@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "robot_agent"
+version = "0.1.0"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+]
+# Heavy deps (ROS2, pyconnect) are expected in the user env.
+# Install with: pip install -e .
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["robot_agent*"]

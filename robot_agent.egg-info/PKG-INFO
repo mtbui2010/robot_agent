@@ -1,0 +1,5 @@
+Metadata-Version: 2.4
+Name: robot_agent
+Version: 0.1.0
+Requires-Dist: fastapi
+Requires-Dist: uvicorn[standard]
