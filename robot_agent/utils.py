@@ -351,7 +351,7 @@ def tool_dz_to_target_z(node, target_z):
 
 def get_lift_height(env, robot_mode):
     height = env.get('height', LIFT_CONFIGS['home'][robot_mode])
-    return height if height> LIFT_CONFIGS['home'][robot_mode] else height + 0.1
+    return height if height>= LIFT_CONFIGS['home'][robot_mode] else height + 0.05
 
 def loc2text(loc, lang='ko'):
     if not isinstance(loc, str):
