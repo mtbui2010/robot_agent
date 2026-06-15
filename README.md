@@ -126,6 +126,38 @@ flattens numpy scalars, NaN / Inf, PIL Images, and oversized arrays into
 JSON-safe payloads — solving the "you can't `json.dumps` a frame" problem
 once, for everyone.
 
+Every run also streams a live **`world`** snapshot. The closed-loop driver
+attaches `world=world.to_dict()` to `task_start`/`plan`/`step_done`/`replan`/`done`;
+the open-loop / direct path emits a dedicated `world` event (initial + after each
+step) via `_emit_world`. So the dashboard "Robot State" panel stays current in
+every execution mode.
+
+### Persistent world state — a belief that outlives the plan
+
+A symbolic [`WorldState`](robot_agent/core/planning/base.py)
+(`arrived`, `found`, `holding`, `opened`, `on`, `holding_since`, `found_pose`,
+`holding_pose`) lives on `AgentState.world` — **one instance per process** (E1 = one robot per
+process), so a plan sees what the previous one left behind, instead of starting
+blank each time.
+
+- **Survives restart** — `save_world()` / `load_world()` persist it to
+  `common_dir/world_state.json` (written after each closed-loop effect, each
+  open-loop step, and on `PUT /agent/world`). On reload `arrived` is dropped
+  (re-reconciled from the localizer) and the transient `found_pose_stale` flag is
+  discarded.
+- **Sensor vs belief** — only `arrived` is sensor-derived: `reconcile_world(node,
+  world)` matches the localizer against the nearest configured location at each
+  plan start. It is robot-overridable through three optional `grace_namemap`
+  hooks (`reconcile_world` full override · `robot_xy` pose reader · else a generic
+  `mobile_pose` + ENV fallback). `found`/`holding`/`opened`/`on` are **beliefs**
+  (no gripper sensor) — `holding_since` timestamps the grasp belief for staleness.
+- **`found_pose`** is the detection-time, base-frame geometry of the found object
+  (`loc_3d/pose_3d/grasppose/ts/robot_pose`); it is flagged stale once the base
+  moves and is **display-only** (a pick that reuses it is a planned follow-up,
+  not implemented).
+
+Operators see and correct it in the dashboard via `GET`/`PUT /agent/world`.
+
 ### Diagnostics
 
 ```bash
@@ -151,6 +183,8 @@ otherwise healthy — failures don't disappear into stderr.
 | **ROS discovery** | `GET /ros/scan` |
 | **Streaming** | `WS /ws/camera/{id}` · `WS /ws/agent` |
 | **Agent / LLM** | `POST /agent/llm-config` · `POST /agent/api-key` · `GET /agent/api-keys` |
+| **World state** | `GET /agent/world` · `PUT /agent/world` (partial edit of the persistent robot belief) |
+| **Planner guides** | `GET /guides` · `GET /guides/{name}` · `POST /guides` · `PUT /guides/{name}` · `DELETE /guides/{name}` · `POST /guides/{name}/activate` (versioned LLM guide) |
 | **Quick buttons** | `GET /buttons` · `POST /buttons` · `PUT /buttons/{id}` · `DELETE /buttons/{id}` · `POST /buttons/reorder` · `POST /buttons/bulk` |
 | **Diagnostics** | `GET /diagnostics` · `GET /diagnostics/boot` |
 

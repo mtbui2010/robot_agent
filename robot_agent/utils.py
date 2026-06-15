@@ -29,6 +29,23 @@ update_dict = lambda adict, x: (adict.update(x), adict)[-1]
 
 llm_client=None
 
+# ---------------------------------------------------------------------------
+# Skill-level TTS mute flag
+# ---------------------------------------------------------------------------
+# The plan-level announcer owns milestone speech; the closed-loop driver mutes
+# skill-level TTS to avoid double-speak. text2voice honors this flag unless
+# called with force=True (the announcer path).
+_SKILL_TTS_MUTED = False
+
+
+def set_skill_tts_muted(v: bool):
+    global _SKILL_TTS_MUTED
+    _SKILL_TTS_MUTED = bool(v)
+
+
+def skill_tts_muted() -> bool:
+    return _SKILL_TTS_MUTED
+
 
 def voice2text(audio_obj):
     from robot_agent.state import current
@@ -52,7 +69,9 @@ def translate(text, to_language='korean'):
         llm_client = init_llm_client(cfg=LLM_SERVERS['llama'])
     return llm_client.chat(prompt=f'Translate to daily {to_language}. Output result only: {text}')
 
-def text2voice(text, lang=None, run_thread=True, slow=False):
+def text2voice(text, lang=None, run_thread=True, slow=False, force=False):
+    if _SKILL_TTS_MUTED and not force:
+        return
     if not DO_TEXT2VOICE:
         return
 

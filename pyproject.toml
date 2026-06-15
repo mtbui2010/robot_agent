@@ -9,6 +9,13 @@ dependencies = [
     "fastapi",
     "uvicorn[standard]",
 ]
+
+# Optional: the GRACE closed-loop planner. pyplanner stays OUT of the core
+# deps so robot_agent's generic runtime never hard-depends on a planner.
+#   pip install -e ".[grace]"     (and: pip install -e ../pyplanner)
+[project.optional-dependencies]
+grace = ["pyplanner"]
+
 # Heavy deps (ROS2, pyconnect) are expected in the user env.
 # Install with: pip install -e .
 

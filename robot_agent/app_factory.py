@@ -1,9 +1,13 @@
 """FastAPI app factory.
 
-Robot packages call `create_app(robot_pkg, data_dir)` from their own entry
-script (e.g. `kcare_robot/main.py`). The factory builds a FastAPI app that
-wraps the same `bootstrap()` used by CLI and Python-API modes — so all three
-modes share one init path.
+Robot packages call `create_app(robot_pkg, ...)` from their own entry script
+(e.g. `kcare_robot/main.py`). The factory builds a FastAPI app that wraps the
+same `bootstrap()` used by CLI and Python-API modes — so all three modes share
+one init path.
+
+Pass either ``config_dir`` (new split layout: ``configs/common`` +
+``configs/locations/<site>``) or the legacy ``data_dir`` (single folder). See
+``runtime.bootstrap`` for the layout details.
 
 `robot_agent` itself contains no entry point; running ``uvicorn`` directly on
 this module is unsupported -- the factory must be called by the robot package.
@@ -12,7 +16,7 @@ this module is unsupported -- the factory must be called by the robot package.
 import json
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -43,8 +47,16 @@ class NumpyJSONResponse(JSONResponse):
         ).encode('utf-8')
 
 
-def create_app(robot_pkg: str, data_dir: Path) -> FastAPI:
-    """Build a FastAPI app bound to `robot_pkg` and persisting state in `data_dir`."""
+def create_app(robot_pkg: str,
+               data_dir: Optional[Path] = None,
+               config_dir: Optional[Path] = None,
+               location: Optional[str] = None) -> FastAPI:
+    """Build a FastAPI app bound to `robot_pkg`.
+
+    Pass ``config_dir`` for the split layout (recommended) or ``data_dir`` for
+    the legacy single-folder layout. ``location`` forces a starting site;
+    otherwise the persisted ``active_location`` is used.
+    """
     from .runtime import bootstrap
 
     # UI mode wants snappy uvicorn startup -> load devices in a background
@@ -52,6 +64,8 @@ def create_app(robot_pkg: str, data_dir: Path) -> FastAPI:
     agent_state = bootstrap(
         robot_pkg=robot_pkg,
         data_dir=data_dir,
+        config_dir=config_dir,
+        location=location,
         load_devices=False,
         verbose=False,
     )
@@ -63,6 +77,8 @@ def create_app(robot_pkg: str, data_dir: Path) -> FastAPI:
     from .api.configs import router as configs_router
     from .api.buttons import router as buttons_router
     from .api.diagnostics import router as diagnostics_router
+    from .api.locations import router as locations_router
+    from .api.guides import router as guides_router
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -100,6 +116,8 @@ def create_app(robot_pkg: str, data_dir: Path) -> FastAPI:
     app.include_router(agent_router,       prefix='')
     app.include_router(camera_router,      prefix='')
     app.include_router(diagnostics_router, prefix='')
+    app.include_router(locations_router,   prefix='')
+    app.include_router(guides_router,      prefix='')
 
     @app.get('/')
     def root():

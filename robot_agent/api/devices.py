@@ -1,14 +1,14 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
-from typing import Literal
 
 from ..state import current
+from ..core.device_manager import ConnectType
 
 router = APIRouter()
 
 
 class AddConnectReq(BaseModel):
-    type: Literal['ros_service', 'ros_topic', 'ros_action', 'webrtc', 'llm', 'tcp']
+    type: ConnectType
     name: str
     config: dict
 

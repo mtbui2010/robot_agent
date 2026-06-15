@@ -28,7 +28,8 @@ def _resolve_dotted(path: str):
     raise ImportError(f'Cannot resolve: {path}')
 
 
-ConnectType = Literal['ros_service', 'ros_topic', 'ros_action', 'webrtc', 'llm', 'tcp']
+ConnectType = Literal['ros_service', 'ros_topic', 'ros_action', 'webrtc', 'llm',
+                      'tcp', 'zmq', 'websocket', 'http', 'visionserve']
 
 
 @dataclass
@@ -75,6 +76,24 @@ class DeviceManager:
     # ------------------------------------------------------------------
     # CRUD
     # ------------------------------------------------------------------
+    @staticmethod
+    def _compile_run_func(config: dict):
+        """Compile a server-side ``run_func`` from a source string in config.
+
+        Shared by the tcp / zmq / websocket / http server branches. Returns
+        ``None`` when no (valid) source is provided, so the server falls back
+        to echoing the request.
+        """
+        code = config.get('run_func')
+        if not (isinstance(code, str) and code.strip()):
+            return None
+        ns: dict = {}
+        exec(code, ns)  # noqa: S102
+        return ns.get('run_func') or next(
+            (v for v in ns.values() if callable(v) and not isinstance(v, type)),
+            None,
+        )
+
     def add_connect(self, conn_type: ConnectType, name: str, config: dict) -> tuple[str, str]:
         agent_name = config.get('agent_name') or config.get('conn_name') or str(uuid.uuid4())[:8]
         entry = ConnectEntry(id=agent_name, name=name, type=conn_type, config=config)
@@ -176,6 +195,91 @@ class DeviceManager:
                     entry.client = server
                     entry.connected = True
 
+            elif conn_type == 'zmq':
+                host = config.get('host', 'localhost')
+                port = int(config.get('port', 8888))
+                if config.get('is_client', True):
+                    from pyconnect.zmq.client import ZmqClient
+                    client = ZmqClient(host=host, port=port,
+                                       timeout=config.get('timeout', 10000))
+                    entry.client = client
+                    entry.connected = client.server_connected
+                else:
+                    from pyconnect.zmq.server import ZmqServer
+                    server = ZmqServer(host=host, port=port,
+                                       run_func=self._compile_run_func(config))
+                    server.spin(run_thread=True)
+                    entry.client = server
+                    entry.connected = True
+
+            elif conn_type == 'websocket':
+                host = config.get('host', 'localhost')
+                port = int(config.get('port', 8888))
+                if config.get('is_client', True):
+                    from pyconnect.websocket.client import WebSocketClient
+                    client = WebSocketClient(
+                        host=host, port=port,
+                        path=config.get('path', '/'),
+                        secure=bool(config.get('secure', False)),
+                        timeout=config.get('timeout', 10.0),
+                    )
+                    entry.client = client
+                    entry.connected = client.server_connected
+                else:
+                    from pyconnect.websocket.server import WebSocketServer
+                    server = WebSocketServer(host=host, port=port,
+                                             run_func=self._compile_run_func(config))
+                    server.spin(run_thread=True)
+                    entry.client = server
+                    entry.connected = True
+
+            elif conn_type == 'http':
+                if config.get('is_client', True):
+                    from pyconnect.http.client import HttpClient
+                    token = config.get('token') or (
+                        __import__('os').getenv(config['token_env'])
+                        if config.get('token_env') else None
+                    )
+                    client = HttpClient(
+                        url=config.get('url', ''),
+                        method=config.get('method', 'POST'),
+                        headers=config.get('headers'),
+                        token=token,
+                        timeout=config.get('timeout', 30.0),
+                    )
+                    entry.client = client
+                    entry.connected = client.server_connected
+                else:
+                    from pyconnect.http.server import HttpServer
+                    server = HttpServer(
+                        host=config.get('host', '0.0.0.0'),
+                        port=int(config.get('port', 8888)),
+                        run_func=self._compile_run_func(config),
+                        path=config.get('path', '/run'),
+                    )
+                    server.spin(run_thread=True)
+                    entry.client = server
+                    entry.connected = True
+
+            elif conn_type == 'visionserve':
+                # Inference client only — the server is the visionserve binary.
+                # from pyconnect.visionserve.client import VisionServeClient
+                # client = VisionServeClient(
+                #     url=config.get('url', 'http://localhost:11435'),
+                #     model=config.get('model', 'rf-detr'),
+                #     timeout=config.get('timeout', 30.0),
+                # )
+                # entry.client = client
+                # entry.connected = client.server_connected
+                from visionserve import Client, VisionServeError
+                try: 
+                    client = Client(config.get('url', 'http://localhost:11435'))
+                    entry.client = client
+                    entry.connected = client.health()['status']=='ok'
+                except VisionServeError as e:
+                    print(e)
+
+
         except Exception as e:
             entry.connected = False
             entry.error = str(e)
@@ -193,14 +297,14 @@ class DeviceManager:
             entry = self._connects.pop(cid)
         if self._ros_node is not None and entry.type in ('ros_service', 'ros_topic', 'ros_action'):
             self._ros_node.agents.pop(cid, None)
-        if entry.type == 'tcp' and entry.client is not None:
+        if entry.type in ('tcp', 'zmq', 'websocket', 'http', 'visionserve') and entry.client is not None:
             try:
                 if entry.config.get('is_client', True):
                     entry.client.close()
                 else:
                     entry.client.stop()
             except Exception as e:
-                print(f'[DeviceManager] Error closing tcp {cid}: {e}')
+                print(f'[DeviceManager] Error closing {entry.type} {cid}: {e}')
         self._save()
         return True
 
@@ -237,6 +341,25 @@ class DeviceManager:
             return active.client if active is not None else None
         entry = self._connects.get(name)
         return entry.client if entry is not None else None
+
+    def active_llm_config(self) -> dict:
+        """Config (``url`` / ``model`` / …) of the active ``type='llm'``
+        connection, or ``{}``. Mirrors the ``get_client('llm')`` resolution
+        (active flag, else first connected) but returns the config so the
+        planner can use it as its LLM config when no explicit ``_llm_cfg`` was
+        set — i.e. selecting an LLM in the dashboard drives planning and
+        survives a restart (the connection lives in ``connections.json``)."""
+        llm_entries = [e for e in self._connects.values() if e.type == 'llm']
+        active = next((e for e in llm_entries if e.config.get('is_active')), None)
+        if active is None:
+            active = next((e for e in llm_entries if e.connected), None)
+        if active is None:
+            return {}
+        # Keep `name` — `init_llm_client` reads it as the backend id
+        # (llama/chatgpt/…); only drop the connection-plumbing keys. Mirrors the
+        # filtering used when the connection itself is initialised.
+        _INTERNAL = {'agent_name', 'conn_name', 'conn_type', 'is_active'}
+        return {k: v for k, v in active.config.items() if k not in _INTERNAL}
 
     def set_active(self, cid: str) -> bool:
         """Mark a single type='llm' entry as active and clear the flag on its
@@ -284,10 +407,13 @@ class DeviceManager:
                 return entry.client.rev_data is not None
             elif entry.type == 'llm':
                 return True
-            elif entry.type == 'tcp':
-                if entry.config.get('is_client', True):
-                    return bool(getattr(entry.client, 'server_connected', False))
-                return bool(getattr(entry.client, 'active', False))
+            elif entry.type in ('tcp', 'zmq', 'websocket', 'http', 'visionserve'):
+                if not entry.config.get('is_client', True):
+                    return bool(getattr(entry.client, 'active', False))
+                # HTTP / visionserve are stateless — actively re-check reachability.
+                if entry.type in ('http', 'visionserve') and hasattr(entry.client, 'ping'):
+                    return bool(entry.client.ping())
+                return bool(getattr(entry.client, 'server_connected', False))
         except Exception:
             return False
         return False
@@ -315,6 +441,42 @@ class DeviceManager:
             tmp.replace(persist)
         except Exception as e:
             print(f'[DeviceManager] Could not save devices: {e}')
+
+    def set_data_dir(self, new_data_dir: Path):
+        """Repoint persistence at a new directory without touching the live
+        connections (used by rename, where the files move with the dir)."""
+        self._data_dir = Path(new_data_dir)
+        self._persist_file = self._data_dir / 'connections.json'
+
+    def _teardown_all(self):
+        """Disconnect and forget every device, keeping the shared ROS node
+        alive. Does NOT persist — callers repoint + reload right after."""
+        with self._lock:
+            entries = list(self._connects.values())
+            self._connects = {}
+        for e in entries:
+            try:
+                if self._ros_node is not None and e.type in ('ros_service', 'ros_topic', 'ros_action'):
+                    self._ros_node.agents.pop(e.id, None)
+                elif e.type == 'tcp' and e.client is not None:
+                    if e.config.get('is_client', True):
+                        e.client.close()
+                    else:
+                        e.client.stop()
+                elif e.type == 'webrtc' and e.client is not None:
+                    close = getattr(e.client, 'close', None)
+                    if callable(close):
+                        close()
+            except Exception as ex:
+                print(f'[DeviceManager] Error tearing down {e.id}: {ex}')
+
+    def reload_from(self, new_data_dir: Path):
+        """Hot-switch to a new connections.json: tear down current devices,
+        repoint, then reconnect everything from the new file. Reuses the
+        existing ROS node (rclpy can't be re-initialised per switch)."""
+        self._teardown_all()
+        self.set_data_dir(new_data_dir)
+        self.load_saved()
 
     def load_saved(self):
         persist = self._persist_file

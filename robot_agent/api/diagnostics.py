@@ -27,16 +27,19 @@ _ENV_KEYS = (
 def diagnostics():
     state = current()
     return {
-        'python':       sys.version.split()[0],
-        'robot_pkg':    state.robot_pkg,
-        'data_dir':     str(state.data_dir),
-        'ros2':         _ros2_status(),
-        'env':          {k: os.environ.get(k) for k in _ENV_KEYS},
-        'sys_path':     _user_sys_path(),
-        'skills':       _skills_status(),
-        'devices':      _devices_status(),
-        'boot_errors':  len(state.boot_errors),
-        'log_file':     str(state.data_dir / 'logs' / f'{state.robot_pkg}.log'),
+        'python':         sys.version.split()[0],
+        'robot_pkg':      state.robot_pkg,
+        'common_dir':     str(state.common_dir),
+        'locations_dir':  str(state.locations_dir),
+        'location':       state.location,
+        'location_dir':   str(state.location_dir),
+        'ros2':           _ros2_status(),
+        'env':            {k: os.environ.get(k) for k in _ENV_KEYS},
+        'sys_path':       _user_sys_path(),
+        'skills':         _skills_status(),
+        'devices':        _devices_status(),
+        'boot_errors':    len(state.boot_errors),
+        'log_file':       str(state.log_dir / f'{state.robot_pkg}.log'),
     }
 
 

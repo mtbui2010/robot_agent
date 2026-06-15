@@ -64,6 +64,47 @@ def set_llm_config(req: LLMConfigReq):
     return {'ok': True}
 
 
+@router.get('/agent/llm-config')
+def get_llm_config():
+    """Effective LLM config the planner runs on (explicit /agent/llm-config,
+    else the active 'llm' connection). Secrets are stripped."""
+    try:
+        cfg = current().ua.effective_llm_cfg() or {}
+    except Exception:
+        cfg = {}
+    _SECRET = {'api_key', 'key', 'token', 'authorization', 'apikey'}
+    return {k: v for k, v in cfg.items() if k.lower() not in _SECRET}
+
+
+# ------------------------------------------------------------------
+# World state (symbolic belief: holding / arrived / opened / on).
+# Persisted on AgentState; the closed-loop driver reads/mutates the same
+# object, so an operator edit here is seen live by a running plan.
+# ------------------------------------------------------------------
+class WorldStateReq(BaseModel):
+    arrived: str | None = None
+    found: str | None = None
+    holding: str | None = None
+    opened: list[str] | None = None
+    on: list[str] | None = None
+    holding_since: float | None = None
+
+
+@router.get('/agent/world')
+def get_world():
+    return current().world.to_dict()
+
+
+@router.put('/agent/world')
+def set_world(req: WorldStateReq):
+    # Only apply fields the client actually sent (partial edit) so omitted
+    # fields keep their current value.
+    st = current()
+    st.world.update_from_dict(req.model_dump(exclude_unset=True))
+    st.save_world()   # operator corrections survive a restart
+    return st.world.to_dict()
+
+
 # ------------------------------------------------------------------
 # API keys
 # ------------------------------------------------------------------
@@ -118,12 +159,17 @@ async def agent_ws(websocket: WebSocket):
     await websocket.accept()
     try:
         data = await websocket.receive_json()
-        prompt = data.get('prompt', '')
-        lang   = data.get('lang', 'en')
-        direct = data.get('direct', False)
+        prompt  = data.get('prompt', '')
+        lang    = data.get('lang', 'en')
+        direct    = data.get('direct', False)
+        planner   = data.get('planner')         # 'grace' | 'direct' | None (legacy)
+        plan_only = data.get('plan_only', False) # generate plan, don't execute
+        log_data  = data.get('log_data', False)  # save rgb/depth/results of vision
 
         ua = current().ua
-        gen = ua.run_direct(plan=prompt) if direct else ua.run(prompt=prompt, lang=lang)
+        gen = (ua.run_direct(plan=prompt, log_data=log_data) if direct
+               else ua.run(prompt=prompt, lang=lang, planner=planner,
+                           plan_only=plan_only, log_data=log_data))
         async for event in gen:
             # Walk the whole event through _serialize_result so numpy scalars
             # and NaN/Inf are sanitized at a single point. `allow_nan=False`

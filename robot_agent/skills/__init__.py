@@ -38,6 +38,21 @@ def _clear_emitter() -> None:
     _local.emit = None
 
 
+# ── optional per-run dataset capture (rgb/depth/results of vision detection) ──
+# When set (by UnifiedAgent for a run with `log_data` on), vision skills save
+# their inputs/outputs under this directory. None → no capture (default).
+def set_dataset_dir(path) -> None:
+    _local.dataset_dir = path
+
+
+def clear_dataset_dir() -> None:
+    _local.dataset_dir = None
+
+
+def dataset_dir():
+    return getattr(_local, 'dataset_dir', None)
+
+
 def skill_entry(fn, pkg: str):
     """Wrap a skill function so it can be called from user code without
     explicit ``node`` or prior ``bootstrap()``.

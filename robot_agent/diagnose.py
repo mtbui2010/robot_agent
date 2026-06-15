@@ -120,17 +120,30 @@ def main() -> int:
             _info(f'{ok_count} ok, {fail_count} failed')
 
     # ── 6. connections.json ─────────────────────────────────────────────
+    # Split layout: configs/locations/<active|default>/connections.json.
+    # Legacy layout: <pkg>/data/connections.json. Explicit --data_dir wins.
+    connections_file = None
     if args.data_dir:
-        data_dir = Path(args.data_dir).resolve()
+        connections_file = Path(args.data_dir).resolve() / 'connections.json'
     else:
         try:
             pkg_mod = importlib.import_module(args.robot_pkg)
-            data_dir = Path(pkg_mod.__file__).parent / 'data'
+            pkg_dir = Path(pkg_mod.__file__).parent
+            locations = pkg_dir / 'configs' / 'locations'
+            if locations.is_dir():
+                active = 'default'
+                marker = pkg_dir / 'configs' / 'common' / 'active_location'
+                if marker.exists():
+                    name = marker.read_text().strip()
+                    if name and (locations / name).is_dir():
+                        active = name
+                connections_file = locations / active / 'connections.json'
+            else:
+                connections_file = pkg_dir / 'data' / 'connections.json'
         except Exception:
-            data_dir = None
+            connections_file = None
 
-    if data_dir is not None:
-        connections_file = data_dir / 'connections.json'
+    if connections_file is not None:
         if connections_file.exists():
             try:
                 connections = json.loads(connections_file.read_text())

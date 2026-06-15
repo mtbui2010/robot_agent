@@ -23,6 +23,25 @@ class ConfigManager:
         self._robot_pkg = robot_pkg
         self._overrides: dict = {}
 
+    def set_data_dir(self, new_data_dir: Path):
+        """Repoint persistence at a new directory, keeping current overrides
+        (used by rename, where the file moves with the dir)."""
+        self._data_dir = Path(new_data_dir)
+        self._persist_file = self._data_dir / 'skill_configs_override.json'
+
+    def reload_from(self, new_data_dir: Path):
+        """Hot-switch to a different location's skill_configs_override.json:
+        drop the current overrides and load the new site's instead. Skills
+        read live via the proxies, so the change is visible immediately.
+
+        Note: any overrides previously deep-merged into the robot's `tasks`
+        module persist in that module's dicts. kcare_robot keeps `tasks` empty
+        (all defaults live in the proxies), so a clean swap is the norm.
+        """
+        self._overrides = {}
+        self.set_data_dir(new_data_dir)
+        self.load_saved()
+
     def _tasks(self):
         """Return the robot's tasks config module, or None if it can't be
         imported. Overrides and proxy defaults work without it."""
