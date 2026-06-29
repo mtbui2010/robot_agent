@@ -387,16 +387,20 @@ class UnifiedAgent:
         action, inputs_str = task
         params = self._parse_inputs(inputs_str)
         params.update({k: v for k, v in ctx.items() if k != 'node'})
+        skip_fail = '!' in action
+        action = action.replace('!', '')
 
         result = self.skill_registry.execute(action, params, node=node, log_fn=log_fn)
         if 'not registered' not in result.get('msg', ''):
+            if skip_fail:
+                result['isdone'] = True
             return result
 
         # Fallback: direct ROS device agent call
         try:
             if node is None:
                 return {'isdone': False, 'msg': f'No ROS node — "{action}" not found'}
-            agent = node.agents.get(action)
+            agent = node.agents.get(action.replace('!', ''))
             if agent is None:
                 return {'isdone': False, 'msg': f'No skill or device agent "{action}"'}
             conn = self.device_manager._connects.get(action)
@@ -404,7 +408,10 @@ class UnifiedAgent:
                 ret = agent.get()
             else:
                 ret = agent.send(params if params else {})
-            return ret if isinstance(ret, dict) else {'isdone': True, 'data': ret}
+            ret  = ret if isinstance(ret, dict) else {'isdone': True, 'data': ret}
+            if skip_fail:
+                ret['isdone'] = True
+            return ret
         except Exception as e:
             return {'isdone': False, 'msg': str(e)}
 
