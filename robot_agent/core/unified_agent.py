@@ -92,19 +92,21 @@ def _kcare_data_root():
     return home / '.kcare_robot'
 
 
-def _begin_dataset(enabled) -> None:
+def _begin_dataset(enabled) -> str | None:
     """Open a per-run vision-capture dir under ~/.kcare_robot when `log_data` is
-    on (thread-local, read by recognition). Best-effort."""
+    on (thread-local, read by recognition). Best-effort. Returns the created
+    directory path (so the caller can surface it to the UI), else None."""
     if not enabled:
-        return
+        return None
     try:
         import time
         from ..skills import set_dataset_dir
         d = _kcare_data_root() / 'vision_logs' / time.strftime('%Y%m%d-%H%M%S')
         d.mkdir(parents=True, exist_ok=True)
         set_dataset_dir(str(d))
+        return str(d)
     except Exception:
-        pass
+        return None
 
 
 def _end_dataset() -> None:
@@ -222,7 +224,9 @@ class UnifiedAgent:
         def _blocking():
             try:
                 emit({'event': 'start', 'prompt': prompt})
-                _begin_dataset(log_data)
+                _ds_dir = _begin_dataset(log_data)
+                if _ds_dir:
+                    emit({'event': 'log_dir', 'log_dir': _ds_dir})
 
                 prompt_en = prompt
                 if lang != 'en':
@@ -335,7 +339,9 @@ class UnifiedAgent:
         def _blocking():
             try:
                 emit({'event': 'start', 'prompt': plan})
-                _begin_dataset(log_data)
+                _ds_dir = _begin_dataset(log_data)
+                if _ds_dir:
+                    emit({'event': 'log_dir', 'log_dir': _ds_dir})
                 tasks = self._parse_plan(plan)
                 if not tasks:
                     emit({'event': 'error', 'msg': 'No valid commands found'})
