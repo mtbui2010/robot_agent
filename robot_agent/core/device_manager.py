@@ -126,7 +126,7 @@ class DeviceManager:
                 # data_interface, encode_func, decode_func are all pre-populated.
                 ros_cfg = get_configs_func(agent_name=agent_name, conn_name=config['conn_name'])
 
-                for key in ('data_interface', 'encode_func', 'decode_func'):
+                for key in ('data_interface', 'encode_func', 'decode_func', 'timeout'):
                     val = config.get(key)
                     if not val:
                         continue
