@@ -202,8 +202,11 @@ class ClosedLoop:
             "vlm_enabled": o.get(
                 "vlm_enabled", env("ROBOT_AGENT_VERIFY_VLM", "0") == "1"
             ),
+            # Speech is played by the dashboard (it receives `say` on every
+            # event), so the robot's own speaker stays silent by default. Set
+            # ROBOT_AGENT_VOICE_BACKEND=1 to also speak on the robot.
             "speak_backend": o.get(
-                "speak_backend", env("ROBOT_AGENT_VOICE_BACKEND", "1") != "0"
+                "speak_backend", env("ROBOT_AGENT_VOICE_BACKEND", "0") != "0"
             ),
             "mute_skill_tts": o.get("mute_skill_tts", True),
             "max_replans": int(o.get("max_replans", env("ROBOT_AGENT_MAX_REPLANS", "3"))),

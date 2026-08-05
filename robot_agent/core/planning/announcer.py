@@ -17,6 +17,8 @@ import threading
 _GTTS_CODE = {'vi': 'vi', 'ko': 'ko', 'en': 'en'}
 
 # Per-action localized verbs (resolved into {verb} when ctx carries 'action').
+# Keys cover both GRACE actions (CamelCase) and the kcare skill names used by
+# the direct/structured path (lowercase, e.g. ``find::apple``).
 VERBS: dict[str, dict[str, str]] = {
     'vi': {
         'MoveTo': 'đi tới', 'GoTo': 'đi tới', 'Navigate': 'đi tới',
@@ -24,6 +26,12 @@ VERBS: dict[str, dict[str, str]] = {
         'Pick': 'lấy', 'PickUp': 'lấy', 'Grasp': 'lấy',
         'Place': 'đặt', 'PlaceAt': 'đặt', 'PutDown': 'đặt', 'PutIn': 'đặt',
         'Open': 'mở', 'Close': 'đóng',
+        # direct-path skills
+        'navigate': 'đi tới', 'move': 'đi tới', 'moveto': 'đi tới',
+        'find': 'tìm', 'detect': 'tìm', 'detect_object': 'tìm',
+        'pick': 'lấy', 'grasp': 'lấy',
+        'place': 'đặt', 'put': 'đặt',
+        'open': 'mở', 'close': 'đóng',
     },
     'ko': {
         'MoveTo': '이동', 'GoTo': '이동', 'Navigate': '이동',
@@ -31,6 +39,12 @@ VERBS: dict[str, dict[str, str]] = {
         'Pick': '집기', 'PickUp': '집기', 'Grasp': '집기',
         'Place': '놓기', 'PlaceAt': '놓기', 'PutDown': '놓기', 'PutIn': '놓기',
         'Open': '열기', 'Close': '닫기',
+        # direct-path skills
+        'navigate': '이동', 'move': '이동', 'moveto': '이동',
+        'find': '찾기', 'detect': '찾기', 'detect_object': '찾기',
+        'pick': '집기', 'grasp': '집기',
+        'place': '놓기', 'put': '놓기',
+        'open': '열기', 'close': '닫기',
     },
     'en': {
         'MoveTo': 'move to', 'GoTo': 'move to', 'Navigate': 'move to',
@@ -38,6 +52,12 @@ VERBS: dict[str, dict[str, str]] = {
         'Pick': 'pick', 'PickUp': 'pick', 'Grasp': 'pick',
         'Place': 'place', 'PlaceAt': 'place', 'PutDown': 'place', 'PutIn': 'place',
         'Open': 'open', 'Close': 'close',
+        # direct-path skills
+        'navigate': 'move to', 'move': 'move to', 'moveto': 'move to',
+        'find': 'find', 'detect': 'find', 'detect_object': 'find',
+        'pick': 'pick', 'grasp': 'pick',
+        'place': 'place', 'put': 'place',
+        'open': 'open', 'close': 'close',
     },
 }
 

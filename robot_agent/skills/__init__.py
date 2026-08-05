@@ -53,6 +53,22 @@ def dataset_dir():
     return getattr(_local, 'dataset_dir', None)
 
 
+# ── optional dataset streaming (frontend log target) ─────────────────────────
+# When on, vision skills push their rgb/depth/results through ``log_data`` so
+# the dashboard can save them client-side instead of the backend writing to
+# disk. Independent of ``dataset_dir`` (backend target).
+def set_stream_dataset(on: bool = True) -> None:
+    _local.stream_dataset = bool(on)
+
+
+def clear_stream_dataset() -> None:
+    _local.stream_dataset = False
+
+
+def stream_dataset() -> bool:
+    return bool(getattr(_local, 'stream_dataset', False))
+
+
 def skill_entry(fn, pkg: str):
     """Wrap a skill function so it can be called from user code without
     explicit ``node`` or prior ``bootstrap()``.

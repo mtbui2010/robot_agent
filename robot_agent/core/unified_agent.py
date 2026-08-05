@@ -92,11 +92,22 @@ def _kcare_data_root():
     return home / '.kcare_robot'
 
 
-def _begin_dataset(enabled) -> str | None:
-    """Open a per-run vision-capture dir under ~/.kcare_robot when `log_data` is
-    on (thread-local, read by recognition). Best-effort. Returns the created
-    directory path (so the caller can surface it to the UI), else None."""
+def _begin_dataset(enabled, mode: str = 'backend') -> str | None:
+    """Start per-run vision capture when `log_data` is on. Best-effort.
+
+    ``mode='backend'`` opens a capture dir under ~/.kcare_robot (thread-local,
+    read by recognition) and returns its path. ``mode='frontend'`` instead turns
+    on dataset streaming, so the vision inputs/outputs travel over the agent
+    WebSocket and the dashboard stores them — the backend writes nothing.
+    """
     if not enabled:
+        return None
+    if mode == 'frontend':
+        try:
+            from ..skills import set_stream_dataset
+            set_stream_dataset(True)
+        except Exception:
+            pass
         return None
     try:
         import time
@@ -109,32 +120,83 @@ def _begin_dataset(enabled) -> str | None:
         return None
 
 
-def _end_dataset() -> None:
+def _end_dataset(keep: bool = True, path: str | None = None) -> None:
+    """Stop capture. With ``keep=False`` (failed-only filter and the run did not
+    fail) the backend capture dir is discarded so only failed cases survive."""
     try:
-        from ..skills import clear_dataset_dir
+        from ..skills import clear_dataset_dir, clear_stream_dataset
         clear_dataset_dir()
+        clear_stream_dataset()
     except Exception:
         pass
+    if not keep and path:
+        try:
+            import shutil
+            shutil.rmtree(path, ignore_errors=True)
+        except Exception:
+            pass
+
+
+def _is_failure_event(ev: dict) -> bool:
+    """True when an event marks this run as a failed case — used by the
+    "log failed only" filter. Covers execution failures (a step returning
+    ``isdone: False`` / ``status: failed``), run-level errors, and GRACE
+    planning-time symbolic violations."""
+    try:
+        name = ev.get('event')
+        if name == 'error':
+            return True
+        if name == 'step_done':
+            if ev.get('status') == 'failed':
+                return True
+            res = ev.get('result')
+            if isinstance(res, dict) and res.get('isdone') is False:
+                return True
+        if name == 'done':
+            st = ev.get('status')
+            if st is not None:
+                return st not in ('success', 'planned')
+            return ev.get('success') is False
+        # GRACE: symbolic precondition violations found while planning.
+        if name == 'plan_step' and ev.get('phase') == 'verified' and ev.get('ok') is False:
+            return True
+        if name == 'plan_step' and ev.get('violations'):
+            return True
+        if name == 'replan':
+            return True
+    except Exception:
+        pass
+    return False
 
 
 def _make_log_fn(emit, step_index: int):
     """Build a per-step ``log_fn`` that turns a raw skill dict into a
     ``step_log`` WebSocket event. Extracts ``log_image`` (numpy RGB →
-    base64 JPEG); the rest of the dict is JSON-serialised and shown
-    under the step in the execution panel.
+    base64 JPEG) and any streamed ``dataset`` payload (rgb/depth/results, sent
+    when the frontend log target is active); the rest of the dict is
+    JSON-serialised and shown under the step in the execution panel.
     """
     def log_fn(raw: Any):
         if not isinstance(raw, dict):
             raw = {'value': raw}
         img = raw.get('log_image')
-        data = {k: v for k, v in raw.items() if k != 'log_image'}
-        emit({
+        dataset = raw.get('dataset')
+        # A skill can report progress mid-step with log_data({'say': '...'}) —
+        # forwarded as the event's `say` so the dashboard speaks it.
+        say = raw.get('say')
+        data = {k: v for k, v in raw.items() if k not in ('log_image', 'dataset', 'say')}
+        ev = {
             'event': 'step_log',
             'step': step_index,
             'data': _serialize_result(data),
             'log_image': _encode_log_image(img),
             'ts': time.time(),
-        })
+        }
+        if dataset is not None:
+            ev['dataset'] = _serialize_result(dataset)
+        if isinstance(say, str) and say.strip():
+            ev['say'] = say
+        emit(ev)
     return log_fn
 
 
@@ -214,17 +276,24 @@ class UnifiedAgent:
     # ------------------------------------------------------------------
     async def run(self, prompt: str, lang: str = 'en',
                   planner: str | None = None,
-                  plan_only: bool = False, log_data: bool = False) -> AsyncIterator[dict]:
+                  plan_only: bool = False, log_data: bool = False,
+                  log_mode: str = 'backend', log_all: bool = True) -> AsyncIterator[dict]:
         q: asyncio.Queue = asyncio.Queue()
         loop = asyncio.get_event_loop()
+        # Failure tracking for the "log failed cases only" filter: a step that
+        # returns isdone False, a run-level error, or GRACE symbolic violations.
+        failed = {'v': False}
 
         def emit(event: dict):
+            if not log_all and not failed['v'] and _is_failure_event(event):
+                failed['v'] = True
             asyncio.run_coroutine_threadsafe(q.put(event), loop)
 
         def _blocking():
+            _ds_dir = None
             try:
-                emit({'event': 'start', 'prompt': prompt})
-                _ds_dir = _begin_dataset(log_data)
+                emit({'event': 'start', 'prompt':prompt})
+                _ds_dir = _begin_dataset(log_data, log_mode)
                 if _ds_dir:
                     emit({'event': 'log_dir', 'log_dir': _ds_dir})
 
@@ -313,9 +382,10 @@ class UnifiedAgent:
 
             except Exception as e:
                 import traceback
+                failed['v'] = True
                 emit({'event': 'error', 'msg': str(e), 'trace': traceback.format_exc()})
             finally:
-                _end_dataset()
+                _end_dataset(keep=log_all or failed['v'], path=_ds_dir)
                 emit({'event': '__end__'})
 
         threading.Thread(target=_blocking, daemon=True).start()
@@ -329,17 +399,39 @@ class UnifiedAgent:
     # ------------------------------------------------------------------
     # Direct execution (structured commands, no LLM)
     # ------------------------------------------------------------------
-    async def run_direct(self, plan: str, log_data: bool = False) -> AsyncIterator[dict]:
+    async def run_direct(self, plan: str, log_data: bool = False,
+                         log_mode: str = 'backend', log_all: bool = True,
+                         lang: str = 'en') -> AsyncIterator[dict]:
         q: asyncio.Queue = asyncio.Queue()
         loop = asyncio.get_event_loop()
+        failed = {'v': False}
+        # Milestone phrases for the structured/direct path. speak_backend=False:
+        # the dashboard speaks (it receives `say` on each event), the robot's own
+        # speaker stays quiet.
+        from .planning.announcer import Announcer
+        announcer = Announcer(lang=lang, speak_backend=False)
+
+        def _verb_obj(task_group):
+            """(skill, first param) of a step — announcer's {verb} / {object}."""
+            try:
+                skill, inputs = task_group[0][0], task_group[0][1]
+                obj = str(inputs).split(',')[0].split('=')[-1].strip()
+                if obj in ('None', 'none', ''):
+                    obj = ''
+                return skill, obj
+            except Exception:
+                return '', ''
 
         def emit(event: dict):
+            if not log_all and not failed['v'] and _is_failure_event(event):
+                failed['v'] = True
             asyncio.run_coroutine_threadsafe(q.put(event), loop)
 
         def _blocking():
+            _ds_dir = None
             try:
-                emit({'event': 'start', 'prompt': plan})
-                _ds_dir = _begin_dataset(log_data)
+                emit({'event': 'start', 'prompt':plan})
+                _ds_dir = _begin_dataset(log_data, log_mode)
                 if _ds_dir:
                     emit({'event': 'log_dir', 'log_dir': _ds_dir})
                 tasks = self._parse_plan(plan)
@@ -347,14 +439,17 @@ class UnifiedAgent:
                     emit({'event': 'error', 'msg': 'No valid commands found'})
                     return
 
-                emit({'event': 'plan', 'plan': plan})
+                emit({'event': 'plan', 'plan': plan,
+                      'say': announcer.announce('plan_ready')})
                 node = self.device_manager._ros_node
                 ctx: dict = {'isdone': True}
                 _emit_world(emit, node)   # initial Robot State snapshot
 
                 for i, task_group in enumerate(tasks):
+                    _act, _obj = _verb_obj(task_group)
                     emit({'event': 'step_start', 'step': i + 1,
-                          'total': len(tasks), 'task': str(task_group)})
+                          'total': len(tasks), 'task': str(task_group),
+                          'say': announcer.announce('step_start', action=_act, object=_obj)})
 
                     if not ctx.get('isdone', True):
                         emit({'event': 'stopped', 'msg': 'Previous step failed'})
@@ -367,18 +462,27 @@ class UnifiedAgent:
                         ret = self._exec_parallel_direct(task_group, node, ctx, log_fn=log_fn)
 
                     ctx.update(ret)
-                    emit({'event': 'step_done', 'step': i + 1, 'result': _serialize_result(ret)})
+                    _ok = bool(ret.get('isdone', True)) if isinstance(ret, dict) else True
+                    _reason = str(ret.get('msg', '')) if isinstance(ret, dict) and not _ok else ''
+                    emit({'event': 'step_done', 'step': i + 1, 'result': _serialize_result(ret),
+                          'say': announcer.announce(
+                              'step_success' if _ok else 'step_fail',
+                              action=_act, object=_obj, reason=_reason)})
                     _sk = task_group[0][0] if task_group and task_group[0] else None
                     _pa = task_group[0][1] if task_group and len(task_group[0]) > 1 else None
                     _emit_world(emit, node, skill=_sk, params=_pa, result=ret)   # refresh Robot State
 
-                emit({'event': 'done', 'success': _serialize_result(ctx.get('isdone', True))})
+                _done_ok = bool(ctx.get('isdone', True))
+                emit({'event': 'done', 'success': _serialize_result(ctx.get('isdone', True)),
+                      'say': announcer.announce('done_success' if _done_ok else 'done_fail')})
 
             except Exception as e:
                 import traceback
-                emit({'event': 'error', 'msg': str(e), 'trace': traceback.format_exc()})
+                failed['v'] = True
+                emit({'event': 'error', 'msg': str(e), 'trace': traceback.format_exc(),
+                      'say': announcer.announce('done_fail')})
             finally:
-                _end_dataset()
+                _end_dataset(keep=log_all or failed['v'], path=_ds_dir)
                 emit({'event': '__end__'})
 
         threading.Thread(target=_blocking, daemon=True).start()
@@ -393,13 +497,15 @@ class UnifiedAgent:
         action, inputs_str = task
         params = self._parse_inputs(inputs_str)
         params.update({k: v for k, v in ctx.items() if k != 'node'})
-        skip_fail = '!' in action
-        action = action.replace('!', '')
+        skip_fail, make_fail = '!' in action, '~' in action
+        action = action.replace('!', '').replace('~', '')
 
         result = self.skill_registry.execute(action, params, node=node, log_fn=log_fn)
         if 'not registered' not in result.get('msg', ''):
             if skip_fail:
                 result['isdone'] = True
+            if make_fail:
+                result['isdone'] = False
             return result
 
         # Fallback: direct ROS device agent call
@@ -417,6 +523,8 @@ class UnifiedAgent:
             ret  = ret if isinstance(ret, dict) else {'isdone': True, 'data': ret}
             if skip_fail:
                 ret['isdone'] = True
+            if make_fail:
+                ret['isdone'] = False
             return ret
         except Exception as e:
             return {'isdone': False, 'msg': str(e)}

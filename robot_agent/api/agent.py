@@ -165,11 +165,17 @@ async def agent_ws(websocket: WebSocket):
         planner   = data.get('planner')         # 'grace' | 'direct' | None (legacy)
         plan_only = data.get('plan_only', False) # generate plan, don't execute
         log_data  = data.get('log_data', False)  # save rgb/depth/results of vision
+        # 'backend' writes the dataset to disk here; 'frontend' streams it to the
+        # dashboard instead. log_all=False keeps only failed cases.
+        log_mode  = data.get('log_mode', 'backend')
+        log_all   = data.get('log_all', True)
 
         ua = current().ua
-        gen = (ua.run_direct(plan=prompt, log_data=log_data) if direct
+        gen = (ua.run_direct(plan=prompt, log_data=log_data, lang=lang,
+                             log_mode=log_mode, log_all=log_all) if direct
                else ua.run(prompt=prompt, lang=lang, planner=planner,
-                           plan_only=plan_only, log_data=log_data))
+                           plan_only=plan_only, log_data=log_data,
+                           log_mode=log_mode, log_all=log_all))
         async for event in gen:
             # Walk the whole event through _serialize_result so numpy scalars
             # and NaN/Inf are sanitized at a single point. `allow_nan=False`
