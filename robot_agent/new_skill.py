@@ -169,7 +169,7 @@ Then call it like any other skill:
     curl -X POST http://localhost:8001/skill/{name} \\
          -H 'Content-Type: application/json' -d '{{}}'
 
-Pros: no robot_agent / pyconnect import, any language, any ROS_DOMAIN_ID,
+Pros: no robot_agent import, any language, any ROS_DOMAIN_ID,
       crash isolation, custom timeout/headers via SkillDef.
 Cons: extra process, HTTP overhead (~ms), no streaming feedback.
 """
@@ -183,7 +183,7 @@ from rclpy.node import Node
 from rosinterfaces.srv import SendStringData
 from fastapi import FastAPI
 
-from pyconnect.utils import dict2str, str2dict
+from robot_agent.connect.serde import dict2str, str2dict
 
 
 class {class_name}Node(Node):

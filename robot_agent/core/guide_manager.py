@@ -159,3 +159,63 @@ def resolve_guide(robot_pkg: str):
         except Exception:
             continue
     return '', None
+
+
+# ---------------------------------------------------------------------------
+# Structured-guide answer → plan string
+# ---------------------------------------------------------------------------
+
+def _fix_len(alist: list, n: int) -> list:
+    """Force *alist* to length *n*, padding with its last element."""
+    nlen = len(alist)
+    if nlen == 0:
+        return ['None'] * n
+    if nlen == n:
+        return list(alist)
+    if nlen > n:
+        return list(alist[:n])
+    return list(alist) + [alist[-1]] * (n - nlen)
+
+
+def _fix_list(alist: list, target_n: int) -> list:
+    """:func:`_fix_len` plus normalising empty / ``'None'`` entries to ``None``."""
+    out = []
+    for el in _fix_len(alist, target_n):
+        el = str(el).strip()
+        out.append(None if el in ('None', '') else el)
+    return out
+
+
+def reconstruct_plan(plan_dict: dict):
+    """Turn a structured guide's JSON answer into the ``action::obj>>dest`` plan.
+
+    A structured guide (``format`` is a JSON schema) makes the LLM answer with
+    parallel lists::
+
+        {"action_types": [...], "target_objects": [...], "destination_locations": [...]}
+
+    ``target_objects`` sets the step count; the other two lists are padded or
+    truncated to match. Returns *plan_dict* unchanged if it does not have that
+    shape, so the caller can fall back to treating the answer as raw text.
+
+    Absorbed from ``pyconnect.ros.node_taskmanager.recontruct_plan``. The
+    padding branch there was dead (it concatenated a list with a string and
+    always raised); it now pads as intended.
+    """
+    try:
+        target_objs = [str(el).strip() for el in plan_dict['target_objects']]
+        ntarget = len(target_objs)
+
+        action_types = _fix_list(plan_dict['action_types'], ntarget)
+        dest_locs = _fix_list(plan_dict['destination_locations'], ntarget)
+
+        out = []
+        for act, tob, dloc in zip(action_types, target_objs, dest_locs):
+            tob = '' if tob is None else f'{tob}'
+            dob = '' if dloc is None else f'>>{dloc}'
+            out.append(f'{act}::{tob}{dob}')
+        return '\n'.join(out).replace('None', '').replace('me@', '').replace('@unknown', '')
+
+    except Exception as e:
+        print(f'[guides] could not reconstruct structured plan: {e}')
+        return plan_dict

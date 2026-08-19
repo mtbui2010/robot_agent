@@ -5,19 +5,71 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "robot_agent"
 version = "0.1.0"
+# Core: the FastAPI runtime + the connect layer's always-on pieces.
+# `msgpack` is technically optional (serde falls back to pickle) but every
+# deployment wants it — pickle over the wire is slower and unsafe across hosts.
+#
+# numpy is pinned to 1.26.4: ROS 2 (rclpy, cv_bridge) ships C extensions built
+# against the numpy 1.x ABI. Under numpy 2.x they fail at import with
+# "compiled against API version 0x10 but this version of numpy is ...".
 dependencies = [
     "fastapi",
     "uvicorn[standard]",
+    "pydantic",
+    "numpy==1.26.4",
+    "msgpack",
 ]
 
-# Optional: the GRACE closed-loop planner. pyplanner stays OUT of the core
-# deps so robot_agent's generic runtime never hard-depends on a planner.
-#   pip install -e ".[grace]"     (and: pip install -e ../pyplanner)
+# ROS 2 (rclpy, cv_bridge, sensor_msgs, std_msgs, rosinterfaces) is NOT
+# installable from PyPI — it comes from the sourced ROS distro. Same for
+# `cv2`: prefer the distro's python3-opencv, hence no opencv pin here (a robot
+# package that needs it should depend on opencv-python itself).
 [project.optional-dependencies]
+# Transports beyond the built-in tcp_ip (stdlib only).
+net = [
+    "pyzmq",
+    "websockets>=13",
+    "requests",
+    "aiohttp",
+    "aiortc",
+    "Pillow",
+]
+# LLM backends behind connect.llm.init_llm_client. Each is imported lazily, so
+# only the ones you actually configure need to be present.
+llm = [
+    "openai>=1.0",
+    "ollama",
+    "google-genai",
+]
+# Skill-level text-to-speech (robot_agent.utils.text2voice). Guarded by
+# try/except, so the agent runs fine without them — it just stays silent.
+voice = [
+    "gtts",
+    "langdetect",
+    "pydub",
+    "sounddevice",
+]
+# The GRACE closed-loop planner. Kept out of the core deps so the generic
+# runtime never hard-depends on a planner.
+#   pip install -e ../pyplanner && pip install -e ".[grace]"
 grace = ["pyplanner"]
 
-# Heavy deps (ROS2, pyconnect) are expected in the user env.
-# Install with: pip install -e .
+# Everything except `grace` (pyplanner is a local path package, not on PyPI).
+all = [
+    "pyzmq",
+    "websockets>=13",
+    "requests",
+    "aiohttp",
+    "aiortc",
+    "Pillow",
+    "openai>=1.0",
+    "ollama",
+    "google-genai",
+    "gtts",
+    "langdetect",
+    "pydub",
+    "sounddevice",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]

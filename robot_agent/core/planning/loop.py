@@ -63,7 +63,7 @@ def _read_robot_xy(node):
     ``{'pose': <...>}`` where the value is a ROS Pose (``.position.x``), a list
     ``[x, y, ...]``, or a ``{'x','y'}`` dict. The kcare ``decode_func`` returns
     ``{'pose': <geometry_msgs Pose>, 'isdone': True}`` — note the stock
-    ``robot_agent.utils.get_closest_loc`` reads ``ret['x']`` and so silently
+    ``kcare_robot.utils.get_closest_loc`` reads ``ret['x']`` and so silently
     fails on this shape; that's why we extract the pose ourselves here.
     Returns ``None`` if unavailable.
     """

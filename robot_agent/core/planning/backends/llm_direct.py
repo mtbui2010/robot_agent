@@ -7,11 +7,11 @@ This reproduces exactly what unified_agent.py does today:
     1. init_llm_client(cfg=llm_cfg)
     2. try the structured guide (guide_struct + llm.chat(prompt, guide, format)),
        falling back to the freeform guide (guide + llm.chat_guide)
-    3. reconstruct via pyconnect.ros.node_taskmanager.recontruct_plan
+    3. reconstruct via robot_agent.core.guide_manager.reconstruct_plan
     4. parse the ``action::inputs && …`` plan string into PlanStep dicts.
 
-All ``pyconnect`` imports are kept lazy (inside methods) because pyconnect is a
-heavy ROS-adjacent dependency and the module must import without it.
+LLM imports are kept lazy (inside methods) so this module imports cleanly in
+environments without the provider SDKs installed.
 """
 
 from __future__ import annotations
@@ -29,8 +29,8 @@ class LlmDirectBackend:
 
     # ── core: produce the raw `action::inputs && …` plan string ───────
     def _plan_string(self, task: str) -> str:
-        # Lazy imports — pyconnect is heavy / ROS-adjacent.
-        from pyconnect.utils import init_llm_client
+        # Lazy import — the LLM backends pull in optional SDKs.
+        from robot_agent.connect.llm import init_llm_client
 
         llm = init_llm_client(cfg=self._llm_cfg)
 
@@ -46,11 +46,11 @@ class LlmDirectBackend:
         except Exception:
             plan_raw = llm.chat_guide(prompt=task, guide=guide, reuse=False)
 
-        from pyconnect.ros.node_taskmanager import recontruct_plan
+        from robot_agent.core.guide_manager import reconstruct_plan
 
         try:
             plan_dict = eval(str(plan_raw))  # noqa: S307 - mirrors legacy behaviour
-            plan = recontruct_plan(plan_dict)
+            plan = reconstruct_plan(plan_dict)
         except Exception:
             plan = str(plan_raw)
 

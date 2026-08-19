@@ -3,12 +3,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, Optional
 
+from ..connect import legacy as _legacy
+
+# Persisted connections.json files may embed `from pyconnect...` snippets and
+# dotted paths from before the connect layer was absorbed — keep them loading.
+_legacy.install()
+
 
 def _resolve_dotted(path: str):
     """Resolve a dotted (or slashed) path to a Python object.
 
     Examples:
-        'pyconnect.ros.utils.encode_imgmsg'   -> function
+        'robot_agent.connect.ros.codecs.encode_imgmsg'  -> function
         'sensor_msgs/msg/Image'               -> class
         'rosinterfaces.srv.SendStringData'    -> class
     """
@@ -60,7 +66,7 @@ class DeviceManager:
     # ------------------------------------------------------------------
     def _get_ros_node(self):
         if self._ros_node is None:
-            from pyconnect.ros.custom_node import CustomNode
+            from ..connect.ros.node import CustomNode
             self._ros_node = CustomNode(name=self._node_name, num_callbackgroup=4)
             self._ros_node.spin(run_thread=True)
         return self._ros_node
@@ -69,7 +75,7 @@ class DeviceManager:
     # Discovery
     # ------------------------------------------------------------------
     def scan_ros(self) -> dict:
-        from pyconnect.ros.utils import get_ros2_node_names_and_types
+        from ..connect.ros.node import get_ros2_node_names_and_types
         self._get_ros_node()  # ensure node is spinning — required to see other nodes
         return get_ros2_node_names_and_types()
 
@@ -103,23 +109,23 @@ class DeviceManager:
                 is_client = config.get('is_client', True)
                 if is_client:
                     if 'topic' in conn_type:
-                        from pyconnect.ros.utils import get_sub_configs
+                        from ..connect.ros.configs import get_sub_configs
                         get_configs_func = get_sub_configs
                     elif 'action' in conn_type:
-                        from pyconnect.ros.utils import get_action_client_configs
+                        from ..connect.ros.configs import get_action_client_configs
                         get_configs_func = get_action_client_configs
                     else:
-                        from pyconnect.ros.utils import get_service_client_configs
+                        from ..connect.ros.configs import get_service_client_configs
                         get_configs_func = get_service_client_configs
                 else:
                     if 'topic' in conn_type:
-                        from pyconnect.ros.utils import get_pub_configs
+                        from ..connect.ros.configs import get_pub_configs
                         get_configs_func = get_pub_configs
                     elif 'action' in conn_type:
-                        from pyconnect.ros.utils import get_action_server_configs
+                        from ..connect.ros.configs import get_action_server_configs
                         get_configs_func = get_action_server_configs
                     else:
-                        from pyconnect.ros.utils import get_service_server_configs
+                        from ..connect.ros.configs import get_service_server_configs
                         get_configs_func = get_service_server_configs
 
                 # Defaults assume SendStringData (service/action) or std_msgs/String (topic):
@@ -151,7 +157,7 @@ class DeviceManager:
 
             elif conn_type == 'webrtc':
                 import asyncio
-                from pyconnect.webrtc.client import WebRTCClient
+                from ..connect.webrtc.client import WebRTCClient
                 try:
                     asyncio.get_event_loop()
                 except RuntimeError:
@@ -165,7 +171,7 @@ class DeviceManager:
                 )
 
             elif conn_type == 'llm':
-                from pyconnect.utils import init_llm_client
+                from ..connect.llm import init_llm_client
                 _INTERNAL_KEYS = {'agent_name', 'conn_name', 'conn_type'}
                 llm_cfg = {k: v for k, v in config.items() if k not in _INTERNAL_KEYS}
                 entry.client = init_llm_client(cfg=llm_cfg)
@@ -175,12 +181,12 @@ class DeviceManager:
                 host = config.get('host', 'localhost')
                 port = int(config.get('port', 8888))
                 if config.get('is_client', True):
-                    from pyconnect.tcp_ip.client import TcpIpClient
+                    from ..connect.tcp_ip.client import TcpIpClient
                     client = TcpIpClient(host=host, port=port)
                     entry.client = client
                     entry.connected = client.server_connected
                 else:
-                    from pyconnect.tcp_ip.server import TcpIpServer
+                    from ..connect.tcp_ip.server import TcpIpServer
                     run_func = None
                     code = config.get('run_func')
                     if isinstance(code, str) and code.strip():
@@ -199,13 +205,13 @@ class DeviceManager:
                 host = config.get('host', 'localhost')
                 port = int(config.get('port', 8888))
                 if config.get('is_client', True):
-                    from pyconnect.zmq.client import ZmqClient
+                    from ..connect.zmq.client import ZmqClient
                     client = ZmqClient(host=host, port=port,
                                        timeout=config.get('timeout', 10000))
                     entry.client = client
                     entry.connected = client.server_connected
                 else:
-                    from pyconnect.zmq.server import ZmqServer
+                    from ..connect.zmq.server import ZmqServer
                     server = ZmqServer(host=host, port=port,
                                        run_func=self._compile_run_func(config))
                     server.spin(run_thread=True)
@@ -216,7 +222,7 @@ class DeviceManager:
                 host = config.get('host', 'localhost')
                 port = int(config.get('port', 8888))
                 if config.get('is_client', True):
-                    from pyconnect.websocket.client import WebSocketClient
+                    from ..connect.websocket.client import WebSocketClient
                     client = WebSocketClient(
                         host=host, port=port,
                         path=config.get('path', '/'),
@@ -226,7 +232,7 @@ class DeviceManager:
                     entry.client = client
                     entry.connected = client.server_connected
                 else:
-                    from pyconnect.websocket.server import WebSocketServer
+                    from ..connect.websocket.server import WebSocketServer
                     server = WebSocketServer(host=host, port=port,
                                              run_func=self._compile_run_func(config))
                     server.spin(run_thread=True)
@@ -235,7 +241,7 @@ class DeviceManager:
 
             elif conn_type == 'http':
                 if config.get('is_client', True):
-                    from pyconnect.http.client import HttpClient
+                    from ..connect.http.client import HttpClient
                     token = config.get('token') or (
                         __import__('os').getenv(config['token_env'])
                         if config.get('token_env') else None
@@ -250,7 +256,7 @@ class DeviceManager:
                     entry.client = client
                     entry.connected = client.server_connected
                 else:
-                    from pyconnect.http.server import HttpServer
+                    from ..connect.http.server import HttpServer
                     server = HttpServer(
                         host=config.get('host', '0.0.0.0'),
                         port=int(config.get('port', 8888)),
@@ -263,7 +269,7 @@ class DeviceManager:
 
             elif conn_type == 'visionserve':
                 # Inference client only — the server is the visionserve binary.
-                # from pyconnect.visionserve.client import VisionServeClient
+                # from ..connect.visionserve.client import VisionServeClient
                 # client = VisionServeClient(
                 #     url=config.get('url', 'http://localhost:11435'),
                 #     model=config.get('model', 'rf-detr'),

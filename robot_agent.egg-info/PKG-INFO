@@ -3,5 +3,38 @@ Name: robot_agent
 Version: 0.1.0
 Requires-Dist: fastapi
 Requires-Dist: uvicorn[standard]
+Requires-Dist: pydantic
+Requires-Dist: numpy==1.26.4
+Requires-Dist: msgpack
+Provides-Extra: net
+Requires-Dist: pyzmq; extra == "net"
+Requires-Dist: websockets>=13; extra == "net"
+Requires-Dist: requests; extra == "net"
+Requires-Dist: aiohttp; extra == "net"
+Requires-Dist: aiortc; extra == "net"
+Requires-Dist: Pillow; extra == "net"
+Provides-Extra: llm
+Requires-Dist: openai>=1.0; extra == "llm"
+Requires-Dist: ollama; extra == "llm"
+Requires-Dist: google-genai; extra == "llm"
+Provides-Extra: voice
+Requires-Dist: gtts; extra == "voice"
+Requires-Dist: langdetect; extra == "voice"
+Requires-Dist: pydub; extra == "voice"
+Requires-Dist: sounddevice; extra == "voice"
 Provides-Extra: grace
 Requires-Dist: pyplanner; extra == "grace"
+Provides-Extra: all
+Requires-Dist: pyzmq; extra == "all"
+Requires-Dist: websockets>=13; extra == "all"
+Requires-Dist: requests; extra == "all"
+Requires-Dist: aiohttp; extra == "all"
+Requires-Dist: aiortc; extra == "all"
+Requires-Dist: Pillow; extra == "all"
+Requires-Dist: openai>=1.0; extra == "all"
+Requires-Dist: ollama; extra == "all"
+Requires-Dist: google-genai; extra == "all"
+Requires-Dist: gtts; extra == "all"
+Requires-Dist: langdetect; extra == "all"
+Requires-Dist: pydub; extra == "all"
+Requires-Dist: sounddevice; extra == "all"

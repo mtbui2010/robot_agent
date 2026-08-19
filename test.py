@@ -1,5 +1,5 @@
 def encode_func(data, req):
-    from pyconnect.utils import set_atrrs
+    from robot_agent.connect.helpers import set_atrrs
     req.pose.header.frame_id = 'map'
     req.behavior_tree = ''
 

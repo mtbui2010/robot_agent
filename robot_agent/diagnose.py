@@ -11,7 +11,8 @@ Example:
 Checks performed:
     1. Python version >= 3.10
     2. rclpy importable (ROS2 sourced)
-    3. pyconnect importable
+    2b. std_msgs / sensor_msgs / cv_bridge / rosinterfaces importable
+    3. robot_agent.connect importable (+ optional extras as warnings)
     4. <robot_pkg>.configs.skills_config imports + has SKILL_CONFIGS
     5. Each entry in SKILL_CONFIGS can be imported
     6. <data_dir>/connections.json parses (if present)
@@ -71,13 +72,54 @@ def main() -> int:
         _fail(f'rclpy NOT importable: {type(e).__name__}: {e}')
         _info('  Hint: source /opt/ros/humble/setup.bash')
 
-    # ── 3. pyconnect ───────────────────────────────────────────────────
+    # ── 2b. ROS message packages ───────────────────────────────────────
+    # `rosinterfaces` is a local ament package (SendStringData srv/action) that
+    # every generic ROS agent config depends on. It must be colcon-built and
+    # sourced — pip cannot provide it.
+    for mod, hint in (
+        ('std_msgs.msg', 'part of the ROS desktop install'),
+        ('sensor_msgs.msg', 'part of the ROS desktop install'),
+        ('cv_bridge', 'apt install ros-$ROS_DISTRO-cv-bridge'),
+        ('rosinterfaces.srv', 'colcon build --packages-select rosinterfaces, '
+                              'then source <ws>/install/setup.bash'),
+    ):
+        try:
+            importlib.import_module(mod)
+            _ok(f'{mod} importable')
+        except Exception as e:
+            _fail(f'{mod} NOT importable: {type(e).__name__}: {e}')
+            _info(f'  Hint: {hint}')
+
+    # ── 3. connect layer ───────────────────────────────────────────────
     try:
-        import pyconnect  # noqa: F401
-        _ok('pyconnect importable')
+        import robot_agent.connect  # noqa: F401
+        _ok('robot_agent.connect importable')
     except Exception as e:
-        _fail(f'pyconnect NOT importable: {type(e).__name__}: {e}')
-        _info('  Hint: pip install -e <path-to-pyconnect>')
+        _fail(f'robot_agent.connect NOT importable: {type(e).__name__}: {e}')
+        _info('  Hint: pip install -e <path-to-robot_agent>')
+
+    # ── 3b. optional third-party extras ────────────────────────────────
+    # Missing ones degrade a feature rather than break the agent, so they are
+    # warnings: no TTS, no ZMQ transport, no OpenAI backend, …
+    for mod, feature in (
+        ('numpy', 'core'),
+        ('cv2', 'image decoding / vision skills'),
+        ('visionserve', 'detection / grasp skills (find, pick, place)'),
+        ('msgpack', 'fast wire serialisation (falls back to pickle)'),
+        ('zmq', 'zmq transport'),
+        ('websockets', 'websocket transport'),
+        ('aiortc', 'webrtc camera transport'),
+        ('gtts', 'text-to-speech'),
+        ('sounddevice', 'text-to-speech playback'),
+    ):
+        try:
+            importlib.import_module(mod)
+        except ImportError:
+            _warn(f'{mod} not installed -- {feature} unavailable')
+        except Exception as e:
+            # Installed but unusable, e.g. sounddevice without libportaudio.
+            _warn(f'{mod} installed but not usable ({type(e).__name__}: {e}) '
+                  f'-- {feature} unavailable')
 
     # ── 4. SKILL_CONFIGS module ────────────────────────────────────────
     mod_name = f'{args.robot_pkg}.configs.skills_config'

@@ -37,6 +37,15 @@ robot_agent/robot_agent/
     ├── unified_agent.py   plan parsing · streaming step events · log capture
     ├── config_manager.py  per-skill overrides · atomic persistence
     └── button_manager.py  quick-action server-side storage
+└── connect/              connectivity layer (absorbed from pyconnect)
+    ├── transport.py       TransportType / LLMBackend enums · Base classes
+    ├── serde.py           msgpack↔bytes↔base64 codecs · JSON helpers
+    ├── helpers.py         Timer · data_info · evaluate · set_atrrs · …
+    ├── parallel.py        run_parallel(_check)
+    ├── legacy.py          `pyconnect.*` alias shim for old connections.json
+    ├── ros/               CustomNode + agents · msg codecs · get_*_configs
+    ├── tcp_ip/ zmq/ websocket/ http/ webrtc/   transports
+    └── llm/               LLaMA / ChatGPT / Gemini clients · init_llm_client
 ```
 
 ---
@@ -196,7 +205,7 @@ Live OpenAPI / Swagger at `http://<host>:8001/docs`.
 
 ```bash
 pip install -e .                       # only fastapi + uvicorn[standard]
-                                       # (ROS2, pyconnect supplied by host env)
+                                       # (ROS2 supplied by host env)
 
 # Provide a skill package via env var, then start:
 export ROBOT_SKILLS_PKG=kcare_robot

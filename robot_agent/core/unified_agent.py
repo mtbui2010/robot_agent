@@ -300,7 +300,7 @@ class UnifiedAgent:
                 prompt_en = prompt
                 if lang != 'en':
                     emit({'event': 'status', 'msg': 'Translating...'})
-                    from pyconnect.utils import translate
+                    from ..utils import translate
                     prompt_en = translate(prompt, to_language='english',
                                          llm_cfg=self._llm_cfg)
                     emit({'event': 'translated', 'text': prompt_en})
@@ -319,7 +319,7 @@ class UnifiedAgent:
                     return
 
                 emit({'event': 'status', 'msg': 'Generating task plan...'})
-                from pyconnect.utils import init_llm_client
+                from ..connect.llm import init_llm_client
                 llm = init_llm_client(cfg=self.effective_llm_cfg())
 
                 from ..state import current
@@ -340,10 +340,10 @@ class UnifiedAgent:
 
                 emit({'event': 'plan_raw', 'plan': str(plan_raw)})
 
-                from pyconnect.ros.node_taskmanager import recontruct_plan
+                from .guide_manager import reconstruct_plan
                 try:
                     plan_dict = eval(str(plan_raw))
-                    plan = recontruct_plan(plan_dict)
+                    plan = reconstruct_plan(plan_dict)
                 except Exception:
                     plan = str(plan_raw)
 
@@ -530,7 +530,7 @@ class UnifiedAgent:
             return {'isdone': False, 'msg': str(e)}
 
     def _exec_parallel_direct(self, task_group: list, node: Any, ctx: dict, log_fn=None) -> dict:
-        from pyconnect.utils import run_parallel_check
+        from ..connect.parallel import run_parallel_check
         fns = [lambda t=task: self._exec_task_direct(t, node, ctx, log_fn=log_fn) for task in task_group]
         return run_parallel_check(funcs=fns)
 
@@ -556,7 +556,7 @@ class UnifiedAgent:
         return self.skill_registry.execute(action, params, node=node, log_fn=log_fn)
 
     def _exec_parallel(self, task_group: list, node: Any, ctx: dict, log_fn=None) -> dict:
-        from pyconnect.utils import run_parallel_check
+        from ..connect.parallel import run_parallel_check
         fns = [lambda t=task: self._exec_task(t, node, ctx, log_fn=log_fn) for task in task_group]
         return run_parallel_check(funcs=fns)
 
