@@ -133,6 +133,11 @@ def bootstrap(robot_pkg: str,
                 )
             return current()
 
+        # Skill modules imported before/around the AgentState exists resolve
+        # configs through _ConfigProxy; this tells it whose configs/tasks.py to
+        # read when no agent is live yet (see robot_agent.skill_configs).
+        os.environ.setdefault('ROBOT_SKILLS_PKG', robot_pkg)
+
         common_dir, locations_dir, location, log_dir = _resolve_layout(
             robot_pkg, data_dir, config_dir, location, log_dir)
 

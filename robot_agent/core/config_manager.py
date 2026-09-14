@@ -34,9 +34,8 @@ class ConfigManager:
         drop the current overrides and load the new site's instead. Skills
         read live via the proxies, so the change is visible immediately.
 
-        Note: any overrides previously deep-merged into the robot's `tasks`
-        module persist in that module's dicts. kcare_robot keeps `tasks` empty
-        (all defaults live in the proxies), so a clean swap is the norm.
+        The swap is clean: `update` never writes into the robot's `tasks`
+        module, so nothing of the previous site survives here.
         """
         self._overrides = {}
         self.set_data_dir(new_data_dir)
@@ -70,22 +69,18 @@ class ConfigManager:
         return result
 
     def update(self, name: str, new_value: dict) -> str:
-        # Always persist to overrides so the change survives even if the
-        # robot tasks module is not installed.
+        # Overrides are the only place an edit is recorded. `get` consults them
+        # first, so a running skill sees the new value on its next read without
+        # a restart — there is nothing else to poke.
+        #
+        # This deliberately does NOT also deep-merge into the robot's `tasks`
+        # module. That used to be a harmless no-op back when robot packages kept
+        # `tasks` empty, but a robot that declares real dicts there would have
+        # them mutated in place, and `reload_from` only clears `_overrides` — so
+        # the next site would silently inherit this site's edits for every group
+        # it does not override itself.
         self._overrides[name] = new_value
         self._save()
-
-        # Also apply in-place to the live module so running skills see the
-        # change immediately without a restart.
-        tasks = self._tasks()
-        if tasks is not None:
-            target = getattr(tasks, name, None)
-            if target is not None:
-                if isinstance(target, dict):
-                    _deep_update(target, new_value)
-                else:
-                    setattr(tasks, name, new_value)
-
         return ''
 
     def _save(self):

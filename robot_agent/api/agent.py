@@ -1,8 +1,8 @@
 import json, os
 from pathlib import Path
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
-from typing import Literal
+from typing import Literal, Optional
 
 from ..state import current
 from ..core.unified_agent import _serialize_result
@@ -154,6 +154,26 @@ def get_api_keys():
 # ------------------------------------------------------------------
 # Agent WebSocket
 # ------------------------------------------------------------------
+class ListenAnswer(BaseModel):
+    text: str = ''
+    error: Optional[str] = None
+
+
+@router.post('/agent/listen/{req_id}')
+def answer_listen(req_id: str, body: ListenAnswer):
+    """The dashboard's transcript for a pending HRI listen request.
+
+    A skill running with ``source='dashboard'`` emits a ``listen`` event over
+    the agent WebSocket and blocks in ``robot_agent.utils.listen_dashboard``;
+    the browser captures the answer and posts it here. 404 once the request has
+    timed out and nothing is waiting any more.
+    """
+    from ..utils import submit_transcript
+    if not submit_transcript(req_id, body.text, body.error):
+        raise HTTPException(status_code=404, detail=f'no pending listen request {req_id!r}')
+    return {'ok': True}
+
+
 @router.websocket('/ws/agent')
 async def agent_ws(websocket: WebSocket):
     await websocket.accept()

@@ -38,6 +38,16 @@ def _clear_emitter() -> None:
     _local.emit = None
 
 
+def has_emitter() -> bool:
+    """True while an agent run is attached to this thread.
+
+    A skill that must reach the dashboard (asking it to listen through the
+    browser mic, say) checks this first: outside an agent run ``log_data`` is a
+    silent no-op, and a request sent through it would simply never arrive.
+    """
+    return getattr(_local, 'emit', None) is not None
+
+
 # ── optional per-run dataset capture (rgb/depth/results of vision detection) ──
 # When set (by UnifiedAgent for a run with `log_data` on), vision skills save
 # their inputs/outputs under this directory. None → no capture (default).

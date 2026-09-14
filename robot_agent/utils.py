@@ -80,11 +80,15 @@ def skill_tts_muted() -> bool:
     return _SKILL_TTS_MUTED
 
 
+_TTS_LANGS = ('ko', 'en', 'vi')
+
+
 def text2voice(text, lang=None, run_thread=True, slow=False, force=False):
     """Speak *text* through the local audio device via gTTS.
 
     Args:
-        lang: ``'ko'`` / ``'en'``; auto-detected from *text* when None.
+        lang: ``'ko'`` / ``'en'`` / ``'vi'``; auto-detected from *text* when
+            None. Anything else is spoken with the English voice.
         run_thread: play in the background instead of blocking the caller.
         force: speak even while skill-level TTS is muted (announcer path).
     """
@@ -94,7 +98,7 @@ def text2voice(text, lang=None, run_thread=True, slow=False, force=False):
         return
 
     lang = detect_lang(text) if lang is None else lang
-    lang = 'en' if lang != 'ko' else lang
+    lang = lang if lang in _TTS_LANGS else 'en'
 
     def func():
         try:
@@ -128,6 +132,201 @@ def voice2text(audio_obj):
     if client is None:
         raise RuntimeError("TCP connect 'vlms' not registered — add it in the Connection panel")
     return client.send({'audio_obj': audio_obj, 'detector': 'audio'})
+
+
+# ---------------------------------------------------------------------------
+# Listening (HRI skills)
+# ---------------------------------------------------------------------------
+# Two ways to hear the user, picked per call by the skill:
+#   * the robot's own microphone — record_phrase() + speech_to_text();
+#   * the dashboard's browser mic — listen_dashboard(), answered through
+#     POST /agent/listen/{id} (api/agent.py) calling submit_transcript().
+
+MIC_SAMPLERATE = 16000       # what the Whisper server expects
+_MIC_BLOCK = 1024            # samples per callback, ~64 ms at 16 kHz
+_PREROLL_SEC = 0.3           # kept from before onset so the first syllable survives
+
+
+def _mic_energy(block: np.ndarray) -> float:
+    """RMS on the same x1e5 scale pydevice.audio.Micro thresholds against."""
+    return float(np.sqrt(np.mean(np.square(block, dtype=np.float64)))) * 1e5
+
+
+def segment_phrase(blocks, samplerate: int = MIC_SAMPLERATE, max_sec: float = 8.0,
+                   silence_sec: float = 1.5, energy_threshold: float = 800,
+                   min_phrase_sec: float = 0.3, wait_sec: float | None = None):
+    """Cut one spoken phrase out of a stream of float32 mono audio blocks.
+
+    Energy VAD: a block louder than `energy_threshold` is speech. Recording
+    starts at the first speech block (plus a short pre-roll) and ends once
+    `silence_sec` passes without speech, or `max_sec` after onset. Returns None
+    when nobody starts talking within `wait_sec` (default `max_sec`), when the
+    stream runs out first, or when the speech was shorter than `min_phrase_sec`
+    (a cough, a door).
+
+    Time is counted in samples, not wall clock, so this is exact on recorded
+    or synthetic audio as well as a live stream.
+    """
+    wait_sec = max_sec if wait_sec is None else wait_sec
+    preroll_n = int(_PREROLL_SEC * samplerate)
+    pre: list[np.ndarray] = []
+    phrase: list[np.ndarray] = []
+    t = 0                     # samples consumed
+    onset = last_voice = None
+    voiced = 0                # samples in blocks above threshold
+
+    for block in blocks:
+        block = np.asarray(block, dtype=np.float32).reshape(-1)
+        n = len(block)
+        loud = _mic_energy(block) > energy_threshold
+        t += n
+        if onset is None:
+            if not loud:
+                pre.append(block)
+                while pre and sum(len(b) for b in pre) - len(pre[0]) >= preroll_n:
+                    pre.pop(0)
+                if t >= wait_sec * samplerate:
+                    return None
+                continue
+            onset = t - n
+            phrase = pre + [block]
+            pre = []
+        else:
+            phrase.append(block)
+        if loud:
+            last_voice = t
+            voiced += n
+        if t - last_voice >= silence_sec * samplerate or t - onset >= max_sec * samplerate:
+            break
+    else:
+        if onset is None:
+            return None
+
+    if voiced < min_phrase_sec * samplerate:
+        return None
+    return np.concatenate(phrase).astype(np.float32)
+
+
+def record_phrase(max_sec: float = 8.0, silence_sec: float = 1.5,
+                  energy_threshold: float = 800, min_phrase_sec: float = 0.3,
+                  wait_sec: float | None = None, device=None):
+    """Record one phrase from the robot's microphone (see segment_phrase).
+
+    Returns float32 mono audio at 16 kHz in [-1, 1] — the format the ``vlms``
+    Whisper server takes — or None when nobody spoke.
+    """
+    import queue
+    q: queue.Queue = queue.Queue()
+    wait_sec = max_sec if wait_sec is None else wait_sec
+    # Hard stop in wall-clock time too, in case the device stalls and blocks
+    # stop arriving.
+    deadline_sec = wait_sec + max_sec + 2.0
+
+    def callback(indata, frames, time_info, status):
+        q.put(indata[:, 0].copy())
+
+    def blocks():
+        import time
+        end = time.monotonic() + deadline_sec
+        while time.monotonic() < end:
+            try:
+                yield q.get(timeout=0.5)
+            except queue.Empty:
+                continue
+
+    with sd.InputStream(samplerate=MIC_SAMPLERATE, channels=1, dtype='float32',
+                        blocksize=_MIC_BLOCK, device=device, callback=callback):
+        return segment_phrase(blocks(), MIC_SAMPLERATE, max_sec=max_sec,
+                              silence_sec=silence_sec, energy_threshold=energy_threshold,
+                              min_phrase_sec=min_phrase_sec, wait_sec=wait_sec)
+
+
+def speech_to_text(audio, lang: str | None = None) -> str:
+    """Transcribe robot-mic audio with the ``vlms`` Whisper server.
+
+    `lang` pins Whisper's language ('ko', 'en', 'vi', ...) instead of letting it
+    guess from a few seconds of audio, which it gets wrong on short answers.
+    Returns the transcript stripped, '' when nothing was recognised.
+    """
+    from robot_agent.state import current
+    client = current().dm.get_client('vlms')
+    if client is None:
+        raise RuntimeError("TCP connect 'vlms' not registered — add it in the Connection panel")
+    req = {'audio_obj': np.asarray(audio, dtype=np.float32), 'detector': 'audio'}
+    if lang:
+        req['language'] = lang       # forwarded to whisper.transcribe()
+    res = client.send(req)
+    if isinstance(res, dict):
+        res = res.get('text', '')
+    return str(res or '').strip()
+
+
+_LISTEN_PENDING: dict[str, dict] = {}
+_LISTEN_LOCK = threading.Lock()
+
+
+def listen_dashboard(prompt: str | None = None, lang: str = 'ko', max_sec: float = 8.0,
+                     timeout: float = 30.0):
+    """Have the dashboard capture one spoken phrase with the browser mic.
+
+    Emits a ``listen`` event over the running agent's WebSocket; the dashboard
+    says `prompt` (if any), listens, and posts the transcript to
+    ``/agent/listen/{id}``. Blocks until then or `timeout`.
+
+    Returns the transcript, or None when nobody answered in time. Raises when
+    there is no dashboard run to ask, or when the browser reports a real
+    failure (microphone blocked, recognition unsupported) — re-asking would not
+    help with either.
+    """
+    import uuid
+    from robot_agent.skills import has_emitter, log_data
+    if not has_emitter():
+        raise RuntimeError("source='dashboard' needs a run started from the dashboard's "
+                           "Agent panel — use source='robot' from the CLI or /skill")
+    req_id = uuid.uuid4().hex[:12]
+    slot = {'event': threading.Event(), 'text': None, 'error': None}
+    with _LISTEN_LOCK:
+        _LISTEN_PENDING[req_id] = slot
+    try:
+        log_data({'listen': {'id': req_id, 'lang': lang, 'max_sec': max_sec,
+                             'prompt': prompt or ''}})
+        slot['event'].wait(timeout)
+    finally:
+        with _LISTEN_LOCK:
+            _LISTEN_PENDING.pop(req_id, None)
+    if slot['error']:
+        raise RuntimeError(f'dashboard microphone: {slot["error"]}')
+    return (slot['text'] or '').strip() or None
+
+
+def submit_transcript(req_id: str, text: str, error: str | None = None) -> bool:
+    """Deliver the dashboard's answer to a waiting listen_dashboard() call.
+    False when nothing is waiting under that id (timed out, or unknown)."""
+    with _LISTEN_LOCK:
+        slot = _LISTEN_PENDING.get(req_id)
+    if slot is None:
+        return False
+    slot['text'], slot['error'] = text, error
+    slot['event'].set()
+    return True
+
+
+def say_to_user(text: str, lang: str = 'ko', source: str = 'robot') -> None:
+    """Say a line as part of a conversation, and return once it has been said.
+
+    source='robot' plays it on the robot speaker, blocking, so a following
+    listen does not record the robot's own voice. It speaks even while skill
+    TTS is muted: that mute exists to stop skills narrating over the plan
+    announcer, and a question is not narration. source='dashboard' sends it to
+    the browser, which voices it in order before any listen queued after it.
+    """
+    if source == 'dashboard':
+        from robot_agent.skills import has_emitter, log_data
+        if has_emitter():
+            log_data({'speak': text, 'speak_lang': lang})
+            return
+        print(f'[say_to_user] no dashboard run attached; using the robot speaker: {text}')
+    text2voice(text, lang=lang, run_thread=False, force=True)
 
 
 # ---------------------------------------------------------------------------

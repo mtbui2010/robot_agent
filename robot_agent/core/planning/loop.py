@@ -431,7 +431,16 @@ class ClosedLoop:
 
                 # ── Execute ──────────────────────────────────────────────
                 try:
-                    result = self.sr.execute(skill_name, params, node)
+                    # The open-loop path attaches a per-step emitter; this one never
+                    # did, so under the closed-loop planner every log_data() call —
+                    # images, datasets, and an HRI skill's speak / listen — was
+                    # silently dropped. `say` stays off: the announcer owns
+                    # narration here, the same reason skill TTS is muted.
+                    log_fn = None
+                    if self._emit is not None:
+                        from ..unified_agent import _make_log_fn
+                        log_fn = _make_log_fn(self._emit, i, allow_say=False)
+                    result = self.sr.execute(skill_name, params, node, log_fn=log_fn)
                 except Exception as e:
                     result = {"isdone": False, "msg": str(e)}
                 rec.result = result if isinstance(result, dict) else {"result": result}

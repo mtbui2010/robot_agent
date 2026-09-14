@@ -169,7 +169,7 @@ def _is_failure_event(ev: dict) -> bool:
     return False
 
 
-def _make_log_fn(emit, step_index: int):
+def _make_log_fn(emit, step_index: int, allow_say: bool = True):
     """Build a per-step ``log_fn`` that turns a raw skill dict into a
     ``step_log`` WebSocket event. Extracts ``log_image`` (numpy RGB →
     base64 JPEG) and any streamed ``dataset`` payload (rgb/depth/results, sent
@@ -184,7 +184,14 @@ def _make_log_fn(emit, step_index: int):
         # A skill can report progress mid-step with log_data({'say': '...'}) —
         # forwarded as the event's `say` so the dashboard speaks it.
         say = raw.get('say')
-        data = {k: v for k, v in raw.items() if k not in ('log_image', 'dataset', 'say')}
+        # HRI skills (kcare hri.reply / hri.ask) drive the browser directly:
+        # `speak` is voiced unconditionally — it is the skill's output, not
+        # narration — and `listen` asks the dashboard to capture one phrase and
+        # POST it to /agent/listen/{id}.
+        speak = raw.get('speak')
+        listen = raw.get('listen')
+        data = {k: v for k, v in raw.items()
+                if k not in ('log_image', 'dataset', 'say', 'speak', 'speak_lang', 'listen')}
         ev = {
             'event': 'step_log',
             'step': step_index,
@@ -194,8 +201,13 @@ def _make_log_fn(emit, step_index: int):
         }
         if dataset is not None:
             ev['dataset'] = _serialize_result(dataset)
-        if isinstance(say, str) and say.strip():
+        if allow_say and isinstance(say, str) and say.strip():
             ev['say'] = say
+        if isinstance(speak, str) and speak.strip():
+            ev['speak'] = speak
+            ev['speak_lang'] = raw.get('speak_lang')
+        if isinstance(listen, dict):
+            ev['listen'] = _serialize_result(listen)
         emit(ev)
     return log_fn
 

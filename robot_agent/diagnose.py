@@ -52,6 +52,11 @@ def main() -> int:
     parser.add_argument('-v', '--verbose', action='store_true')
     args = parser.parse_args()
 
+    # Skill modules that read a config at import time resolve through
+    # _ConfigProxy, which has no AgentState here — tell it which package's
+    # configs/tasks.py to fall back to. Must happen before any skill import.
+    os.environ.setdefault('ROBOT_SKILLS_PKG', args.robot_pkg)
+
     print('=' * 64)
     print(f' robot_agent diagnostics ({args.robot_pkg})')
     print('=' * 64)

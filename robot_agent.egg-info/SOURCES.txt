@@ -3,9 +3,11 @@ pyproject.toml
 robot_agent/__init__.py
 robot_agent/app_factory.py
 robot_agent/cli.py
+robot_agent/copy_skill.py
 robot_agent/delete_skill.py
 robot_agent/diagnose.py
 robot_agent/logging_config.py
+robot_agent/new_robot.py
 robot_agent/new_skill.py
 robot_agent/rename_skill.py
 robot_agent/runtime.py
