@@ -132,12 +132,14 @@ class DeviceManager:
                 # data_interface, encode_func, decode_func are all pre-populated.
                 ros_cfg = get_configs_func(agent_name=agent_name, conn_name=config['conn_name'])
 
-                for key in ('data_interface', 'encode_func', 'decode_func', 'timeout'):
+                for key in ('data_interface', 'encode_func', 'decode_func',
+                            'cancel_func', 'timeout'):
                     val = config.get(key)
                     if not val:
                         continue
                     if isinstance(val, str):
-                        if key in ('encode_func', 'decode_func') and ('def ' in val or 'lambda ' in val):
+                        if (key in ('encode_func', 'decode_func', 'cancel_func')
+                                and ('def ' in val or 'lambda ' in val)):
                             ns: dict = {}
                             exec(val, ns)  # noqa: S102
                             ros_cfg[key] = ns.get(key) or next(

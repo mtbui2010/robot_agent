@@ -311,6 +311,22 @@ def submit_transcript(req_id: str, text: str, error: str | None = None) -> bool:
     return True
 
 
+def cancel_pending_listens() -> int:
+    """Release every skill blocked on the dashboard microphone. Returns how many.
+
+    Called when a run is cancelled: ``listen_dashboard`` would otherwise keep
+    the plan alive until its timeout, waiting for an answer nobody is going to
+    give. The waiter sees ``error='cancelled'`` and raises, which the HRI skill
+    reports as a failed step.
+    """
+    with _LISTEN_LOCK:
+        slots = list(_LISTEN_PENDING.values())
+    for slot in slots:
+        slot['error'] = 'cancelled'
+        slot['event'].set()
+    return len(slots)
+
+
 def say_to_user(text: str, lang: str = 'ko', source: str = 'robot') -> None:
     """Say a line as part of a conversation, and return once it has been said.
 

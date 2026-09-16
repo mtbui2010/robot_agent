@@ -116,16 +116,20 @@ def delete_skill(name: str):
 
 @router.post('/skill/{name}')
 def execute_skill(name: str, params: dict = {}):
+    from ..core.run_control import begin_run
     state = current()
     node = state.dm._ros_node
+    begin_run(node)          # a cancel must not leak into the next command
     return state.sr.execute(name, params, node=node)
 
 
 @router.post('/agent/{agent_name}/send')
 def send_to_agent(agent_name: str, params: dict = {}):
+    from ..core.run_control import begin_run
     node = current().dm._ros_node
     if node is None:
         return {'isdone': False, 'msg': 'No ROS node available'}
+    begin_run(node)          # a cancel must not leak into the next command
     agent = node.agents.get(agent_name)
     if agent is None:
         return {'isdone': False, 'msg': f'No skill or device agent "{agent_name}"'}

@@ -45,6 +45,18 @@ except Exception:
 if not rclpy.ok():
     rclpy.init()
 
+# action_msgs/GoalStatus values, used to tell a cancelled goal from a real
+# result. Imported rather than hard-coded — guessing them once already turned
+# every SUCCEEDED (4) goal into a reported "aborted".
+try:
+    from action_msgs.msg import GoalStatus as _GoalStatus
+    _STATUS_EXECUTING = _GoalStatus.STATUS_EXECUTING
+    _STATUS_SUCCEEDED = _GoalStatus.STATUS_SUCCEEDED
+    _STATUS_CANCELED = _GoalStatus.STATUS_CANCELED
+    _STATUS_ABORTED = _GoalStatus.STATUS_ABORTED
+except Exception:
+    _STATUS_EXECUTING, _STATUS_SUCCEEDED, _STATUS_CANCELED, _STATUS_ABORTED = 2, 4, 5, 6
+
 
 # ---------------------------------------------------------------------------
 # Logging locations
@@ -99,6 +111,13 @@ class NodeAgent:
         self.encode_func, self.decode_func, self.response_func = encode_func, decode_func, response_func
         self.connected = False
         self.wait_until_done = kwargs.get('wait_until_done', True)
+        # Set by make_agent — lets an agent see the node-wide cancel flag.
+        self.node = None
+        # Optional per-connection cancel written by the user (DevicePanel's
+        # `cancel_func` box, stored in connections.json like encode/decode):
+        #   def cancel_func(node, agent) -> bool
+        # When given it replaces the default cancel for this connection.
+        self.cancel_func = kwargs.get('cancel_func')
 
     def make_log_dirs(self, make_new_dir=None):
         """Create directories for logging messages and images.
@@ -165,6 +184,24 @@ class NodeAgent:
 
     def send(self, **kwargs):
         pass
+
+    def cancel(self) -> bool:
+        """Abort whatever this agent has in flight, best effort.
+
+        False means this connection kind has nothing to cancel (a subscription,
+        a publisher, a timer) — not that cancelling failed. Overridden by the
+        action and service clients, the only agents that wait on the robot.
+        """
+        return False
+
+    def _node_cancelled(self) -> bool:
+        """True while the owning node is under a :meth:`CustomNode.cancel_all`.
+
+        Checked before sending so a skill that keeps issuing commands after one
+        of them was cancelled cannot start a fresh motion.
+        """
+        node = getattr(self, 'node', None)
+        return bool(node is not None and getattr(node, 'cancel_requested', False))
 
     @property
     def raw(self):
@@ -270,11 +307,20 @@ class ActionClientAgent(NodeAgent):
                          encode_func, decode_func, response_func, do_log_msg, **kwargs)
         self.feedback_status = None
         self.timeout = kwargs.pop('timeout', None)
+        # Goal handles accepted by the server and not finished yet — what
+        # cancel() sends cancel_goal_async() to.
+        self._goal_handles = []
+        self._goal_lock = threading.Lock()
+        self._cancelled = False
+        self._cancel_cli = None
 
     @exception_handler
     def send(self, data, **kwargs):
         """Send an action goal to the server and log data if enabled."""
         assert self.encode_func is not None and self.decode_func is not None
+        if self._node_cancelled():
+            return {'isdone': False, 'msg': f'{self.id}: cancelled'}
+        self._cancelled = False
         if self.do_log_msg:
             printif(data_info(data), do_print=self.do_log_msg)
             self.log_msg(data, msg_type='sent')
@@ -332,13 +378,34 @@ class ActionClientAgent(NodeAgent):
             return
 
         printif(f'{"=" * 5}{self.id}: Goal accepted, waiting for result...', do_print=self.do_log_msg)
+        with self._goal_lock:
+            self._goal_handles.append(goal_handle)
+        # cancel() may have run between send() and the server accepting: cancel
+        # this goal right away instead of letting the motion start.
+        if self._cancelled:
+            try:
+                goal_handle.cancel_goal_async()
+            except Exception:
+                pass
         result_future = goal_handle.get_result_async()
         result_future.add_done_callback(self.result_callback)
 
     def result_callback(self, future):
         """Process the final result from the action server."""
         try:
-            result = future.result().result
+            outcome = future.result()
+            # A cancelled goal still carries a Result message, and decode_func
+            # would read its default fields as a success — kaair's action
+            # results are plain structs. Only CANCELED is special-cased: an
+            # ABORTED goal keeps decoding as it always did, since servers like
+            # GripperActionController abort on a perfectly normal stall.
+            status = getattr(outcome, 'status', None)
+            if status is not None and status == _STATUS_CANCELED:
+                printif(f'{"=" * 5}{self.id}: Goal cancelled', do_print=self.do_log_msg)
+                self.rev_data = {'isdone': False, 'msg': f'{self.id}: goal cancelled'}
+                self._forget_goal(getattr(future, '_goal_handle', None))
+                return
+            result = outcome.result
             self.rev_data = self.decode_func(result)
             if self.rev_data is None:
                 self.rev_data = {'ret': None}
@@ -348,9 +415,106 @@ class ActionClientAgent(NodeAgent):
             return
 
         printif(f'{"=" * 5}{self.id}: Return received...', do_print=self.do_log_msg)
+        self._forget_goal(getattr(future, '_goal_handle', None))
         if self.do_log_msg:
             printif(data_info(self.rev_data), do_print=self.do_log_msg)
             self.log_msg(self.rev_data, msg_type='retunred')
+
+    def _forget_goal(self, goal_handle=None) -> None:
+        """Drop finished goals so cancel() only touches live ones."""
+        with self._goal_lock:
+            if goal_handle is not None and goal_handle in self._goal_handles:
+                self._goal_handles.remove(goal_handle)
+            else:
+                # The result future does not carry its handle on every rclpy
+                # version; a finished goal is harmless to cancel, but keeping
+                # the list bounded matters more than precision here.
+                self._goal_handles = [
+                    h for h in self._goal_handles
+                    if getattr(h, 'status', None) in (None, _STATUS_EXECUTING)
+                ]
+
+    def _cancel_goal_client(self):
+        """Lazy client for this action's built-in ``<conn_name>/_action/cancel_goal``.
+
+        Derived from ``conn_name``, so every action client can cancel without
+        an extra entry in connections.json.
+        """
+        if self._cancel_cli is None:
+            if self.node is None:
+                return None
+            from action_msgs.srv import CancelGoal
+            self._cancel_cli = self.node.create_client(
+                CancelGoal, f'{self.conn_name}/_action/cancel_goal')
+        return self._cancel_cli
+
+    def cancel_all_goals(self, timeout_sec: float = 0.3) -> bool:
+        """Ask the server to drop every goal — the Python form of::
+
+            ros2 service call /navigate_to_pose/_action/cancel_goal \\
+              action_msgs/srv/CancelGoal \\
+              "{goal_info: {goal_id: {uuid: [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}, \\
+                stamp: {sec: 0, nanosec: 0}}}"
+
+        A zero uuid with a zero stamp is CANCEL_ALL, so this also stops goals
+        this process never held — sent by another client, or left running
+        across a backend restart. ``move::home`` with the base already driving
+        is the case it exists for.
+        """
+        try:
+            from action_msgs.srv import CancelGoal
+            cli = self._cancel_goal_client()
+            if cli is None:
+                return False
+            if not cli.wait_for_service(timeout_sec=timeout_sec):
+                printif(f'{"=" * 5}{self.id}: cancel_goal service not available',
+                        do_print=self.do_log_msg)
+                return False
+            cli.call_async(CancelGoal.Request())   # defaults: uuid all-zero, stamp 0
+            printif(f'{"=" * 5}{self.id}: cancel_goal sent (all goals)', do_print=self.do_log_msg)
+            return True
+        except Exception as e:
+            printif(f'{"=" * 5}{self.id}: cancel_goal failed: {e}', do_print=self.do_log_msg)
+            return False
+
+    def cancel(self) -> bool:
+        """Cancel this action's unfinished requests.
+
+        Two steps, because they cover different goals: ``cancel_goal_async()``
+        on the handles this process is waiting on, then a CANCEL_ALL on the
+        action's ``/_action/cancel_goal`` service for anything else the server
+        still has. The kcare servers (arm / lift / head moves,
+        navigate_to_pose) accept both and stop the motion.
+
+        A connection whose config defines ``cancel_func(node, agent)`` uses
+        that instead — for a robot whose action cannot be stopped this way.
+
+        ``rev_data`` is filled in either way, so a ``send()`` blocked in its
+        wait loop returns immediately even if the server never answers.
+        """
+        self._cancelled = True
+        with self._goal_lock:
+            handles, self._goal_handles = list(self._goal_handles), []
+
+        if self.cancel_func is not None:
+            try:
+                done = bool(self.cancel_func(self.node, self))
+            except Exception as e:
+                printif(f'{"=" * 5}{self.id}: cancel_func failed: {e}', do_print=self.do_log_msg)
+                done = False
+        else:
+            done = False
+            for h in handles:
+                try:
+                    h.cancel_goal_async()
+                    done = True
+                except Exception as e:
+                    printif(f'{"=" * 5}{self.id}: cancel failed: {e}', do_print=self.do_log_msg)
+            done = self.cancel_all_goals() or done
+
+        if done or self.rev_data is None:
+            self.rev_data = {'isdone': False, 'msg': f'{self.id}: cancelled'}
+        return done
 
 
 class TopicAgent(NodeAgent):
@@ -427,6 +591,13 @@ class ServiceServerAgent(NodeAgent):
 
 
 class ServiceClientAgent(NodeAgent):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Service calls being waited on — cancel() drops these futures.
+        self._futures = []
+        self._future_lock = threading.Lock()
+        self._cancelled = False
+
     def send(self, data={}, wait_until_done=True, show_info=False, timeout=None, **kwargs):
         """Send a service request and wait for the response if specified.
 
@@ -442,6 +613,9 @@ class ServiceClientAgent(NodeAgent):
             dict: Decoded response data.
         """
         assert self.encode_func is not None and self.decode_func is not None
+        if self._node_cancelled():
+            return {'isdone': False, 'msg': f'{self.id}: cancelled'}
+        self._cancelled = False
         if show_info:
             timer = Timer()
         if self.do_log_msg:
@@ -464,14 +638,24 @@ class ServiceClientAgent(NodeAgent):
             print('No waiting until done')
             return {'isdone': True}
 
-        timeout = timeout if timeout is not None else getattr(self, 'timeout', None)
-        tic = time.perf_counter()
-        while rclpy.ok() and not future.done() and wait_until_done:
-            time.sleep(0.1)
-            if timeout is not None and time.perf_counter() - tic > timeout:
-                printif(f'{"=" * 5}{self.id}: Timed out waiting for response', do_print=self.do_log_msg)
-                future.cancel()
-                return {'isdone': False, 'msg': f'{self.id}: timed out waiting for response'}
+        with self._future_lock:
+            self._futures.append(future)
+        try:
+            timeout = timeout if timeout is not None else getattr(self, 'timeout', None)
+            tic = time.perf_counter()
+            while rclpy.ok() and not future.done() and wait_until_done:
+                if self._cancelled:
+                    printif(f'{"=" * 5}{self.id}: Cancelled while waiting', do_print=self.do_log_msg)
+                    return {'isdone': False, 'msg': f'{self.id}: cancelled'}
+                time.sleep(0.1)
+                if timeout is not None and time.perf_counter() - tic > timeout:
+                    printif(f'{"=" * 5}{self.id}: Timed out waiting for response', do_print=self.do_log_msg)
+                    future.cancel()
+                    return {'isdone': False, 'msg': f'{self.id}: timed out waiting for response'}
+        finally:
+            with self._future_lock:
+                if future in self._futures:
+                    self._futures.remove(future)
 
         try:
             result = future.result()
@@ -496,6 +680,25 @@ class ServiceClientAgent(NodeAgent):
             timer.pin_time('decode')
             print(timer.pin_times_str)
         return ret_data
+
+    def cancel(self) -> bool:
+        """Stop waiting on the service calls in flight.
+
+        A ROS service has no cancel protocol, so this is client-side only: the
+        caller stops blocking and the skill unwinds, but a server already
+        moving the robot (kcare's ``mobile/shift_pose`` publishes /cmd_vel for
+        the whole duration) keeps going until it finishes on its own. Stopping
+        that needs a stop service on the robot — see robotapp/CLAUDE.md.
+        """
+        self._cancelled = True
+        with self._future_lock:
+            futures, self._futures = list(self._futures), []
+        for f in futures:
+            try:
+                f.cancel()
+            except Exception as e:
+                printif(f'{"=" * 5}{self.id}: cancel failed: {e}', do_print=self.do_log_msg)
+        return bool(futures)
 
 
 class TimerAgent(NodeAgent):
@@ -542,6 +745,7 @@ def make_agent(node, **config):
                                                  config['conn_type'], config['qos'])
 
     agent = AGENT_CLASS_DICT[conn_type](**config, is_init=node.is_init)
+    agent.node = node          # so the agent can see the node-wide cancel flag
     node.is_init = False
 
     is_image_sensor = 'image' in data_interface.__name__.lower()
@@ -601,6 +805,14 @@ class CustomNode(Node):
         self._spin_thread = None
         self._spinning = False
         self._executor = None
+
+        # ── cancellation ──
+        # Set by cancel_all() (the dashboard's Stop button, via
+        # robot_agent.core.run_control) and cleared by clear_cancel() when the
+        # next run starts. While set, action / service client agents refuse to
+        # send, so a skill cannot start a new motion after being cancelled.
+        self._cancel_event = threading.Event()
+        self._cancel_hooks = []
 
     def add_agent(self, agent_name=None, conn_name=None, conn_type='sub', data_interface=SendData, callback_group=None,
                   encode_func=None, decode_func=None, response_func=None, do_log_msg=False, qos=10, **kwargs):
@@ -697,6 +909,63 @@ class CustomNode(Node):
         ):
             self._spin_thread.join(timeout=1.0)
             self._spin_thread = None
+
+    # ------------------------------------------------------------------
+    # Cancellation
+    # ------------------------------------------------------------------
+    @property
+    def cancel_requested(self) -> bool:
+        """True from :meth:`cancel_all` until :meth:`clear_cancel`."""
+        return self._cancel_event.is_set()
+
+    def add_cancel_hook(self, fn) -> None:
+        """Register extra work to do on cancel, e.g. publishing a stop command.
+
+        A robot whose motion cannot be stopped by cancelling the goal (a
+        service that drives the base for a fixed duration, say) can add a hook
+        that publishes to whatever stop topic it does have::
+
+            node.add_cancel_hook(lambda: node.agents['mobile_stop'].send({}))
+        """
+        self._cancel_hooks.append(fn)
+
+    def clear_cancel(self) -> None:
+        """Re-arm the node for a new run."""
+        self._cancel_event.clear()
+
+    def cancel_all(self) -> dict:
+        """Stop every command this node has in flight.
+
+        Cancels each action goal (the servers stop the motion), drops the
+        service calls being waited on, and runs any cancel hooks. Returns
+        ``{'cancelled': [agent names], 'errors': {agent: msg}}``; it never
+        raises, so one broken agent cannot keep the rest from being stopped.
+        """
+        self._cancel_event.set()
+        cancelled, errors = [], {}
+
+        # In parallel: each agent may wait on its cancel_goal service, and a
+        # Stop button must not take one timeout per action connection.
+        def _cancel_one(name, agent):
+            try:
+                if agent.cancel():
+                    cancelled.append(name)
+            except Exception as e:
+                errors[name] = str(e)
+
+        threads = [threading.Thread(target=_cancel_one, args=(n, a), daemon=True)
+                   for n, a in list(self.agents.items())]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=3.0)
+        for hook in list(self._cancel_hooks):
+            try:
+                hook()
+            except Exception as e:
+                errors[getattr(hook, '__name__', 'cancel_hook')] = str(e)
+        print(f'===== cancel_all: {cancelled or "nothing in flight"}')
+        return {'cancelled': cancelled, 'errors': errors}
 
     def wait_until_connected(self):
         """Wait until all subscriber and service client agents are connected."""

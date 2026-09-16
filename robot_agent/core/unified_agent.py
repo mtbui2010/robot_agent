@@ -1,4 +1,6 @@
 import asyncio, base64, threading, time
+
+from .run_control import begin_run, cancel_requested
 from typing import AsyncIterator, Any
 
 
@@ -304,6 +306,7 @@ class UnifiedAgent:
         def _blocking():
             _ds_dir = None
             try:
+                begin_run()          # drop a cancel left over from a past run
                 emit({'event': 'start', 'prompt':prompt})
                 _ds_dir = _begin_dataset(log_data, log_mode)
                 if _ds_dir:
@@ -378,6 +381,10 @@ class UnifiedAgent:
                         emit({'event': 'stopped', 'msg': 'Previous step failed'})
                         break
 
+                    if cancel_requested():
+                        emit({'event': 'stopped', 'msg': 'Cancelled by user'})
+                        break
+
                     log_fn = _make_log_fn(emit, i + 1)
                     if len(task_group) == 1:
                         ret = self._exec_task(task_group[0], node, ctx, log_fn=log_fn)
@@ -390,7 +397,11 @@ class UnifiedAgent:
                     _pa = task_group[0][1] if task_group and len(task_group[0]) > 1 else None
                     _emit_world(emit, node, skill=_sk, params=_pa, result=ret)   # refresh Robot State
 
-                emit({'event': 'done', 'success': _serialize_result(ctx.get('isdone', True))})
+                if cancel_requested():
+                    emit({'event': 'done', 'status': 'aborted', 'success': False,
+                          'msg': 'Cancelled by user'})
+                else:
+                    emit({'event': 'done', 'success': _serialize_result(ctx.get('isdone', True))})
 
             except Exception as e:
                 import traceback
@@ -442,6 +453,7 @@ class UnifiedAgent:
         def _blocking():
             _ds_dir = None
             try:
+                begin_run()          # drop a cancel left over from a past run
                 emit({'event': 'start', 'prompt':plan})
                 _ds_dir = _begin_dataset(log_data, log_mode)
                 if _ds_dir:
@@ -467,6 +479,11 @@ class UnifiedAgent:
                         emit({'event': 'stopped', 'msg': 'Previous step failed'})
                         break
 
+                    if cancel_requested():
+                        emit({'event': 'stopped', 'msg': 'Cancelled by user',
+                              'say': announcer.announce('done_fail')})
+                        break
+
                     log_fn = _make_log_fn(emit, i + 1)
                     if len(task_group) == 1:
                         ret = self._exec_task_direct(task_group[0], node, ctx, log_fn=log_fn)
@@ -484,9 +501,13 @@ class UnifiedAgent:
                     _pa = task_group[0][1] if task_group and len(task_group[0]) > 1 else None
                     _emit_world(emit, node, skill=_sk, params=_pa, result=ret)   # refresh Robot State
 
-                _done_ok = bool(ctx.get('isdone', True))
-                emit({'event': 'done', 'success': _serialize_result(ctx.get('isdone', True)),
-                      'say': announcer.announce('done_success' if _done_ok else 'done_fail')})
+                if cancel_requested():
+                    emit({'event': 'done', 'status': 'aborted', 'success': False,
+                          'msg': 'Cancelled by user'})
+                else:
+                    _done_ok = bool(ctx.get('isdone', True))
+                    emit({'event': 'done', 'success': _serialize_result(ctx.get('isdone', True)),
+                          'say': announcer.announce('done_success' if _done_ok else 'done_fail')})
 
             except Exception as e:
                 import traceback

@@ -174,9 +174,53 @@ def answer_listen(req_id: str, body: ListenAnswer):
     return {'ok': True}
 
 
+@router.post('/agent/cancel')
+def cancel_run():
+    """Stop the robot: cancel every ROS command in flight and end the run.
+
+    This is what the dashboard's Stop button reaches. Closing the WebSocket is
+    not enough on its own — the plan runs in a backend thread that would
+    otherwise finish the current skill and keep going through the remaining
+    steps. Cancelling is process-wide (one robot per process), so it also stops
+    a skill started from the CLI or a second client.
+    """
+    from ..core.run_control import request_cancel
+    return request_cancel()
+
+
+async def _watch_client(websocket: WebSocket) -> None:
+    """Cancel the run when the dashboard goes away mid-plan.
+
+    Runs alongside the event stream: a reload, a closed tab or a dropped
+    network connection leaves nobody watching the robot, which must not keep
+    executing. The client may also cancel over this socket by sending
+    ``{"cancel": true}``.
+    """
+    from ..core.run_control import request_cancel
+    try:
+        while True:
+            msg = await websocket.receive()
+            if msg.get('type') == 'websocket.disconnect':
+                break
+            text = msg.get('text')
+            if text:
+                try:
+                    if json.loads(text).get('cancel'):
+                        break
+                except Exception:
+                    pass
+    except Exception:
+        pass          # socket already torn down — treat as a disconnect
+    try:
+        request_cancel()
+    except Exception:
+        pass
+
+
 @router.websocket('/ws/agent')
 async def agent_ws(websocket: WebSocket):
     await websocket.accept()
+    watcher = None
     try:
         data = await websocket.receive_json()
         prompt  = data.get('prompt', '')
@@ -189,6 +233,11 @@ async def agent_ws(websocket: WebSocket):
         # dashboard instead. log_all=False keeps only failed cases.
         log_mode  = data.get('log_mode', 'backend')
         log_all   = data.get('log_all', True)
+
+        # Watch for the client going away (or asking to cancel) while the plan
+        # runs; the run itself clears the cancel flag as it starts.
+        import asyncio
+        watcher = asyncio.create_task(_watch_client(websocket))
 
         ua = current().ua
         gen = (ua.run_direct(plan=prompt, log_data=log_data, lang=lang,
@@ -212,3 +261,8 @@ async def agent_ws(websocket: WebSocket):
             await websocket.send_text(json.dumps({'event': 'error', 'msg': str(e)}))
         except Exception:
             pass
+    finally:
+        # The run is over: stop watching, so finishing normally never looks
+        # like a cancel.
+        if watcher is not None:
+            watcher.cancel()

@@ -379,7 +379,19 @@ class ClosedLoop:
             i = 0
             replans = 0
 
+            from ..run_control import cancel_requested
+
+            def _abort():
+                """End the run on a cancel — no verify, no replan."""
+                run.status = "aborted"
+                run.ended_at = time.time()
+                return ev("done", status="aborted", run_id=run_id,
+                          msg="Cancelled by user", world=world.to_dict())
+
             while i < len(steps):
+                if cancel_requested():
+                    yield _abort()
+                    return
                 step = steps[i]
                 action = step.get("action", "")
                 obj = step.get("object", "")
@@ -444,6 +456,15 @@ class ClosedLoop:
                 except Exception as e:
                     result = {"isdone": False, "msg": str(e)}
                 rec.result = result if isinstance(result, dict) else {"result": result}
+
+                # A cancelled skill fails like any other, but replanning around
+                # it would start the robot moving again — stop instead.
+                if cancel_requested():
+                    rec.status = "aborted"
+                    rec.ended_at = time.time()
+                    run.steps.append(rec)
+                    yield _abort()
+                    return
 
                 # ── Check (layered) ──────────────────────────────────────
                 vres = verifier.verify(step, rec.result, world, node)
