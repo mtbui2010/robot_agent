@@ -29,8 +29,10 @@ def list_connects():
 
 
 @router.get('/connects/status')
-def connects_status():
-    return current().dm.get_status()
+def connects_status(fresh: bool = False):
+    """Reachability of every device. Cached for a few seconds so N dashboards
+    polling this do not each ping every device; `?fresh=1` forces a re-probe."""
+    return current().dm.get_status(max_age=0.0 if fresh else None)
 
 
 @router.post('/connects')

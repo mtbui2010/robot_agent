@@ -101,6 +101,19 @@ PHRASES: dict[str, dict[str, str]] = {
 # Last-resort generic phrase per language (when a kind is missing everywhere).
 _GENERIC = {'vi': 'Đang thực hiện', 'ko': '진행 중입니다', 'en': 'Working'}
 
+# Skills that speak to the user themselves (kcare `hri.reply` / `hri.ask`).
+# Their steps are not narrated: announcing "doing reply" talks over the skill's
+# own question, and with source='dashboard' the browser mic is open right then,
+# so the narration gets transcribed as if the user had said it. Naming kcare's
+# skills here is deliberate — 'reply' / 'ask' are this stack's conventional HRI
+# entry points (robot_template emits the same pair); a robot package with other
+# conversational skills can add to this set.
+SILENT_ACTIONS = {'reply', 'ask'}
+
+# Only per-step narration is suppressed. Plan-level milestones (plan_ready,
+# done_success, ...) carry no action and play when no mic is open.
+_STEP_KINDS = ('step_start', 'step_success', 'step_fail')
+
 
 class _BlankDict(dict):
     """Format mapping that yields '' for any missing key."""
@@ -140,7 +153,13 @@ class Announcer:
         return out
 
     def say_for(self, kind: str, **ctx) -> str:
-        """Return the localized phrase for `kind` without speaking."""
+        """Return the localized phrase for `kind` without speaking.
+
+        Returns '' for a step of a conversational skill (see SILENT_ACTIONS):
+        `announce` then speaks nothing, and the dashboard skips a falsy `say`.
+        """
+        if kind in _STEP_KINDS and str(ctx.get('action') or '').strip() in SILENT_ACTIONS:
+            return ''
         tmpl = self._template(kind)
         ctx = self._resolve_verb(ctx)
         try:

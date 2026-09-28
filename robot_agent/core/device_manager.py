@@ -60,6 +60,14 @@ class DeviceManager:
         self._ros_node = None
         self._lock = threading.Lock()
         self._loading = False  # suppresses _save() during load_saved()
+        # Cached reachability: every open dashboard polls /connects/status every
+        # 10 s and a probe actively pings each device, so the cost used to scale
+        # with the number of browsers. See get_status().
+        self._status_cache: dict[str, bool] | None = None
+        self._status_ts   = 0.0
+        self._status_ttl  = 5.0
+        self._status_gen  = 0            # bumped whenever the device set changes
+        self._status_lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # ROS2 node (lazy, shared across all ROS clients)
@@ -295,6 +303,7 @@ class DeviceManager:
 
         with self._lock:
             self._connects[agent_name] = entry
+        self._invalidate_status()
         self._save()
         return agent_name, error
 
@@ -313,6 +322,7 @@ class DeviceManager:
                     entry.client.stop()
             except Exception as e:
                 print(f'[DeviceManager] Error closing {entry.type} {cid}: {e}')
+        self._invalidate_status()
         self._save()
         return True
 
@@ -382,7 +392,44 @@ class DeviceManager:
         self._save()
         return True
 
-    def get_status(self) -> dict[str, bool]:
+    def _invalidate_status(self) -> None:
+        """Drop the cached reachability — a device was added, removed, or the
+        whole set was swapped by a location switch."""
+        self._status_gen += 1
+        self._status_cache = None
+
+    def get_status(self, max_age: float | None = None) -> dict[str, bool]:
+        """Reachability of every device, cached for `_status_ttl` seconds.
+
+        A probe pings every device (a 1 s TCP connect for an unreachable webrtc
+        camera, a real request for http/visionserve), and each open dashboard
+        asks for this every 10 s — so uncached, the probing cost grew with the
+        number of browsers watching the robot. Pass `max_age=0` to force a
+        fresh probe.
+        """
+        ttl = self._status_ttl if max_age is None else max_age
+        cache = self._status_cache
+        if cache is not None and (time.time() - self._status_ts) < ttl:
+            return dict(cache)
+
+        if not self._status_lock.acquire(blocking=False):
+            # Someone else is probing right now: serve what we have rather than
+            # queueing browsers behind a probe that can take seconds.
+            cache = self._status_cache
+            if cache is not None:
+                return dict(cache)
+            with self._status_lock:      # nothing cached yet — wait for theirs
+                return dict(self._status_cache or {})
+        try:
+            gen = self._status_gen
+            out = self._probe_status()
+            if gen == self._status_gen:  # devices unchanged while probing
+                self._status_cache, self._status_ts = out, time.time()
+            return dict(out)
+        finally:
+            self._status_lock.release()
+
+    def _probe_status(self) -> dict[str, bool]:
         with self._lock:
             entries = list(self._connects.values())
         out = {}
@@ -462,6 +509,7 @@ class DeviceManager:
         with self._lock:
             entries = list(self._connects.values())
             self._connects = {}
+        self._invalidate_status()
         for e in entries:
             try:
                 if self._ros_node is not None and e.type in ('ros_service', 'ros_topic', 'ros_action'):

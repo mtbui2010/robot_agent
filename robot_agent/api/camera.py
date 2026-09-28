@@ -1,4 +1,4 @@
-import asyncio, base64, json, threading, zlib
+import asyncio, base64, json, queue, threading, time, zlib
 import cv2
 import numpy as np
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -7,7 +7,7 @@ from ..state import current
 
 router = APIRouter()
 
-_streams: dict[str, tuple[threading.Event, threading.Thread]] = {}
+_streams: dict[str, '_Stream'] = {}
 _streams_lock = threading.Lock()
 
 
@@ -137,6 +137,215 @@ def _decode_frame(data, depth_settings: dict) -> dict:
     return msg
 
 
+# ---------------------------------------------------------------------------
+# Streaming: one worker per camera, fanned out to every browser watching it.
+#
+# Each websocket used to start its own stream thread keyed by connect_id, so a
+# second browser killed the first one's stream (both held the same stop Event)
+# and the first browser's auto-reconnect killed it right back — a permanent
+# reconnect war, 3 s of thread-join per round. The encoding cost scaled with
+# viewers too: every client re-encoded every frame for itself.
+#
+# Now a camera has exactly one worker, whatever the number of viewers. It
+# encodes a frame once per distinct depth setting and sends the same JSON text
+# to every subscriber sharing it, skips the work entirely when no new frame has
+# arrived, and drops a frame for any client whose previous send has not
+# finished — so a slow browser can no longer pile sends up in the event loop.
+# ---------------------------------------------------------------------------
+
+_IDLE_GRACE = 15.0   # keep a camera worker alive this long after the last viewer left
+
+
+class _Subscriber:
+    """One connected websocket, with its own depth settings."""
+
+    def __init__(self, websocket: WebSocket, loop: asyncio.AbstractEventLoop):
+        self.ws   = websocket
+        self.loop = loop
+        # Mutated by this client's receive loop, read by the camera worker.
+        self.settings: dict = {'mode': 'colored', 'dmin': None, 'dmax': None}
+        self.inflight = None   # Future of the last send, for backpressure
+        self.dropped  = 0
+        # A viewer joining a stream that is already running must get the frame
+        # the worker is holding, without waiting for the camera's next message.
+        self.needs_frame = True
+
+    def key(self) -> tuple:
+        """Subscribers with the same key share one encoded frame."""
+        s = self.settings
+        return (s.get('mode', 'colored'), s.get('dmin'), s.get('dmax'))
+
+    def send_text(self, text: str) -> None:
+        fut = self.inflight
+        if fut is not None and not fut.done():
+            self.dropped += 1      # client is behind — drop this frame for it
+            return
+        try:
+            self.inflight = asyncio.run_coroutine_threadsafe(self.ws.send_text(text), self.loop)
+            self.needs_frame = False
+        except Exception:
+            pass
+
+
+class _Stream:
+    """A camera's worker thread and the subscribers it feeds."""
+
+    def __init__(self, connect_id: str):
+        self.connect_id = connect_id
+        self.subs: list[_Subscriber] = []
+        self.stop     = threading.Event()
+        self.captures: queue.Queue = queue.Queue()   # capture requests from any client
+        self.idle_since: float | None = None
+        self.thread: threading.Thread | None = None
+
+
+def _snapshot(stream: _Stream) -> list:
+    with _streams_lock:
+        return list(stream.subs)
+
+
+def _fanout(subs: list, build) -> None:
+    """Encode once per distinct depth setting, then send the same text to all."""
+    groups: dict = {}
+    for s in subs:
+        groups.setdefault(s.key(), []).append(s)
+    for members in groups.values():
+        try:
+            msg = build(members[0].settings)
+        except Exception as e:
+            print(f'[camera] encode error: {e}')
+            continue
+        if not msg:
+            continue
+        text = json.dumps(msg)
+        for s in members:
+            s.send_text(text)
+
+
+def _broadcast(stream: _Stream, msg: dict) -> None:
+    text = json.dumps(msg)
+    for s in _snapshot(stream):
+        s.send_text(text)
+
+
+def _retire(stream: _Stream) -> bool:
+    """True once the worker has had no viewer for the whole grace period.
+
+    The grace period keeps a page reload (or a switch between grid and tab
+    view) from tearing the worker down and building it straight back up.
+    """
+    with _streams_lock:
+        if stream.subs:
+            stream.idle_since = None
+            return False
+        now = time.time()
+        if stream.idle_since is None:
+            stream.idle_since = now
+            return False
+        if now - stream.idle_since < _IDLE_GRACE:
+            return False
+        if _streams.get(stream.connect_id) is stream:
+            _streams.pop(stream.connect_id, None)
+        stream.stop.set()
+        return True
+
+
+def _run_topic(stream: _Stream) -> None:
+    """ros_topic camera: poll the agent's last message, encode only new frames."""
+    last_seq = None
+    while not stream.stop.is_set():
+        if _retire(stream):
+            return
+        subs = _snapshot(stream)
+        if not subs:
+            time.sleep(0.2)          # no viewer — nothing to encode
+            continue
+        entry  = current().dm.get_connect(stream.connect_id)
+        client = None if entry is None else entry.client
+        data   = None if client is None else client.rev_data
+        if data is not None:
+            # TopicAgent bumps rev_seq on every message received, so an
+            # unchanged frame costs nothing here (a 5 fps camera used to be
+            # re-encoded 20 times a second, per viewer).
+            seq = getattr(client, 'rev_seq', None)
+            if seq is None or seq != last_seq or any(s.needs_frame for s in subs):
+                last_seq = seq
+                _fanout(subs, lambda st, d=data: _decode_frame(d, st))
+        time.sleep(0.05)             # ~20 fps cap
+
+
+def _run_webrtc(stream: _Stream) -> None:
+    """webrtc camera: one fetch generator, shared by every viewer."""
+    entry = current().dm.get_connect(stream.connect_id)
+    if entry is None:
+        return
+    for frame in entry.client.fetch(timeout=2.0):
+        if stream.stop.is_set() or _retire(stream):
+            return
+        subs = _snapshot(stream)
+        if not subs:
+            continue                 # keep the feed running, skip the encoding
+        rgb = frame.get('rgb')
+        # rgb does not depend on the depth settings — encode it once for all.
+        rgb_b64 = None if rgb is None else (rgb if isinstance(rgb, str) else _encode_rgb(rgb))
+        depth, cam_params = frame.get('depth'), frame.get('cam_params')
+
+        def build(settings, _rgb=rgb_b64, _depth=depth, _cam=cam_params):
+            msg: dict = {}
+            if _rgb is not None:
+                msg['rgb'] = _rgb
+            if _depth is not None:
+                msg.update(_process_depth(_depth, settings))
+            if _cam is not None:
+                msg['cam_params'] = list(_cam)
+            return msg
+
+        _fanout(subs, build)
+
+
+def _run_ondemand(stream: _Stream) -> None:
+    """ros_service / ros_action camera: one shot per capture request."""
+    while not stream.stop.is_set():
+        if _retire(stream):
+            return
+        try:
+            stream.captures.get(timeout=1.0)
+        except queue.Empty:
+            continue
+        subs = _snapshot(stream)
+        if stream.stop.is_set() or not subs:
+            continue
+        entry = current().dm.get_connect(stream.connect_id)
+        if entry is None:
+            continue
+        try:
+            data = entry.client.send({})
+        except Exception as e:
+            _broadcast(stream, {'error': str(e)})
+            continue
+        _fanout(subs, lambda st, d=data: _decode_frame(d, st))
+
+
+def _run_stream(stream: _Stream) -> None:
+    try:
+        entry = current().dm.get_connect(stream.connect_id)
+        if entry is None:
+            return
+        if entry.type == 'ros_topic':
+            _run_topic(stream)
+        elif entry.type == 'webrtc':
+            _run_webrtc(stream)
+        else:
+            _run_ondemand(stream)
+    except Exception as e:
+        _broadcast(stream, {'error': str(e)})
+    finally:
+        stream.stop.set()
+        with _streams_lock:
+            if _streams.get(stream.connect_id) is stream:
+                _streams.pop(stream.connect_id, None)
+
+
 @router.websocket('/ws/camera/{connect_id:path}')
 async def camera_ws(websocket: WebSocket, connect_id: str):
     await websocket.accept()
@@ -147,109 +356,51 @@ async def camera_ws(websocket: WebSocket, connect_id: str):
         await websocket.close()
         return
 
+    sub = _Subscriber(websocket, asyncio.get_running_loop())
     with _streams_lock:
-        prev = _streams.get(connect_id)
-    if prev is not None:
-        old_stop, old_thread = prev
-        old_stop.set()
-        await asyncio.to_thread(old_thread.join, 3.0)
-
-    loop = asyncio.get_event_loop()
-    stop = threading.Event()
-    # Queue for capture requests from client messages
-    capture_queue: asyncio.Queue = asyncio.Queue()
-    # Per-connection depth settings; mutated by the WS-receive loop, read by stream thread
-    depth_settings: dict = {'mode': 'colored', 'dmin': None, 'dmax': None}
-
-    def _send(msg: dict):
-        asyncio.run_coroutine_threadsafe(
-            websocket.send_text(json.dumps(msg)), loop
-        )
-
-    def stream():
-        try:
-            if entry.type == 'ros_topic':
-                import time
-                while not stop.is_set():
-                    data = entry.client.rev_data
-                    if data is not None:
-                        msg = _decode_frame(data, depth_settings)
-                        if msg:
-                            _send(msg)
-                    time.sleep(0.05)  # ~20 fps cap
-            else:
-                # webrtc: continuous fetch; ros_service/ros_action: wait for capture signal
-                if entry.type == 'webrtc':
-                    for frame in entry.client.fetch(timeout=2.0):
-                        if stop.is_set():
-                            break
-                        msg: dict = {}
-                        rgb = frame.get('rgb')
-                        if rgb is not None:
-                            msg['rgb'] = rgb if isinstance(rgb, str) else _encode_rgb(rgb)
-                        depth = frame.get('depth')
-                        if depth is not None:
-                            msg.update(_process_depth(depth, depth_settings))
-                        cam_params = frame.get('cam_params')
-                        if cam_params is not None:
-                            msg['cam_params'] = list(cam_params)
-                        if msg:
-                            _send(msg)
-                else:
-                    # ros_service / ros_action: trigger on capture signal
-                    import time
-                    while not stop.is_set():
-                        try:
-                            asyncio.run_coroutine_threadsafe(
-                                capture_queue.get(), loop
-                            ).result(timeout=1.0)
-                        except Exception:
-                            continue
-                        if stop.is_set():
-                            break
-                        try:
-                            data = entry.client.send({})
-                            msg = _decode_frame(data, depth_settings)
-                            if msg:
-                                _send(msg)
-                        except Exception as e:
-                            _send({'error': str(e)})
-        except Exception as e:
-            _send({'error': str(e)})
-
-    t = threading.Thread(target=stream, daemon=True)
-    with _streams_lock:
-        _streams[connect_id] = (stop, t)
-    t.start()
+        stream = _streams.get(connect_id)
+        start  = stream is None or stream.stop.is_set()
+        if start:
+            stream = _Stream(connect_id)
+            _streams[connect_id] = stream
+        stream.subs.append(sub)
+        stream.idle_since = None
+    if start:
+        stream.thread = threading.Thread(target=_run_stream, args=(stream,), daemon=True)
+        stream.thread.start()
 
     try:
-        while not stop.is_set():
+        while not stream.stop.is_set():
             try:
                 text = await asyncio.wait_for(websocket.receive_text(), timeout=1.0)
-                try:
-                    msg = json.loads(text)
-                    if msg.get('capture'):
-                        await capture_queue.put(True)
-                    if 'depth_range' in msg:
-                        rng = msg['depth_range']
-                        if rng is None:
-                            depth_settings['dmin'] = None
-                            depth_settings['dmax'] = None
-                        else:
-                            try:
-                                depth_settings['dmin'] = float(rng[0])
-                                depth_settings['dmax'] = float(rng[1])
-                            except (TypeError, ValueError, IndexError):
-                                pass
-                    if 'depth_mode' in msg and msg['depth_mode'] in ('colored', 'raw'):
-                        depth_settings['mode'] = msg['depth_mode']
-                except Exception:
-                    pass
             except asyncio.TimeoutError:
                 continue
+            try:
+                msg = json.loads(text)
+            except Exception:
+                continue
+            if msg.get('capture'):
+                stream.captures.put(True)
+            if 'depth_range' in msg:
+                rng = msg['depth_range']
+                if rng is None:
+                    sub.settings['dmin'] = None
+                    sub.settings['dmax'] = None
+                else:
+                    try:
+                        sub.settings['dmin'] = float(rng[0])
+                        sub.settings['dmax'] = float(rng[1])
+                    except (TypeError, ValueError, IndexError):
+                        pass
+            if 'depth_mode' in msg and msg['depth_mode'] in ('colored', 'raw'):
+                # Per-client: one browser's one-shot raw grab must not push raw
+                # frames at the others.
+                sub.settings['mode'] = msg['depth_mode']
     except WebSocketDisconnect:
         pass
     finally:
-        stop.set()
         with _streams_lock:
-            _streams.pop(connect_id, None)
+            if sub in stream.subs:
+                stream.subs.remove(sub)
+            if not stream.subs:
+                stream.idle_since = time.time()

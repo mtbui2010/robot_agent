@@ -147,6 +147,32 @@ _MIC_BLOCK = 1024            # samples per callback, ~64 ms at 16 kHz
 _PREROLL_SEC = 0.3           # kept from before onset so the first syllable survives
 
 
+def play_audio(audio, samplerate: int = MIC_SAMPLERATE) -> bool:
+    """Play mono float32 audio on the robot speaker, blocking until it ends.
+
+    Used to echo a recording back to the person instead of reading a transcript
+    out loud: they hear exactly what the microphone captured, so a name or a
+    word the recogniser mangled is still checkable.
+
+    Returns False when it could not play — `sounddevice` is imported at the top
+    of this module inside a try/except, so `sd` may not exist at all — letting
+    the caller fall back to speaking.
+    """
+    _sd = globals().get('sd')
+    if _sd is None or audio is None:
+        return False
+    try:
+        samples = np.asarray(audio, dtype=np.float32).reshape(-1)
+        if samples.size == 0:
+            return False
+        _sd.play(samples, samplerate=samplerate)
+        _sd.wait()
+        return True
+    except Exception as e:
+        print(f'[play_audio] {e}')
+        return False
+
+
 def _mic_energy(block: np.ndarray) -> float:
     """RMS on the same x1e5 scale pydevice.audio.Micro thresholds against."""
     return float(np.sqrt(np.mean(np.square(block, dtype=np.float64)))) * 1e5

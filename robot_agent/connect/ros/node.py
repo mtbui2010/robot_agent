@@ -105,6 +105,9 @@ class NodeAgent:
         self.conn_name, self.conn_type, self.executor = conn_name, conn_type, executor
         self.agent_name = conn_name if agent_name is None else agent_name
         self.rev_data, self.ret_data, self.msg_id = None, None, None
+        # Bumped on every message a TopicAgent receives, so a reader (the camera
+        # stream) can tell a fresh frame from the one it already handled.
+        self.rev_seq = 0
         self.id = f'{self.agent_name}.{self.conn_name}.{self.conn_type}'
         self.is_init, self.do_log_msg = is_init, do_log_msg
         self.data_interface = data_interface
@@ -532,6 +535,7 @@ class TopicAgent(NodeAgent):
             self.is_firstmsg = False
             self.connected = True
         self.rev_data = data
+        self.rev_seq += 1
 
         if self.response_func is not None:
             self.response_func(data)
