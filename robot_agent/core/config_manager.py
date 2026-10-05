@@ -4,7 +4,7 @@ from pathlib import Path
 KNOWN_CONFIGS = [
     'GRIP_CONFIGS', 'LIFT_CONFIGS', 'HEAD_CONFIGS', 'ARM_CONFIGS',
     'MOBILE_CONFIGS', 'FIND_CONFIGS', 'CALIB_PARAMS',
-    'ENV', 'HOME_LOC', 'LLM_SERVERS', 'KR2EN', 'EN2KR',
+    'ENV', 'HOME_LOC', 'LLM_SERVERS', 'KR2EN', 'EN2KR', 'QA_CONFIGS',
 ]
 
 
@@ -79,6 +79,12 @@ class ConfigManager:
         # them mutated in place, and `reload_from` only clears `_overrides` — so
         # the next site would silently inherit this site's edits for every group
         # it does not override itself.
+        if name == 'ENV':
+            # Refuse a location name / alias that would point at two places.
+            from ..env_names import validate_env
+            error = validate_env(new_value)
+            if error:
+                return error
         self._overrides[name] = new_value
         self._save()
         return ''

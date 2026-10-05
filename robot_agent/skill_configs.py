@@ -98,6 +98,9 @@ HOME_LOC        = _ConfigProxy('HOME_LOC',        HOME_LOC_DEFAULT)
 LLM_SERVERS     = _ConfigProxy('LLM_SERVERS',    {})
 KR2EN           = _ConfigProxy('KR2EN',           KR2EN_DEFAULT)
 EN2KR           = _ConfigProxy('EN2KR',           EN2KR_DEFAULT)
+# Visual Q&A (kcare `qa`): Ollama url/model, head views, ... The skill carries
+# its own defaults, so an empty dict here just means "use them".
+QA_CONFIGS      = _ConfigProxy('QA_CONFIGS',      {})
 
 # ── Simple constants (not proxied — scalar arithmetic doesn't work with proxy) ─
 NO_ACTION            = False

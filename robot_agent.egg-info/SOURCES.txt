@@ -6,6 +6,7 @@ robot_agent/cli.py
 robot_agent/copy_skill.py
 robot_agent/delete_skill.py
 robot_agent/diagnose.py
+robot_agent/env_names.py
 robot_agent/logging_config.py
 robot_agent/new_robot.py
 robot_agent/new_skill.py
@@ -66,6 +67,7 @@ robot_agent/core/button_manager.py
 robot_agent/core/config_manager.py
 robot_agent/core/device_manager.py
 robot_agent/core/guide_manager.py
+robot_agent/core/plan_skill.py
 robot_agent/core/run_control.py
 robot_agent/core/skill_registry.py
 robot_agent/core/unified_agent.py

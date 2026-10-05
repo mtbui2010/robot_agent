@@ -138,11 +138,51 @@ class GuideManager:
         return None
 
 
+LOCATIONS_MARKER = 'LOCATIONS_HERE'
+
+
+PLAN_SKILLS_MARKER = 'PLAN_SKILLS_HERE'
+
+
+def _fill_plan_skills(guide: str) -> str:
+    """Replace :data:`PLAN_SKILLS_MARKER` with the plan skills defined on the
+    dashboard (name, parameters, description), so the planner can use them."""
+    if PLAN_SKILLS_MARKER not in guide:
+        return guide
+    try:
+        from ..state import current
+        from .plan_skill import describe_plan_skills
+        return guide.replace(PLAN_SKILLS_MARKER, describe_plan_skills(current().sr))
+    except Exception:
+        return guide
+
+
+def _fill_locations(guide: str) -> str:
+    """Replace :data:`LOCATIONS_MARKER` with the live ENV location list (with
+    aliases), so a guide can name the places without copying them by hand.
+    Guides without the marker are returned unchanged."""
+    if LOCATIONS_MARKER not in guide:
+        return guide
+    try:
+        from ..skill_configs import ENV
+        from ..env_names import describe_env
+        return guide.replace(LOCATIONS_MARKER, describe_env(ENV))
+    except Exception:
+        return guide
+
+
 def resolve_guide(robot_pkg: str):
     """``(guide_text, format)`` to plan with: the active stored version if any,
     else the robot's ``guide_struct`` / ``guide`` module (legacy fallback).
     ``format`` is ``None`` for a freeform guide, a JSON schema dict otherwise.
+    A ``LOCATIONS_HERE`` marker in the text is filled with the ENV locations,
+    a ``PLAN_SKILLS_HERE`` marker with the plan skills.
     """
+    guide, fmt = _resolve_guide(robot_pkg)
+    return _fill_plan_skills(_fill_locations(guide)), fmt
+
+
+def _resolve_guide(robot_pkg: str):
     try:
         from ..state import current
         ag = current().guides.active_guide()

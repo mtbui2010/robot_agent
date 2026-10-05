@@ -292,7 +292,7 @@ _LISTEN_LOCK = threading.Lock()
 
 
 def listen_dashboard(prompt: str | None = None, lang: str = 'ko', max_sec: float = 8.0,
-                     timeout: float = 30.0):
+                     timeout: float = 30.0, mode: str = 'voice'):
     """Have the dashboard capture one spoken phrase with the browser mic.
 
     Emits a ``listen`` event over the running agent's WebSocket; the dashboard
@@ -303,6 +303,9 @@ def listen_dashboard(prompt: str | None = None, lang: str = 'ko', max_sec: float
     there is no dashboard run to ask, or when the browser reports a real
     failure (microphone blocked, recognition unsupported) — re-asking would not
     help with either.
+
+    `mode` 'text' asks the dashboard for a typed answer instead of the mic;
+    the answer comes back through the same endpoint.
     """
     import uuid
     from robot_agent.skills import has_emitter, log_data
@@ -315,7 +318,7 @@ def listen_dashboard(prompt: str | None = None, lang: str = 'ko', max_sec: float
         _LISTEN_PENDING[req_id] = slot
     try:
         log_data({'listen': {'id': req_id, 'lang': lang, 'max_sec': max_sec,
-                             'prompt': prompt or ''}})
+                             'prompt': prompt or '', 'mode': mode}})
         slot['event'].wait(timeout)
     finally:
         with _LISTEN_LOCK:

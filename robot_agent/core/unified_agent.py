@@ -594,12 +594,5 @@ class UnifiedAgent:
         return run_parallel_check(funcs=fns)
 
     def _parse_inputs(self, s: str) -> dict:
-        s = s.strip()
-        if not s or s in ('None', ''):
-            return {}
-        if '=' not in s:
-            return {'inputs': s}
-        try:
-            return eval(f'dict({s})')
-        except Exception:
-            return {'inputs': s}
+        from .plan_skill import parse_inputs     # shared with plan skills
+        return parse_inputs(s)

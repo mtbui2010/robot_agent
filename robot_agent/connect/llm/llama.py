@@ -15,11 +15,17 @@ class LLamaClient(LLMobj):
       2. ``OLLAMA_URL`` environment variable  (default: http://localhost:11434)
     """
 
-    def init(self, url=None, text_model=None, vision_model=None, **kwargs):
+    def init(self, url=None, text_model=None, vision_model=None, model=None, num_ctx=None, **kwargs):
         from ollama import Client
         self.url          = url          or DEFAULT_URL
-        self.text_model   = text_model   or DEFAULT_TEXT_MODEL
-        self.vision_model = vision_model or DEFAULT_VISION_MODEL
+        # `model` is the Connections-panel field: one model for both, unless
+        # text_model / vision_model say otherwise (it used to be ignored).
+        self.text_model   = text_model   or model or DEFAULT_TEXT_MODEL
+        self.vision_model = vision_model or model or DEFAULT_VISION_MODEL
+        # Sent with every request: without it Ollama loads the model with its
+        # own default context (262k for qwen3-vl — 94 GB, spread over GPUs),
+        # and a request with a different num_ctx reloads the model.
+        self.options      = {'num_ctx': int(num_ctx)} if num_ctx else None
         self.chatclient   = Client(host=self.url).chat
         print(f"LLaMA client → {self.url}")
         print(self.chat(prompt="hello"))
@@ -43,7 +49,8 @@ class LLamaClient(LLMobj):
     def send_msgs(self, msgs, **kwargs):
         self.current_model = self.vision_model if self.image_contained(msgs=msgs) else self.text_model
         model = kwargs.get('model', self.current_model)
-        return self.chatclient(model=model, messages=msgs, format=kwargs.get('format', None)).message.content
+        return self.chatclient(model=model, messages=msgs, format=kwargs.get('format', None),
+                               options=self.options).message.content
         
 
 if __name__=='__main__':

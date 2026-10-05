@@ -35,7 +35,7 @@ def _resolve_dotted(path: str):
 
 
 ConnectType = Literal['ros_service', 'ros_topic', 'ros_action', 'webrtc', 'llm',
-                      'tcp', 'zmq', 'websocket', 'http', 'visionserve']
+                      'tcp', 'zmq', 'websocket', 'http', 'visionserve', 'switchbot']
 
 
 @dataclass
@@ -296,6 +296,28 @@ class DeviceManager:
                     print(e)
 
 
+            elif conn_type == 'switchbot':
+                # A SwitchBot Bot (BLE button pusher). Config only — the robot's
+                # skill does the BLE (kcare skills/switchbot.py): {mac, loc,
+                # default}. Status polling must not scan BLE every 10 s per
+                # browser, so "connected" means "configured".
+                import re as _re
+                import types as _types
+                mac = str(config.get('mac', '')).strip().upper()
+                if not _re.fullmatch(r'([0-9A-F]{2}:){5}[0-9A-F]{2}', mac):
+                    raise ValueError(f'mac must look like AA:BB:CC:DD:EE:FF, got {mac!r}')
+                config['mac'] = mac
+                config['loc'] = str(config.get('loc') or name).strip()
+                config['default'] = bool(config.get('default', False))
+                entry.client = _types.SimpleNamespace(mac=mac, loc=config['loc'])
+                entry.connected = True
+                if config['default']:
+                    # One default device: the skill's `loc` when none is given.
+                    with self._lock:
+                        for other in self._connects.values():
+                            if other.type == 'switchbot' and other.id != agent_name:
+                                other.config['default'] = False
+
         except Exception as e:
             entry.connected = False
             entry.error = str(e)
@@ -346,6 +368,13 @@ class DeviceManager:
 
     def get_connect(self, cid: str) -> Optional[ConnectEntry]:
         return self._connects.get(cid)
+
+    def switchbots(self) -> list[dict]:
+        """[{id, mac, loc, default}] of the configured SwitchBot connections."""
+        with self._lock:
+            return [{'id': e.id, 'mac': e.config.get('mac', ''), 'loc': e.config.get('loc', e.name),
+                     'default': bool(e.config.get('default', False))}
+                    for e in self._connects.values() if e.type == 'switchbot' and e.client is not None]
 
     def get_client(self, name: str) -> Any:
         # Special alias: 'llm' resolves to whichever type='llm' entry is
@@ -462,6 +491,8 @@ class DeviceManager:
                 return entry.client.rev_data is not None
             elif entry.type == 'llm':
                 return True
+            elif entry.type == 'switchbot':
+                return entry.client is not None      # configured; BLE is not polled from here
             elif entry.type in ('tcp', 'zmq', 'websocket', 'http', 'visionserve'):
                 if not entry.config.get('is_client', True):
                     return bool(getattr(entry.client, 'active', False))

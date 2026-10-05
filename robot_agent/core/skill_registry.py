@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SkillDef:
     name: str
-    type: Literal['internal', 'external']
+    type: Literal['internal', 'external', 'plan']
     description: str = ''
     module_path: str = ''
     func_name: str = ''
@@ -19,6 +19,7 @@ class SkillDef:
     timeout: float = 30.0
     method: str = 'POST'
     headers: dict = field(default_factory=dict)
+    plan: str = ''               # type 'plan': the steps (see core/plan_skill.py)
 
 
 class SkillRegistry:
@@ -49,6 +50,23 @@ class SkillRegistry:
             headers=headers or {},
         )
 
+    def register_plan(self, name: str, plan: str, description: str = ''):
+        self._skills[name] = SkillDef(name=name, type='plan', plan=plan,
+                                      description=description)
+
+    def rename(self, old: str, new: str):
+        """Re-key skill *old* as *new*, keeping its place in the list."""
+        items = []
+        for k, s in self._skills.items():
+            if k == old:
+                s.name = new
+                k = new
+            items.append((k, s))
+        self._skills = dict(items)
+
+    def plan_skills(self) -> list:
+        return [s for s in self._skills.values() if s.type == 'plan']
+
     def remove(self, name: str):
         self._skills.pop(name, None)
         self._save()
@@ -75,6 +93,7 @@ class SkillRegistry:
                 'timeout': s.timeout,
                 'method': s.method,
                 'headers': s.headers,
+                'plan': s.plan,
             }
             for s in self._skills.values()
         ]
@@ -87,6 +106,14 @@ class SkillRegistry:
         skill = self._skills.get(name)
         if skill is None:
             return {'isdone': False, 'msg': f'Skill "{name}" not registered'}
+
+        if skill.type == 'plan':
+            from .plan_skill import run_plan_skill
+            try:
+                return run_plan_skill(self, skill, params, node=node, log_fn=log_fn)
+            except Exception as e:
+                logger.error(f"Plan skill '{name}' failed: {e}\n{traceback.format_exc()}")
+                return {'isdone': False, 'msg': str(e)}
 
         if skill.type == 'internal':
             from ..skills import _set_emitter, _clear_emitter
