@@ -193,7 +193,7 @@ def _make_log_fn(emit, step_index: int, allow_say: bool = True):
         speak = raw.get('speak')
         listen = raw.get('listen')
         data = {k: v for k, v in raw.items()
-                if k not in ('log_image', 'dataset', 'say', 'speak', 'speak_lang', 'listen')}
+                if k not in ('log_image', 'log_image_reset', 'dataset', 'say', 'speak', 'speak_lang', 'listen')}
         ev = {
             'event': 'step_log',
             'step': step_index,
@@ -203,6 +203,10 @@ def _make_log_fn(emit, step_index: int, allow_say: bool = True):
         }
         if dataset is not None:
             ev['dataset'] = _serialize_result(dataset)
+        # log_data({'log_image_reset': True}) clears the dashboard's log image
+        # (e.g. qa, before each answer, so a stale picture is never shown).
+        if raw.get('log_image_reset'):
+            ev['log_image_reset'] = True
         if allow_say and isinstance(say, str) and say.strip():
             ev['say'] = say
         if isinstance(speak, str) and speak.strip():
@@ -527,8 +531,12 @@ class UnifiedAgent:
             yield event
 
     def _exec_task_direct(self, task: list, node: Any, ctx: dict, log_fn=None) -> dict:
+        from .plan_skill import parse_step_args
         action, inputs_str = task
-        params = self._parse_inputs(inputs_str)
+        try:
+            params = parse_step_args(inputs_str, ctx)   # {answer} → an earlier step's result
+        except ValueError as e:
+            return {'isdone': False, 'msg': str(e)}
         params.update({k: v for k, v in ctx.items() if k != 'node'})
         skip_fail, make_fail = '!' in action, '~' in action
         action = action.replace('!', '').replace('~', '')
@@ -583,8 +591,12 @@ class UnifiedAgent:
         return tasks
 
     def _exec_task(self, task: list, node: Any, ctx: dict, log_fn=None) -> dict:
+        from .plan_skill import parse_step_args
         action, inputs_str = task
-        params = self._parse_inputs(inputs_str)
+        try:
+            params = parse_step_args(inputs_str, ctx)
+        except ValueError as e:
+            return {'isdone': False, 'msg': str(e)}
         params.update({k: v for k, v in ctx.items() if k != 'node'})
         return self.skill_registry.execute(action, params, node=node, log_fn=log_fn)
 

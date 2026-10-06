@@ -35,7 +35,7 @@ def _resolve_dotted(path: str):
 
 
 ConnectType = Literal['ros_service', 'ros_topic', 'ros_action', 'webrtc', 'llm',
-                      'tcp', 'zmq', 'websocket', 'http', 'visionserve', 'switchbot']
+                      'tcp', 'zmq', 'websocket', 'http', 'visionserve', 'switchbot', 'stt']
 
 
 @dataclass
@@ -296,6 +296,19 @@ class DeviceManager:
                     print(e)
 
 
+            elif conn_type == 'stt':
+                # Speech-to-text server (Whisper, OpenAI-compatible API) used by
+                # the HRI skills for both the robot's and the dashboard's mic.
+                from ..connect.stt import WhisperClient
+                if not str(config.get('url', '')).strip():
+                    raise ValueError('url is required, e.g. http://192.168.0.6:8000')
+                client = WhisperClient(url=config['url'], model=config.get('model', ''),
+                                       timeout=config.get('timeout', 30.0))
+                entry.client = client
+                entry.connected = client.ping()
+                if not entry.connected:
+                    entry.error = f"no answer from {config['url']}/health"
+
             elif conn_type == 'switchbot':
                 # A SwitchBot Bot (BLE button pusher). Config only — the robot's
                 # skill does the BLE (kcare skills/switchbot.py): {mac, loc,
@@ -368,6 +381,15 @@ class DeviceManager:
 
     def get_connect(self, cid: str) -> Optional[ConnectEntry]:
         return self._connects.get(cid)
+
+    def stt_client(self, name: str | None = None):
+        """The speech-to-text client: connection `name`, else the first
+        type 'stt' connection; None when there is none."""
+        with self._lock:
+            if name and name in self._connects and self._connects[name].type == 'stt':
+                return self._connects[name].client
+            return next((e.client for e in self._connects.values()
+                         if e.type == 'stt' and e.client is not None), None)
 
     def switchbots(self) -> list[dict]:
         """[{id, mac, loc, default}] of the configured SwitchBot connections."""
@@ -493,6 +515,8 @@ class DeviceManager:
                 return True
             elif entry.type == 'switchbot':
                 return entry.client is not None      # configured; BLE is not polled from here
+            elif entry.type == 'stt':
+                return bool(entry.client.ping())
             elif entry.type in ('tcp', 'zmq', 'websocket', 'http', 'visionserve'):
                 if not entry.config.get('is_client', True):
                     return bool(getattr(entry.client, 'active', False))

@@ -20,6 +20,19 @@ class SkillDef:
     method: str = 'POST'
     headers: dict = field(default_factory=dict)
     plan: str = ''               # type 'plan': the steps (see core/plan_skill.py)
+    # Other names the skill answers to (라면가져와, lấy mì …): every caller —
+    # Agent panel, POST /skill/<alias>, CLI, plan skills, planners — resolves
+    # them through SkillRegistry.resolve. Checked on save by check_aliases.
+    aliases: list = field(default_factory=list)
+
+
+# Characters the plan / direct-mode parser gives a meaning to.
+_ALIAS_BAD = set(':&!~#$' + '{},=' + '\'"' + '\n\r\t()')
+
+
+def _norm(name) -> str:
+    from ..env_names import normalize
+    return normalize(name)
 
 
 class SkillRegistry:
@@ -64,6 +77,56 @@ class SkillRegistry:
             items.append((k, s))
         self._skills = dict(items)
 
+    # ------------------------------------------------------------------
+    # Aliases
+    # ------------------------------------------------------------------
+    def resolve(self, name: str):
+        """Canonical skill name for *name* — the name itself, an alias, or
+        either ignoring case / spacing / Unicode form — or None."""
+        if name in self._skills:
+            return name
+        for s in self._skills.values():
+            if name in (s.aliases or []):
+                return s.name
+        n = _norm(name)
+        for s in self._skills.values():
+            if n == _norm(s.name) or any(n == _norm(a) for a in (s.aliases or [])):
+                return s.name
+        return None
+
+    def get(self, name: str):
+        key = self.resolve(name)
+        return self._skills.get(key) if key else None
+
+    def check_aliases(self, name: str, aliases) -> str:
+        """'' when *aliases* can be saved for skill *name*, else why not: an
+        alias must be non-empty, free of the parser's characters, and not the
+        name or an alias of another skill (compared normalised)."""
+        if not isinstance(aliases, (list, tuple)):
+            return 'aliases must be a list of names'
+        seen = {}
+        for a in aliases:
+            a = str(a).strip()
+            if not a:
+                return 'an alias is empty'
+            bad = sorted(set(a) & _ALIAS_BAD)
+            if bad:
+                return f'alias "{a}" contains {" ".join(repr(c) for c in bad)}'
+            n = _norm(a)
+            if n in seen:
+                return f'alias "{a}" is listed twice'
+            seen[n] = a
+            if n == _norm(name):
+                continue                              # same as its own name: harmless
+            for s in self._skills.values():
+                if s.name == name:
+                    continue
+                if n == _norm(s.name):
+                    return f'alias "{a}" is the name of skill "{s.name}"'
+                if any(n == _norm(x) for x in (s.aliases or [])):
+                    return f'alias "{a}" is already an alias of "{s.name}"'
+        return ''
+
     def plan_skills(self) -> list:
         return [s for s in self._skills.values() if s.type == 'plan']
 
@@ -94,6 +157,7 @@ class SkillRegistry:
                 'method': s.method,
                 'headers': s.headers,
                 'plan': s.plan,
+                'aliases': list(s.aliases or []),
             }
             for s in self._skills.values()
         ]
@@ -103,7 +167,7 @@ class SkillRegistry:
     # ------------------------------------------------------------------
     def execute(self, name: str, params: dict, node: Any = None,
                 log_fn=None) -> dict:
-        skill = self._skills.get(name)
+        skill = self.get(name)                      # a name or an alias
         if skill is None:
             return {'isdone': False, 'msg': f'Skill "{name}" not registered'}
 
@@ -193,7 +257,8 @@ class SkillRegistry:
             print(f'[SkillRegistry] Could not load skills.json: {e}')
             return False
         for item in data:
-            self._skills[item['name']] = SkillDef(**item)
+            known = {f for f in SkillDef.__dataclass_fields__}
+            self._skills[item['name']] = SkillDef(**{k: v for k, v in item.items() if k in known})
         print(f'[SkillRegistry] Loaded {len(data)} skills from skills.json')
         return True
 

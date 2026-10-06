@@ -114,6 +114,10 @@ SILENT_ACTIONS = {'reply', 'ask', 'qa'}
 # done_success, ...) carry no action and play when no mic is open.
 _STEP_KINDS = ('step_start', 'step_success', 'step_fail')
 
+# Milestones never spoken, in any language: "plan ready" only delays the robot
+# getting on with it (and talked over HRI skills right as the mic opened).
+SILENT_KINDS = {'plan_ready'}
+
 
 class _BlankDict(dict):
     """Format mapping that yields '' for any missing key."""
@@ -158,6 +162,8 @@ class Announcer:
         Returns '' for a step of a conversational skill (see SILENT_ACTIONS):
         `announce` then speaks nothing, and the dashboard skips a falsy `say`.
         """
+        if kind in SILENT_KINDS:
+            return ''
         if kind in _STEP_KINDS and str(ctx.get('action') or '').strip() in SILENT_ACTIONS:
             return ''
         tmpl = self._template(kind)

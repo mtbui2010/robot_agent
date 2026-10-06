@@ -18,6 +18,7 @@ class SkillIn(BaseModel):
     method: str = 'POST'
     headers: dict = Field(default_factory=dict)
     plan: str = ''
+    aliases: list[str] = Field(default_factory=list)
 
 
 class SkillUpdate(BaseModel):
@@ -30,6 +31,7 @@ class SkillUpdate(BaseModel):
     method: Optional[str] = None
     headers: Optional[dict] = None
     plan: Optional[str] = None
+    aliases: Optional[list[str]] = None
 
 
 @router.get('/skills')
@@ -50,12 +52,17 @@ def reload_skills():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Could not load skills_config: {e}')
 
-    # Plan skills are data the operator wrote, not code: keep them.
+    # Plan skills are data the operator wrote, not code: keep them — and the
+    # aliases given to code skills, which skills_config does not carry.
     plans = sr.plan_skills()
+    aliases = {s.name: list(s.aliases) for s in sr._skills.values() if s.aliases}
     sr._skills.clear()
     sr.load_from_skill_configs(SKILL_CONFIGS)
     for p in plans:
         sr._skills.setdefault(p.name, p)
+    for name, al in aliases.items():
+        if name in sr._skills:
+            sr._skills[name].aliases = al
     sr._save()
     return {'ok': True, 'count': len(sr.all())}
 
@@ -87,6 +94,11 @@ def skills_status():
 @router.post('/skills')
 def add_skill(skill: SkillIn):
     sr = current().sr
+    error = sr.check_aliases(skill.name, skill.aliases)
+    if not error and sr.resolve(skill.name) not in (None, skill.name):
+        error = f'"{skill.name}" is an alias of skill "{sr.resolve(skill.name)}"'
+    if error:
+        raise HTTPException(status_code=400, detail=error)
     if skill.type == 'plan':
         from ..core.plan_skill import validate_plan
         error = validate_plan(skill.name, skill.plan, sr)
@@ -109,6 +121,7 @@ def add_skill(skill: SkillIn):
             method=skill.method,
             headers=skill.headers,
         )
+    sr._skills[skill.name].aliases = [a.strip() for a in skill.aliases]
     sr._save()
     return {'ok': True}
 
@@ -135,6 +148,11 @@ def update_skill(name: str, body: SkillUpdate):
             sr._skills[other].plan = plan
         name, existing = new_name, sr._skills[new_name]
     body.name = None
+    if body.aliases is not None:
+        error = sr.check_aliases(name, body.aliases)
+        if error:
+            raise HTTPException(status_code=400, detail=error)
+        body.aliases = [a.strip() for a in body.aliases]
     if existing is not None and existing.type == 'plan' and body.plan is not None:
         from ..core.plan_skill import validate_plan
         error = validate_plan(name, body.plan, sr)
@@ -151,7 +169,8 @@ def update_skill(name: str, body: SkillUpdate):
 def delete_skill(name: str):
     sr = current().sr
     from ..core.plan_skill import called_skills
-    users = [p.name for p in sr.plan_skills() if p.name != name and name in called_skills(p.plan)]
+    users = [p.name for p in sr.plan_skills()
+             if p.name != name and any(sr.resolve(c) == name for c in called_skills(p.plan))]
     if users:
         raise HTTPException(status_code=400,
                             detail=f'"{name}" is used by plan skill {", ".join(users)}')

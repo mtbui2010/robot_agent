@@ -9,6 +9,7 @@ Korean announcement phrasing, …) belong in the robot package's own
 import io
 import math
 import threading
+import time
 
 import numpy as np
 
@@ -267,15 +268,33 @@ def record_phrase(max_sec: float = 8.0, silence_sec: float = 1.5,
                               min_phrase_sec=min_phrase_sec, wait_sec=wait_sec)
 
 
-def speech_to_text(audio, lang: str | None = None) -> str:
-    """Transcribe robot-mic audio with the ``vlms`` Whisper server.
+def speech_to_text(audio, lang: str | None = None, prompt: str | None = None,
+                   mime: str = 'audio/wav', stt: str | None = None) -> str:
+    """Transcribe audio with Whisper.
+
+    `audio` is robot-mic float32 samples (16 kHz), or the bytes of a recording
+    (the dashboard's webm; `mime` says which). The server is the type 'stt'
+    connection (`stt` names one; default the first), else the legacy ``vlms``
+    TCP server (samples only).
 
     `lang` pins Whisper's language ('ko', 'en', 'vi', ...) instead of letting it
-    guess from a few seconds of audio, which it gets wrong on short answers.
-    Returns the transcript stripped, '' when nothing was recognised.
+    guess from a few seconds of audio, which it gets wrong on short answers;
+    `prompt` lists words to expect. Returns the transcript stripped, '' when
+    nothing was recognised.
     """
     from robot_agent.state import current
-    client = current().dm.get_client('vlms')
+    dm = current().dm
+    stt_client = dm.stt_client(stt) if hasattr(dm, 'stt_client') else None
+    if stt_client is not None:
+        text = stt_client.transcribe(audio, lang=lang, prompt=prompt, mime=mime)
+        dropped = getattr(stt_client, 'last_dropped', '')
+        if dropped:                      # noise Whisper turned into words
+            from robot_agent.skills import log_data
+            log_data({'msg': f'whisper: ignored {dropped[:60]!r} (noise / repetition)'})
+        return text
+    if isinstance(audio, (bytes, bytearray)):
+        raise RuntimeError("no 'stt' connection to transcribe a recording — add one in the Connection panel")
+    client = dm.get_client('vlms')
     if client is None:
         raise RuntimeError("TCP connect 'vlms' not registered — add it in the Connection panel")
     req = {'audio_obj': np.asarray(audio, dtype=np.float32), 'detector': 'audio'}
@@ -292,7 +311,8 @@ _LISTEN_LOCK = threading.Lock()
 
 
 def listen_dashboard(prompt: str | None = None, lang: str = 'ko', max_sec: float = 8.0,
-                     timeout: float = 30.0, mode: str = 'voice'):
+                     timeout: float = 30.0, mode: str = 'voice', capture: str = 'browser',
+                     hint: str | None = None, silence_sec: float = 1.5, stt: str | None = None):
     """Have the dashboard capture one spoken phrase with the browser mic.
 
     Emits a ``listen`` event over the running agent's WebSocket; the dashboard
@@ -306,6 +326,12 @@ def listen_dashboard(prompt: str | None = None, lang: str = 'ko', max_sec: float
 
     `mode` 'text' asks the dashboard for a typed answer instead of the mic;
     the answer comes back through the same endpoint.
+
+    `capture` picks who turns speech into text: 'browser' (the browser's own
+    recogniser — Google's in Chrome) or 'whisper': the browser only records the
+    phrase and posts the audio to ``/agent/listen/{id}/audio``, where
+    `transcribe_listen_audio` runs it through the 'stt' connection (`stt`
+    names one) with `lang` and `hint` (Whisper's prompt — words to expect).
     """
     import uuid
     from robot_agent.skills import has_emitter, log_data
@@ -313,29 +339,63 @@ def listen_dashboard(prompt: str | None = None, lang: str = 'ko', max_sec: float
         raise RuntimeError("source='dashboard' needs a run started from the dashboard's "
                            "Agent panel — use source='robot' from the CLI or /skill")
     req_id = uuid.uuid4().hex[:12]
-    slot = {'event': threading.Event(), 'text': None, 'error': None}
+    slot = {'event': threading.Event(), 'text': None, 'error': None, 'note': None,
+            'lang': lang, 'hint': hint, 'stt': stt}
     with _LISTEN_LOCK:
         _LISTEN_PENDING[req_id] = slot
     try:
         log_data({'listen': {'id': req_id, 'lang': lang, 'max_sec': max_sec,
-                             'prompt': prompt or '', 'mode': mode}})
+                             'prompt': prompt or '', 'mode': mode,
+                             'capture': capture if mode == 'voice' else 'browser',
+                             'silence_sec': silence_sec}})
         slot['event'].wait(timeout)
     finally:
         with _LISTEN_LOCK:
             _LISTEN_PENDING.pop(req_id, None)
     if slot['error']:
         raise RuntimeError(f'dashboard microphone: {slot["error"]}')
-    return (slot['text'] or '').strip() or None
+    text = (slot['text'] or '').strip() or None
+    if text is None and mode == 'voice':
+        # Say why in the Execution panel: no answer at all (timeout) vs the
+        # browser's own account (mic opened? sound heard? recogniser code).
+        why = slot['note'] or ('no reply from the dashboard within '
+                               f'{timeout:.0f} s' if not slot['event'].is_set() else 'empty transcript')
+        log_data({'msg': f'dashboard mic: nothing recognised — {why}'})
+    elif text and slot['note']:
+        log_data({'msg': f'dashboard mic: {slot["note"]}'})   # e.g. interim text used
+    return text
 
 
-def submit_transcript(req_id: str, text: str, error: str | None = None) -> bool:
+def transcribe_listen_audio(req_id: str, data: bytes, mime: str = 'audio/webm',
+                            note: str | None = None):
+    """The dashboard's recording for a pending listen with capture='whisper':
+    transcribe it and deliver the text. Returns the transcript ('' for none),
+    or None when nothing is waiting under that id."""
+    with _LISTEN_LOCK:
+        slot = _LISTEN_PENDING.get(req_id)
+    if slot is None:
+        return None
+    text, error = '', None
+    if data:
+        t0 = time.time()
+        try:
+            text = speech_to_text(data, lang=slot.get('lang'), prompt=slot.get('hint'),
+                                  mime=mime, stt=slot.get('stt'))
+            note = f'whisper {time.time() - t0:.1f}s, {len(data) // 1024} KB'
+        except Exception as e:                       # server down / bad audio
+            error = f'whisper: {e}'
+    return text if submit_transcript(req_id, text, error, note) else None
+
+
+def submit_transcript(req_id: str, text: str, error: str | None = None,
+                      note: str | None = None) -> bool:
     """Deliver the dashboard's answer to a waiting listen_dashboard() call.
     False when nothing is waiting under that id (timed out, or unknown)."""
     with _LISTEN_LOCK:
         slot = _LISTEN_PENDING.get(req_id)
     if slot is None:
         return False
-    slot['text'], slot['error'] = text, error
+    slot['text'], slot['error'], slot['note'] = text, error, note
     slot['event'].set()
     return True
 

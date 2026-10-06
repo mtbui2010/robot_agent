@@ -36,6 +36,10 @@ logger = logging.getLogger(__name__)
 
 # $name$ or $name=default$
 _PARAM = re.compile(r'\$([A-Za-z_]\w*)(?:=([^$]*))?\$')
+# {name}: a value from an earlier step's result, e.g. ask's answer:
+#   ask::inputs="뭐 드실래요?", options="신라면, 짜파게티"
+#   fine_move::{answer}
+_REF = re.compile(r'\{([A-Za-z_]\w*)\}')
 _NAME = re.compile(r'^[A-Za-z_][\w\-]*$')
 MAX_DEPTH = 5
 
@@ -110,15 +114,18 @@ def validate_plan(name: str, plan: str, registry) -> str:
     for no, group in steps:
         for action, _ in group:
             target = _bare(action)
-            if target != name and target not in registry._skills:
+            if target != name and registry.resolve(target) is None:
                 return f'line {no}: unknown skill "{target}"'
     try:
         plan_params(plan)
     except ValueError as e:
         return str(e)
     # A plan that ends up calling itself would never finish.
-    graph = {s.name: called_skills(s.plan) for s in registry._skills.values() if s.type == 'plan'}
-    graph[name] = called_skills(plan)
+    # Calls through an alias count as calls to the skill it names.
+    canon = lambda c: name if c == name else (registry.resolve(c) or c)   # noqa: E731
+    graph = {s.name: [canon(c) for c in called_skills(s.plan)]
+             for s in registry._skills.values() if s.type == 'plan'}
+    graph[name] = [canon(c) for c in called_skills(plan)]
 
     def reaches(node, seen):
         for nxt in graph.get(node, []):
@@ -155,11 +162,37 @@ def plan_rename(registry, old: str, new: str):
         return f'"{new}" is not a valid skill name (letters, digits, _ and -)', {}
     if new in registry._skills:
         return f'"{new}" is already a skill', {}
+    if registry.resolve(new) not in (None, old):
+        return f'"{new}" is an alias of skill "{registry.resolve(new)}"', {}
     updates = {}
     for other in registry.plan_skills():
         if other.name != old and old in called_skills(other.plan):
             updates[other.name] = rename_calls(other.plan, old, new)
     return '', updates
+
+
+def refs_to_params(args: str, ctx: dict):
+    """(args, values): every ``{name}`` in *args* turned into a ``$__ref_name$``
+    parameter whose value is ``ctx[name]`` (an earlier step's result), for
+    `_substitute`. Raises ValueError for a name no earlier step returned."""
+    values = {}
+
+    def swap(m):
+        name = m.group(1)
+        if name not in ctx:
+            known = ', '.join(k for k in ctx if k not in ('isdone', 'node')) or 'none'
+            raise ValueError(f'{{{name}}}: no earlier step returned "{name}" (have: {known})')
+        values[f'__ref_{name}'] = ctx[name]
+        return f'$__ref_{name}$'
+    return _REF.sub(swap, args), values
+
+
+def parse_step_args(args: str, ctx: dict) -> dict:
+    """A direct-mode step's params, with ``{name}`` taken from earlier results."""
+    if not _REF.search(args or ''):
+        return parse_inputs(args)
+    args, values = refs_to_params(args, ctx)
+    return _substitute(args, values)
 
 
 def _substitute(args: str, values: dict) -> dict:
@@ -218,6 +251,7 @@ def run_plan_skill(registry, skill, params: dict, node=None, log_fn=None) -> dic
             return {'isdone': False, 'msg': f'{skill.name}: missing parameter "{pname}"'}
     params.pop('inputs', None)              # given but not used by this plan
     ctx = params                            # what the caller passed on (previous results)
+    origin = {k: 'caller' for k in ctx}     # trace: which step put each ctx key there
 
     steps = plan_lines(skill.plan)
     report, last = [], {'isdone': True}
@@ -231,9 +265,12 @@ def run_plan_skill(registry, skill, params: dict, node=None, log_fn=None) -> dic
                         'failed_line': text, 'plan_steps': report}
 
             def run_one(action, args):
-                p = _substitute(args, values)
+                args, refs = refs_to_params(args, ctx)      # {answer} → an earlier result
+                p = _substitute(args, {**values, **refs})
+                own = dict(p)
                 p.update({k: v for k, v in ctx.items() if k != 'node'})
                 name = _bare(action)
+                _trace_carried(skill.name, i, len(steps), name, own, p, origin, log)
                 ret = registry.execute(name, p, node=node, log_fn=log_fn)
                 if not isinstance(ret, dict):
                     ret = {'isdone': bool(ret)}
@@ -262,6 +299,8 @@ def run_plan_skill(registry, skill, params: dict, node=None, log_fn=None) -> dic
             log(f'{skill.name} {i}/{len(steps)}: {text} {"✓" if ok else "✗"} ({dt:.1f}s)'
                 + ('' if ok else f' — {ret.get("msg", "")}'))
             ctx.update(ret)
+            for k in ret:
+                origin[k] = f'step {i} {text}'
             last = ret
             if not ok:
                 # Stop here, leaving the robot as it is: no fold / lift-home.
@@ -271,6 +310,32 @@ def run_plan_skill(registry, skill, params: dict, node=None, log_fn=None) -> dic
         return {**last, 'isdone': True, 'plan_steps': report}
     finally:
         _local.depth = depth
+
+
+_TRACE_SKIP = {'isdone', 'msg', 'plan_steps', 'failed_step', 'failed_line'}
+
+
+def _trace_carried(plan, i, n, name, own, merged, origin, log):
+    """Debug trace (temporary): the parameters a step gets from earlier steps'
+    results rather than from its own line — and which it overrides. Scalars
+    only, to keep the line short."""
+    carried, overridden = [], []
+    for k, v in merged.items():
+        if k in _TRACE_SKIP or k == 'node':
+            continue
+        if not isinstance(v, (int, float, str, bool)) or (isinstance(v, str) and len(v) > 40):
+            continue
+        if k not in own:
+            carried.append(f'{k}={v!r} ({origin.get(k, "?")})')
+        elif own[k] != v:
+            overridden.append(f'{k}: {own[k]!r}→{v!r} ({origin.get(k, "?")})')
+    if not carried and not overridden:
+        return
+    msg = (f'[trace] {plan} {i}/{n} {name}: '
+           + ('carried ' + ', '.join(carried) if carried else '')
+           + (' | OVERRIDDEN ' + ', '.join(overridden) if overridden else ''))
+    logger.warning(msg)
+    log(msg)
 
 
 def describe_plan_skills(registry) -> str:
@@ -286,5 +351,6 @@ def describe_plan_skills(registry) -> str:
         args = ', '.join(k if v is None else f'{k}={v}' for k, v in ps.items())
         lines.append(f'- {s.name}::{"<inputs>" if "inputs" in ps else ""}'
                      + (f'  ({args})' if args else '')
+                     + (f'  (also: {", ".join(s.aliases)})' if getattr(s, 'aliases', None) else '')
                      + (f' — {s.description}' if s.description else ''))
     return '\n'.join(lines)

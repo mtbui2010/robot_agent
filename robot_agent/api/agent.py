@@ -1,6 +1,6 @@
 import json, os
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from typing import Literal, Optional
 
@@ -157,6 +157,9 @@ def get_api_keys():
 class ListenAnswer(BaseModel):
     text: str = ''
     error: Optional[str] = None
+    # Why nothing was recognised, when text is empty and it is not an error:
+    # the browser's mic events and code, e.g. 'mic on, no speech (no-speech)'.
+    note: Optional[str] = None
 
 
 @router.post('/agent/listen/{req_id}')
@@ -169,9 +172,28 @@ def answer_listen(req_id: str, body: ListenAnswer):
     timed out and nothing is waiting any more.
     """
     from ..utils import submit_transcript
-    if not submit_transcript(req_id, body.text, body.error):
+    if not submit_transcript(req_id, body.text, body.error, body.note):
         raise HTTPException(status_code=404, detail=f'no pending listen request {req_id!r}')
     return {'ok': True}
+
+
+@router.post('/agent/listen/{req_id}/audio')
+async def answer_listen_audio(req_id: str, request: Request):
+    """The dashboard's recording for a listen with ``capture='whisper'``.
+
+    Raw body (``Content-Type`` audio/webm, audio/ogg, …; empty when nobody
+    spoke); ``?note=`` carries the browser's account of an empty recording.
+    Transcribed with the 'stt' connection off the event loop.
+    """
+    from starlette.concurrency import run_in_threadpool
+    from ..utils import transcribe_listen_audio
+    data = await request.body()
+    mime = request.headers.get('content-type', 'audio/webm')
+    text = await run_in_threadpool(transcribe_listen_audio, req_id, data, mime,
+                                   request.query_params.get('note'))
+    if text is None:
+        raise HTTPException(status_code=404, detail=f'no pending listen request {req_id!r}')
+    return {'ok': True, 'text': text}
 
 
 @router.post('/agent/cancel')
