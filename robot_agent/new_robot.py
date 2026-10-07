@@ -167,6 +167,8 @@ def _reset_locations(root: Path, pkg: str, blank_configs: bool,
             done.append('  Pass --reset-sites when the fork targets different hardware.')
 
     if common.is_dir():
+        if 'active_location' in stale:          # the per-machine markers too
+            stale += [f.name for f in common.glob('active_location.*')]
         for name in stale:
             f = common / name
             if f.exists():

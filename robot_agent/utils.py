@@ -416,22 +416,42 @@ def cancel_pending_listens() -> int:
     return len(slots)
 
 
-def say_to_user(text: str, lang: str = 'ko', source: str = 'robot') -> None:
+def say_to_user(text: str, lang: str = 'ko', source: str = 'robot', wait: bool | None = None) -> None:
     """Say a line as part of a conversation, and return once it has been said.
 
     source='robot' plays it on the robot speaker, blocking, so a following
     listen does not record the robot's own voice. It speaks even while skill
     TTS is muted: that mute exists to stop skills narrating over the plan
     announcer, and a question is not narration. source='dashboard' sends it to
-    the browser, which voices it in order before any listen queued after it.
+    the browser, which voices it in order before any listen queued after it;
+    with `wait` it also blocks until the browser reports the line spoken
+    (POST /agent/listen/<speak_id>) — so the next step does not start under
+    it — at most a length-based timeout, and not past a cancel. `wait=False`
+    on the robot speaker plays the line in the background. None (default) keeps
+    each side's usual behaviour: robot blocks, dashboard does not.
     """
     if source == 'dashboard':
         from robot_agent.skills import has_emitter, log_data
         if has_emitter():
-            log_data({'speak': text, 'speak_lang': lang})
+            if not wait:
+                log_data({'speak': text, 'speak_lang': lang})
+                return
+            import uuid
+            req_id = uuid.uuid4().hex[:12]
+            slot = {'event': threading.Event(), 'text': None, 'error': None, 'note': None,
+                    'lang': lang, 'hint': None, 'stt': None}
+            with _LISTEN_LOCK:
+                _LISTEN_PENDING[req_id] = slot
+            try:
+                log_data({'speak': text, 'speak_lang': lang, 'speak_id': req_id})
+                # ~6 characters a second in speech, plus slack for the queue ahead of it.
+                slot['event'].wait(5.0 + len(text) / 6.0 + 5.0)
+            finally:
+                with _LISTEN_LOCK:
+                    _LISTEN_PENDING.pop(req_id, None)
             return
         print(f'[say_to_user] no dashboard run attached; using the robot speaker: {text}')
-    text2voice(text, lang=lang, run_thread=False, force=True)
+    text2voice(text, lang=lang, run_thread=(wait is False), force=True)
 
 
 # ---------------------------------------------------------------------------

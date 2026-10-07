@@ -322,6 +322,12 @@ class DeviceManager:
                 config['mac'] = mac
                 config['loc'] = str(config.get('loc') or name).strip()
                 config['default'] = bool(config.get('default', False))
+                # Other names for the place (세탁실 …): turn_light::loc and qa's
+                # "세탁실 불 켜줘" match them too.
+                al = config.get('aliases') or []
+                if isinstance(al, str):
+                    al = al.split(',')
+                config['aliases'] = [str(a).strip() for a in al if str(a).strip()]
                 entry.client = _types.SimpleNamespace(mac=mac, loc=config['loc'])
                 entry.connected = True
                 if config['default']:
@@ -392,9 +398,10 @@ class DeviceManager:
                          if e.type == 'stt' and e.client is not None), None)
 
     def switchbots(self) -> list[dict]:
-        """[{id, mac, loc, default}] of the configured SwitchBot connections."""
+        """[{id, mac, loc, aliases, default}] of the configured SwitchBot connections."""
         with self._lock:
             return [{'id': e.id, 'mac': e.config.get('mac', ''), 'loc': e.config.get('loc', e.name),
+                     'aliases': list(e.config.get('aliases') or []),
                      'default': bool(e.config.get('default', False))}
                     for e in self._connects.values() if e.type == 'switchbot' and e.client is not None]
 

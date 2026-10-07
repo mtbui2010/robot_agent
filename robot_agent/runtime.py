@@ -70,15 +70,10 @@ def _resolve_layout(robot_pkg: str,
         locations_dir = config_dir / 'locations'
         resolved_log = Path(log_dir).resolve() if log_dir else config_dir.parent / 'data' / 'logs'
         if location is None:
-            location = DEFAULT_LOCATION
-            active_file = common_dir / 'active_location'
-            try:
-                if active_file.exists():
-                    name = active_file.read_text().strip()
-                    if name and (locations_dir / name).is_dir():
-                        location = name
-            except Exception:
-                pass
+            # Per machine: $ROBOT_LOCATION, active_location.<host>, then the
+            # shared active_location (see state.read_active_location).
+            from .state import read_active_location
+            location = read_active_location(common_dir, locations_dir) or DEFAULT_LOCATION
         return common_dir, locations_dir, location, resolved_log
 
     # Legacy single-dir layout.

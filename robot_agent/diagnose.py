@@ -178,12 +178,9 @@ def main() -> int:
             pkg_dir = Path(pkg_mod.__file__).parent
             locations = pkg_dir / 'configs' / 'locations'
             if locations.is_dir():
-                active = 'default'
-                marker = pkg_dir / 'configs' / 'common' / 'active_location'
-                if marker.exists():
-                    name = marker.read_text().strip()
-                    if name and (locations / name).is_dir():
-                        active = name
+                # The same choice as the backend on this machine (per-host marker).
+                from .state import read_active_location
+                active = read_active_location(pkg_dir / 'configs' / 'common', locations) or 'default'
                 connections_file = locations / active / 'connections.json'
             else:
                 connections_file = pkg_dir / 'data' / 'connections.json'

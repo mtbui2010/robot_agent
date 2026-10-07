@@ -66,6 +66,43 @@ def _safe_location_name(name: str) -> str:
     return name
 
 
+
+# ── Active location, per machine ─────────────────────────────────────────────
+# The configs folder is often shared (the same /remote_dir on several robots /
+# PCs). One `common/active_location` file made them fight: switching site on one
+# machine rewrote it, and the other — running uvicorn --reload over the same
+# tree — restarted into that site. Each machine now keeps its own marker,
+# `active_location.<host>`; the shared file is only a fallback for a machine
+# that never switched. ROBOT_LOCATION in the environment overrides both.
+
+def _host_id() -> str:
+    import os, re, socket
+    host = os.environ.get('ROBOT_AGENT_HOST') or socket.gethostname() or 'host'
+    return re.sub(r'[^A-Za-z0-9_.-]', '_', host)
+
+
+def active_location_file(common_dir: Path) -> Path:
+    """Where this machine records its active location."""
+    return Path(common_dir) / f'active_location.{_host_id()}'
+
+
+def read_active_location(common_dir: Path, locations_dir: Path) -> str | None:
+    """This machine's active location: $ROBOT_LOCATION, else its own marker,
+    else the shared `active_location` — the first naming an existing site."""
+    import os
+    cands = [os.environ.get('ROBOT_LOCATION', '')]
+    for f in (active_location_file(common_dir), Path(common_dir) / 'active_location'):
+        try:
+            if f.exists():
+                cands.append(f.read_text().strip())
+        except Exception:
+            pass
+    for name in cands:
+        if name and (Path(locations_dir) / name).is_dir():
+            return name
+    return None
+
+
 class AgentState:
     def __init__(self, robot_pkg: str, common_dir: Path, locations_dir: Path,
                  location: str = DEFAULT_LOCATION, log_dir: Path | None = None,
@@ -147,7 +184,8 @@ class AgentState:
 
     @property
     def _active_file(self) -> Path:
-        return self.common_dir / 'active_location'
+        """This machine's active-location marker (see active_location_file)."""
+        return active_location_file(self.common_dir)
 
     # ------------------------------------------------------------------
     # Location discovery / persistence
@@ -159,15 +197,8 @@ class AgentState:
             return []
 
     def read_active_location(self) -> str | None:
-        """The persisted active location, if it still exists on disk."""
-        try:
-            if self._active_file.exists():
-                name = self._active_file.read_text().strip()
-                if name and (self.locations_dir / name).is_dir():
-                    return name
-        except Exception:
-            pass
-        return None
+        """The persisted active location of this machine, if it still exists."""
+        return read_active_location(self.common_dir, self.locations_dir)
 
     def _write_active_location(self, name: str) -> None:
         try:

@@ -193,7 +193,7 @@ def _make_log_fn(emit, step_index: int, allow_say: bool = True):
         speak = raw.get('speak')
         listen = raw.get('listen')
         data = {k: v for k, v in raw.items()
-                if k not in ('log_image', 'log_image_reset', 'dataset', 'say', 'speak', 'speak_lang', 'listen')}
+                if k not in ('log_image', 'log_image_reset', 'dataset', 'say', 'speak', 'speak_lang', 'speak_id', 'listen')}
         ev = {
             'event': 'step_log',
             'step': step_index,
@@ -212,6 +212,8 @@ def _make_log_fn(emit, step_index: int, allow_say: bool = True):
         if isinstance(speak, str) and speak.strip():
             ev['speak'] = speak
             ev['speak_lang'] = raw.get('speak_lang')
+            if raw.get('speak_id'):           # the skill waits for "spoken" (POST /agent/listen/<id>)
+                ev['speak_id'] = raw.get('speak_id')
         if isinstance(listen, dict):
             ev['listen'] = _serialize_result(listen)
         emit(ev)
