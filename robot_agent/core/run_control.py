@@ -18,7 +18,11 @@ started from the CLI or a second client. It is cleared by :func:`begin_run` at
 every execution entry point, so a cancel never leaks into the next run.
 """
 
+import logging
 import threading
+import traceback
+
+_dbg = logging.getLogger('robot_agent.spoken_debug')     # [spoken-debug] temporary
 
 _CANCEL = threading.Event()
 _LOCK = threading.Lock()
@@ -42,6 +46,7 @@ def _node(node=None):
 
 def begin_run(node=None) -> None:
     """Clear the flag before a new execution (plan, skill, direct agent send)."""
+    _dbg.warning('[spoken-debug] begin_run (cancel flag cleared)')
     with _LOCK:
         _CANCEL.clear()
         n = _node(node)
@@ -59,6 +64,8 @@ def request_cancel(node=None) -> dict:
     cancel, and which raised while doing so. Never raises: a Stop button that
     fails with a 500 is worse than a partial stop.
     """
+    _dbg.warning('[spoken-debug] request_cancel from:\n%s',
+                 ''.join(traceback.format_stack(limit=8)[:-1]))
     with _LOCK:
         _CANCEL.set()
         result = {'ok': True, 'cancelled': [], 'errors': {}}

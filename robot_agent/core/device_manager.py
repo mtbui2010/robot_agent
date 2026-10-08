@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any, Literal, Optional
 
 from ..connect import legacy as _legacy
+from .shared_json import SharedJson, keyed, merge_list
 
 # Persisted connections.json files may embed `from pyconnect...` snippets and
 # dotted paths from before the connect layer was absorbed — keep them loading.
@@ -51,11 +52,16 @@ class ConnectEntry:
     is_camera: bool = False
 
 
+def _conn_key(item: dict) -> str:
+    """A saved connection's identity: its agent id, else type + name."""
+    c = item.get('config') or {}
+    return c.get('agent_name') or c.get('conn_name') or f"{item.get('type')}:{item.get('name')}"
+
+
 class DeviceManager:
     def __init__(self, data_dir: Path, node_name: str = 'robot_agent'):
-        self._data_dir = Path(data_dir)
-        self._persist_file = self._data_dir / 'connections.json'
         self._node_name = node_name
+        self.set_data_dir(data_dir)
         self._connects: dict[str, ConnectEntry] = {}
         self._ros_node = None
         self._lock = threading.Lock()
@@ -539,31 +545,47 @@ class DeviceManager:
     # Persistence
     # ------------------------------------------------------------------
     def _save(self):
+        """Merge this process's connections into the site's connections.json.
+
+        A site may be used by more than one machine (see presence.py). The file
+        used to be rewritten from memory, dropping a connection another machine
+        added meanwhile. Now it is merged (shared_json.py): connections this
+        process added / edited / removed win, the rest is kept. A connection
+        another machine added is NOT connected here (that takes a restart or a
+        site switch) but is carried along untouched."""
         if self._loading:
             return
         with self._lock:
-            data = [
-                {'type': e.type, 'name': e.name, 'config': e.config}
-                for e in self._connects.values()
-            ]
-        text = json.dumps(data, indent=2)
-        persist = self._persist_file
-        tmp = persist.with_suffix('.json.tmp')
-        bak = persist.with_suffix('.json.bak')
-        try:
-            persist.parent.mkdir(parents=True, exist_ok=True)
-            tmp.write_text(text)
-            if persist.exists():
-                persist.replace(bak)
-            tmp.replace(persist)
-        except Exception as e:
-            print(f'[DeviceManager] Could not save devices: {e}')
+            held = keyed([{'type': e.type, 'name': e.name, 'config': e.config}
+                          for e in self._connects.values()], _conn_key)
+        with self._save_lock:
+            self._known |= set(held)
+            # Start from the file's order; a connection this process never held
+            # (another machine's) is passed through as it was.
+            mine = {}
+            for k, it in keyed(self._store.base, _conn_key).items():
+                if k in held:
+                    mine[k] = held[k]
+                elif k not in self._known:
+                    mine[k] = it
+            for k, it in held.items():
+                mine.setdefault(k, it)
+            try:
+                self._store.save(list(mine.values()))
+            except Exception as e:
+                print(f'[DeviceManager] Could not save devices: {e}')
 
     def set_data_dir(self, new_data_dir: Path):
         """Repoint persistence at a new directory without touching the live
         connections (used by rename, where the files move with the dir)."""
         self._data_dir = Path(new_data_dir)
         self._persist_file = self._data_dir / 'connections.json'
+        base = getattr(getattr(self, '_store', None), 'base', None)
+        self._store = SharedJson(self._persist_file, merge=merge_list(_conn_key))
+        self._store.base = base
+        if not hasattr(self, '_known'):
+            self._known: set = set()         # connection keys this process has held
+            self._save_lock = threading.RLock()
 
     def _teardown_all(self):
         """Disconnect and forget every device, keeping the shared ROS node
@@ -597,23 +619,13 @@ class DeviceManager:
         self.load_saved()
 
     def load_saved(self):
-        persist = self._persist_file
-        if not persist.exists():
+        data = self._store.read()            # falls back to connections.json.bak
+        self._known = set()
+        if not isinstance(data, list):
+            if data is not None:
+                print('[DeviceManager] Could not load saved devices: not a list')
             return
-        try:
-            data = json.loads(persist.read_text())
-        except Exception as e:
-            print(f'[DeviceManager] Could not load saved devices: {e}')
-            # try backup
-            bak = persist.with_suffix('.json.bak')
-            if bak.exists():
-                try:
-                    data = json.loads(bak.read_text())
-                    print(f'[DeviceManager] Recovered from backup')
-                except Exception:
-                    return
-            else:
-                return
+        self._known = set(keyed(data, _conn_key))
         self._loading = True
         try:
             for item in data:

@@ -63,6 +63,7 @@ def _parse_args(argv: list[str]) -> tuple[str, dict]:
         find::apple estimate_grasp=true camera=arm
         find inputs=apple
         find inputs=apple estimate_grasp=true
+        '이동->move::식탁 앞->table@kitchen'   (said->real, split by SkillRegistry.execute)
     """
     if not argv:
         raise SystemExit('usage: <pkg> <skill>[::<inputs>] [key=value ...]')
@@ -110,6 +111,7 @@ def main(robot_pkg: str, argv: list[str] | None = None) -> int:
     if argv and argv[0] in ('-h', '--help'):
         print(f'usage: {robot_pkg} <skill>[::<inputs>] [key=value ...]')
         print(f'       {robot_pkg} --list')
+        print(f"       {robot_pkg} '이동->move::식탁 앞->table@kitchen'   # said->real: quote it (> is a shell redirect)")
         return 0
 
     import atexit

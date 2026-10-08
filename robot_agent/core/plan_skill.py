@@ -58,6 +58,11 @@ def parse_inputs(s: str) -> dict:
     try:
         return eval(f'dict({s})')
     except Exception:
+        if '->' in s:
+            # loc=식탁->table@kitchen: falling back to inputs would run the
+            # whole line as one name. The said->real value needs quotes.
+            raise ValueError(f'cannot read "{s}": put a said->real value in quotes '
+                             f"(loc='식탁->table@kitchen')")
         return {'inputs': s}
 
 
@@ -93,7 +98,9 @@ def plan_params(plan: str) -> dict:
 
 
 def _bare(action: str) -> str:
-    return action.replace('!', '').replace('~', '').strip()
+    """The skill a step calls: no ``!`` / ``~``, no spoken name (``이동->move``)."""
+    action = action.replace('!', '').replace('~', '').strip()
+    return action.rpartition('->')[2].strip()
 
 
 def called_skills(plan: str) -> list:
@@ -143,8 +150,9 @@ def validate_plan(name: str, plan: str, registry) -> str:
 
 def rename_calls(plan: str, old: str, new: str) -> str:
     """*plan* with every step that calls skill *old* calling *new* instead,
-    keeping its ``!`` / ``~`` prefix, arguments, parallel ``&&`` and comments."""
-    pat = re.compile(r'(^|&&)(\s*[!~]*\s*)' + re.escape(old) + r'(\s*::)')
+    keeping its ``!`` / ``~`` prefix, spoken name (``이동->``), arguments,
+    parallel ``&&`` and comments."""
+    pat = re.compile(r'(^|&&)(\s*[!~]*\s*(?:[^:&#\n]*?->\s*)?)' + re.escape(old) + r'(\s*::)')
     out = []
     for line in plan.split('\n'):
         code, sep, comment = line.partition('#')
@@ -182,9 +190,34 @@ def refs_to_params(args: str, ctx: dict):
         if name not in ctx:
             known = ', '.join(k for k in ctx if k not in ('isdone', 'node')) or 'none'
             raise ValueError(f'{{{name}}}: no earlier step returned "{name}" (have: {known})')
-        values[f'__ref_{name}'] = ctx[name]
+        values[f'__ref_{name}'] = _ref(ctx, name)
         return f'$__ref_{name}$'
     return _REF.sub(swap, args), values
+
+
+class _Said(str):
+    """An earlier result that also has a spoken form: ``ask`` returns
+    ``answer='table_top'`` and ``answer_text='식탁 앞'``. Used as a whole
+    parameter value it goes in as ``'식탁 앞->table_top'``, so the next skill
+    says what the user chose; inside longer text it is just the value."""
+
+    def __new__(cls, value, said):
+        obj = super().__new__(cls, value)
+        obj.pair = f'{said}->{value}'
+        return obj
+
+
+def _ref(ctx: dict, name: str):
+    v, said = ctx[name], ctx.get(f'{name}_text')
+    if (isinstance(v, str) and isinstance(said, str) and said.strip() and said != v
+            and '->' not in v and '->' not in said):
+        return _Said(v, said.strip())
+    return v
+
+
+def _whole(v):
+    """*v* as a whole parameter value — with its spoken form, if it has one."""
+    return v.pair if isinstance(v, _Said) else v
 
 
 def parse_step_args(args: str, ctx: dict) -> dict:
@@ -201,10 +234,10 @@ def _substitute(args: str, values: dict) -> dict:
     for a bare argument — so a value with commas or quotes cannot break the
     parsing the way plain text substitution would."""
     if '=' in _PARAM.sub('', args):
-        return parse_inputs(_PARAM.sub(lambda m: repr(values[m.group(1)]), args))
+        return parse_inputs(_PARAM.sub(lambda m: repr(_whole(values[m.group(1)])), args))
     whole = _PARAM.fullmatch(args.strip())
     if whole:                                   # fine_move::$inputs$ keeps the value's type
-        v = values[whole.group(1)]
+        v = _whole(values[whole.group(1)])
         return {} if v in (None, '') else {'inputs': v}
     text = _PARAM.sub(lambda m: str(values[m.group(1)]), args)
     return parse_inputs(text) if '=' not in text else {'inputs': text}
@@ -219,6 +252,8 @@ def _apply_world_effect(action, params, result, node):
         namemap = _robot_namemap()
         fn = getattr(namemap, 'apply_skill_effect', None) if namemap else None
         if callable(fn):
+            from ..spoken import real_step
+            action, params = real_step(action, params)
             fn(current().world, action, params, result, node)
     except Exception:
         pass

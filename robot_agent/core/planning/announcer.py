@@ -76,8 +76,8 @@ PHRASES: dict[str, dict[str, str]] = {
     },
     'ko': {
         'task_start':   '작업을 시작합니다',
-        'step_start':   '{object} {verb}를 진행합니다',
-        'step_success': '{object} {verb}를 완료했습니다',
+        'step_start':   '{object} {verb}{eul} 진행합니다',
+        'step_success': '{object} {verb}{eul} 완료했습니다',
         'step_fail':    '{object} {verb}에 실패했습니다. {reason}',
         'replan':       '계획을 다시 세웁니다',
         'done_success': '작업을 완료했습니다',
@@ -117,6 +117,15 @@ _STEP_KINDS = ('step_start', 'step_success', 'step_fail')
 # Milestones never spoken, in any language: "plan ready" only delays the robot
 # getting on with it (and talked over HRI skills right as the mic opened).
 SILENT_KINDS = {'plan_ready'}
+
+
+def _eul(word) -> str:
+    """Korean object particle for *word*: 을 after a final consonant (이동을),
+    를 after a vowel (찾기를). A verb written in the plan (``이동->move``) can
+    end either way, so the template cannot hard-code one."""
+    w = str(word or '').rstrip()
+    c = ord(w[-1]) if w else 0
+    return '을' if 0xAC00 <= c <= 0xD7A3 and (c - 0xAC00) % 28 else '를'
 
 
 class _BlankDict(dict):
@@ -168,6 +177,7 @@ class Announcer:
             return ''
         tmpl = self._template(kind)
         ctx = self._resolve_verb(ctx)
+        ctx.setdefault('eul', _eul(ctx.get('verb', '')))
         try:
             return tmpl.format_map(_BlankDict(ctx)).strip()
         except Exception:

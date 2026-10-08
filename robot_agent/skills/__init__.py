@@ -38,6 +38,46 @@ def _clear_emitter() -> None:
     _local.emit = None
 
 
+# ── spoken names (``said->real`` in a plan, see robot_agent.spoken) ──────────
+_ANY = object()
+
+
+def spoken(key: str, value=_ANY, default=None):
+    """What the plan said for parameter *key* of the running skill
+    (``'skill'`` for the skill's own name), or *default*.
+
+    ``move::식탁 앞->table_top`` runs ``move`` with ``inputs='table_top'`` and
+    ``spoken('inputs')`` gives ``'식탁 앞'``. Pass the value the skill actually
+    holds as *value*: the spoken name is returned only while it still belongs
+    to that value, so a skill calling another skill directly (``move`` →
+    ``lift(inputs='home')``) does not read the outer step's name.
+    """
+    pair = (getattr(_local, 'spoken', None) or {}).get(key)
+    if pair is None:
+        return default
+    said, real = pair
+    if value is not _ANY and value != real:
+        return default
+    return said
+
+
+class _spoken_scope:
+    """Install ``{key: (said, real)}`` for the duration of one skill call,
+    restoring the caller's afterwards (plan skills nest)."""
+
+    def __init__(self, said: dict):
+        self.said = said
+
+    def __enter__(self):
+        self.prev = getattr(_local, 'spoken', None)
+        _local.spoken = self.said
+        return self
+
+    def __exit__(self, *exc):
+        _local.spoken = self.prev
+        return False
+
+
 def has_emitter() -> bool:
     """True while an agent run is attached to this thread.
 
@@ -116,6 +156,14 @@ def skill_entry(fn, pkg: str):
             bootstrap(pkg)
             node = current().dm._ros_node
 
+        # move(inputs='식탁 앞->table_top') from user code: split like
+        # SkillRegistry.execute does. Values that came through execute are
+        # already split, so the spoken names it installed are kept.
+        from ..spoken import KEEP_PAIRS, has_arrow, split_params
+        if any(has_arrow(v) for k, v in kwargs.items() if k not in KEEP_PAIRS):
+            kwargs, said = split_params(kwargs)
+            with _spoken_scope({**(getattr(_local, 'spoken', None) or {}), **said}):
+                return fn(node=node, **kwargs)
         return fn(node=node, **kwargs)
 
     wrapper._skill_entry_wrapped = True

@@ -125,7 +125,13 @@ def set_api_key(req: ApiKeyWithValueReq):
     os.environ[env_var] = req.key
     env_file = _env_file()
     env_file.parent.mkdir(parents=True, exist_ok=True)
-    lines: list[str] = env_file.read_text().splitlines() if env_file.exists() else []
+    # The site's .env may be shared with another machine: read it fresh (an
+    # sshfs read can come back cut short) and replace it in one step.
+    from ..core.shared_json import read_fresh
+    try:
+        lines: list[str] = read_fresh(env_file).splitlines()
+    except FileNotFoundError:
+        lines = []
     updated = False
     for i, line in enumerate(lines):
         if line.startswith(f'{env_var}='):
@@ -134,7 +140,9 @@ def set_api_key(req: ApiKeyWithValueReq):
             break
     if not updated:
         lines.append(f'{env_var}={req.key}')
-    env_file.write_text('\n'.join(lines) + '\n')
+    tmp = env_file.with_name(f'.env.tmp.{os.getpid()}')
+    tmp.write_text('\n'.join(lines) + '\n')
+    os.replace(tmp, env_file)
     return {'ok': True}
 
 

@@ -28,7 +28,7 @@ import traceback
 from pathlib import Path
 from typing import Iterator, Optional
 
-from robot_agent.state import current
+from robot_agent.state import current, host_id
 from .announcer import Announcer
 from .base import WorldState
 from .mapper import ActionMapper, Unmappable
@@ -212,8 +212,9 @@ class ClosedLoop:
             "max_replans": int(o.get("max_replans", env("ROBOT_AGENT_MAX_REPLANS", "3"))),
             "host": self._llm_cfg.get("url") or self._llm_cfg.get("host"),
             "model": self._llm_cfg.get("model"),
-            "log_dir": Path(o.get("log_dir") or (common / "task_runs")),
-            "live_path": str(o.get("live_path") or (common / "grace_memory.jsonl")),
+            # Per machine (common/ is shared by every robot using this folder).
+            "log_dir": Path(o.get("log_dir") or (common / "task_runs" / host_id())),
+            "live_path": str(o.get("live_path") or (common / f"grace_memory.{host_id()}.jsonl")),
         }
 
     def _make_planner(self):
@@ -240,6 +241,18 @@ class ClosedLoop:
             return nm.to_loc(obj) if action == "MoveTo" else nm.to_obj(obj)
         except Exception:
             return obj
+
+    def _say(self, step: dict, action: str, obj: str) -> dict:
+        """Announcer kwargs for a step: the spoken names the plan gave
+        (``이동->move::식탁 앞->table_top`` → step["say"]) win over the
+        name map."""
+        from ...spoken import said_of
+        say = step.get("say") or {}
+        out = {"action": action,
+               "object": say.get("object") or self._arg_name(action, said_of(obj))}
+        if say.get("action"):
+            out["verb"] = say["action"]
+        return out
 
     def _build_params(self, action: str, obj: str, world, mapped_params: dict) -> dict:
         nm = self._namemap
@@ -407,8 +420,7 @@ class ClosedLoop:
                                      verifies=[VerifyResult("isdone", False, reason)])
                     run.steps.append(rec)
                     yield ev("step_done", index=i, status="failed",
-                             say=announcer.announce("step_fail", action=action,
-                                                    object=self._arg_name(action, obj), reason=reason),
+                             say=announcer.announce("step_fail", **self._say(step, action, obj), reason=reason),
                              reason=reason, world=world.to_dict())
                     ok_to_replan, steps, i, replans = self._maybe_replan(
                         planner, task, completed, step, reason, obs, visible,
@@ -438,8 +450,7 @@ class ClosedLoop:
                                  params=params, status="running", started_at=started)
 
                 yield ev("step_start", index=i, action=action, object=obj, skill=skill_name,
-                         say=announcer.announce("step_start", action=action,
-                                                object=self._arg_name(action, obj)))
+                         say=announcer.announce("step_start", **self._say(step, action, obj)))
 
                 # ── Execute ──────────────────────────────────────────────
                 try:
@@ -489,16 +500,14 @@ class ClosedLoop:
                     completed.append(step)
                     run.steps.append(rec)
                     yield ev("step_done", index=i, status="success", result=rec.result,
-                             say=announcer.announce("step_success", action=action,
-                                                    object=self._arg_name(action, obj)),
+                             say=announcer.announce("step_success", **self._say(step, action, obj)),
                              world=world.to_dict())
                     i += 1
                 else:
                     rec.status = "failed"
                     run.steps.append(rec)
                     yield ev("step_done", index=i, status="failed", result=rec.result, reason=reason,
-                             say=announcer.announce("step_fail", action=action,
-                                                    object=self._arg_name(action, obj), reason=reason),
+                             say=announcer.announce("step_fail", **self._say(step, action, obj), reason=reason),
                              world=world.to_dict())
                     # fresh observation before replanning
                     try:

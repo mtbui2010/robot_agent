@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import importlib
 from typing import Any
+from robot_agent.spoken import SpokenError, split_skill, split_value
 
 
 class LlmDirectBackend:
@@ -79,11 +80,27 @@ class LlmDirectBackend:
             parallel = len(items) > 1
             for el in items:
                 action, inputs = (p.strip() for p in el.split("::", 1))
+                # 이동->move::식탁 앞->table_top: the mapper, verifier and world
+                # state work with the real names; the spoken ones go in "say"
+                # for the narration. A k=v argument list is left whole (the
+                # skill registry splits its values).
+                say: dict[str, str] = {}
+                try:
+                    said, action = split_skill(action)
+                    if said:
+                        say["action"] = said
+                    if "=" not in inputs and "->" in inputs:
+                        said, inputs = split_value(inputs)
+                        say["object"] = said.split(">>")[0]
+                except SpokenError:
+                    pass                    # left as written; the skill call reports it
                 step: dict[str, Any] = {
                     "action": action,
                     "object": inputs,
                     "reason": el.strip(),
                 }
+                if say:
+                    step["say"] = say
                 if parallel:
                     step["_parallel_group"] = group_idx
                 steps.append(step)

@@ -18,9 +18,12 @@ Config layout (see runtime._resolve_layout)
 -------------------------------------------
 A robot's configs are split into:
 
-  * ``common_dir``   — shared across all deployment sites: skills.json,
-    buttons.json, the ``active_location`` marker. Owned by SkillRegistry +
-    ButtonManager.
+  * ``common_dir``   — shared across all deployment sites AND all machines
+    using this configs folder: skills.json, buttons.json, guides.json (saved
+    as merges, see core/shared_json.py), plus per-machine files named after
+    :func:`host_id`: ``active_location.<host>``, ``world_state.<host>.json``,
+    ``task_runs/<host>/``, ``hosts/<host>.json`` (presence.py). Owned by
+    SkillRegistry + ButtonManager + GuideManager.
   * ``locations_dir/<location>`` — per-site config: connections.json (device
     endpoints), skill_configs_override.json (global config), .env (API keys).
     Owned by DeviceManager + ConfigManager. The active site can be switched at
@@ -75,21 +78,26 @@ def _safe_location_name(name: str) -> str:
 # `active_location.<host>`; the shared file is only a fallback for a machine
 # that never switched. ROBOT_LOCATION in the environment overrides both.
 
-def _host_id() -> str:
-    import os, re, socket
+def host_id() -> str:
+    """This machine's name in per-machine file names: $ROBOT_AGENT_HOST, else
+    the hostname. Two machines with the same hostname (cloned Jetson images)
+    must set ROBOT_AGENT_HOST — the presence check below warns when they don't."""
+    import socket
     host = os.environ.get('ROBOT_AGENT_HOST') or socket.gethostname() or 'host'
     return re.sub(r'[^A-Za-z0-9_.-]', '_', host)
 
 
+_host_id = host_id
+
+
 def active_location_file(common_dir: Path) -> Path:
     """Where this machine records its active location."""
-    return Path(common_dir) / f'active_location.{_host_id()}'
+    return Path(common_dir) / f'active_location.{host_id()}'
 
 
 def read_active_location(common_dir: Path, locations_dir: Path) -> str | None:
     """This machine's active location: $ROBOT_LOCATION, else its own marker,
     else the shared `active_location` — the first naming an existing site."""
-    import os
     cands = [os.environ.get('ROBOT_LOCATION', '')]
     for f in (active_location_file(common_dir), Path(common_dir) / 'active_location'):
         try:
@@ -111,7 +119,7 @@ class AgentState:
         self.common_dir = Path(common_dir)
         self.locations_dir = Path(locations_dir)
         self.location = location
-        self.log_dir = Path(log_dir) if log_dir is not None else self.common_dir / 'logs'
+        self.log_dir = Path(log_dir) if log_dir is not None else self.common_dir / 'logs' / host_id()
         self.node_name = node_name
 
         self.common_dir.mkdir(parents=True, exist_ok=True)
@@ -132,6 +140,9 @@ class AgentState:
         # single instance here is sufficient.
         self.world = WorldState()
         self.load_world()   # restore persisted belief (arrived re-reconciled later)
+        # Heartbeat record of this machine (common/hosts/<host>.json), started
+        # by the server's lifespan — see presence.py.
+        self.presence = None
         # Populated during create_app lifespan. Each item:
         #   {'phase': str, 'msg': str, 'traceback': str, 'timestamp': float}
         # Exposed via GET /diagnostics/boot.
@@ -142,7 +153,9 @@ class AgentState:
     # ------------------------------------------------------------------
     @property
     def _world_file(self) -> Path:
-        return self.common_dir / 'world_state.json'
+        # Per machine: the belief is about THIS robot (what it holds, where it
+        # is). One shared world_state.json let a second robot inherit it.
+        return self.common_dir / f'world_state.{host_id()}.json'
 
     def save_world(self) -> None:
         """Persist the symbolic world belief (best-effort). ``arrived`` is saved
@@ -151,7 +164,10 @@ class AgentState:
         base has moved (see :meth:`WorldState.found_pose_is_stale`)."""
         import json
         try:
-            self._world_file.write_text(json.dumps(self.world.to_dict()))
+            f = self._world_file
+            tmp = f.with_name(f'.{f.name}.tmp.{os.getpid()}')
+            tmp.write_text(json.dumps(self.world.to_dict()))
+            os.replace(tmp, f)
         except Exception as e:
             print(f'[AgentState] could not persist world state: {e}')
 
@@ -226,8 +242,15 @@ class AgentState:
                     shutil.copy2(s, target / fn)
         return name
 
+    def _guard_in_use(self, name: str, what: str) -> None:
+        """Refuse to rename / delete a site another live machine is on."""
+        users = self.presence.users_of(name) if self.presence is not None else []
+        if users:
+            raise ValueError(f'cannot {what} location {name!r}: in use on {", ".join(users)}')
+
     def rename_location(self, old: str, new: str) -> str:
         new = _safe_location_name(new)
+        self._guard_in_use(old, 'rename')
         src = self.locations_dir / old
         dst = self.locations_dir / new
         if not src.is_dir():
@@ -242,6 +265,8 @@ class AgentState:
             self.dm.set_data_dir(dst)
             self.cm.set_data_dir(dst)
             self._write_active_location(new)
+            if self.presence is not None:
+                self.presence.beat()
         return new
 
     def delete_location(self, name: str) -> None:
@@ -249,6 +274,7 @@ class AgentState:
             raise ValueError('cannot delete the active location; switch first')
         if name == DEFAULT_LOCATION:
             raise ValueError('cannot delete the default location')
+        self._guard_in_use(name, 'delete')
         target = self.locations_dir / name
         if not target.is_dir():
             raise ValueError(f'location {name!r} does not exist')
@@ -268,6 +294,8 @@ class AgentState:
         self.cm.reload_from(target)
         self._reload_env(target)
         self._write_active_location(name)
+        if self.presence is not None:
+            self.presence.beat()            # the others see the new site at once
         return name
 
     def _reload_env(self, location_dir: Path) -> None:

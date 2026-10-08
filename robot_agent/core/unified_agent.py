@@ -64,6 +64,8 @@ def _emit_world(emit, node, skill=None, params=None, result=None) -> None:
             fn = getattr(namemap, 'apply_skill_effect', None) if namemap else None
             if callable(fn):
                 try:
+                    from ..spoken import real_step
+                    skill, params = real_step(skill, params)    # 이동->move::식탁->table → move, table
                     fn(world, skill, params, result, node)
                 except Exception:
                     pass
@@ -441,15 +443,24 @@ class UnifiedAgent:
         announcer = Announcer(lang=lang, speak_backend=False)
 
         def _verb_obj(task_group):
-            """(skill, first param) of a step — announcer's {verb} / {object}."""
+            """Announcer kwargs of a step: {action} (the skill), {object} (its
+            first param) and {verb} when the plan says how to call the skill —
+            the spoken sides of ``이동->move::식탁 앞->table_top``."""
+            from ..spoken import SpokenError, said_of, split_skill
             try:
                 skill, inputs = task_group[0][0], task_group[0][1]
-                obj = str(inputs).split(',')[0].split('=')[-1].strip()
+                try:
+                    said, skill = split_skill(skill)
+                except SpokenError:
+                    said = None
+                skill = skill.replace('!', '').replace('~', '').strip()
+                obj = str(inputs).split(',')[0].split('=')[-1].strip().strip('\'"')
+                obj = said_of(obj).strip()
                 if obj in ('None', 'none', ''):
                     obj = ''
-                return skill, obj
+                return {'action': skill, 'object': obj, **({'verb': said} if said else {})}
             except Exception:
-                return '', ''
+                return {'action': '', 'object': ''}
 
         def emit(event: dict):
             if not log_all and not failed['v'] and _is_failure_event(event):
@@ -465,6 +476,9 @@ class UnifiedAgent:
                 if _ds_dir:
                     emit({'event': 'log_dir', 'log_dir': _ds_dir})
                 tasks = self._parse_plan(plan)
+                import logging as _lg      # [spoken-debug] temporary
+                _lg.getLogger('robot_agent.spoken_debug').warning(
+                    '[spoken-debug] run_direct plan=%r tasks=%r', plan, tasks)
                 if not tasks:
                     emit({'event': 'error', 'msg': 'No valid commands found'})
                     return
@@ -476,10 +490,10 @@ class UnifiedAgent:
                 _emit_world(emit, node)   # initial Robot State snapshot
 
                 for i, task_group in enumerate(tasks):
-                    _act, _obj = _verb_obj(task_group)
+                    _vo = _verb_obj(task_group)
                     emit({'event': 'step_start', 'step': i + 1,
                           'total': len(tasks), 'task': str(task_group),
-                          'say': announcer.announce('step_start', action=_act, object=_obj)})
+                          'say': announcer.announce('step_start', **_vo)})
 
                     if not ctx.get('isdone', True):
                         emit({'event': 'stopped', 'msg': 'Previous step failed'})
@@ -502,7 +516,7 @@ class UnifiedAgent:
                     emit({'event': 'step_done', 'step': i + 1, 'result': _serialize_result(ret),
                           'say': announcer.announce(
                               'step_success' if _ok else 'step_fail',
-                              action=_act, object=_obj, reason=_reason)})
+                              reason=_reason, **_vo)})
                     _sk = task_group[0][0] if task_group and task_group[0] else None
                     _pa = task_group[0][1] if task_group and len(task_group[0]) > 1 else None
                     _emit_world(emit, node, skill=_sk, params=_pa, result=ret)   # refresh Robot State
@@ -544,6 +558,7 @@ class UnifiedAgent:
         action = action.replace('!', '').replace('~', '')
 
         result = self.skill_registry.execute(action, params, node=node, log_fn=log_fn)
+        action = action.rpartition('->')[2].strip()      # 이동->move: the device agent is 'move'
         if 'not registered' not in result.get('msg', ''):
             if skip_fail:
                 result['isdone'] = True
@@ -562,6 +577,8 @@ class UnifiedAgent:
             if conn is not None and conn.type == 'ros_topic':
                 ret = agent.get()
             else:
+                from ..spoken import split_params
+                params, _ = split_params(params)         # the agent gets the real values
                 ret = agent.send(params if params else {})
             ret  = ret if isinstance(ret, dict) else {'isdone': True, 'data': ret}
             if skip_fail:

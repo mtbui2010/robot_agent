@@ -54,7 +54,7 @@ def _resolve_layout(robot_pkg: str,
     When neither is given, auto-detect: use ``<pkg>/configs`` if it already has
     a ``locations``/``common`` subdir, otherwise the legacy ``<pkg>/data``.
     """
-    from .state import DEFAULT_LOCATION
+    from .state import DEFAULT_LOCATION, host_id
 
     if config_dir is None and data_dir is None:
         pkg_dir = Path(importlib.import_module(robot_pkg).__file__).parent
@@ -68,7 +68,9 @@ def _resolve_layout(robot_pkg: str,
         config_dir = Path(config_dir).resolve()
         common_dir = config_dir / 'common'
         locations_dir = config_dir / 'locations'
-        resolved_log = Path(log_dir).resolve() if log_dir else config_dir.parent / 'data' / 'logs'
+        # Logs per machine (data/logs/<host>/): the data folder is shared too, and
+        # two robots appending to one kcare_robot.log / ros session dir mixed them.
+        resolved_log = Path(log_dir).resolve() if log_dir else config_dir.parent / 'data' / 'logs' / host_id()
         if location is None:
             # Per machine: $ROBOT_LOCATION, active_location.<host>, then the
             # shared active_location (see state.read_active_location).
@@ -78,7 +80,7 @@ def _resolve_layout(robot_pkg: str,
 
     # Legacy single-dir layout.
     data_dir = Path(data_dir).resolve()
-    resolved_log = Path(log_dir).resolve() if log_dir else data_dir / 'logs'
+    resolved_log = Path(log_dir).resolve() if log_dir else data_dir / 'logs' / host_id()
     return data_dir, data_dir, '', resolved_log
 
 
@@ -103,8 +105,8 @@ def bootstrap(robot_pkg: str,
             auto-detected from the package when neither is given.
         location: active site under ``locations/``. Defaults to the persisted
             ``active_location`` (else ``default``). Ignored in legacy layout.
-        log_dir: where rotating logs are written. Defaults to ``<data>/logs``
-            (legacy) or ``configs/../data/logs`` (split).
+        log_dir: where rotating logs are written. Defaults to ``<data>/logs/<host>``
+            (legacy) or ``configs/../data/logs/<host>`` (split) — per machine.
         load_devices: if True, blocks until all devices in connections.json
             have been (re)connected. CLI and Python-API normally want this;
             the FastAPI app loads devices in a background thread for snappy

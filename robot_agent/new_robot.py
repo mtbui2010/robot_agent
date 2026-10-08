@@ -169,11 +169,16 @@ def _reset_locations(root: Path, pkg: str, blank_configs: bool,
     if common.is_dir():
         if 'active_location' in stale:          # the per-machine markers too
             stale += [f.name for f in common.glob('active_location.*')]
+        # Per-machine beliefs / presence records / merge side files of the source.
+        stale += [f.name for f in common.glob('world_state.*.json')]
+        stale += [f.name for f in common.glob('.*.lock')] + [f.name for f in common.glob('.*.tmp.*')]
         for name in stale:
             f = common / name
             if f.exists():
                 f.unlink()
                 done.append(f'removed configs/common/{name} (re-seeds on first run)')
+        if (common / 'hosts').is_dir():
+            shutil.rmtree(common / 'hosts')
 
     tasks = cfg / 'tasks.py'
     if blank_configs and tasks.exists():

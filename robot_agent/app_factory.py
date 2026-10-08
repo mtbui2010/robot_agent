@@ -79,6 +79,7 @@ def create_app(robot_pkg: str,
     from .api.diagnostics import router as diagnostics_router
     from .api.locations import router as locations_router
     from .api.guides import router as guides_router
+    from .api.map import router as map_router
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -89,8 +90,18 @@ def create_app(robot_pkg: str,
             logger.warning(
                 f'{len(agent_state.boot_errors)} boot error(s) -- see GET /diagnostics/boot'
             )
+        # Heartbeat in configs/common/hosts/<host>.json: lets the other machines
+        # sharing this configs folder see which site this one is on.
+        try:
+            from .presence import Presence
+            agent_state.presence = Presence(agent_state)
+            agent_state.presence.start()
+        except Exception as e:
+            logger.warning(f'presence: {e}')
         yield
         logger.info('lifespan: shutdown')
+        if agent_state.presence is not None:
+            agent_state.presence.stop()
         if agent_state.dm._ros_node:
             agent_state.dm._ros_node.stop()
 
@@ -118,6 +129,7 @@ def create_app(robot_pkg: str,
     app.include_router(diagnostics_router, prefix='')
     app.include_router(locations_router,   prefix='')
     app.include_router(guides_router,      prefix='')
+    app.include_router(map_router,         prefix='')
 
     @app.get('/')
     def root():

@@ -10,8 +10,15 @@ The active site can be switched at runtime — DeviceManager tears down the
 current connections (keeping the shared ROS node) and reconnects from the new
 site's files; ConfigManager swaps its overrides. No restart needed.
 
+Several machines may share this configs folder (/remote_dir): each one has its
+own active site (``active_location.<host>``), and the list says which site the
+other live machines are on (presence.py) — two machines on one site share its
+connections and Global Configs. Renaming / deleting a site another live
+machine is on is refused.
+
 Endpoints
-    GET    /config/locations              {locations: [...], active: name}
+    GET    /config/locations              {locations: [...], active: name, host,
+                                           others: [{host, location, age_sec, clash?}]}
     POST   /config/locations              {name, copy_from?}      → create
     POST   /config/locations/{name}/activate                      → hot-switch
     PUT    /config/locations/{name}       {new_name}              → rename
@@ -46,7 +53,10 @@ class RenameLocationReq(BaseModel):
 
 
 def _payload(state) -> dict:
-    return {'locations': state.list_locations(), 'active': state.location}
+    from ..state import host_id
+    others = state.presence.others() if state.presence is not None else []
+    return {'locations': state.list_locations(), 'active': state.location,
+            'host': host_id(), 'others': others}
 
 
 @router.get('/config/locations')

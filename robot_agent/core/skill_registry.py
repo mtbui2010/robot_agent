@@ -1,9 +1,10 @@
-import importlib, json, logging, requests, traceback
+import importlib, logging, requests, threading, traceback
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from typing import Any, Literal
 
 from ..logging_config import debug_response_enabled
+from .shared_json import SharedJson, merge_list
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,12 @@ class SkillRegistry:
         self._data_dir = Path(data_dir)
         self._persist_file = self._data_dir / 'skills.json'
         self._skills: dict[str, SkillDef] = {}
+        # skills.json is shared by every machine using this configs folder: a
+        # save merges this process's changes into the file (shared_json.py),
+        # and reads pick up the other machines' saves (refresh). Hold `lock`
+        # around a multi-step edit of `_skills` (api/skills.py).
+        self._store = SharedJson(self._persist_file, merge=merge_list(lambda it: it.get('name')))
+        self.lock = threading.RLock()
 
     # ------------------------------------------------------------------
     # Registration
@@ -83,6 +90,7 @@ class SkillRegistry:
     def resolve(self, name: str):
         """Canonical skill name for *name* — the name itself, an alias, or
         either ignoring case / spacing / Unicode form — or None."""
+        self.refresh()
         if name in self._skills:
             return name
         for s in self._skills.values():
@@ -128,23 +136,27 @@ class SkillRegistry:
         return ''
 
     def plan_skills(self) -> list:
+        self.refresh()
         return [s for s in self._skills.values() if s.type == 'plan']
 
     def remove(self, name: str):
-        self._skills.pop(name, None)
-        self._save()
+        with self.lock:
+            self._skills.pop(name, None)
+            self._save()
 
     def update(self, name: str, **kwargs) -> bool:
-        skill = self._skills.get(name)
-        if skill is None:
-            return False
-        for k, v in kwargs.items():
-            if hasattr(skill, k) and v is not None:
-                setattr(skill, k, v)
-        self._save()
-        return True
+        with self.lock:
+            skill = self._skills.get(name)
+            if skill is None:
+                return False
+            for k, v in kwargs.items():
+                if hasattr(skill, k) and v is not None:
+                    setattr(skill, k, v)
+            self._save()
+            return True
 
     def all(self) -> list[dict]:
+        self.refresh()
         return [
             {
                 'name': s.name,
@@ -167,6 +179,11 @@ class SkillRegistry:
     # ------------------------------------------------------------------
     def execute(self, name: str, params: dict, node: Any = None,
                 log_fn=None) -> dict:
+        from ..spoken import SpokenError, split_params, split_skill
+        try:
+            said_name, name = split_skill(name)     # '이동->move' runs move
+        except SpokenError as e:
+            return {'isdone': False, 'msg': str(e)}
         skill = self.get(name)                      # a name or an alias
         if skill is None:
             return {'isdone': False, 'msg': f'Skill "{name}" not registered'}
@@ -179,6 +196,23 @@ class SkillRegistry:
                 logger.error(f"Plan skill '{name}' failed: {e}\n{traceback.format_exc()}")
                 return {'isdone': False, 'msg': str(e)}
 
+        # 'said->real' values: the skill gets the real side, and reads the said
+        # side through robot_agent.skills.spoken(). Plan skills (above) get them
+        # unsplit, so the step inside still has both names.
+        from ..skills import _spoken_scope
+        try:
+            params, said = split_params(params)
+        except SpokenError as e:
+            return {'isdone': False, 'msg': f'{name}: {e}'}
+        if said_name:
+            said['skill'] = (said_name, skill.name)
+        logger.warning('[spoken-debug] execute %s (%s) params=%s said=%s', skill.name, skill.type,  # temporary
+                       {k: (v if isinstance(v, (str, int, float, bool)) and len(str(v)) < 80 else type(v).__name__)
+                        for k, v in params.items() if k != 'node'}, said)
+        with _spoken_scope(said):
+            return self._run_code(skill, name, params, node, log_fn)
+
+    def _run_code(self, skill, name: str, params: dict, node: Any, log_fn) -> dict:
         if skill.type == 'internal':
             from ..skills import _set_emitter, _clear_emitter
             try:
@@ -239,28 +273,56 @@ class SkillRegistry:
     # ------------------------------------------------------------------
     # Persistence
     # ------------------------------------------------------------------
+    @staticmethod
+    def _defs(data) -> dict:
+        known = set(SkillDef.__dataclass_fields__)
+        return {item['name']: SkillDef(**{k: v for k, v in item.items() if k in known})
+                for item in data or [] if isinstance(item, dict) and item.get('name')}
+
     def _save(self):
-        try:
-            data = [asdict(s) for s in self._skills.values()]
-            self._persist_file.parent.mkdir(parents=True, exist_ok=True)
-            self._persist_file.write_text(json.dumps(data, indent=2))
-        except Exception as e:
-            print(f'[SkillRegistry] Could not save skills: {e}')
+        """Merge this process's skills into skills.json and adopt the result
+        (it also carries what other machines saved meanwhile)."""
+        with self.lock:
+            try:
+                merged = self._store.save([asdict(s) for s in self._skills.values()])
+                self._skills = self._defs(merged)
+            except Exception as e:
+                print(f'[SkillRegistry] Could not save skills: {e}')
+
+    def refresh(self, force: bool = False) -> bool:
+        """Reload skills.json when another machine saved it since (at most one
+        stat a second). Skipped while this process has unsaved edits — its
+        next save merges them. True when reloaded."""
+        if not self._store.changed(force):
+            return False
+        with self.lock:
+            if [asdict(s) for s in self._skills.values()] != [asdict(s) for s in self._defs(self._store.base).values()]:
+                return False
+            data = self._store.read()
+            if not isinstance(data, list):
+                return False
+            self._skills = self._defs(data)
+            logger.info(f'skills.json changed on disk: reloaded {len(self._skills)} skills')
+            return True
+
+    def revert(self) -> None:
+        """Drop unsaved in-memory edits: back to skills.json as it is now."""
+        with self.lock:
+            data = self._store.read()
+            if isinstance(data, list):
+                self._skills = self._defs(data)
 
     def load_saved(self) -> bool:
         """Load from skills.json. Returns True if file existed and was loaded."""
-        if not self._persist_file.exists():
-            return False
-        try:
-            data = json.loads(self._persist_file.read_text())
-        except Exception as e:
-            print(f'[SkillRegistry] Could not load skills.json: {e}')
-            return False
-        for item in data:
-            known = {f for f in SkillDef.__dataclass_fields__}
-            self._skills[item['name']] = SkillDef(**{k: v for k, v in item.items() if k in known})
-        print(f'[SkillRegistry] Loaded {len(data)} skills from skills.json')
-        return True
+        with self.lock:
+            data = self._store.read()
+            if not isinstance(data, list):
+                if data is not None:
+                    print('[SkillRegistry] Could not load skills.json: not a list')
+                return False
+            self._skills.update(self._defs(data))
+            print(f'[SkillRegistry] Loaded {len(data)} skills from skills.json')
+            return True
 
     # ------------------------------------------------------------------
     # Bulk load from config dict: {skill_name: (module_path, func_name)}

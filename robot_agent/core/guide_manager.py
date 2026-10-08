@@ -22,13 +22,26 @@ This module is robot-agnostic: the robot package is only referenced by name
 """
 
 import importlib
-import json
+import threading
 from pathlib import Path
+
+from .shared_json import SharedJson, merge_map
 
 # Guide modules to seed from on first run (best-effort; missing ones are skipped).
 # The first one that imports cleanly becomes the initial active version — keep
 # ``guide_struct`` first so the seeded default matches the legacy first-choice.
 _SEED_MODULES = ['guide_struct', 'guide', 'guide_short', 'guide_struct_kr']
+
+
+def _merge_guides(base, mine, theirs) -> dict:
+    """guides.json is shared by every machine using this configs folder: merge
+    the versions one by one, and `active` if this process changed it."""
+    base, mine, theirs = base or {}, mine or {}, theirs or {}
+    versions = merge_map(base.get('versions'), mine.get('versions'), theirs.get('versions'))
+    active = mine.get('active') if mine.get('active') != base.get('active') else theirs.get('active')
+    if active not in versions:
+        active = next(iter(versions), None)
+    return {'active': active, 'versions': versions}
 
 
 class GuideManager:
@@ -38,26 +51,48 @@ class GuideManager:
         self._file = self.data_dir / 'guides.json'
         # versions: {name: {'guide': str, 'format': dict | None}}
         self._data: dict = {'active': None, 'versions': {}}
+        # Saves merge into the shared file; reads pick up other machines' saves.
+        self._store = SharedJson(self._file, merge=_merge_guides, indent=1, ensure_ascii=False)
+        self._lock = threading.RLock()
         self._load()
 
     # ── persistence ──────────────────────────────────────────────────────
+    @staticmethod
+    def _valid(d) -> bool:
+        return isinstance(d, dict) and isinstance(d.get('versions'), dict)
+
     def _load(self) -> None:
-        if self._file.exists():
-            try:
-                d = json.loads(self._file.read_text())
-                if isinstance(d, dict) and isinstance(d.get('versions'), dict):
-                    self._data = {'active': d.get('active'), 'versions': d['versions']}
-                    return
-            except Exception as e:
-                print(f'[GuideManager] could not read guides.json ({e}); reseeding')
+        d = self._store.read()
+        if self._valid(d):
+            self._data = {'active': d.get('active'), 'versions': d['versions']}
+            return
+        if d is not None:
+            print('[GuideManager] could not read guides.json; reseeding')
         self._seed()
 
     def _save(self) -> None:
-        try:
-            self.data_dir.mkdir(parents=True, exist_ok=True)
-            self._file.write_text(json.dumps(self._data, ensure_ascii=False, indent=1))
-        except Exception as e:
-            print(f'[GuideManager] could not persist guides: {e}')
+        with self._lock:
+            try:
+                merged = self._store.save(self._data)
+                if self._valid(merged):
+                    self._data = {'active': merged.get('active'), 'versions': merged['versions']}
+            except Exception as e:
+                print(f'[GuideManager] could not persist guides: {e}')
+
+    def refresh(self, force: bool = False) -> bool:
+        """Reload guides.json when another machine saved it since (skipped
+        while this process has unsaved edits). True when reloaded."""
+        if not self._store.changed(force):
+            return False
+        with self._lock:
+            base = self._store.base or {}
+            if self._data != {'active': base.get('active'), 'versions': base.get('versions')}:
+                return False
+            d = self._store.read()
+            if not self._valid(d):
+                return False
+            self._data = {'active': d.get('active'), 'versions': d['versions']}
+            return True
 
     def _seed(self) -> None:
         versions: dict = {}
@@ -81,12 +116,14 @@ class GuideManager:
 
     # ── CRUD (used by api/guides.py) ─────────────────────────────────────
     def list(self) -> dict:
+        self.refresh()
         return {
             'active': self._data.get('active'),
             'versions': [{'name': n, **v} for n, v in self._data['versions'].items()],
         }
 
     def get(self, name: str):
+        self.refresh()
         v = self._data['versions'].get(name)
         return {'name': name, **v} if v else None
 
@@ -94,16 +131,23 @@ class GuideManager:
         name = (name or '').strip()
         if not name:
             raise ValueError('guide version name is required')
-        self._data['versions'][name] = {'guide': guide or '', 'format': format or None}
-        if self._data.get('active') is None:
-            self._data['active'] = name
-        self._save()
+        with self._lock:
+            self.refresh(force=True)
+            self._data['versions'][name] = {'guide': guide or '', 'format': format or None}
+            if self._data.get('active') is None:
+                self._data['active'] = name
+            self._save()
         return self.get(name)
 
     def rename(self, old: str, new: str) -> dict:
         new = (new or '').strip()
         if not new:
             raise ValueError('new name is required')
+        with self._lock:
+            self.refresh(force=True)
+            return self._rename(old, new)
+
+    def _rename(self, old: str, new: str) -> dict:
         if old not in self._data['versions']:
             raise ValueError(f'unknown guide version: {old}')
         if new != old and new in self._data['versions']:
@@ -115,22 +159,27 @@ class GuideManager:
         return self.get(new)
 
     def delete(self, name: str) -> None:
-        self._data['versions'].pop(name, None)
-        if self._data.get('active') == name:
-            self._data['active'] = next(iter(self._data['versions']), None)
-        self._save()
+        with self._lock:
+            self.refresh(force=True)
+            self._data['versions'].pop(name, None)
+            if self._data.get('active') == name:
+                self._data['active'] = next(iter(self._data['versions']), None)
+            self._save()
 
     def activate(self, name: str) -> str:
-        if name not in self._data['versions']:
-            raise ValueError(f'unknown guide version: {name}')
-        self._data['active'] = name
-        self._save()
+        with self._lock:
+            self.refresh(force=True)
+            if name not in self._data['versions']:
+                raise ValueError(f'unknown guide version: {name}')
+            self._data['active'] = name
+            self._save()
         return name
 
     # ── planner resolution ───────────────────────────────────────────────
     def active_guide(self):
         """``(guide_text, format)`` of the active version, or ``None`` if there
         is no usable active version (caller then falls back to the modules)."""
+        self.refresh()
         name = self._data.get('active')
         v = self._data['versions'].get(name) if name else None
         if v and isinstance(v.get('guide'), str) and v['guide'].strip():
