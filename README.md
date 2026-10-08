@@ -188,12 +188,13 @@ otherwise healthy — failures don't disappear into stderr.
 | **Skills** | `GET /skills` · `GET /skills/status` · `POST /skill/{name}` · `POST /skills` · `PUT /skills/{name}` · `DELETE /skills/{name}` · `POST /skills/reload` |
 | **Skill configs** | `GET /skill-configs` · `GET /skill-configs/{name}` · `PUT /skill-configs/{name}` |
 | **Devices / connections** | `GET /connects` · `GET /connects/status` · `POST /connects` · `PUT /connects/{id}` · `DELETE /connects/{id}` · `POST /connects/{id}/set_active` |
-| **Direct ROS dispatch** | `POST /agent/{name}/send` |
+| **Direct ROS dispatch** | `POST /agent/{name}/send` · `GET /agent/{name}/get` (latest value of a device agent, read-only: never clears a pending cancel, safe to poll) |
 | **ROS discovery** | `GET /ros/scan` |
 | **Streaming** | `WS /ws/camera/{id}` · `WS /ws/agent` |
 | **Agent / LLM** | `POST /agent/llm-config` · `POST /agent/api-key` · `GET /agent/api-keys` |
 | **World state** | `GET /agent/world` · `PUT /agent/world` (partial edit of the persistent robot belief) |
 | **Planner guides** | `GET /guides` · `GET /guides/{name}` · `POST /guides` · `PUT /guides/{name}` · `DELETE /guides/{name}` · `POST /guides/{name}/activate` (versioned LLM guide) |
+| **Site files** | `GET /config/locations/{name}/files/{path}` — images / JSON under the site folder (map layers); `{name}` = `_active` for the active site; `connections.json`, overrides and dot-files are refused |
 | **Quick buttons** | `GET /buttons` · `POST /buttons` · `PUT /buttons/{id}` · `DELETE /buttons/{id}` · `POST /buttons/reorder` · `POST /buttons/bulk` |
 | **Diagnostics** | `GET /diagnostics` · `GET /diagnostics/boot` |
 

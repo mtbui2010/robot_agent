@@ -187,6 +187,39 @@ def execute_skill(name: str, params: dict = {}):
     return state.sr.execute(name, params, node=node)
 
 
+def _ros_to_plain(obj):
+    """ROS messages (anywhere in a dict / list) -> plain dicts, for JSON."""
+    if hasattr(obj, 'get_fields_and_field_types'):
+        from rosidl_runtime_py.convert import message_to_ordereddict
+        return dict(message_to_ordereddict(obj))
+    if isinstance(obj, dict):
+        return {k: _ros_to_plain(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_ros_to_plain(v) for v in obj]
+    return obj
+
+
+@router.get('/agent/{agent_name}/get')
+def get_from_agent(agent_name: str):
+    """Latest value of a device agent (e.g. ``mobile_pose``), read-only.
+
+    Unlike ``POST /skill/<name>`` and ``POST /agent/<name>/send`` this does NOT call
+    ``begin_run``: a UI polling a pose must never clear a pending cancel.
+    """
+    from ..core.unified_agent import _serialize_result
+    node = current().dm._ros_node
+    if node is None:
+        raise HTTPException(status_code=503, detail='No ROS node available')
+    agent = node.agents.get(agent_name)
+    if agent is None:
+        raise HTTPException(status_code=404, detail=f'No device agent "{agent_name}"')
+    try:
+        value = agent.get()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {'value': _serialize_result(_ros_to_plain(value))}
+
+
 @router.post('/agent/{agent_name}/send')
 def send_to_agent(agent_name: str, params: dict = {}):
     from ..core.run_control import begin_run
