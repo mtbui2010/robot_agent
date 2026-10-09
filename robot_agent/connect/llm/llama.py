@@ -3,8 +3,10 @@ from .llm_object import LLMobj
 from ..helpers import Timer, crop_image
 
 DEFAULT_URL          = os.environ.get("OLLAMA_URL", "http://localhost:11434")
-DEFAULT_TEXT_MODEL   = os.environ.get("OLLAMA_TEXT_MODEL", "llama3.2")
-DEFAULT_VISION_MODEL = os.environ.get("OLLAMA_VISION_MODEL", "llama3.2-vision")
+# One model for every role (planner, understanding, translation, QA): 2026-10-09 comparison, qwen3-vl 8b-instruct
+# as accurate as 32b and ~3x faster; one resident model also stops Ollama reloading between roles.
+DEFAULT_TEXT_MODEL   = os.environ.get("OLLAMA_TEXT_MODEL", "qwen3-vl:8b-instruct")
+DEFAULT_VISION_MODEL = os.environ.get("OLLAMA_VISION_MODEL", "qwen3-vl:8b-instruct")
 
 
 class LLamaClient(LLMobj):

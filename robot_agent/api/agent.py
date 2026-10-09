@@ -263,6 +263,8 @@ async def agent_ws(websocket: WebSocket):
         # dashboard instead. log_all=False keeps only failed cases.
         log_mode  = data.get('log_mode', 'backend')
         log_all   = data.get('log_all', True)
+        # planner options (SAGE: confirm_task, confirm_answers, find_min_conf, ...); unknown keys are ignored
+        options   = data.get('options') if isinstance(data.get('options'), dict) else None
 
         # Watch for the client going away (or asking to cancel) while the plan
         # runs; the run itself clears the cancel flag as it starts.
@@ -274,7 +276,7 @@ async def agent_ws(websocket: WebSocket):
                              log_mode=log_mode, log_all=log_all) if direct
                else ua.run(prompt=prompt, lang=lang, planner=planner,
                            plan_only=plan_only, log_data=log_data,
-                           log_mode=log_mode, log_all=log_all))
+                           log_mode=log_mode, log_all=log_all, options=options))
         async for event in gen:
             # Walk the whole event through _serialize_result so numpy scalars
             # and NaN/Inf are sanitized at a single point. `allow_nan=False`

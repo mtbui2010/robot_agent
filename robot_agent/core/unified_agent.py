@@ -299,7 +299,8 @@ class UnifiedAgent:
     async def run(self, prompt: str, lang: str = 'en',
                   planner: str | None = None,
                   plan_only: bool = False, log_data: bool = False,
-                  log_mode: str = 'backend', log_all: bool = True) -> AsyncIterator[dict]:
+                  log_mode: str = 'backend', log_all: bool = True,
+                  options: dict | None = None) -> AsyncIterator[dict]:
         q: asyncio.Queue = asyncio.Queue()
         loop = asyncio.get_event_loop()
         # Failure tracking for the "log failed cases only" filter: a step that
@@ -332,12 +333,18 @@ class UnifiedAgent:
                 # choice ('grace' | 'direct') or the ROBOT_AGENT_CLOSED_LOOP=1 env
                 # gate. The legacy open-loop flow below remains the default fallback.
                 import os as _os
-                _planner = {'grace': 'grace', 'direct': 'llm_direct'}.get(planner) if planner else None
+                _planner = {'grace': 'grace', 'direct': 'llm_direct', 'sage': 'sage'}.get(planner) if planner else None
                 if (_planner is not None or plan_only
                         or _os.environ.get('ROBOT_AGENT_CLOSED_LOOP') == '1'):
                     from .planning.loop import ClosedLoop
                     _kw = {'planner': _planner} if _planner else {}
-                    for _ev in ClosedLoop(self, emit=emit, **_kw).run_blocking(prompt_en, lang, plan_only=plan_only):
+                    # 'sage': SAGE plans; AssistLoop adds understanding / clarification and a guard per step
+                    # (planning/assist_loop.py). 'grace' = the plain ClosedLoop around the same planner.
+                    _Loop = ClosedLoop
+                    if _planner == 'sage' or (_planner is None and _os.environ.get('ROBOT_AGENT_PLANNER') == 'sage'):
+                        from .planning.assist_loop import AssistLoop as _Loop, ASSIST_OPTIONS
+                        _kw = {'original': prompt, **{k: v for k, v in (options or {}).items() if k in ASSIST_OPTIONS}}
+                    for _ev in _Loop(self, emit=emit, **_kw).run_blocking(prompt_en, lang, plan_only=plan_only):
                         emit(_ev)
                     return
 
