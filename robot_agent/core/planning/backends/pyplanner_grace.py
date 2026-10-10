@@ -93,10 +93,10 @@ class GraceBackend:
         **cfg: Any,
     ) -> None:
         try:
-            import pyplanner  # optional dependency — imported lazily
+            import embodiplan  # optional dependency — imported lazily
         except ImportError as e:  # pragma: no cover - depends on install
             raise RuntimeError(
-                "pip install -e pyplanner to use the GRACE planner"
+                "pip install -e embodiplan to use the GRACE planner"
             ) from e
 
         # Assemble the candidate kwargs, then keep only those pyplanner accepts.
@@ -117,7 +117,7 @@ class GraceBackend:
         }
 
         # pyplanner.get("GRACE", ...) routes through the registry to GRACEPlanner.
-        self._p = pyplanner.get("GRACE", **selected)
+        self._p = embodiplan.get("GRACE", **selected)
 
     # ── Planner interface ────────────────────────────────────────────
     def generate_plan(

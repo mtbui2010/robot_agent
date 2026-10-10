@@ -51,10 +51,10 @@ voice = [
 ]
 # The GRACE closed-loop planner. Kept out of the core deps so the generic
 # runtime never hard-depends on a planner.
-#   pip install -e ../pyplanner && pip install -e ".[grace]"
-grace = ["pyplanner"]
+#   pip install -e ../embodiplan && pip install -e ".[grace]"
+grace = ["embodiplan"]
 
-# Everything except `grace` (pyplanner is a local path package, not on PyPI).
+# Everything except `grace` (embodiplan is a local path package, not on PyPI).
 all = [
     "pyzmq",
     "websockets>=13",

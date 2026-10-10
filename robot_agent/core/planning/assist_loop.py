@@ -580,8 +580,8 @@ class AssistLoop(ClosedLoop):
         blocks = getattr(inner, "_last_blocks", None)
         if not blocks or not hasattr(inner, "_refine"):
             return None, []
-        from pyplanner.grace import _flatten
-        from pyplanner.verifier import SymbolicState, simulate
+        from embodiplan.sage import _flatten
+        from embodiplan.verifier import SymbolicState, simulate
         ex_block = inner._retrieve_block(task)[1] if hasattr(inner, "_retrieve_block") else ""
         notes = []
         for _round in range(self.cfg["edit_rounds"]):
