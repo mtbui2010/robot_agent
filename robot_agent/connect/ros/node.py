@@ -33,14 +33,6 @@ from ..serde import write_json
 from ..paths import log_dir as _log_dir
 from ..tcp_ip.node import make_agent as make_tcpip_agent
 
-try:
-    from rosinterfaces.action import SendStringData as SendData
-    from rosinterfaces.srv import SendStringData as SendSeviceData
-except Exception:
-    printif('rosinterfaces not found — ROS service/action interfaces unavailable.')
-    SendData = None
-    SendSeviceData = None
-
 # Initialise rclpy once per process; guard against double-init.
 if not rclpy.ok():
     rclpy.init()
@@ -818,7 +810,7 @@ class CustomNode(Node):
         self._cancel_event = threading.Event()
         self._cancel_hooks = []
 
-    def add_agent(self, agent_name=None, conn_name=None, conn_type='sub', data_interface=SendData, callback_group=None,
+    def add_agent(self, agent_name=None, conn_name=None, conn_type='sub', data_interface=None, callback_group=None,
                   encode_func=None, decode_func=None, response_func=None, do_log_msg=False, qos=10, **kwargs):
         """Add a single agent to the node.
 
@@ -826,7 +818,7 @@ class CustomNode(Node):
             agent_name (str, optional): Name of the agent. Defaults to conn_name if None.
             conn_name (str, optional): Connection name. Defaults to agent_name if None.
             conn_type (str): Type of connection. Defaults to 'sub'.
-            data_interface (type): ROS2 message interface type. Defaults to SendData.
+            data_interface (type): ROS2 message interface type. None → rosinterfaces SendStringData (srv for services, action otherwise).
             callback_group: Callback group for the agent. Defaults to None.
             encode_func (callable, optional): Function to encode data.
             decode_func (callable, optional): Function to decode data.
@@ -844,6 +836,10 @@ class CustomNode(Node):
         if 'tcp' in conn_type:
             self.agents[agent_name] = make_tcpip_agent(agent_name=agent_name, conn_type=conn_type, **kwargs)
             return
+
+        if data_interface is None:
+            from .configs import string_interface
+            data_interface = string_interface('srv' if 'service' in conn_type else 'action', conn_name)
 
         self.agents[agent_name] = make_agent(node=self, agent_name=agent_name, conn_name=conn_name, conn_type=conn_type,
                                              data_interface=data_interface, encode_func=encode_func, decode_func=decode_func,

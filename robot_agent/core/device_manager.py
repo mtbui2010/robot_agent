@@ -142,10 +142,7 @@ class DeviceManager:
                         from ..connect.ros.configs import get_service_server_configs
                         get_configs_func = get_service_server_configs
 
-                # Defaults assume SendStringData (service/action) or std_msgs/String (topic):
-                # data_interface, encode_func, decode_func are all pre-populated.
-                ros_cfg = get_configs_func(agent_name=agent_name, conn_name=config['conn_name'])
-
+                overrides = {}
                 for key in ('data_interface', 'encode_func', 'decode_func',
                             'cancel_func', 'timeout'):
                     val = config.get(key)
@@ -156,14 +153,19 @@ class DeviceManager:
                                 and ('def ' in val or 'lambda ' in val)):
                             ns: dict = {}
                             exec(val, ns)  # noqa: S102
-                            ros_cfg[key] = ns.get(key) or next(
+                            overrides[key] = ns.get(key) or next(
                                 (v for v in ns.values() if callable(v) and not isinstance(v, type)),
                                 None,
                             )
                         else:
-                            ros_cfg[key] = _resolve_dotted(val)
+                            overrides[key] = _resolve_dotted(val)
                     else:
-                        ros_cfg[key] = val
+                        overrides[key] = val
+
+                # Builder defaults fill only what the connection left out; the
+                # rosinterfaces string type is imported only when data_interface is.
+                ros_cfg = get_configs_func(agent_name=agent_name, conn_name=config['conn_name'],
+                                           **overrides)
 
                 node = self._get_ros_node()
                 node.add_agent(**ros_cfg)

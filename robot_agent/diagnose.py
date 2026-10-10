@@ -78,15 +78,10 @@ def main() -> int:
         _info('  Hint: source /opt/ros/humble/setup.bash')
 
     # ── 2b. ROS message packages ───────────────────────────────────────
-    # `rosinterfaces` is a local ament package (SendStringData srv/action) that
-    # every generic ROS agent config depends on. It must be colcon-built and
-    # sourced — pip cannot provide it.
     for mod, hint in (
         ('std_msgs.msg', 'part of the ROS desktop install'),
         ('sensor_msgs.msg', 'part of the ROS desktop install'),
         ('cv_bridge', 'apt install ros-$ROS_DISTRO-cv-bridge'),
-        ('rosinterfaces.srv', 'colcon build --packages-select rosinterfaces, '
-                              'then source <ws>/install/setup.bash'),
     ):
         try:
             importlib.import_module(mod)
@@ -94,6 +89,17 @@ def main() -> int:
         except Exception as e:
             _fail(f'{mod} NOT importable: {type(e).__name__}: {e}')
             _info(f'  Hint: {hint}')
+
+    # Optional: only service/action connections without their own
+    # data_interface (dict-as-string RPC) need it.
+    try:
+        importlib.import_module('rosinterfaces.srv')
+        _ok('rosinterfaces.srv importable')
+    except Exception as e:
+        _warn(f'rosinterfaces NOT importable ({type(e).__name__}) — only connections '
+              f'without a data_interface need it')
+        _info('  Hint: colcon build --packages-select rosinterfaces, '
+              'then source <ws>/install/setup.bash')
 
     # ── 3. connect layer ───────────────────────────────────────────────
     try:

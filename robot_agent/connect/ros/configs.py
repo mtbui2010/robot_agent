@@ -6,6 +6,8 @@ matching encode/decode pair from :mod:`.codecs`) for one connection kind, with
 other so a caller only has to name the connection once.
 """
 
+import importlib
+
 from ..helpers import update_dict
 from .codecs import (
     decode_actionclient_revmsg, decode_actionserver_revmsg, decode_caminfomsg,
@@ -13,6 +15,28 @@ from .codecs import (
     decode_topic_strmsg, encode_actionclient_sendmsg, encode_actionserver_retmsg,
     encode_srvclient_sendmsg, encode_srvserver_retmsg, encode_topic_strmsg,
 )
+
+
+def string_interface(kind: str, conn_name=None):
+    """``rosinterfaces.<kind>.SendStringData`` (``kind`` = ``'srv'`` | ``'action'``).
+
+    Only connections that carry a dict-as-string need it; ones that name their
+    own ``data_interface`` (kaair_msgs, nav2_msgs, …) never import it.
+    """
+    try:
+        return importlib.import_module(f'rosinterfaces.{kind}').SendStringData
+    except ImportError as e:
+        raise ImportError(
+            f'connection {conn_name!r} has no data_interface, so it defaults to '
+            f'rosinterfaces/{kind}/SendStringData, which is not importable. Set '
+            f'data_interface, or colcon build rosinterfaces and source it.') from e
+
+
+def _string_defaults(kind: str, defaults: dict, kwargs: dict) -> dict:
+    kwargs = _name_defaults(kwargs)
+    if kwargs.get('data_interface') is None:
+        kwargs['data_interface'] = string_interface(kind, kwargs.get('conn_name'))
+    return update_dict(defaults, kwargs)
 
 
 def _name_defaults(kwargs: dict) -> dict:
@@ -48,47 +72,39 @@ def get_sub_configs(**kwargs):
 
 
 def get_service_client_configs(**kwargs):
-    from rosinterfaces.srv import SendStringData
-    return update_dict({
+    return _string_defaults('srv', {
         'conn_type': 'service_client',
-        'data_interface': SendStringData,
         'encode_func': encode_srvclient_sendmsg,
         'decode_func': decode_srvclient_revmsg,
         'do_log_msg': True,
-    }, _name_defaults(kwargs))
+    }, kwargs)
 
 
 def get_service_server_configs(**kwargs):
-    from rosinterfaces.srv import SendStringData
-    return update_dict({
+    return _string_defaults('srv', {
         'conn_type': 'service_server',
-        'data_interface': SendStringData,
         'encode_func': encode_srvserver_retmsg,
         'decode_func': decode_srvserver_revmsg,
         'do_log_msg': False,
-    }, _name_defaults(kwargs))
+    }, kwargs)
 
 
 def get_action_client_configs(**kwargs):
-    from rosinterfaces.action import SendStringData
-    return update_dict({
+    return _string_defaults('action', {
         'conn_type': 'action_client',
-        'data_interface': SendStringData,
         'encode_func': encode_actionclient_sendmsg,
         'decode_func': decode_actionclient_revmsg,
         'do_log_msg': True,
-    }, _name_defaults(kwargs))
+    }, kwargs)
 
 
 def get_action_server_configs(**kwargs):
-    from rosinterfaces.action import SendStringData
-    return update_dict({
+    return _string_defaults('action', {
         'conn_type': 'action_server',
-        'data_interface': SendStringData,
         'encode_func': encode_actionserver_retmsg,
         'decode_func': decode_actionserver_revmsg,
         'do_log_msg': False,
-    }, _name_defaults(kwargs))
+    }, kwargs)
 
 
 def get_image_sub_configs(**kwargs):
