@@ -396,6 +396,15 @@ class DeviceManager:
     def get_connect(self, cid: str) -> Optional[ConnectEntry]:
         return self._connects.get(cid)
 
+    def saved_connect(self, cid: str) -> Optional[dict]:
+        """`{type, name, config}` of connection `cid` as saved in
+        connections.json, connected or not. At startup `load_saved` connects
+        them one by one and an unreachable host holds the rest up (~20 s on
+        kcare): a skill run meanwhile found no 'vlm' and fell back to another
+        model."""
+        item = keyed(self._store.base or [], _conn_key).get(cid)
+        return dict(item) if isinstance(item, dict) else None
+
     def stt_client(self, name: str | None = None):
         """The speech-to-text client: connection `name`, else the first
         type 'stt' connection; None when there is none."""

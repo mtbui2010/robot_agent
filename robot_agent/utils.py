@@ -312,7 +312,8 @@ _LISTEN_LOCK = threading.Lock()
 
 def listen_dashboard(prompt: str | None = None, lang: str = 'ko', max_sec: float = 8.0,
                      timeout: float = 30.0, mode: str = 'voice', capture: str = 'browser',
-                     hint: str | None = None, silence_sec: float = 1.5, stt: str | None = None):
+                     hint: str | None = None, silence_sec: float = 1.5, stt: str | None = None,
+                     audio_out: list | None = None):
     """Have the dashboard capture one spoken phrase with the browser mic.
 
     Emits a ``listen`` event over the running agent's WebSocket; the dashboard
@@ -332,6 +333,8 @@ def listen_dashboard(prompt: str | None = None, lang: str = 'ko', max_sec: float
     phrase and posts the audio to ``/agent/listen/{id}/audio``, where
     `transcribe_listen_audio` runs it through the 'stt' connection (`stt`
     names one) with `lang` and `hint` (Whisper's prompt — words to expect).
+    With `audio_out` (a list), that recording is appended to it as
+    ``(bytes, mime)`` — to keep it for replays; nothing when none was posted.
     """
     import uuid
     from robot_agent.skills import has_emitter, log_data
@@ -340,7 +343,7 @@ def listen_dashboard(prompt: str | None = None, lang: str = 'ko', max_sec: float
                            "Agent panel — use source='robot' from the CLI or /skill")
     req_id = uuid.uuid4().hex[:12]
     slot = {'event': threading.Event(), 'text': None, 'error': None, 'note': None,
-            'lang': lang, 'hint': hint, 'stt': stt}
+            'lang': lang, 'hint': hint, 'stt': stt, 'keep': audio_out is not None}
     with _LISTEN_LOCK:
         _LISTEN_PENDING[req_id] = slot
     try:
@@ -352,6 +355,8 @@ def listen_dashboard(prompt: str | None = None, lang: str = 'ko', max_sec: float
     finally:
         with _LISTEN_LOCK:
             _LISTEN_PENDING.pop(req_id, None)
+    if audio_out is not None and slot.get('audio'):
+        audio_out.append(slot['audio'])
     if slot['error']:
         raise RuntimeError(f'dashboard microphone: {slot["error"]}')
     text = (slot['text'] or '').strip() or None
@@ -376,6 +381,8 @@ def transcribe_listen_audio(req_id: str, data: bytes, mime: str = 'audio/webm',
     if slot is None:
         return None
     text, error = '', None
+    if data and slot.get('keep'):
+        slot['audio'] = (bytes(data), mime)
     if data:
         t0 = time.time()
         try:
