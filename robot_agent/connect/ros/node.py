@@ -620,16 +620,21 @@ class ServiceClientAgent(NodeAgent):
 
         printif(f'{"=" * 5}{self.id}[{"conneted" if self.connected else "disconnected"}]: Data sent',
                 do_print=self.do_log_msg)
+        # A fresh request per call. Encoding into the one shared self.request kept every field a call does not set
+        # from the call before (kcare get3d sets d_array only for points with a depth: a call without one sent the
+        # previous object's depths), and two threads calling one service at once overwrote each other's fields
+        # before call_async serialised them (2026-10-14, kcare house sim).
         try:
-            self.request = self.encode_func(data, self.request)
+            request = self.encode_func(data, self.executor.srv_type.Request())
         except Exception as e:
             print(f'{"=" * 5}{self.id}: Error: {e}. Stopped ...')
             return {'isdone': False}
+        self.request = request                      # last request sent, for inspection
 
         if show_info:
             timer.pin_time('encode')
 
-        future = self.executor.call_async(self.request)
+        future = self.executor.call_async(request)
         if not wait_until_done:
             print('No waiting until done')
             return {'isdone': True}
