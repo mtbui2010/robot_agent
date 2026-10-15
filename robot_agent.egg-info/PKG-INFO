@@ -23,7 +23,7 @@ Requires-Dist: langdetect; extra == "voice"
 Requires-Dist: pydub; extra == "voice"
 Requires-Dist: sounddevice; extra == "voice"
 Provides-Extra: grace
-Requires-Dist: pyplanner; extra == "grace"
+Requires-Dist: embodiplan; extra == "grace"
 Provides-Extra: all
 Requires-Dist: pyzmq; extra == "all"
 Requires-Dist: websockets>=13; extra == "all"

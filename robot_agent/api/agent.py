@@ -204,6 +204,18 @@ async def answer_listen_audio(req_id: str, request: Request):
     return {'ok': True, 'text': text}
 
 
+@router.post('/agent/qa/end')
+def end_qa():
+    """End the running kcare `qa` conversation as a stop word would: it says
+    goodbye, returns success and the plan goes on (unlike /agent/cancel).
+    409 when no qa conversation is running."""
+    from ..core.run_control import request_end_dialog
+    out = request_end_dialog()
+    if not out.get('ok'):
+        raise HTTPException(status_code=409, detail=out.get('detail', 'no qa conversation is running'))
+    return out
+
+
 @router.post('/agent/cancel')
 def cancel_run():
     """Stop the robot: cancel every ROS command in flight and end the run.

@@ -10,10 +10,12 @@ robot_agent/env_names.py
 robot_agent/logging_config.py
 robot_agent/new_robot.py
 robot_agent/new_skill.py
+robot_agent/presence.py
 robot_agent/rename_skill.py
 robot_agent/runtime.py
 robot_agent/skill_config_defaults.py
 robot_agent/skill_configs.py
+robot_agent/spoken.py
 robot_agent/state.py
 robot_agent/utils.py
 robot_agent.egg-info/PKG-INFO
@@ -30,6 +32,7 @@ robot_agent/api/devices.py
 robot_agent/api/diagnostics.py
 robot_agent/api/guides.py
 robot_agent/api/locations.py
+robot_agent/api/map.py
 robot_agent/api/skills.py
 robot_agent/connect/__init__.py
 robot_agent/connect/helpers.py
@@ -50,6 +53,7 @@ robot_agent/connect/ros/__init__.py
 robot_agent/connect/ros/codecs.py
 robot_agent/connect/ros/configs.py
 robot_agent/connect/ros/node.py
+robot_agent/connect/stt/__init__.py
 robot_agent/connect/tcp_ip/__init__.py
 robot_agent/connect/tcp_ip/client.py
 robot_agent/connect/tcp_ip/node.py
@@ -69,10 +73,12 @@ robot_agent/core/device_manager.py
 robot_agent/core/guide_manager.py
 robot_agent/core/plan_skill.py
 robot_agent/core/run_control.py
+robot_agent/core/shared_json.py
 robot_agent/core/skill_registry.py
 robot_agent/core/unified_agent.py
 robot_agent/core/planning/__init__.py
 robot_agent/core/planning/announcer.py
+robot_agent/core/planning/assist_loop.py
 robot_agent/core/planning/base.py
 robot_agent/core/planning/loop.py
 robot_agent/core/planning/mapper.py

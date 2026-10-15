@@ -14,15 +14,16 @@ had said ``move::table_top``. Without ``->`` both are the same.
 ``SkillRegistry.execute`` splits the parameters of every code skill (plan skills
 pass them on unsplit, so the step inside still gets both names) and makes the
 spoken side readable to the skill through :func:`robot_agent.skills.spoken`.
-``options`` is left to the skill (``ask`` needs the pairs).
+``options`` and ``others`` are left to the skill (``ask`` needs the pairs; kcare
+``find`` / ``pick`` take the real side of each ``others`` item).
 """
 import ast
 import re
 
 ARROW = '->'
 
-# Parameters a skill splits itself.
-KEEP_PAIRS = ('options',)
+# Parameters a skill splits itself: ask's options; find / pick's others (the same list, copied from ask).
+KEEP_PAIRS = ('options', 'others')
 
 
 class SpokenError(ValueError):

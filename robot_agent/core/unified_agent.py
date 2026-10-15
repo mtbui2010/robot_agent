@@ -194,8 +194,11 @@ def _make_log_fn(emit, step_index: int, allow_say: bool = True):
         # POST it to /agent/listen/{id}.
         speak = raw.get('speak')
         listen = raw.get('listen')
+        alarm = raw.get('alarm')            # kcare call_119 (simulated): the browser plays the siren, in order
+        qa_state = raw.get('qa_state')      # kcare qa running / over: the dashboard's "End Q&A" button
         data = {k: v for k, v in raw.items()
-                if k not in ('log_image', 'log_image_reset', 'dataset', 'say', 'speak', 'speak_lang', 'speak_id', 'listen')}
+                if k not in ('log_image', 'log_image_reset', 'dataset', 'say', 'speak', 'speak_lang', 'speak_id',
+                             'listen', 'alarm', 'qa_state')}
         ev = {
             'event': 'step_log',
             'step': step_index,
@@ -218,6 +221,10 @@ def _make_log_fn(emit, step_index: int, allow_say: bool = True):
                 ev['speak_id'] = raw.get('speak_id')
         if isinstance(listen, dict):
             ev['listen'] = _serialize_result(listen)
+        if isinstance(alarm, dict):
+            ev['alarm'] = _serialize_result(alarm)
+        if isinstance(qa_state, dict):
+            ev['qa_state'] = _serialize_result(qa_state)
         emit(ev)
     return log_fn
 
@@ -411,6 +418,12 @@ class UnifiedAgent:
                     _sk = task_group[0][0] if task_group and task_group[0] else None
                     _pa = task_group[0][1] if task_group and len(task_group[0]) > 1 else None
                     _emit_world(emit, node, skill=_sk, params=_pa, result=ret)   # refresh Robot State
+                    if isinstance(ret, dict) and ret.get('isdone', True) and ret.get('stop'):
+                        # A step ended the plan here (kcare check_fall::False): a success, the rest is
+                        # skipped, and nothing more is said — the step has said what it had to.
+                        stopped_by = f"{_sk}: {ret.get('stop_reason')}" if ret.get('stop_reason') else _sk
+                        emit({'event': 'stopped', 'msg': f'plan stopped by {stopped_by}'})
+                        break
 
                 if cancel_requested():
                     emit({'event': 'done', 'status': 'aborted', 'success': False,
@@ -452,8 +465,12 @@ class UnifiedAgent:
         def _verb_obj(task_group):
             """Announcer kwargs of a step: {action} (the skill), {object} (its
             first param) and {verb} when the plan says how to call the skill —
-            the spoken sides of ``이동->move::식탁 앞->table_top``."""
+            the spoken sides of ``이동->move::식탁 앞->table_top``. A first param
+            taken from an earlier step (``pick::inputs={answer}``) is not known
+            here — the narration read "{answer}" aloud — so it is left out:
+            "잡기를 진행합니다"."""
             from ..spoken import SpokenError, said_of, split_skill
+            from .plan_skill import _REF
             try:
                 skill, inputs = task_group[0][0], task_group[0][1]
                 try:
@@ -462,7 +479,7 @@ class UnifiedAgent:
                     said = None
                 skill = skill.replace('!', '').replace('~', '').strip()
                 obj = str(inputs).split(',')[0].split('=')[-1].strip().strip('\'"')
-                obj = said_of(obj).strip()
+                obj = '' if _REF.fullmatch(obj) else said_of(obj).strip()
                 if obj in ('None', 'none', ''):
                     obj = ''
                 return {'action': skill, 'object': obj, **({'verb': said} if said else {})}
@@ -527,6 +544,12 @@ class UnifiedAgent:
                     _sk = task_group[0][0] if task_group and task_group[0] else None
                     _pa = task_group[0][1] if task_group and len(task_group[0]) > 1 else None
                     _emit_world(emit, node, skill=_sk, params=_pa, result=ret)   # refresh Robot State
+                    if isinstance(ret, dict) and ret.get('isdone', True) and ret.get('stop'):
+                        # A step ended the plan here (kcare check_fall::False): a success, the rest is
+                        # skipped, and nothing more is said — the step has said what it had to.
+                        stopped_by = f"{_sk}: {ret.get('stop_reason')}" if ret.get('stop_reason') else _sk
+                        emit({'event': 'stopped', 'msg': f'plan stopped by {stopped_by}'})
+                        break
 
                 if cancel_requested():
                     emit({'event': 'done', 'status': 'aborted', 'success': False,
@@ -534,7 +557,8 @@ class UnifiedAgent:
                 else:
                     _done_ok = bool(ctx.get('isdone', True))
                     emit({'event': 'done', 'success': _serialize_result(ctx.get('isdone', True)),
-                          'say': announcer.announce('done_success' if _done_ok else 'done_fail')})
+                          'say': '' if ctx.get('stop') else
+                                 announcer.announce('done_success' if _done_ok else 'done_fail')})
 
             except Exception as e:
                 import traceback

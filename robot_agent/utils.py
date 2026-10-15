@@ -174,6 +174,55 @@ def play_audio(audio, samplerate: int = MIC_SAMPLERATE) -> bool:
         return False
 
 
+# Earcons around a listen. A blind user cannot see that the mic is open: two rising notes say "your turn" (played
+# to the end before the mic opens, so the recording does not start with them), two falling ones "got it" (the
+# phrase was taken). Low notes (600 / 900 Hz): older ears lose the high ones. The dashboard plays the same tones
+# (robotapp lib/hriVoice.ts playEarcon).
+EARCON_NOTES = {'listen': (600, 900), 'heard': (900, 600)}      # Hz, one after the other
+EARCON_NOTE_SEC = {'listen': 0.075, 'heard': 0.06}
+EARCON_LEAD_SEC = 0.05          # silence first: a speaker waking up swallowed the start of a sound
+EARCON_GAP_SEC = 0.1            # after the "your turn" tone, before the mic opens
+EARCON_SAMPLERATE = 44100       # what text2voice plays at: kcare-3's speaker (Jetson APE) refuses 16 kHz
+
+
+def earcon(kind: str, volume: float = 0.3, samplerate: int = EARCON_SAMPLERATE) -> np.ndarray:
+    """The `kind` tone ('listen' | 'heard') as float32 mono samples: sine notes with 10 ms fades."""
+    n = int(EARCON_NOTE_SEC[kind] * samplerate)
+    t = np.arange(n) / samplerate
+    fade = np.minimum(1.0, np.minimum(t, t[::-1]) / 0.01)
+    notes = [np.sin(2 * np.pi * f * t) * fade for f in EARCON_NOTES[kind]]
+    return (np.concatenate([np.zeros(int(EARCON_LEAD_SEC * samplerate)), *notes]) * volume).astype(np.float32)
+
+
+def play_earcon(kind: str, volume: float = 0.3) -> bool:
+    """Play an earcon on the robot speaker, blocking; False when off (volume 0) or it could not play."""
+    if not volume or volume <= 0:
+        return False
+    return play_audio(earcon(kind, volume=float(volume)), samplerate=EARCON_SAMPLERATE)
+
+
+# Alarm: a two-tone siren on the robot speaker when help is called (kcare call_119). A blind user hears that the
+# call was made, and so does anyone else in the house. Low notes again (880 / 660 Hz), 0.35 s each.
+ALARM_NOTES = (880, 660)
+ALARM_NOTE_SEC = 0.35
+
+
+def alarm(volume: float = 0.6, cycles: int = 3, samplerate: int = EARCON_SAMPLERATE) -> np.ndarray:
+    """`cycles` x (high, low) siren notes with 15 ms fades, float32 mono."""
+    n = int(ALARM_NOTE_SEC * samplerate)
+    t = np.arange(n) / samplerate
+    fade = np.minimum(1.0, np.minimum(t, t[::-1]) / 0.015)
+    notes = [np.sin(2 * np.pi * f * t) * fade for f in ALARM_NOTES] * max(1, int(cycles))
+    return (np.concatenate([np.zeros(int(EARCON_LEAD_SEC * samplerate)), *notes]) * volume).astype(np.float32)
+
+
+def play_alarm(volume: float = 0.6, cycles: int = 3) -> bool:
+    """Play the alarm on the robot speaker, blocking; False when off (volume 0) or it could not play."""
+    if not volume or volume <= 0:
+        return False
+    return play_audio(alarm(float(volume), int(cycles)), samplerate=EARCON_SAMPLERATE)
+
+
 def _mic_energy(block: np.ndarray) -> float:
     """RMS on the same x1e5 scale pydevice.audio.Micro thresholds against."""
     return float(np.sqrt(np.mean(np.square(block, dtype=np.float64)))) * 1e5
@@ -254,8 +303,11 @@ def record_phrase(max_sec: float = 8.0, silence_sec: float = 1.5,
 
     def blocks():
         import time
+        from robot_agent.core.run_control import cancel_requested, end_dialog_requested
         end = time.monotonic() + deadline_sec
         while time.monotonic() < end:
+            if cancel_requested() or end_dialog_requested():     # Cancel / "End Q&A": stop listening now
+                return
             try:
                 yield q.get(timeout=0.5)
             except queue.Empty:
@@ -309,11 +361,25 @@ def speech_to_text(audio, lang: str | None = None, prompt: str | None = None,
 _LISTEN_PENDING: dict[str, dict] = {}
 _LISTEN_LOCK = threading.Lock()
 
+# How fast the dashboard voices conversation lines (SpeechSynthesisUtterance.rate, 1.0 = the browser's normal).
+# A robot package sets it per skill call from its own config (kcare: HRI_CONFIGS.speech_rate); say_to_user and
+# listen_dashboard put it in their speak / listen events. Per thread: each run executes in its own thread.
+_SPEECH_RATE = threading.local()
+
+
+def set_speech_rate(rate) -> None:
+    """Rate for the following speak / listen events of this thread (None = the browser's default)."""
+    _SPEECH_RATE.value = float(rate) if rate else None
+
+
+def speech_rate():
+    return getattr(_SPEECH_RATE, 'value', None)
+
 
 def listen_dashboard(prompt: str | None = None, lang: str = 'ko', max_sec: float = 8.0,
                      timeout: float = 30.0, mode: str = 'voice', capture: str = 'browser',
                      hint: str | None = None, silence_sec: float = 1.5, stt: str | None = None,
-                     audio_out: list | None = None):
+                     audio_out: list | None = None, earcon: float = 0.0, rate: float | None = None):
     """Have the dashboard capture one spoken phrase with the browser mic.
 
     Emits a ``listen`` event over the running agent's WebSocket; the dashboard
@@ -335,6 +401,9 @@ def listen_dashboard(prompt: str | None = None, lang: str = 'ko', max_sec: float
     names one) with `lang` and `hint` (Whisper's prompt — words to expect).
     With `audio_out` (a list), that recording is appended to it as
     ``(bytes, mime)`` — to keep it for replays; nothing when none was posted.
+    `earcon` (volume, 0 = off): the dashboard plays the "your turn" tone before the mic opens and the "got it"
+    tone once a phrase was taken (see `earcon`).
+    `rate`: how fast the browser says `prompt` (default `speech_rate()`).
     """
     import uuid
     from robot_agent.skills import has_emitter, log_data
@@ -343,14 +412,15 @@ def listen_dashboard(prompt: str | None = None, lang: str = 'ko', max_sec: float
                            "Agent panel — use source='robot' from the CLI or /skill")
     req_id = uuid.uuid4().hex[:12]
     slot = {'event': threading.Event(), 'text': None, 'error': None, 'note': None,
-            'lang': lang, 'hint': hint, 'stt': stt, 'keep': audio_out is not None}
+            'lang': lang, 'hint': hint, 'stt': stt, 'keep': audio_out is not None, 'kind': 'listen'}
     with _LISTEN_LOCK:
         _LISTEN_PENDING[req_id] = slot
     try:
         log_data({'listen': {'id': req_id, 'lang': lang, 'max_sec': max_sec,
                              'prompt': prompt or '', 'mode': mode,
                              'capture': capture if mode == 'voice' else 'browser',
-                             'silence_sec': silence_sec}})
+                             'silence_sec': silence_sec, 'earcon': float(earcon or 0),
+                             **({'rate': r} if (r := rate or speech_rate()) else {})}})
         slot['event'].wait(timeout)
     finally:
         with _LISTEN_LOCK:
@@ -423,7 +493,20 @@ def cancel_pending_listens() -> int:
     return len(slots)
 
 
-def say_to_user(text: str, lang: str = 'ko', source: str = 'robot', wait: bool | None = None) -> None:
+def end_pending_listens() -> int:
+    """Answer every pending dashboard listen with nothing ("End Q&A"): the
+    skill gets no answer at once and sees run_control.end_dialog_requested().
+    Speak waits (say_to_user wait=True) are left alone. Returns how many."""
+    with _LISTEN_LOCK:
+        slots = [s for s in _LISTEN_PENDING.values() if s.get('kind') == 'listen']
+    for slot in slots:
+        slot['text'], slot['note'] = '', 'ended from the dashboard (End Q&A)'
+        slot['event'].set()
+    return len(slots)
+
+
+def say_to_user(text: str, lang: str = 'ko', source: str = 'robot', wait: bool | None = None,
+                rate: float | None = None) -> None:
     """Say a line as part of a conversation, and return once it has been said.
 
     source='robot' plays it on the robot speaker, blocking, so a following
@@ -436,12 +519,15 @@ def say_to_user(text: str, lang: str = 'ko', source: str = 'robot', wait: bool |
     it — at most a length-based timeout, and not past a cancel. `wait=False`
     on the robot speaker plays the line in the background. None (default) keeps
     each side's usual behaviour: robot blocks, dashboard does not.
+    `rate`: how fast the browser says it (default `speech_rate()`; the robot speaker ignores it).
     """
     if source == 'dashboard':
         from robot_agent.skills import has_emitter, log_data
         if has_emitter():
+            rate = rate or speech_rate()
+            extra = {'speak_rate': float(rate)} if rate else {}
             if not wait:
-                log_data({'speak': text, 'speak_lang': lang})
+                log_data({'speak': text, 'speak_lang': lang, **extra})
                 return
             import uuid
             req_id = uuid.uuid4().hex[:12]
@@ -450,9 +536,9 @@ def say_to_user(text: str, lang: str = 'ko', source: str = 'robot', wait: bool |
             with _LISTEN_LOCK:
                 _LISTEN_PENDING[req_id] = slot
             try:
-                log_data({'speak': text, 'speak_lang': lang, 'speak_id': req_id})
-                # ~6 characters a second in speech, plus slack for the queue ahead of it.
-                slot['event'].wait(5.0 + len(text) / 6.0 + 5.0)
+                log_data({'speak': text, 'speak_lang': lang, 'speak_id': req_id, **extra})
+                # ~6 characters a second in speech (times the rate), plus slack for the queue ahead of it.
+                slot['event'].wait(5.0 + len(text) / (6.0 * min(1.0, float(rate or 1.0))) + 5.0)
             finally:
                 with _LISTEN_LOCK:
                     _LISTEN_PENDING.pop(req_id, None)

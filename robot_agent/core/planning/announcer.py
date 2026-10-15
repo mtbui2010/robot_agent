@@ -108,7 +108,8 @@ _GENERIC = {'vi': 'Đang thực hiện', 'ko': '진행 중입니다', 'en': 'Wor
 # skills here is deliberate — 'reply' / 'ask' are this stack's conventional HRI
 # entry points (robot_template emits the same pair); a robot package with other
 # conversational skills can add to this set.
-SILENT_ACTIONS = {'reply', 'ask', 'qa', 'announce'}
+SILENT_ACTIONS = {'reply', 'ask', 'qa', 'announce', 'wait',   # wait: a pause, nothing to tell
+                  'check_fall', 'check_restroom', 'call_119'}   # kcare emergency skills speak for themselves
 
 # Only per-step narration is suppressed. Plan-level milestones (plan_ready,
 # done_success, ...) carry no action and play when no mic is open.

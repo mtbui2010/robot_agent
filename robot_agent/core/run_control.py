@@ -27,6 +27,14 @@ _dbg = logging.getLogger('robot_agent.spoken_debug')     # [spoken-debug] tempor
 _CANCEL = threading.Event()
 _LOCK = threading.Lock()
 
+# "End Q&A" (dashboard button, POST /agent/qa/end): ends a running kcare `qa`
+# conversation the way a stop word does — qa says goodbye and returns success,
+# and the plan carries on. Unlike Cancel, nothing else is touched. Only a skill
+# that called dialog_begin() can be ended (ask / reply need their answer; the
+# emergency exchange must not be dismissed by a click).
+_END_DIALOG = threading.Event()
+_DIALOG = {'active': 0}
+
 
 def cancel_requested() -> bool:
     """True between a :func:`request_cancel` and the next :func:`begin_run`."""
@@ -49,6 +57,7 @@ def begin_run(node=None) -> None:
     _dbg.warning('[spoken-debug] begin_run (cancel flag cleared)')
     with _LOCK:
         _CANCEL.clear()
+        _END_DIALOG.clear()
         n = _node(node)
         if n is not None:
             try:
@@ -83,3 +92,39 @@ def request_cancel(node=None) -> dict:
         except Exception as e:
             result['errors']['listen'] = str(e)
         return result
+
+
+def dialog_begin() -> None:
+    """A conversation that "End Q&A" may end has started (kcare qa)."""
+    with _LOCK:
+        _END_DIALOG.clear()
+        _DIALOG['active'] += 1
+
+
+def dialog_end() -> None:
+    """That conversation is over (always called, also on errors)."""
+    with _LOCK:
+        _DIALOG['active'] = max(0, _DIALOG['active'] - 1)
+        _END_DIALOG.clear()
+
+
+def dialog_active() -> bool:
+    return _DIALOG['active'] > 0
+
+
+def end_dialog_requested() -> bool:
+    """True once "End Q&A" was pressed during the running conversation."""
+    return _END_DIALOG.is_set()
+
+
+def request_end_dialog() -> dict:
+    """End the running conversation: set the flag and release the listen it
+    waits on (an empty answer, so it returns at once instead of after its
+    listen window). Returns ``{'ok', 'listens_released'}``, or ``{'ok': False,
+    'detail'}`` when no conversation is running."""
+    with _LOCK:
+        if _DIALOG['active'] <= 0:
+            return {'ok': False, 'detail': 'no qa conversation is running'}
+        _END_DIALOG.set()
+    from ..utils import end_pending_listens
+    return {'ok': True, 'listens_released': end_pending_listens()}

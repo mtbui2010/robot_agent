@@ -20,7 +20,7 @@ pydub
 sounddevice
 
 [grace]
-pyplanner
+embodiplan
 
 [llm]
 openai>=1.0
