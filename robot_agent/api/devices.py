@@ -35,6 +35,15 @@ def connects_status(fresh: bool = False):
     return current().dm.get_status(max_age=0.0 if fresh else None)
 
 
+@router.get('/connects/servers')
+def connects_servers():
+    """Per AI-server connection (vlms / visions / voices and the older llm /
+    visionserve / stt): {level: ok | warn | error | unknown, using, servers:
+    [{idx, label, status, error, last_sec, cooldown, enabled}]}. What is known
+    from the last calls / probes — nothing is probed here."""
+    return current().dm.servers_status()
+
+
 @router.post('/connects')
 def add_connect(req: AddConnectReq):
     cid, error = current().dm.add_connect(conn_type=req.type, name=req.name, config=req.config)

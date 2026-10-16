@@ -19,6 +19,14 @@ def init_llm_client(cfg: dict):
         ValueError: If ``name`` is missing or unsupported.
     """
     name = cfg.get('name', '')
+    if name == 'pool':
+        # A vlms connection (connect/pool.py): its LLMobj, which falls back
+        # through the connection's servers on every call.
+        from ...state import current
+        client = current().dm.get_client(cfg['connection'])
+        if client is None:
+            raise ValueError(f"no connection {cfg['connection']!r}")
+        return client
     try:
         backend = LLMBackend(name.lower())
     except ValueError:

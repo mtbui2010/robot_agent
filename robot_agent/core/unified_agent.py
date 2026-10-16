@@ -196,9 +196,10 @@ def _make_log_fn(emit, step_index: int, allow_say: bool = True):
         listen = raw.get('listen')
         alarm = raw.get('alarm')            # kcare call_119 (simulated): the browser plays the siren, in order
         qa_state = raw.get('qa_state')      # kcare qa running / over: the dashboard's "End Q&A" button
+        choose = raw.get('choose')          # kcare ask did not understand: its options as buttons (utils.choose_open)
         data = {k: v for k, v in raw.items()
                 if k not in ('log_image', 'log_image_reset', 'dataset', 'say', 'speak', 'speak_lang', 'speak_id',
-                             'listen', 'alarm', 'qa_state')}
+                             'speak_rate', 'listen', 'alarm', 'qa_state', 'choose', 'choose_close')}
         ev = {
             'event': 'step_log',
             'step': step_index,
@@ -219,12 +220,18 @@ def _make_log_fn(emit, step_index: int, allow_say: bool = True):
             ev['speak_lang'] = raw.get('speak_lang')
             if raw.get('speak_id'):           # the skill waits for "spoken" (POST /agent/listen/<id>)
                 ev['speak_id'] = raw.get('speak_id')
+            if raw.get('speak_rate'):         # the call's rate= / HRI_CONFIGS.speech_rate (was dropped here)
+                ev['speak_rate'] = raw.get('speak_rate')
         if isinstance(listen, dict):
             ev['listen'] = _serialize_result(listen)
         if isinstance(alarm, dict):
             ev['alarm'] = _serialize_result(alarm)
         if isinstance(qa_state, dict):
             ev['qa_state'] = _serialize_result(qa_state)
+        if isinstance(choose, dict):
+            ev['choose'] = _serialize_result(choose)
+        if raw.get('choose_close'):
+            ev['choose_close'] = raw.get('choose_close')
         emit(ev)
     return log_fn
 

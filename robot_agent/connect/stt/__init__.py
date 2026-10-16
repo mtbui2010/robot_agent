@@ -99,7 +99,8 @@ class WhisperClient:
         if prompt:
             form['prompt'] = prompt
         r = self._session.post(f'{self.url}/v1/audio/transcriptions', data=form,
-                               files={'file': (name, data, mime)}, timeout=self.timeout)
+                               files={'file': (name, data, mime)},
+                               timeout=(3.0, self.timeout))   # a dead host fails in 3 s (fallback to the next server)
         r.raise_for_status()
         out = r.json()
         # Per segment: drop repetition loops (high compression ratio — '아, 아,

@@ -36,7 +36,12 @@ def _resolve_dotted(path: str):
 
 
 ConnectType = Literal['ros_service', 'ros_topic', 'ros_action', 'webrtc', 'llm',
-                      'tcp', 'zmq', 'websocket', 'http', 'visionserve', 'switchbot', 'stt']
+                      'tcp', 'zmq', 'websocket', 'http', 'visionserve', 'switchbot', 'stt',
+                      'vlms', 'visions', 'voices']
+# AI servers (connect/pool.py): one connection = one role served by an ordered list
+# of servers with fallback. `llm` / `visionserve` / `stt` are the older one-server
+# forms of the same three kinds and keep working.
+POOL_KINDS = ('vlms', 'visions', 'voices')
 
 
 @dataclass
@@ -50,6 +55,7 @@ class ConnectEntry:
     error: str = ''
     last_checked: float = field(default_factory=time.time)
     is_camera: bool = False
+    pool: Any = field(default=None, repr=False)     # ServerPool (vlms / visions / voices, and the legacy forms)
 
 
 def _conn_key(item: dict) -> str:
@@ -187,6 +193,17 @@ class DeviceManager:
                     self._tcp_reachable(config['host'], config.get('port', 8443))
                     if entry.is_camera else client.connected
                 )
+
+            elif conn_type in POOL_KINDS:
+                # No network here: servers are tried when called, probed by the
+                # status poll and loaded by warmup_servers.
+                from ..connect import pool as _pool
+                config['servers'] = _pool.normalize_servers(conn_type, config.get('servers'))
+                entry.pool = _pool.make_pool(agent_name, conn_type, config['servers'],
+                                             config.get('cooldown_sec') or 60)
+                entry.client = (_pool.pool_llm(entry.pool) if conn_type == 'vlms'
+                                else _pool.PoolProxy(entry.pool))
+                entry.connected = True
 
             elif conn_type == 'llm':
                 from ..connect.llm import init_llm_client
@@ -363,6 +380,8 @@ class DeviceManager:
             entry = self._connects.pop(cid)
         if self._ros_node is not None and entry.type in ('ros_service', 'ros_topic', 'ros_action'):
             self._ros_node.agents.pop(cid, None)
+        if entry.pool is not None:
+            entry.pool.close()
         if entry.type in ('tcp', 'zmq', 'websocket', 'http', 'visionserve') and entry.client is not None:
             try:
                 if entry.config.get('is_client', True):
@@ -409,10 +428,10 @@ class DeviceManager:
         """The speech-to-text client: connection `name`, else the first
         type 'stt' connection; None when there is none."""
         with self._lock:
-            if name and name in self._connects and self._connects[name].type == 'stt':
+            if name and name in self._connects and self._connects[name].type in ('stt', 'voices'):
                 return self._connects[name].client
             return next((e.client for e in self._connects.values()
-                         if e.type == 'stt' and e.client is not None), None)
+                         if e.type in ('voices', 'stt') and e.client is not None), None)
 
     def switchbots(self) -> list[dict]:
         """[{id, mac, loc, aliases, default}] of the configured SwitchBot connections."""
@@ -427,7 +446,7 @@ class DeviceManager:
         # marked active in its config. Falls back to the first connected llm
         # entry so legacy callers still get something usable.
         if name == 'llm' and name not in self._connects:
-            llm_entries = [e for e in self._connects.values() if e.type == 'llm']
+            llm_entries = [e for e in self._connects.values() if e.type in ('llm', 'vlms')]
             active = next((e for e in llm_entries if e.config.get('is_active')), None)
             if active is None:
                 active = next((e for e in llm_entries if e.connected), None)
@@ -442,12 +461,20 @@ class DeviceManager:
         planner can use it as its LLM config when no explicit ``_llm_cfg`` was
         set — i.e. selecting an LLM in the dashboard drives planning and
         survives a restart (the connection lives in ``connections.json``)."""
-        llm_entries = [e for e in self._connects.values() if e.type == 'llm']
+        llm_entries = [e for e in self._connects.values() if e.type in ('llm', 'vlms')]
         active = next((e for e in llm_entries if e.config.get('is_active')), None)
         if active is None:
             active = next((e for e in llm_entries if e.connected), None)
         if active is None:
             return {}
+        if active.type == 'vlms':
+            # init_llm_client('pool') → the pool's LLMobj (fallback on every call);
+            # url / model: the first usable Ollama server, for the GRACE planner,
+            # which talks to Ollama itself.
+            s = active.pool.planner_server() or {}
+            out = {'name': 'pool', 'connection': active.id}
+            out.update({k: s[k] for k in ('url', 'model', 'num_ctx') if s.get(k)})
+            return out
         # Keep `name` — `init_llm_client` reads it as the backend id
         # (llama/chatgpt/…); only drop the connection-plumbing keys. Mirrors the
         # filtering used when the connection itself is initialised.
@@ -459,13 +486,53 @@ class DeviceManager:
         peers. Persists immediately. Returns False if `cid` is not an llm entry."""
         with self._lock:
             target = self._connects.get(cid)
-            if target is None or target.type != 'llm':
+            if target is None or target.type not in ('llm', 'vlms'):
                 return False
             for e in self._connects.values():
-                if e.type == 'llm':
+                if e.type in ('llm', 'vlms'):
                     e.config['is_active'] = (e.id == cid)
         self._save()
         return True
+
+    # ------------------------------------------------------------------
+    # AI server pools (connect/pool.py)
+    # ------------------------------------------------------------------
+    def pools(self) -> list[tuple[str, str, Any]]:
+        """[(kind, connection id, ServerPool)] of every AI-server connection — the
+        vlms / visions / voices pools, and a one-server pool for each older
+        llm / visionserve / stt connection (made on first use)."""
+        from ..connect import pool as _pool
+        out = []
+        with self._lock:
+            entries = list(self._connects.values())
+        for e in entries:
+            if e.type in POOL_KINDS:
+                if e.pool is not None:           # None: the servers did not validate (see entry.error)
+                    out.append((e.type, e.id, e.pool))
+            elif e.type in _pool.LEGACY_KIND:
+                if e.pool is None:
+                    try:
+                        e.pool = _pool.make_pool(e.id, _pool.LEGACY_KIND[e.type],
+                                                 _pool.legacy_servers(e.type, e.config))
+                    except Exception:
+                        continue
+                out.append((_pool.LEGACY_KIND[e.type], e.id, e.pool))
+        return out
+
+    def servers_status(self) -> dict[str, dict]:
+        """{connection id: {level, using, servers: [...]}} from what is known (no probing)."""
+        return {cid: p.status() for _, cid, p in self.pools()}
+
+    @staticmethod
+    def _probe_pool(pool) -> str:
+        """Probe every enabled server at once (one slow host must not hold up the
+        others); the pool's level after."""
+        from concurrent.futures import ThreadPoolExecutor
+        idx = pool.enabled()
+        if idx:
+            with ThreadPoolExecutor(max_workers=len(idx)) as ex:
+                list(ex.map(pool.check, idx))
+        return pool.level()
 
     def _invalidate_status(self) -> None:
         """Drop the cached reachability — a device was added, removed, or the
@@ -535,6 +602,8 @@ class DeviceManager:
                 return getattr(entry.client, 'connected', False)
             elif entry.type == 'ros_topic':
                 return entry.client.rev_data is not None
+            elif entry.type in POOL_KINDS:
+                return self._probe_pool(entry.pool) != 'error'
             elif entry.type == 'llm':
                 return True
             elif entry.type == 'switchbot':
@@ -547,6 +616,8 @@ class DeviceManager:
                 # HTTP / visionserve are stateless — actively re-check reachability.
                 if entry.type in ('http', 'visionserve') and hasattr(entry.client, 'ping'):
                     return bool(entry.client.ping())
+                if entry.type == 'visionserve':          # visionserve's Client has health(), no ping()
+                    return (entry.client.health() or {}).get('status') == 'ok'
                 return bool(getattr(entry.client, 'server_connected', False))
         except Exception:
             return False
@@ -655,7 +726,8 @@ class DeviceManager:
             'config': e.config,
             'connected': e.connected,
             'is_camera': e.is_camera,
-            'is_active': bool(e.config.get('is_active', False)) if e.type == 'llm' else False,
+            'is_active': bool(e.config.get('is_active', False)) if e.type in ('llm', 'vlms') else False,
             'error': e.error,
             'last_checked': e.last_checked,
+            **({'servers': e.pool.status()} if e.pool is not None else {}),
         }

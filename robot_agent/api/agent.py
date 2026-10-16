@@ -9,7 +9,9 @@ from ..core.unified_agent import _serialize_result
 
 _PROVIDER_KEY_MAP = {
     'chatgpt': 'OPENAI_API_KEY',
+    'openai':  'OPENAI_API_KEY',      # the vlms servers' provider names (connect/pool.py)
     'gemini':  'GOOGLE_API_KEY',
+    'anthropic': 'ANTHROPIC_API_KEY',
 }
 
 

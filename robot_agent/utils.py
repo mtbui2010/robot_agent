@@ -306,7 +306,7 @@ def record_phrase(max_sec: float = 8.0, silence_sec: float = 1.5,
         from robot_agent.core.run_control import cancel_requested, end_dialog_requested
         end = time.monotonic() + deadline_sec
         while time.monotonic() < end:
-            if cancel_requested() or end_dialog_requested():     # Cancel / "End Q&A": stop listening now
+            if cancel_requested() or end_dialog_requested() or choice_made():   # Cancel / End Q&A / a click
                 return
             try:
                 yield q.get(timeout=0.5)
@@ -472,9 +472,73 @@ def submit_transcript(req_id: str, text: str, error: str | None = None,
         slot = _LISTEN_PENDING.get(req_id)
     if slot is None:
         return False
+    if slot.get('kind') == 'choose':
+        if error is None and (text or '').strip() not in slot['options']:
+            return False                         # not one of the options shown
+        slot['text'], slot['error'], slot['note'] = (text or '').strip(), error, note
+        slot['event'].set()
+        if error is None:
+            _CHOICE_MADE.set()                   # the robot mic stops (record_phrase)
+            _end_listens('chosen on screen')     # and so does a dashboard listen
+        return True
     slot['text'], slot['error'], slot['note'] = text, error, note
     slot['event'].set()
     return True
+
+
+# ── On-screen choice: ask's options as buttons once the robot did not understand ──
+# kcare `ask` (screen_choice, default on) opens one after the first failed attempt; the dashboard shows the
+# options as buttons until a click, the spoken answer or the end of the ask. A click answers through
+# POST /agent/listen/<id> (submit_transcript) and stops the listen in progress, robot mic or browser.
+_CHOICE_MADE = threading.Event()
+
+
+def choice_made() -> bool:
+    return _CHOICE_MADE.is_set()
+
+
+def choose_open(options, prompt: str = '') -> str | None:
+    """Show `options` as buttons on the dashboard running this skill; its id, or None without a dashboard run."""
+    import uuid
+    from robot_agent.skills import has_emitter, log_data
+    if not has_emitter():
+        return None
+    req_id = uuid.uuid4().hex[:12]
+    slot = {'event': threading.Event(), 'text': None, 'error': None, 'note': None,
+            'kind': 'choose', 'options': [str(o) for o in options]}
+    with _LISTEN_LOCK:
+        _LISTEN_PENDING[req_id] = slot
+    _CHOICE_MADE.clear()
+    log_data({'choose': {'id': req_id, 'options': slot['options'], 'prompt': prompt or ''}})
+    return req_id
+
+
+def choose_result(req_id: str | None, wait: float = 0.0) -> str | None:
+    """The option clicked for `req_id` (waiting up to `wait` s), else None."""
+    with _LISTEN_LOCK:
+        slot = _LISTEN_PENDING.get(req_id) if req_id else None
+    if slot is None:
+        return None
+    if wait > 0:
+        slot['event'].wait(wait)
+    if not slot['event'].is_set() or slot['error']:
+        return None
+    return slot['text'] or None
+
+
+def choose_close(req_id: str | None) -> None:
+    """Take the buttons off the dashboard."""
+    if not req_id:
+        return
+    with _LISTEN_LOCK:
+        _LISTEN_PENDING.pop(req_id, None)
+    _CHOICE_MADE.clear()
+    try:
+        from robot_agent.skills import has_emitter, log_data
+        if has_emitter():
+            log_data({'choose_close': req_id})
+    except Exception:
+        pass
 
 
 def cancel_pending_listens() -> int:
@@ -497,10 +561,14 @@ def end_pending_listens() -> int:
     """Answer every pending dashboard listen with nothing ("End Q&A"): the
     skill gets no answer at once and sees run_control.end_dialog_requested().
     Speak waits (say_to_user wait=True) are left alone. Returns how many."""
+    return _end_listens('ended from the dashboard (End Q&A)')
+
+
+def _end_listens(note: str) -> int:
     with _LISTEN_LOCK:
         slots = [s for s in _LISTEN_PENDING.values() if s.get('kind') == 'listen']
     for slot in slots:
-        slot['text'], slot['note'] = '', 'ended from the dashboard (End Q&A)'
+        slot['text'], slot['note'] = '', note
         slot['event'].set()
     return len(slots)
 
