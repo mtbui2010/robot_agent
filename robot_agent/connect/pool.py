@@ -23,7 +23,7 @@ Kinds and their servers:
 |---|---|---|
 | ``vlms`` | ``provider`` (ollama / openai / gemini / anthropic), ``url``, ``model``, ``num_ctx``, ``api_key_env`` | :class:`VlmPool` ``chat(body)``; :class:`PoolLLM` for LLMobj callers |
 | ``visions`` | ``url`` | visionserve ``Client`` methods through :class:`PoolProxy` |
-| ``voices`` | ``url``, ``model`` | :class:`~robot_agent.connect.stt.WhisperClient` through :class:`PoolProxy` |
+| ``voices`` | ``url``, ``model``, ``api_key_env`` (a server that wants a key: ``WHISPER_API_KEY``) | :class:`~robot_agent.connect.stt.WhisperClient` through :class:`PoolProxy` |
 
 Every server may also carry ``enabled`` (false = skipped), ``slow_sec`` and ``timeout``. Cloud API keys are read
 from the environment (the site's ``.env``, set from the Connections panel): ``OPENAI_API_KEY``,
@@ -239,7 +239,12 @@ class ServerPool:
             return Client(s['url'], timeout=float(s.get('timeout') or DEFAULT_TIMEOUT['visions']))
         if self.kind == 'voices':
             from .stt import WhisperClient
-            return WhisperClient(url=s['url'], model=s.get('model', ''),
+            key = ''
+            if s.get('api_key_env'):                 # a server behind a public tunnel (speaches API_KEY)
+                key = os.environ.get(s['api_key_env'], '')
+                if not key:
+                    raise PermissionError(f"no API key: set {s['api_key_env']} (Connections panel → the server's key)")
+            return WhisperClient(url=s['url'], model=s.get('model', ''), api_key=key,
                                  timeout=float(s.get('timeout') or DEFAULT_TIMEOUT['voices']))
         return requests.Session()
 
@@ -348,9 +353,13 @@ class ServerPool:
             if self.kind == 'vlms':
                 p = provider_of(s)
                 if p == 'ollama':
-                    r = requests.post(f"{s['url']}/api/generate",
-                                      json={'model': s.get('model'), 'prompt': '', 'keep_alive': s.get('keep_alive', '30m')},
-                                      timeout=(CONNECT_TIMEOUT, 180))
+                    # with the server's num_ctx, as every chat sends it: without, Ollama loaded the model with its
+                    # full context (qwen3-vl:8b: 262144, 48 GB — 14-90 % in RAM on the A6000, flagged "on the CPU"),
+                    # and the next chat (num_ctx 8192) had to load it again (2026-10-21)
+                    req = {'model': s.get('model'), 'prompt': '', 'keep_alive': s.get('keep_alive', '30m')}
+                    if s.get('num_ctx'):
+                        req['options'] = {'num_ctx': int(s['num_ctx'])}
+                    r = requests.post(f"{s['url']}/api/generate", json=req, timeout=(CONNECT_TIMEOUT, 180))
                     r.raise_for_status()
                     cpu = self._ollama_cpu(i)
                     if cpu:
@@ -359,7 +368,10 @@ class ServerPool:
                     _cloud_model_check(s)
             elif self.kind == 'voices':
                 import numpy as np
-                self.client(i).transcribe(np.zeros(8000, dtype=np.float32), lang='ko')   # 0.5 s of silence
+                # 0.5 s of silence with the server's VAD off: with it on the silence is cut before Whisper and the
+                # model never runs — a GPU out of memory answered 200 to the warm-up and 500 to every real phrase
+                # (dev PC 3090, 2026-10-21)
+                self.client(i).transcribe(np.zeros(8000, dtype=np.float32), lang='ko', vad=False)
             else:
                 import numpy as np
                 img = np.full((240, 320, 3), 128, dtype=np.uint8)

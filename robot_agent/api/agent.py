@@ -12,6 +12,7 @@ _PROVIDER_KEY_MAP = {
     'openai':  'OPENAI_API_KEY',      # the vlms servers' provider names (connect/pool.py)
     'gemini':  'GOOGLE_API_KEY',
     'anthropic': 'ANTHROPIC_API_KEY',
+    'whisper': 'WHISPER_API_KEY',     # a voices server behind a public tunnel (speaches API_KEY)
 }
 
 

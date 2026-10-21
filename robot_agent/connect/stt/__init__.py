@@ -1,5 +1,8 @@
 """Speech-to-text over an OpenAI-compatible transcription API.
 
+A server behind a public tunnel (https://whisper.aistations.org) can require a key (speaches ``API_KEY``): it is
+sent as ``Authorization: Bearer <key>`` on every request, health checks included.
+
 Connection type ``stt`` (Connections panel): ``{url, model, timeout}``, e.g. a
 speaches / faster-whisper-server container::
 
@@ -62,7 +65,8 @@ def clean_transcript(text: str) -> str:
 
 
 class WhisperClient:
-    def __init__(self, url: str, model: str = '', timeout: float = 30.0, vad_filter: bool = True, **_):
+    def __init__(self, url: str, model: str = '', timeout: float = 30.0, vad_filter: bool = True,
+                 api_key: str = '', **_):
         self.url = url.rstrip('/')
         self.model = model
         self.timeout = float(timeout)
@@ -71,6 +75,8 @@ class WhisperClient:
         self.vad_filter = bool(vad_filter)
         self.last_dropped = ''           # the raw text of the last rejected transcript
         self._session = requests.Session()
+        if api_key:
+            self._session.headers['Authorization'] = f'Bearer {api_key}'
 
     def ping(self) -> bool:
         try:
@@ -83,15 +89,18 @@ class WhisperClient:
         return self.ping()
 
     def transcribe(self, audio, lang: str | None = None, prompt: str | None = None,
-                   mime: str = 'audio/wav', samplerate: int = 16000) -> str:
+                   mime: str = 'audio/wav', samplerate: int = 16000, vad: bool | None = None) -> str:
         """Transcript of `audio` — float32 samples, or the bytes of an encoded
-        file (wav / webm / ogg; `mime` says which). '' when nothing was said."""
+        file (wav / webm / ogg; `mime` says which). '' when nothing was said.
+        `vad` overrides the client's vad_filter for this call (warm-up: False, or the server's VAD drops the
+        silence and the model never runs)."""
         if isinstance(audio, (bytes, bytearray)):
             data, name = bytes(audio), 'audio.' + (mime.split('/')[-1].split(';')[0] or 'webm')
         else:
             data, name, mime = _wav_bytes(audio, samplerate), 'audio.wav', 'audio/wav'
+        use_vad = self.vad_filter if vad is None else bool(vad)
         form = {'response_format': 'verbose_json', 'temperature': '0',
-                'vad_filter': 'true' if self.vad_filter else 'false'}
+                'vad_filter': 'true' if use_vad else 'false'}
         if self.model:
             form['model'] = self.model
         if lang:
