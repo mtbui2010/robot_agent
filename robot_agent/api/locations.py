@@ -1,7 +1,7 @@
 """Location (deployment-site) config management.
 
 A KCare robot deployed at different sites needs different *connections* (device
-endpoints) and *global configs* (HOME_LOC, LLM_SERVERS, ENV, …). Each site is a
+endpoints) and *global configs* (ENV, …). Each site is a
 folder under ``configs/locations/<name>`` holding its own ``connections.json``,
 ``skill_configs_override.json`` and ``.env``. Shared state (skills, buttons)
 lives in ``configs/common`` and is NOT per-site.

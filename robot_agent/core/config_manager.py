@@ -3,10 +3,10 @@ from pathlib import Path
 
 from .shared_json import SharedJson
 
+# CALIB_PARAMS, HOME_LOC, LLM_SERVERS, KR2EN, EN2KR were dropped on 2026-10-26 (unused)
 KNOWN_CONFIGS = [
     'GRIP_CONFIGS', 'LIFT_CONFIGS', 'HEAD_CONFIGS', 'ARM_CONFIGS',
-    'MOBILE_CONFIGS', 'FIND_CONFIGS', 'CALIB_PARAMS',
-    'ENV', 'HOME_LOC', 'LLM_SERVERS', 'KR2EN', 'EN2KR', 'QA_CONFIGS', 'HRI_CONFIGS',
+    'MOBILE_CONFIGS', 'FIND_CONFIGS', 'ENV', 'QA_CONFIGS', 'HRI_CONFIGS',
 ]
 
 
@@ -71,6 +71,21 @@ class ConfigManager:
             if val is not None:
                 result[name] = val
         return result
+
+    def merge_update(self, name: str, base: dict, value: dict):
+        """Save a dashboard edit of group *name* as a change, not a snapshot:
+        *base* is the group as the dashboard loaded it, *value* as it is now.
+        Every top-level entry the dashboard added, edited or removed takes
+        *value*'s; every other one stays as the group is NOW — an ENV location
+        another machine added after the dashboard loaded is kept, where a plain
+        PUT of the old snapshot dropped it (2026-10-26). Returns (error, saved)."""
+        from .shared_json import merge_map
+        with self._lock:
+            self.refresh(force=True)
+            cur = self.get(name)
+            merged = merge_map(base, value, cur) if isinstance(cur, dict) else value
+            error = self.update(name, merged)
+            return error, (None if error else merged)
 
     def update(self, name: str, new_value: dict) -> str:
         # Overrides are the only place an edit is recorded. `get` consults them

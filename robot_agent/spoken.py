@@ -142,10 +142,10 @@ def real_text(s) -> str:
 
 
 def real_step(skill, params):
-    """``(skill, params)`` of a step as the skill ran it: no ``!`` / ``~`` or
+    """``(skill, params)`` of a step as the skill ran it: no ``!`` / ``~`` / ``%`` or
     spoken name on *skill*; *params* (a dict or the raw argument string) with
     the real values. Never raises."""
-    skill = str(skill or '').replace('!', '').replace('~', '').rpartition(ARROW)[2].strip()
+    skill = str(skill or '').replace('!', '').replace('~', '').replace('%', '').rpartition(ARROW)[2].strip()
     try:
         params = split_params(params)[0] if isinstance(params, dict) else real_text(params)
     except SpokenError:

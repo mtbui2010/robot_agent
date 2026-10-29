@@ -41,3 +41,17 @@ async def update_config(name: str, body: dict):
     if error:
         raise HTTPException(status_code=400, detail=error)
     return {'ok': True}
+
+
+@router.patch('/skill-configs/{name}')
+async def merge_config(name: str, body: dict):
+    """Body ``{base, value}``: the group as the client loaded it and as it is now.
+    Only the entries the client changed are written (3-way, per top-level key —
+    per location for ENV); returns the saved group, other machines' edits included."""
+    base, value = body.get('base'), body.get('value')
+    if not isinstance(base, dict) or not isinstance(value, dict):
+        raise HTTPException(status_code=400, detail='body must be {"base": {...}, "value": {...}}')
+    error, saved = current().cm.merge_update(name, base, value)
+    if error:
+        raise HTTPException(status_code=400, detail=error)
+    return {'ok': True, 'value': saved}

@@ -28,7 +28,7 @@ class SkillDef:
 
 
 # Characters the plan / direct-mode parser gives a meaning to.
-_ALIAS_BAD = set(':&!~#$' + '{},=' + '\'"' + '\n\r\t()')
+_ALIAS_BAD = set(':&!~%#$' + '{},=' + '\'"' + '\n\r\t()')     # %: a step prefix (not narrated)
 
 
 def _norm(name) -> str:

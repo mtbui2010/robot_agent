@@ -45,8 +45,7 @@ from pathlib import Path
 # Config groups a skill can read; reported so the destination can declare them.
 KNOWN_CONFIG_NAMES = {
     'GRIP_CONFIGS', 'LIFT_CONFIGS', 'HEAD_CONFIGS', 'ARM_CONFIGS',
-    'MOBILE_CONFIGS', 'FIND_CONFIGS', 'CALIB_PARAMS', 'ENV', 'HOME_LOC',
-    'LLM_SERVERS', 'KR2EN', 'EN2KR', 'NO_ACTION', 'ME', 'VLA_CLIENTS',
+    'MOBILE_CONFIGS', 'FIND_CONFIGS', 'ENV', 'NO_ACTION', 'ME', 'VLA_CLIENTS',
     'STANDING_OBJ_NAMES', 'LYING_OBJ_NAMES', 'HAVING_HANDLE_OBJ_NAMES',
 }
 

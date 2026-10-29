@@ -62,18 +62,7 @@ MOBILE_CONFIGS_DEFAULT: dict = {}
 # Detector/selector thresholds for the recognition skills.
 FIND_CONFIGS_DEFAULT: dict = {}
 
-# Hand-eye calibration parameters.
-CALIB_PARAMS_DEFAULT: dict = {}
-
-# The map pose the robot returns to when idle: {'x', 'y', 'theta'}.
-HOME_LOC_DEFAULT: dict = {}
-
 # The symbolic world: '<furniture>@<room>' -> {'loc': {'x','y','theta'},
 # 'height': m, 'label': str, ...}. Populated per robot — an empty ENV simply
 # means no named locations are known yet.
 ENV_DEFAULT: dict = {}
-
-# Word maps for spoken output, e.g. {'cup': '컵'}. Language-specific, so they
-# belong to the robot package rather than the runtime.
-KR2EN_DEFAULT: dict = {}
-EN2KR_DEFAULT: dict = {}

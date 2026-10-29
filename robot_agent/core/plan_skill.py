@@ -98,8 +98,8 @@ def plan_params(plan: str) -> dict:
 
 
 def _bare(action: str) -> str:
-    """The skill a step calls: no ``!`` / ``~``, no spoken name (``이동->move``)."""
-    action = action.replace('!', '').replace('~', '').strip()
+    """The skill a step calls: no ``!`` / ``~`` / ``%`` (not narrated, direct mode), no spoken name (``이동->move``)."""
+    action = action.replace('!', '').replace('~', '').replace('%', '').strip()
     return action.rpartition('->')[2].strip()
 
 
@@ -152,7 +152,7 @@ def rename_calls(plan: str, old: str, new: str) -> str:
     """*plan* with every step that calls skill *old* calling *new* instead,
     keeping its ``!`` / ``~`` prefix, spoken name (``이동->``), arguments,
     parallel ``&&`` and comments."""
-    pat = re.compile(r'(^|&&)(\s*[!~]*\s*(?:[^:&#\n]*?->\s*)?)' + re.escape(old) + r'(\s*::)')
+    pat = re.compile(r'(^|&&)(\s*[!~%]*\s*(?:[^:&#\n]*?->\s*)?)' + re.escape(old) + r'(\s*::)')
     out = []
     for line in plan.split('\n'):
         code, sep, comment = line.partition('#')

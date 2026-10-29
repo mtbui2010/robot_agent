@@ -88,7 +88,7 @@ PHRASES: dict[str, dict[str, str]] = {
     'en': {
         'task_start':   'Starting the task',
         'step_start':   'I will {verb} {object}',
-        'step_success': 'I have {verb} {object}',
+        'step_success': 'Done: {verb} {object}',
         'step_fail':    'Failed to {verb} {object}. {reason}',
         'replan':       'Replanning',
         'done_success': 'Task completed',
@@ -162,7 +162,7 @@ class Announcer:
         verbs = VERBS.get(self.lang, VERBS['en'])
         verb = verbs.get(action)
         if verb is None and isinstance(action, str):
-            verb = action.lower()
+            verb = action.lower().replace('_', ' ')     # pick_top → "pick top"
         out = dict(ctx)
         out['verb'] = verb or ''
         return out

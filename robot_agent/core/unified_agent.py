@@ -3,6 +3,10 @@ import asyncio, base64, threading, time
 from .run_control import begin_run, cancel_requested
 from typing import AsyncIterator, Any
 
+# Direct-mode narration says a step's `inputs` only; these skills' `options` too when they have no
+# inputs. `ask` is not narrated now (Announcer.SILENT_ACTIONS: it says its own question).
+_SAY_OPTIONS = {'ask'}
+
 
 def _encode_log_image(img: Any) -> str | None:
     """Encode an image value to a base64 JPEG string.
@@ -469,27 +473,70 @@ class UnifiedAgent:
         from .planning.announcer import Announcer
         announcer = Announcer(lang=lang, speak_backend=False)
 
+        def _hangul(text) -> bool:
+            return any('\uac00' <= ch <= '\ud7a3' for ch in str(text or ''))
+
+        def _step_say(kind, vo, **kw):
+            """(phrase, its language) for a step, in the run's language. A step written
+            with plain names keeps them as written, the skill name included:
+            ``move::drawer`` → "drawer move를 진행합니다"; the translated verb (이동) only
+            for a spoken name (``이동->move::서랍->drawer`` → "서랍 이동을 진행합니다") or a
+            Korean name (``move::식탁`` → "식탁 이동을 …"). The word maps that turned table
+            into 테이블 are gone (2026-10-26)."""
+            vo = dict(vo)
+            native = vo.pop('_native', False)
+            # A failure's msg is for the log, not for the ear: "'Exception in move': {'isdone': False, 'rets':
+            # [...]}" was read out word by word. Only a short plain-text reason is said.
+            r = str(kw.get('reason') or '')
+            if r and (len(r) > 80 or any(c in r for c in '{}[]\'"') or 'Exception' in r or 'Traceback' in r):
+                kw['reason'] = ''
+            if not native and lang != 'en' and 'verb' not in vo and vo.get('action'):
+                vo['verb'] = str(vo['action']).replace('_', ' ')      # pick_top → "pick top"
+            return announcer.announce(kind, **kw, **vo), lang
+
         def _verb_obj(task_group):
             """Announcer kwargs of a step: {action} (the skill), {object} (its
-            first param) and {verb} when the plan says how to call the skill —
-            the spoken sides of ``이동->move::식탁 앞->table_top``. A first param
+            `inputs`) and {verb} when the plan says how to call the skill —
+            the spoken sides of ``이동->move::식탁 앞->table_top``. An input
             taken from an earlier step (``pick::inputs={answer}``) is not known
             here — the narration read "{answer}" aloud — so it is left out:
-            "잡기를 진행합니다"."""
+            "잡기를 진행합니다". Only `inputs` is said (2026-10-27): the first
+            param whatever its key read "True" for ``execute=True,
+            inputs='drawer'`` and "0.5" for ``lift::height=0.5``; `options`
+            only for the skills in _SAY_OPTIONS."""
             from ..spoken import SpokenError, said_of, split_skill
-            from .plan_skill import _REF
+            from .plan_skill import _REF, parse_inputs
             try:
                 skill, inputs = task_group[0][0], task_group[0][1]
                 try:
                     said, skill = split_skill(skill)
                 except SpokenError:
                     said = None
-                skill = skill.replace('!', '').replace('~', '').strip()
-                obj = str(inputs).split(',')[0].split('=')[-1].strip().strip('\'"')
+                skill = skill.replace('!', '').replace('~', '').replace('%', '').strip()
+                raw = str(inputs).strip()
+                try:
+                    params = parse_inputs(raw)
+                except ValueError:
+                    params = {}
+                if '=' in raw and params == {'inputs': raw}:
+                    # did not evaluate (``drawer, execute=True``, ``inputs=cup, x=1``):
+                    # the `inputs=` segment, else a leading one without a key
+                    segs = [x.strip() for x in raw.split(',')]
+                    val = next((x.split('=', 1)[1] for x in segs if x.startswith('inputs=')),
+                               None if '=' in segs[0] else segs[0])
+                else:
+                    val = params.get('inputs')
+                    if val is None and skill in _SAY_OPTIONS:
+                        val = params.get('options')
+                if isinstance(val, (list, tuple)):
+                    val = ', '.join(str(v) for v in val)
+                obj = '' if val is None else str(val).strip().strip('\'"')
+                named = '->' in obj
                 obj = '' if _REF.fullmatch(obj) else said_of(obj).strip()
                 if obj in ('None', 'none', ''):
                     obj = ''
-                return {'action': skill, 'object': obj, **({'verb': said} if said else {})}
+                native = bool(said) or named or _hangul(obj)
+                return {'action': skill, 'object': obj, '_native': native, **({'verb': said} if said else {})}
             except Exception:
                 return {'action': '', 'object': ''}
 
@@ -497,6 +544,9 @@ class UnifiedAgent:
             if not log_all and not failed['v'] and _is_failure_event(event):
                 failed['v'] = True
             asyncio.run_coroutine_threadsafe(q.put(event), loop)
+
+        def _run_phrase(kind):
+            return {'say': announcer.announce(kind), 'say_lang': lang}
 
         def _blocking():
             _ds_dir = None
@@ -522,17 +572,21 @@ class UnifiedAgent:
 
                 for i, task_group in enumerate(tasks):
                     _vo = _verb_obj(task_group)
+                    # `%move::wait` (2026-10-28): this step is not narrated — neither its start nor its success;
+                    # a failure is still said (a blind user must hear the robot is stuck). The narrated task of
+                    # an `&&` group is its first one, so the `%` goes there.
+                    _quiet = '%' in str(task_group[0][0]) if task_group and task_group[0] else False
+                    _say, _say_lang = ('', lang) if _quiet else _step_say('step_start', _vo)
                     emit({'event': 'step_start', 'step': i + 1,
                           'total': len(tasks), 'task': str(task_group),
-                          'say': announcer.announce('step_start', **_vo)})
+                          'say': _say, 'say_lang': _say_lang, **({'quiet': True} if _quiet else {})})
 
                     if not ctx.get('isdone', True):
                         emit({'event': 'stopped', 'msg': 'Previous step failed'})
                         break
 
                     if cancel_requested():
-                        emit({'event': 'stopped', 'msg': 'Cancelled by user',
-                              'say': announcer.announce('done_fail')})
+                        emit({'event': 'stopped', 'msg': 'Cancelled by user', **_run_phrase('done_fail')})
                         break
 
                     log_fn = _make_log_fn(emit, i + 1)
@@ -544,10 +598,10 @@ class UnifiedAgent:
                     ctx.update(ret)
                     _ok = bool(ret.get('isdone', True)) if isinstance(ret, dict) else True
                     _reason = str(ret.get('msg', '')) if isinstance(ret, dict) and not _ok else ''
+                    _say, _say_lang = (('', lang) if _quiet and _ok else
+                                       _step_say('step_success' if _ok else 'step_fail', _vo, reason=_reason))
                     emit({'event': 'step_done', 'step': i + 1, 'result': _serialize_result(ret),
-                          'say': announcer.announce(
-                              'step_success' if _ok else 'step_fail',
-                              reason=_reason, **_vo)})
+                          'say': _say, 'say_lang': _say_lang})
                     _sk = task_group[0][0] if task_group and task_group[0] else None
                     _pa = task_group[0][1] if task_group and len(task_group[0]) > 1 else None
                     _emit_world(emit, node, skill=_sk, params=_pa, result=ret)   # refresh Robot State
@@ -564,14 +618,14 @@ class UnifiedAgent:
                 else:
                     _done_ok = bool(ctx.get('isdone', True))
                     emit({'event': 'done', 'success': _serialize_result(ctx.get('isdone', True)),
-                          'say': '' if ctx.get('stop') else
-                                 announcer.announce('done_success' if _done_ok else 'done_fail')})
+                          **({'say': ''} if ctx.get('stop') else
+                             _run_phrase('done_success' if _done_ok else 'done_fail'))})
 
             except Exception as e:
                 import traceback
                 failed['v'] = True
                 emit({'event': 'error', 'msg': str(e), 'trace': traceback.format_exc(),
-                      'say': announcer.announce('done_fail')})
+                      **_run_phrase('done_fail')})
             finally:
                 _end_dataset(keep=log_all or failed['v'], path=_ds_dir)
                 emit({'event': '__end__'})
@@ -593,7 +647,7 @@ class UnifiedAgent:
             return {'isdone': False, 'msg': str(e)}
         params.update({k: v for k, v in ctx.items() if k != 'node'})
         skip_fail, make_fail = '!' in action, '~' in action
-        action = action.replace('!', '').replace('~', '')
+        action = action.replace('!', '').replace('~', '').replace('%', '')     # %: not narrated (run_direct)
 
         result = self.skill_registry.execute(action, params, node=node, log_fn=log_fn)
         action = action.rpartition('->')[2].strip()      # 이동->move: the device agent is 'move'

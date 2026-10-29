@@ -81,8 +81,7 @@ class _ConfigProxy:
 from .skill_config_defaults import (
     GRIP_CONFIGS_DEFAULT, LIFT_CONFIGS_DEFAULT, HEAD_CONFIGS_DEFAULT,
     ARM_CONFIGS_DEFAULT, MOBILE_CONFIGS_DEFAULT, FIND_CONFIGS_DEFAULT,
-    CALIB_PARAMS_DEFAULT, HOME_LOC_DEFAULT,
-    ENV_DEFAULT, KR2EN_DEFAULT, EN2KR_DEFAULT,
+    ENV_DEFAULT,
 )
 
 # ── Live-proxied configs ──────────────────────────────────────────────────────
@@ -92,12 +91,7 @@ HEAD_CONFIGS    = _ConfigProxy('HEAD_CONFIGS',    HEAD_CONFIGS_DEFAULT)
 ARM_CONFIGS     = _ConfigProxy('ARM_CONFIGS',     ARM_CONFIGS_DEFAULT)
 MOBILE_CONFIGS  = _ConfigProxy('MOBILE_CONFIGS',  MOBILE_CONFIGS_DEFAULT)
 FIND_CONFIGS    = _ConfigProxy('FIND_CONFIGS',    FIND_CONFIGS_DEFAULT)
-CALIB_PARAMS    = _ConfigProxy('CALIB_PARAMS',    CALIB_PARAMS_DEFAULT)
 ENV             = _ConfigProxy('ENV',             ENV_DEFAULT)
-HOME_LOC        = _ConfigProxy('HOME_LOC',        HOME_LOC_DEFAULT)
-LLM_SERVERS     = _ConfigProxy('LLM_SERVERS',    {})
-KR2EN           = _ConfigProxy('KR2EN',           KR2EN_DEFAULT)
-EN2KR           = _ConfigProxy('EN2KR',           EN2KR_DEFAULT)
 # Visual Q&A (kcare `qa`): Ollama url/model, head views, ... The skill carries
 # its own defaults, so an empty dict here just means "use them".
 QA_CONFIGS      = _ConfigProxy('QA_CONFIGS',      {})
