@@ -6,19 +6,22 @@ control loop. The driver attaches the returned text to streamed events as
 `say`, and the frontend speaks the same string via the browser. One
 phrasebook, shared contract — no duplicated phrasing in TS + Python.
 
-Planner/robot-agnostic; lives under robot_agent.core.planning.
+Planner/robot-agnostic; lives under robot_agent.core.planning. The core
+ships English and Vietnamese; a robot adds its languages (and overrides any
+phrase) through its adapter's ``i18n``: ``{kind: {lang: template}}`` and
+``{'verb.<action>': {lang: verb}}``.
 """
 from __future__ import annotations
 
 import threading
 
 
-# Map run language -> gTTS voice code.
-_GTTS_CODE = {'vi': 'vi', 'ko': 'ko', 'en': 'en'}
+# Map run language -> gTTS voice code (a two-letter code is used as is).
+_GTTS_CODE = {'vi': 'vi', 'en': 'en'}
 
 # Per-action localized verbs (resolved into {verb} when ctx carries 'action').
-# Keys cover both GRACE actions (CamelCase) and the kcare skill names used by
-# the direct/structured path (lowercase, e.g. ``find::apple``).
+# Keys cover both GRACE actions (CamelCase) and the skill names used by the
+# direct/structured path (lowercase, e.g. ``find::apple``).
 VERBS: dict[str, dict[str, str]] = {
     'vi': {
         'MoveTo': 'đi tới', 'GoTo': 'đi tới', 'Navigate': 'đi tới',
@@ -32,19 +35,6 @@ VERBS: dict[str, dict[str, str]] = {
         'pick': 'lấy', 'grasp': 'lấy',
         'place': 'đặt', 'put': 'đặt',
         'open': 'mở', 'close': 'đóng',
-    },
-    'ko': {
-        'MoveTo': '이동', 'GoTo': '이동', 'Navigate': '이동',
-        'Find': '찾기', 'Search': '찾기', 'Detect': '찾기',
-        'Pick': '집기', 'PickUp': '집기', 'Grasp': '집기',
-        'Place': '놓기', 'PlaceAt': '놓기', 'PutDown': '놓기', 'PutIn': '놓기',
-        'Open': '열기', 'Close': '닫기',
-        # direct-path skills
-        'navigate': '이동', 'move': '이동', 'moveto': '이동',
-        'find': '찾기', 'detect': '찾기', 'detect_object': '찾기',
-        'pick': '집기', 'grasp': '집기',
-        'place': '놓기', 'put': '놓기',
-        'open': '열기', 'close': '닫기',
     },
     'en': {
         'MoveTo': 'move to', 'GoTo': 'move to', 'Navigate': 'move to',
@@ -74,17 +64,6 @@ PHRASES: dict[str, dict[str, str]] = {
         'plan_ready':   'Đã tạo kế hoạch',
         'unsupported':  'Hành động không được hỗ trợ',
     },
-    'ko': {
-        'task_start':   '작업을 시작합니다',
-        'step_start':   '{object} {verb}{eul} 진행합니다',
-        'step_success': '{object} {verb}{eul} 완료했습니다',
-        'step_fail':    '{object} {verb}에 실패했습니다. {reason}',
-        'replan':       '계획을 다시 세웁니다',
-        'done_success': '작업을 완료했습니다',
-        'done_fail':    '작업에 실패했습니다',
-        'plan_ready':   '계획을 생성했습니다',
-        'unsupported':  '지원하지 않는 동작입니다',
-    },
     'en': {
         'task_start':   'Starting the task',
         'step_start':   'I will {verb} {object}',
@@ -99,18 +78,15 @@ PHRASES: dict[str, dict[str, str]] = {
 }
 
 # Last-resort generic phrase per language (when a kind is missing everywhere).
-_GENERIC = {'vi': 'Đang thực hiện', 'ko': '진행 중입니다', 'en': 'Working'}
+_GENERIC = {'vi': 'Đang thực hiện', 'en': 'Working'}
 
-# Skills that speak to the user themselves (kcare `hri.reply` / `hri.ask`).
-# Their steps are not narrated: announcing "doing reply" talks over the skill's
-# own question, and with source='dashboard' the browser mic is open right then,
-# so the narration gets transcribed as if the user had said it. Naming kcare's
-# skills here is deliberate — 'reply' / 'ask' are this stack's conventional HRI
-# entry points (robot_template emits the same pair); a robot package with other
-# conversational skills can add to this set.
-SILENT_ACTIONS = {'reply', 'ask', 'qa', 'announce', 'wait',   # wait: a pause, nothing to tell
-                  'check_fall', 'check_restroom', 'call_119',   # kcare emergency skills speak for themselves
-                  'warmup_servers'}                             # loads models: nothing to tell the user
+# Skills that speak to the user themselves (HRI reply / ask). Their steps are
+# not narrated: announcing "doing reply" talks over the skill's own question,
+# and with source='dashboard' the browser mic is open right then, so the
+# narration gets transcribed as if the user had said it. 'reply' / 'ask' are
+# this stack's conventional HRI entry points (robot_template emits the same
+# pair); a robot adds its own through the adapter's ``quiet_skills``.
+SILENT_ACTIONS = {'reply', 'ask', 'announce', 'wait'}   # wait: a pause, nothing to tell
 
 # Only per-step narration is suppressed. Plan-level milestones (plan_ready,
 # done_success, ...) carry no action and play when no mic is open.
@@ -138,20 +114,39 @@ class _BlankDict(dict):
 
 
 class Announcer:
-    """Localized milestone announcer with optional backend speech."""
+    """Localized milestone announcer with optional backend speech.
 
-    def __init__(self, lang: str = 'en', speak_backend: bool = True) -> None:
-        self.lang = lang if lang in PHRASES else 'en'
+    ``i18n`` (a ``robot_agent.contract.Messages``) and ``quiet`` (skills that speak for
+    themselves) come from the robot's adapter; left out, the running robot's are used.
+    """
+
+    def __init__(self, lang: str = 'en', speak_backend: bool = True, i18n=None, quiet=None) -> None:
+        if i18n is None or quiet is None:
+            from .robot import current_robot
+            robot = current_robot()
+            if i18n is None and robot is not None:
+                i18n = robot.i18n
+            if quiet is None and robot is not None:
+                quiet = robot.quiet_skills
+        self.phrases: dict = dict(getattr(i18n, 'phrases', None) or {})
+        self.quiet = SILENT_ACTIONS | set(quiet or ())
+        robot_langs = {lg for by_lang in self.phrases.values() if isinstance(by_lang, dict) for lg in by_lang}
+        self.lang = lang if (lang in PHRASES or lang in robot_langs) else 'en'
         self.speak_backend = speak_backend
 
     # -- phrase resolution ---------------------------------------------------
+    def _robot(self, key: str) -> str | None:
+        by_lang = self.phrases.get(key)
+        return by_lang.get(self.lang) if isinstance(by_lang, dict) else None
+
     def _template(self, kind: str) -> str:
-        table = PHRASES.get(self.lang) or PHRASES['en']
-        tmpl = table.get(kind)
+        tmpl = self._robot(kind)
+        if tmpl is None:
+            tmpl = (PHRASES.get(self.lang) or {}).get(kind)
         if tmpl is None:
             tmpl = PHRASES['en'].get(kind)
         if tmpl is None:
-            tmpl = _GENERIC.get(self.lang, _GENERIC['en'])
+            tmpl = self._robot('generic') or _GENERIC.get(self.lang, _GENERIC['en'])
         return tmpl
 
     def _resolve_verb(self, ctx: dict) -> dict:
@@ -160,7 +155,7 @@ class Announcer:
             return ctx
         action = ctx.get('action')
         verbs = VERBS.get(self.lang, VERBS['en'])
-        verb = verbs.get(action)
+        verb = self._robot(f'verb.{action}') or verbs.get(action)
         if verb is None and isinstance(action, str):
             verb = action.lower().replace('_', ' ')     # pick_top → "pick top"
         out = dict(ctx)
@@ -175,7 +170,7 @@ class Announcer:
         """
         if kind in SILENT_KINDS:
             return ''
-        if kind in _STEP_KINDS and str(ctx.get('action') or '').strip() in SILENT_ACTIONS:
+        if kind in _STEP_KINDS and str(ctx.get('action') or '').strip() in self.quiet:
             return ''
         tmpl = self._template(kind)
         ctx = self._resolve_verb(ctx)
@@ -194,7 +189,7 @@ class Announcer:
         return text
 
     def _speak(self, text: str) -> None:
-        code = _GTTS_CODE.get(self.lang, 'en')
+        code = _GTTS_CODE.get(self.lang, self.lang if len(self.lang) == 2 else 'en')
 
         def _run() -> None:
             try:

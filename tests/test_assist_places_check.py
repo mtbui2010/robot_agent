@@ -25,11 +25,23 @@ def W(**kw):
 
 
 @pytest.fixture
-def loop():
+def robot():
+    from robot_agent.core.planning.robot import RobotView
+    return RobotView.load("fakebot")
+
+
+@pytest.fixture
+def places(env, robot):
+    """The ENV places with the robot's rule for what opens (the sim house marks no drawer)."""
+    return Places(env, openable=robot.openable)
+
+
+@pytest.fixture
+def loop(robot):
     """An AssistLoop with only what _check and the pure helpers read (no agent, no planner)."""
-    from fakebot.configs import grace_namemap
     lp = AssistLoop.__new__(AssistLoop)
-    lp._namemap = grace_namemap
+    lp.robot = robot
+    lp._namemap = robot.adapter.namemap
     return lp
 
 

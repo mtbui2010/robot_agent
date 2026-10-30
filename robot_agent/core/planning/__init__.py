@@ -2,10 +2,11 @@
 """Robot-agnostic planning layer for the closed-loop GRACE driver.
 
 This package bridges abstract GRACE/SAGE (embodiplan) symbolic plans to concrete
-kcare_robot skill calls. See the authoritative specs:
+skill calls of the robot, which it reaches only through its ``RobotAdapter``
+(``robot_agent.contract``, wrapped by :class:`.robot.RobotView`). See the specs:
 
-* ``kcare_robot/docs/CLOSED_LOOP_ARCHITECTURE.md``
-* ``kcare_robot/docs/ACTION_MAPPER_SPEC.md``
+* ``docs/contract.md`` (this repo) and the robot package's
+  ``docs/CLOSED_LOOP_ARCHITECTURE.md`` / ``docs/ACTION_MAPPER_SPEC.md``
 
 Public surface (the only names downstream code should import):
 

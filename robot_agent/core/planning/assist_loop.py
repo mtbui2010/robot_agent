@@ -8,17 +8,20 @@ or ``ROBOT_AGENT_PLANNER=sage``; ``'grace'`` is the plain ``ClosedLoop`` around 
 1. **Understand** (one LLM call, JSON): the task becomes goals ``{type: on|in|open|close, object, from, to}`` or
    a refusal (``unsafe`` / ``infeasible``). Places are grounded on the live ENV without the LLM; a place word
    naming several places, a place the user never said, or "me" without a place is a question for the user
-   (HRI ``ask`` skill); answers are read back ("I will … Is that right?").
+   (the robot's Ask skill, from its manifest); answers are read back ("I will … Is that right?").
 2. **Plan**: SAGE ``generate_plan``; the checker (``_check``) simulates the plan as written and reports rule
    violations (wrong place, Pick without Find, Open with a full hand, goals not reached …); critical ones go back
    to SAGE as an edit request (``replan`` from the first bad step), up to ``edit_rounds`` times.
-3. **Guard each step**: preconditions before the robot moves (a violation -> SAGE replan); after the skill, its
-   own result + symbolic + extra checks (MoveTo measured against the ENV loc, Pick looked at again, Place looked at
-   twice, a Find seen out of reach). Skill-level retries in place stay here (move again, look + grasp again), as do
-   requests to the person (clear the way, move the object to the edge, where is it?). Anything that needs a
-   different plan — the object is not here, the robot is at the wrong place, the plan ended short of the goals —
-   goes to SAGE's suffix repair with an E / R / S reason (``max_replans``). A skill bug, a dropped object or the
-   same failure twice stops the run and says why.
+3. **Guard each step**: preconditions before the robot moves (a violation -> SAGE replan); after the skill
+   reported success, never the preconditions again: its effects are applied and the skill's VerifySpecs run (the
+   manifest's sensors: MoveTo measured against the ENV loc, Pick looked at again; a missing sensor = UNKNOWN), plus
+   a Place looked at twice and a Find seen out of reach. Skill-level retries in place stay here (move again, look
+   + grasp again), as do requests to the person (clear the way, move the object to the edge, where is it?).
+   Anything that needs a different plan — the object is not here, the robot is at the wrong place, the plan ended
+   short of the goals — goes to SAGE's suffix repair with an E / R / S reason (``max_replans``). A failure the
+   recovery policy does not retry (a skill bug, an e-stop: ``contract.recovery`` by FailureCode), a dropped object
+   or the same failure twice stops the run and says why. The robot comes in only through its RobotAdapter
+   (``RobotView``): skill names, sensors, geometry, what opens, its phrases.
 4. **Done** only when every goal holds in the belief state; the object memory (``object_memory.<host>.json``)
    is updated on every Find / Pick / Place.
 """
@@ -35,13 +38,13 @@ import traceback
 from pathlib import Path
 from typing import Iterator, Optional
 
+from robot_agent.contract import FailureCode, Unbindable
 from robot_agent.state import current, host_id
-from .announcer import Announcer
 from .loop import ClosedLoop, _vr_list, reconcile_world
-from .mapper import ActionMapper, Unmappable
 from .records import RunLogger, StepRecord, VerifyResult, new_task_record
 from . import action_model
-from .verify import StepVerifier, symbolic_check, verdict
+from .robot import run_skill
+from .verify import symbolic_check, verdict
 
 _LOC_ACTIONS = {"MoveTo", "Place", "PutIn", "Open", "Close"}
 # per-run overrides accepted from /ws/agent `options`
@@ -51,9 +54,6 @@ _USER_WORDS = {"me", "user", "here", "you", "myself", "person"}
 # spoken yes / no (ko / vi / en) for read-backs
 _YES = re.compile(r"\b(yes|yeah|yep|ok|okay|right|correct|sure|go ahead|네|예|응|맞아|맞아요|좋아|có|đúng|vâng|ừ)\b")
 _NO = re.compile(r"\b(no|nope|not|wrong|아니|아니요|아뇨|không|sai)\b")
-# a bug in a skill, not the world: retrying / replanning cannot help
-_SOFTWARE_ERR = re.compile(r"unexpected keyword argument|missing \d+ required|is not defined|has no attribute|"
-                           r"TypeError|NameError|AttributeError|ImportError|SyntaxError")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -71,11 +71,13 @@ def _strip_article(s: str) -> str:
 
 
 class Places:
-    """The live ENV as a closed vocabulary of places."""
+    """The live ENV as a closed vocabulary of places. ``openable(key, entry)``: the robot's rule
+    (``RobotView.openable``); default, the ENV entry's ``openable`` flag."""
 
-    def __init__(self, env: dict):
+    def __init__(self, env: dict, openable=None):
         self.env = {k: v for k, v in (env or {}).items() if isinstance(v, dict)}
         self.keys = list(self.env)
+        self._openable = openable
 
     @staticmethod
     def head(key: str) -> str:
@@ -90,7 +92,9 @@ class Places:
 
     def openable(self, key: str) -> bool:
         v = self.env.get(key, {})
-        return bool(v.get("openable")) or "drawer" in key.lower()
+        if self._openable is not None:
+            return bool(self._openable(key, v))
+        return bool(v.get("openable"))
 
     def describe(self) -> str:
         out = []
@@ -221,8 +225,7 @@ UNDERSTAND_SCHEMA = {
     "required": ["status", "reason", "question", "goals"],
 }
 
-UNDERSTAND_PROMPT = """You turn a household robot task into goals. The robot is a mobile manipulator. It can:
-move to a place, find an object, pick it up, place it on a surface, open / close a drawer, put an object in an open drawer.
+UNDERSTAND_PROMPT = """You turn a household robot task into goals. {abilities}
 It cannot: throw, pour, cook, wash, climb, open windows or doors, use tools, handle knives near people, or leave the house.
 
 Places (use these names):
@@ -262,6 +265,11 @@ class AssistLoop(ClosedLoop):
         super().__init__(agent, emit=emit, **overrides)
         env = os.environ.get
         common = Path(getattr(current(), "common_dir", "."))
+        geo = self.robot.geometry
+        find = self.robot.spec("Find")
+        find_props = (find.params.get("properties") or {}) if find is not None else {}
+        self._find_params = set(find_props)
+        min_conf = (find_props.get("min_conf") or {}).get("default", 0)
         self.cfg.update({
             "clarify_rounds": int(overrides.get("clarify_rounds", env("ROBOT_AGENT_CLARIFY_ROUNDS", "3"))),
             # Find failures before asking the person where the object is (each one goes to SAGE first)
@@ -274,18 +282,18 @@ class AssistLoop(ClosedLoop):
             "silence_retries": int(overrides.get("silence_retries", env("ROBOT_AGENT_SILENCE_RETRIES", "1"))),
             "confirm_answers": overrides.get("confirm_answers", env("ROBOT_AGENT_CONFIRM_ANSWERS", "1") == "1"),
             "confirm_task": overrides.get("confirm_task", env("ROBOT_AGENT_CONFIRM_TASK", "0") == "1"),
-            # MoveTo: farther than this from the ENV loc counts as not arrived (nav "succeeded" off the spot)
-            "arrive_tol": float(overrides.get("arrive_tol", env("ROBOT_AGENT_ARRIVE_TOL", "0.3"))),
-            # Find: detections below this score are treated as not seen (kcare's own default is 0). Sim, 109
-            # finds: 0 -> absent objects "found" 48/82, real ones right 18/27; 0.55 -> 6/82 and 16/27
-            "find_min_conf": float(overrides.get("find_min_conf", env("ROBOT_AGENT_FIND_MIN_CONF", "0.55"))),
-            # Find: a VLM checks the crop of each low-scoring detection (kcare find::verify). Off: in the sim it
-            # removed no more absent objects than the 0.55 threshold, lost real ones and cost ~8 s per find
+            # MoveTo: farther than this from the ENV loc counts as not arrived (nav "succeeded" off the spot);
+            # default: the robot's geometry (manifest arrive_tol_m)
+            "arrive_tol": float(overrides.get("arrive_tol", env("ROBOT_AGENT_ARRIVE_TOL", str(geo.arrive_tol_m)))),
+            # Find: detections below this score are treated as not seen; sent only when the robot's Find takes a
+            # `min_conf` param, default its manifest default (the robot's measurements live there)
+            "find_min_conf": float(overrides.get("find_min_conf", env("ROBOT_AGENT_FIND_MIN_CONF", str(min_conf)))),
+            # Find: a VLM checks the crop of each low-scoring detection (the Find skill's `verify` param, if any)
             "find_verify": overrides.get("find_verify", env("ROBOT_AGENT_FIND_VERIFY", "0") == "1"),
-            # base-frame distances: beyond reach_far a detection is "over there" (look-and-go); a pick whose
-            # target is more than reach_lateral to the side is not retried (kcare: 0/23 beyond 0.74 m)
-            "reach_far": float(overrides.get("reach_far", env("ROBOT_AGENT_REACH_FAR", "1.0"))),
-            "reach_lateral": float(overrides.get("reach_lateral", env("ROBOT_AGENT_REACH_LATERAL", "0.78"))),
+            # base-frame distances (manifest reach_far_m / reach_m): beyond reach_far a detection is "over there"
+            # (look-and-go); a pick whose target is more than reach_lateral to the side is not retried
+            "reach_far": float(overrides.get("reach_far", env("ROBOT_AGENT_REACH_FAR", str(geo.reach_far_m)))),
+            "reach_lateral": float(overrides.get("reach_lateral", env("ROBOT_AGENT_REACH_LATERAL", str(geo.reach_m)))),
             "ask_help": overrides.get("ask_help", env("ROBOT_AGENT_ASK_HELP", "1") == "1"),
             "memory_path": Path(overrides.get("memory_path") or (common / f"object_memory.{host_id()}.json")),
             "generator": self.cfg["planner"],
@@ -308,6 +316,7 @@ class AssistLoop(ClosedLoop):
 
     def _understand(self, task, places, memory, world, dialogue) -> dict:
         prompt = UNDERSTAND_PROMPT.format(
+            abilities=self.robot.robot_description(),
             # no object memory here: a 7B model refused / asked about every object it did not list
             # (the memory grounds `from` after this call instead)
             places=places.describe(), answers=memory.answers_text(),
@@ -428,10 +437,16 @@ class AssistLoop(ClosedLoop):
         return cache[(text, name)]
 
     def _ask(self, question, node, log_fn, lang) -> str:
-        """Ask the user through the HRI `ask` skill. '' when there is no answer / no channel."""
+        """Ask the user through the robot's Ask skill (manifest). '' when there is no answer / no channel."""
+        spec = self.robot.ask_spec()
+        if spec is None:
+            return ""
+        params = {(spec.required_params[:1] or ["inputs"])[0]: self._in_lang(question, lang)}
+        for k, v in (("retries", 0), ("lang", lang)):            # optional params the skill may take
+            if k in spec.param_names:
+                params[k] = v
         try:
-            r = self.sr.execute("ask", {"inputs": self._in_lang(question, lang), "retries": 0, "lang": lang},
-                                node, log_fn=log_fn)
+            r = self.sr.execute(spec.name, params, node, log_fn=log_fn)
             return str((r or {}).get("text") or (r or {}).get("answer") or "").strip() if (r or {}).get("isdone") else ""
         except Exception:
             return ""
@@ -505,9 +520,9 @@ class AssistLoop(ClosedLoop):
         need_open = {g["to"] for g in goals if g["type"] == "in"} | {g["object"] for g in goals if g["type"] == "open"}
         need_close = {g["object"] for g in goals if g["type"] == "close"}
         src_of = {g["object"]: g.get("from") for g in goals}
-        known = set(getattr(self._namemap, "SKILL_MAP", {})) | set(getattr(self._namemap, "NOOP_ACTIONS", set()))
+        known = self.robot.plan_actions
         nice = lambda k: (k or "").replace("@", " in the ")
-        ctx = dict(capabilities=action_model.ROBOT_CAPABILITIES, actions=known, openable=places.openable,
+        ctx = dict(capabilities=self.robot.model_capabilities(), actions=known, openable=places.openable,
                    containers=places.openable, object_places={o: f for o, f in src_of.items() if f})
         w, placed_ok = world.copy(), {}
         for i, st in enumerate(steps):
@@ -627,7 +642,8 @@ class AssistLoop(ClosedLoop):
                 break
             for k, items in sorted(todo.items()):
                 prev = [s_ for b in blocks[:k] for s_ in b.steps]
-                state = action_model.simulate(prev, stop_on_error=False).final_state
+                state = action_model.simulate(prev, stop_on_error=False,
+                                              capabilities=self.robot.model_capabilities()).final_state
                 fb = ("Checker findings (fix them; places must be exactly the listed ones):\n"
                       + "\n".join(f"- {t}" for t in items) + f"\nGoals of the whole task: {goal_txt}")
                 try:
@@ -702,29 +718,57 @@ class AssistLoop(ClosedLoop):
         return True
 
     # ── execution helpers ─────────────────────────────────────────────────
-    def _params(self, st, world):
+    def _bind(self, st, world):
+        """``(skill, params)`` of a grounded step (None: a no-op); raises Unbindable. The step's object is
+        already the robot's name (an ENV key / the object), so it goes in as is."""
+        mapped = self.robot.bind(dict(st), world)
+        if mapped is None:
+            return None
+        skill, p = mapped[0], dict(mapped[1] or {})
         a, o = st["action"], st["object"]
-        p = self._build_params(a, o, world, {})
-        if a in _LOC_ACTIONS:
+        if a in _LOC_ACTIONS or a in ("Find", "Pick"):
             p["inputs"] = o
-        elif a in ("Find", "Pick"):
-            p["inputs"] = o
-        if a == "Find" and self.cfg["find_min_conf"] > 0:
+        if a == "Find" and self.cfg["find_min_conf"] > 0 and "min_conf" in self._find_params:
             p["min_conf"] = self.cfg["find_min_conf"]
-        if a == "Find" and self.cfg["find_verify"]:
+        if a == "Find" and self.cfg["find_verify"] and "verify" in self._find_params:
             p["verify"] = True
-        return p
+        return skill, p
+
+    def _params(self, st, world):
+        """The params of a grounded step (legacy entry point; see ``_bind``)."""
+        mapped = self._bind(st, world)
+        return dict(mapped[1]) if mapped else {}
+
+    def _holding(self, node, default: bool) -> bool:
+        """Is something in the hand? The robot's holding sensor (the one that verifies its Pick);
+        ``default`` when it has none or it cannot be read."""
+        skill = self.robot.holding_sensor()
+        if skill is None:
+            return default
+        try:
+            return bool(self.sr.execute(skill, {}, node).get("isdone"))
+        except Exception:
+            return default
+
+    def _base_pose(self, node):
+        """[x, y, yaw_deg] from the robot's pose sensor, or None."""
+        skill = self.robot.pose_sensor()
+        if skill is None:
+            return None
+        try:
+            return list(self.sr.execute(skill, {}, node)["pose"])[:3]
+        except Exception:
+            return None
 
     def _dist_to_place(self, key, node, places):
         """Base distance (m) from the ENV loc of `key`, or None when unknown."""
         l = (places.env.get(key) or {}).get("loc") or {}
         if "x" not in l or "y" not in l:
             return None
-        try:
-            x, y, _ = self.sr.execute("mobile_pose", {}, node)["pose"]
-        except Exception:
+        pose = self._base_pose(node)
+        if pose is None:
             return None
-        return math.hypot(x - l["x"], y - l["y"])
+        return math.hypot(pose[0] - l["x"], pose[1] - l["y"])
 
     def _effect(self, st, world, memory, placed):
         a, o, held = st["action"], st["object"], world.holding
@@ -760,10 +804,10 @@ class AssistLoop(ClosedLoop):
         """The ENV place to stand at for a point seen beyond reach (None when it is within reach / unknown)."""
         if math.hypot(p3[0], p3[1]) <= self.cfg["reach_far"]:
             return None
-        try:
-            x, y, rz = self.sr.execute("mobile_pose", {}, node)["pose"]
-        except Exception:
+        pose = self._base_pose(node)
+        if pose is None or len(pose) < 3:
             return None
+        x, y, rz = pose
         c, s_ = math.cos(math.radians(rz)), math.sin(math.radians(rz))
         wx, wy = x + c * p3[0] - s_ * p3[1], y + s_ * p3[0] + c * p3[1]
         best = None
@@ -779,16 +823,14 @@ class AssistLoop(ClosedLoop):
 
     # ── main ──────────────────────────────────────────────────────────────
     def run_blocking(self, task: str, lang: str = "en", plan_only: bool = False) -> Iterator[dict]:
-        nm = self._namemap
-        mapper = ActionMapper(nm)
-        verifier = StepVerifier(self.cfg["vlm_enabled"], set(getattr(nm, "VLM_ACTIONS", set())),
-                                getattr(nm, "vlm_hook", None))
-        announcer = Announcer(lang=lang, speak_backend=self.cfg["speak_backend"])
+        robot = self.robot
+        announcer = self._announcer(lang)
         world = current().world
         node = getattr(self.dm, "_ros_node", None)
         reconcile_world(node, world)
         from robot_agent.skill_configs import ENV
-        places = Places(dict(ENV))
+        places = Places(dict(ENV), openable=robot.openable)
+        verifier = self._verifier(node, places.env)
         memory = Memory(self.cfg["memory_path"])
 
         muted = False
@@ -951,7 +993,8 @@ class AssistLoop(ClosedLoop):
                 yield ev("gate", round=1, edits=edits, problems=[p_[1] for p_ in probs],
                          plan=[f"{x['action']} {x['object']}" for x in steps])
             run.plan_meta = dict(meta or {}, plan_sec=round(time.time() - t_plan, 2), llm_plan=ground(raw), edits=edits)
-            plan_text = "\n".join(f"{nm.SKILL_MAP.get(x['action'], x['action'])}::{x['object']}" for x in steps)
+            skill_map = robot.skill_map
+            plan_text = "\n".join(f"{skill_map.get(x['action'], x['action'])}::{x['object']}" for x in steps)
             yield ev("plan", steps=steps, plan_meta=run.plan_meta, warnings=[], plan_text=plan_text,
                      world=world.to_dict())
             if plan_only:
@@ -1015,11 +1058,7 @@ class AssistLoop(ClosedLoop):
                     why = "" if ok_pre else why_
                 if not why and a in ("Place", "PutIn") and world.holding:
                     # still in the hand? (dropped on the way: `place` would otherwise go and pick something up)
-                    try:
-                        in_hand = bool(self.sr.execute("grasp_succeed", {}, node).get("isdone"))
-                    except Exception:
-                        in_hand = True
-                    if not in_hand:
+                    if not self._holding(node, default=True):
                         lost = world.holding
                         memory.see(lost, None, "dropped")
                         world.holding = world.holding_since = None
@@ -1037,8 +1076,8 @@ class AssistLoop(ClosedLoop):
                     continue
 
                 try:
-                    mapped = mapper.to_skill(dict(st), world)
-                except Unmappable as e:
+                    mapped = self._bind(st, world)
+                except Unbindable as e:
                     mapped = e
                 if mapped is None:                                   # no-op action
                     run.steps.append(StepRecord(index=i, action=a, object=o, skill=None, status="success",
@@ -1054,44 +1093,25 @@ class AssistLoop(ClosedLoop):
                     yield e_
                     continue
 
-                skill = mapped[0]
-                params = self._params(st, world)
+                skill, params = mapped
                 rec = StepRecord(index=i, action=a, object=o, skill=skill, params=params,
                                  status="running", started_at=started)
                 yield ev("step_start", index=i, action=a, object=o, skill=skill,
                          say=announcer.announce("step_start", **self._say(st, a, o)))
-                try:
-                    result = self.sr.execute(skill, params, node, log_fn=log_fn_for(i))
-                except Exception as e:
-                    result = {"isdone": False, "msg": str(e)}
-                rec.result = result if isinstance(result, dict) else {"result": result}
+                res = run_skill(self.sr, skill, params, node, log_fn=log_fn_for(i))
+                rec.result = res.to_legacy()
                 if cancel_requested():
                     rec.status = "aborted"; run.steps.append(rec)
                     yield finish("aborted", msg="Cancelled by user"); return
 
-                # ── post-checks ──
-                vres = verifier.verify(st, rec.result, world, node)
+                # ── post-checks: after a reported success, the effects + the skill's VerifySpecs (manifest:
+                # Pick looked at again once the arm is folded, MoveTo measured against the ENV loc) ──
+                vres = verifier.verify(st, res, world, node, params=params)
                 if (a in ("Place", "PutIn") and vres and not vres[0].ok
-                        and "still in the gripper" in str(vres[0].detail)):
-                    # place's own empty-gripper check fired right after the release; look once more
-                    try:
-                        if not self.sr.execute("grasp_succeed", {}, node).get("isdone"):
-                            vres = [VerifyResult("isdone", True, "place: second look, gripper empty"),
-                                    VerifyResult("recheck", True, f"first check: {vres[0].detail}")]
-                    except Exception:
-                        pass
-                if a == "Pick" and vres and vres[0].ok:
-                    # pick's own check passed on an empty gripper ~1 in 10 sim runs: look again once the arm is folded
-                    try:
-                        if not self.sr.execute("grasp_succeed", {}, node).get("isdone"):
-                            vres.append(VerifyResult("in_hand", False, "pick reported success but the gripper is empty"))
-                    except Exception:
-                        pass
-                if a == "MoveTo" and vres and vres[0].ok:
-                    # navigation may report success off the spot: measure it
-                    d_off = self._dist_to_place(o, node, places)
-                    if d_off is not None and d_off > self.cfg["arrive_tol"]:
-                        vres.append(VerifyResult("localization", False, f"stopped {d_off:.2f} m from {o}"))
+                        and res.code is FailureCode.GRASP_FAILED and not self._holding(node, default=True)):
+                    # the release's own empty-gripper check fired right after letting go; looked once more
+                    vres = [VerifyResult("isdone", True, f"{skill}: second look, gripper empty"),
+                            VerifyResult("recheck", True, f"first check: {vres[0].detail}")]
                 if a == "Find" and vres and vres[0].ok:
                     p3 = self._found_point(rec.result, o)
                     seen_at[o] = p3
@@ -1124,9 +1144,13 @@ class AssistLoop(ClosedLoop):
                          say=announcer.announce("step_fail", **self._say(st, a, o), reason=reason),
                          world=world.to_dict())
 
-                # ── stop at once: a skill bug, or the same failure twice ──
-                if _SOFTWARE_ERR.search(str(reason)):
-                    yield finish("failed", msg=f"internal error in the {skill} skill (not retried): {reason}"); return
+                # ── stop at once: the recovery policy does not retry it (a skill bug, an e-stop), or the same
+                # failure twice ──
+                code = robot.failure_code(res, reason)
+                rule = robot.policy.rule_for(code)
+                if not rule.retry_allowed:
+                    what = "internal error in" if code is FailureCode.SOFTWARE else f"{code.value} in"
+                    yield finish("failed", msg=f"{what} the {skill} skill (not retried): {reason}"); return
                 sig = (a, o, world.arrived, re.sub(r"[-\d.]+", "#", str(reason))[:160])
                 seen_fail[sig] = seen_fail.get(sig, 0) + 1
                 if seen_fail[sig] > 2:
@@ -1136,7 +1160,8 @@ class AssistLoop(ClosedLoop):
                 extra = ""
                 if a == "Find":
                     world.found = None
-                    if world.arrived and world.arrived not in searched and "out of reach" not in reason:
+                    # absent: the place counts as searched; could not look / out of reach: it does not (policy)
+                    if world.arrived and world.arrived not in searched and rule.mark_searched:
                         searched.append(world.arrived)
                     find_fails[o] = find_fails.get(o, 0) + 1
                     if find_fails[o] > self.cfg["search_max"] and self.cfg["ask_help"] and ("where", o) not in helped:
@@ -1157,11 +1182,7 @@ class AssistLoop(ClosedLoop):
                         extra = (f"; it is not at {world.arrived}. Choose where to look next among the places not yet "
                                  f"searched" + (f" (it was seen near {seen_far[-1]})" if seen_far else ""))
                 elif a == "Pick":
-                    try:
-                        in_hand = bool(self.sr.execute("grasp_succeed", {}, node).get("isdone"))
-                    except Exception:
-                        in_hand = False
-                    if in_hand:
+                    if self._holding(node, default=False):
                         # failed, yet something is in the gripper (a neighbour?): never carry on with an unknown object
                         world.holding = f"unknown object (picking {o})"
                         yield finish("failed", msg=f"the pick of the {o} failed but something is in my gripper; "
@@ -1207,11 +1228,7 @@ class AssistLoop(ClosedLoop):
                             continue
                     yield finish("failed", msg=f"could not get to {o}: {reason}"); return
                 elif a in ("Place", "PutIn"):
-                    try:
-                        held = bool(self.sr.execute("grasp_succeed", {}, node).get("isdone"))
-                    except Exception:
-                        held = True
-                    if not held:
+                    if not self._holding(node, default=True):
                         if world.holding:
                             memory.see(world.holding, None, "dropped")
                         world.holding = world.holding_since = None

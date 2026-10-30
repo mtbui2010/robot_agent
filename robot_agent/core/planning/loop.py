@@ -5,12 +5,14 @@ frontend already consumes from ``UnifiedAgent.run``, plus ``action/object/
 verifies/say``). It is selected from ``UnifiedAgent.run`` behind a config gate;
 the legacy open-loop path remains the default fallback.
 
-Per-step it: maps a GRACE step to a kcare skill (``ActionMapper``), executes it
-(``SkillRegistry.execute``), verifies the result in layers (``StepVerifier``:
-isdone -> symbolic -> VLM), announces milestones (``Announcer`` — robot speaker
-+ ``say`` for the dashboard), records everything (``TaskRecord`` + JSONL
-``RunLogger``), and on failure asks the planner to ``replan`` a suffix (bounded
-by ``max_replans``).
+Per-step it: binds a GRACE step to a skill of the robot (``RobotView.bind``, the
+robot's ``RobotAdapter`` from ``robot_agent.contract.load_adapter``), executes it
+(``SkillRegistry.execute``, normalised by ``run_skill``), verifies the result in
+layers (``StepVerifier``: isdone -> symbolic effects -> VLM -> the skill's sensor
+VerifySpecs), announces milestones (``Announcer`` — robot speaker + ``say`` for
+the dashboard), records everything (``TaskRecord`` + JSONL ``RunLogger``), and on
+failure asks the planner to ``replan`` a suffix (bounded by ``max_replans``)
+unless the recovery policy says to stop (``contract.recovery``, by FailureCode).
 
 Runtime code (not a workflow/pyplanner library) — ``time.time()`` is allowed
 here and is the source of run-ids/timestamps.
@@ -28,12 +30,14 @@ import traceback
 from pathlib import Path
 from typing import Iterator, Optional
 
+from robot_agent.contract import classify_legacy_failure
 from robot_agent.state import current, host_id
 from .announcer import Announcer
 from .base import WorldState
 from .mapper import ActionMapper, Unmappable
 from .records import RunLogger, StepRecord, VerifyResult, new_task_record
 from .registry import get_planner
+from .robot import RobotView, current_robot, run_skill
 from .verify import StepVerifier, verdict
 
 
@@ -56,22 +60,27 @@ def _robot_namemap():
         return None
 
 
-def _read_robot_xy(node):
-    """Best-effort (x, y) of the mobile base from the ``mobile_pose`` agent.
+def _read_robot_xy(node, agent=None):
+    """Best-effort (x, y) of the mobile base from the robot's base-pose agent
+    (``agent``; default: the running robot's pose sensor, the skill that
+    verifies its MoveTo in the manifest).
 
     Robust to the payload shapes seen in the wild: a flat ``{'x','y'}`` dict, or
     ``{'pose': <...>}`` where the value is a ROS Pose (``.position.x``), a list
-    ``[x, y, ...]``, or a ``{'x','y'}`` dict. The kcare ``decode_func`` returns
-    ``{'pose': <geometry_msgs Pose>, 'isdone': True}`` — note the stock
-    ``kcare_robot.utils.get_closest_loc`` reads ``ret['x']`` and so silently
-    fails on this shape; that's why we extract the pose ourselves here.
-    Returns ``None`` if unavailable.
+    ``[x, y, ...]``, or a ``{'x','y'}`` dict (a ``decode_func`` may return
+    ``{'pose': <geometry_msgs Pose>, 'isdone': True}``, so the pose is
+    extracted here). Returns ``None`` if unavailable.
     """
+    if agent is None:
+        robot = current_robot()
+        agent = robot.pose_sensor() if robot is not None else None
+        if agent is None:
+            return None
     try:
         agents = node.agents
-        if 'mobile_pose' not in agents:
+        if agent not in agents:
             return None
-        ret = agents['mobile_pose'].get()
+        ret = agents[agent].get()
     except Exception:
         return None
     if not ret:
@@ -97,15 +106,15 @@ def reconcile_world(node, world, threshold=0.8):
     **Hybrid (robot-overridable) strategy** — keeps robot-specific knowledge in
     the robot's ``grace_namemap`` config per the project's namemap-hook design
     (``mapper.py`` docstring), while still working out-of-the-box for any robot
-    that follows the ``mobile_pose`` agent + ENV ``loc`` convention:
+    that has a base-pose agent (its manifest's MoveTo sensor) + ENV ``loc``:
 
       1. If ``grace_namemap`` defines ``reconcile_world(node, world)`` → it owns
          reconciliation entirely (e.g. can also read a real gripper sensor for
          ``holding``). Core does nothing else.
       2. Else if it defines ``robot_xy(node) -> (x, y) | None`` → core uses that
          pose (robot-specific reader) and does the generic ENV match below.
-      3. Else → fully generic: ``_read_robot_xy`` (built-in ``mobile_pose``
-         reader) + nearest-ENV-``loc`` match.
+      3. Else → fully generic: ``_read_robot_xy`` (the pose agent named by
+         the manifest) + nearest-ENV-``loc`` match.
 
     Only ``arrived`` is sensor-derived here: the robot's localization is matched
     against the nearest ENV location's ``loc`` (within ``threshold`` metres; a
@@ -190,8 +199,30 @@ class ClosedLoop:
         )
         st = current()
         self.robot_pkg: str = st.robot_pkg
-        self._namemap = importlib.import_module(f"{self.robot_pkg}.configs.grace_namemap")
+        # the robot, through its adapter only (robot_agent.contract.load_adapter)
+        self.robot = RobotView.load(self.robot_pkg)
+        # the namemap module behind a namemap-shim adapter (kept for callers that read it)
+        self._namemap = getattr(self.robot.adapter, "namemap", None)
         self.cfg = self._resolve_cfg(overrides, st)
+
+    @property
+    def robot(self) -> RobotView:
+        """The robot (its RobotAdapter). A loop made without ``__init__`` that only set
+        ``_namemap`` (tests, tools) gets that namemap wrapped in the contract's shim."""
+        r = self.__dict__.get("_robot")
+        if r is None:
+            nm = self.__dict__.get("_namemap")
+            if nm is not None:
+                from robot_agent.contract import NamemapAdapter
+                r = RobotView(NamemapAdapter(nm))
+            else:
+                r = RobotView.load(self.robot_pkg)
+            self._robot = r
+        return r
+
+    @robot.setter
+    def robot(self, value: RobotView) -> None:
+        self._robot = value
 
     # ── config ───────────────────────────────────────────────────────────
     def _resolve_cfg(self, o: dict, st) -> dict:
@@ -226,6 +257,8 @@ class ClosedLoop:
                 model=self.cfg.get("model"),
                 live_path=self.cfg.get("live_path"),
                 safe_refine=True,
+                # the robot's body (manifest): SAGE's gate plans e.g. the MoveTo before an Open
+                capabilities=self.robot.capabilities(),
             )
         if name == "llm_direct":
             return get_planner(
@@ -236,11 +269,7 @@ class ClosedLoop:
     # ── helpers ──────────────────────────────────────────────────────────
     def _arg_name(self, action: str, obj: str) -> str:
         """Localized-ish argument name for announcements."""
-        nm = self._namemap
-        try:
-            return nm.to_loc(obj) if action == "MoveTo" else nm.to_obj(obj)
-        except Exception:
-            return obj
+        return self.robot.name_for(action, obj)
 
     def _say(self, step: dict, action: str, obj: str) -> dict:
         """Announcer kwargs for a step: the spoken names the plan gave
@@ -255,9 +284,11 @@ class ClosedLoop:
         return out
 
     def _build_params(self, action: str, obj: str, world, mapped_params: dict) -> dict:
+        """Legacy: ``mapped_params`` + the namemap's ``build_params`` (``RobotView.bind``
+        already includes them)."""
         nm = self._namemap
         params = dict(mapped_params or {})
-        if hasattr(nm, "build_params"):
+        if nm is not None and hasattr(nm, "build_params"):
             try:
                 extra = nm.build_params(action, obj, world)
                 if extra:
@@ -266,8 +297,8 @@ class ClosedLoop:
                 pass
         return params
 
-    def _kcare_plan_text(self, steps, meta, mapper, world) -> str:
-        """Render the plan in the kcare ``skill::inputs`` format the robot
+    def _plan_text(self, steps, meta, mapper, world) -> str:
+        """Render the plan in the ``skill::inputs`` format the robot
         actually runs (e.g. ``move::living room``), not GRACE CamelCase. The
         direct planner already produced that string (``meta['raw']``); for GRACE
         we map each step through the ActionMapper, threading a world copy so
@@ -294,18 +325,34 @@ class ClosedLoop:
         return "\n".join(lines)
 
     # ── main loop ────────────────────────────────────────────────────────
+    def _verifier(self, node, env=None) -> StepVerifier:
+        """The layered post-step verifier for this robot: its VLM hook, its manifest's
+        VerifySpecs (sensors run through ``run_skill``), places located on ``env`` (default:
+        the live ENV)."""
+        def locate(key):
+            if env is None:
+                from robot_agent.skill_configs import ENV as e
+            else:
+                e = env
+            l = ((e or {}).get(key) or {}).get("loc") or {}
+            return (float(l["x"]), float(l["y"])) if "x" in l and "y" in l else None
+        robot = self.robot
+        return StepVerifier(self.cfg["vlm_enabled"], robot.vlm_actions, robot.vlm_hook, robot=robot,
+                            sensor=lambda skill: run_skill(self.sr, skill, {}, node, raise_errors=True),
+                            locate=locate)
+
+    def _announcer(self, lang: str) -> Announcer:
+        return Announcer(lang=lang, speak_backend=self.cfg["speak_backend"], i18n=self.robot.i18n,
+                         quiet=self.robot.quiet_skills)
+
     def run_blocking(self, task: str, lang: str = "en",
                      plan_only: bool = False) -> Iterator[dict]:
-        nm = self._namemap
-        mapper = ActionMapper(nm)
-        verifier = StepVerifier(
-            self.cfg["vlm_enabled"],
-            set(getattr(nm, "VLM_ACTIONS", set())),
-            getattr(nm, "vlm_hook", None),
-        )
-        announcer = Announcer(lang=lang, speak_backend=self.cfg["speak_backend"])
+        robot = self.robot
+        mapper = ActionMapper(robot)
+        announcer = self._announcer(lang)
         world = current().world
         node = getattr(self.dm, "_ros_node", None)
+        verifier = self._verifier(node)
         reconcile_world(node, world)
 
         # Mute skill-level TTS so the plan-level announcer owns milestone speech.
@@ -340,11 +387,7 @@ class ClosedLoop:
                      task=task, run_id=run_id, world=world.to_dict())
 
             # ── Ground ───────────────────────────────────────────────────
-            obs, visible = "", []
-            try:
-                obs, visible = nm.observe(node)
-            except Exception:
-                obs, visible = "", []
+            obs, visible = robot.observe(node)
             # Feed the persisted world summary to the planner so the LLM knows
             # current holding/location.
             try:
@@ -374,7 +417,7 @@ class ClosedLoop:
             warnings = mapper.screen(steps)
             run.warnings = warnings
             run.status = "running"
-            plan_text = self._kcare_plan_text(steps, run.plan_meta, mapper, world)
+            plan_text = self._plan_text(steps, run.plan_meta, mapper, world)
             yield ev("plan", steps=steps, plan_meta=run.plan_meta, warnings=warnings,
                      plan_text=plan_text, world=world.to_dict())
             for w in warnings:
@@ -446,7 +489,7 @@ class ClosedLoop:
                     continue
 
                 skill_name, mapped_params = mapped
-                params = self._build_params(action, obj, world, mapped_params)
+                params = dict(mapped_params or {})        # bind() = the robot's names + build_params
                 rec = StepRecord(index=i, action=action, object=obj, skill=skill_name,
                                  params=params, status="running", started_at=started)
 
@@ -464,10 +507,10 @@ class ClosedLoop:
                     if self._emit is not None:
                         from ..unified_agent import _make_log_fn
                         log_fn = _make_log_fn(self._emit, i, allow_say=False)
-                    result = self.sr.execute(skill_name, params, node, log_fn=log_fn)
-                except Exception as e:
-                    result = {"isdone": False, "msg": str(e)}
-                rec.result = result if isinstance(result, dict) else {"result": result}
+                except Exception:
+                    log_fn = None
+                res = run_skill(self.sr, skill_name, params, node, log_fn=log_fn)
+                rec.result = res.to_legacy()
 
                 # A cancelled skill fails like any other, but replanning around
                 # it would start the robot moving again — stop instead.
@@ -479,7 +522,7 @@ class ClosedLoop:
                     return
 
                 # ── Check (layered) ──────────────────────────────────────
-                vres = verifier.verify(step, rec.result, world, node)
+                vres = verifier.verify(step, res, world, node, params=params)
                 rec.verifies = vres
                 ok, reason = verdict(vres)
                 rec.ended_at = time.time()
@@ -510,11 +553,15 @@ class ClosedLoop:
                     yield ev("step_done", index=i, status="failed", result=rec.result, reason=reason,
                              say=announcer.announce("step_fail", **self._say(step, action, obj), reason=reason),
                              world=world.to_dict())
+                    code = robot.failure_code(res, reason)
+                    if robot.stops_now(code):
+                        # e-stop / cancelled / a skill bug: a replan cannot help (recovery policy)
+                        yield ev("recover", at_index=i, kind="stop", code=code.value,
+                                 msg=f"{skill_name} failed ({code.value}), not retried: {reason}")
+                        run.status = "failed"
+                        break
                     # fresh observation before replanning
-                    try:
-                        obs, visible = nm.observe(node)
-                    except Exception:
-                        pass
+                    obs, visible = robot.observe(node)
                     ok_to_replan, steps, i, replans = self._maybe_replan(
                         planner, task, completed, step, reason, obs, visible,
                         run, replans, announcer)

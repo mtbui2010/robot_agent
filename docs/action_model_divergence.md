@@ -193,10 +193,10 @@ The inline guard in `AssistLoop.run_blocking` still checks "at the place" and "h
 `symbolic_check` (only to keep its messages for SAGE's replan prompt); both are the model's rules, so it
 cannot disagree with it.
 
-## kcare `apply_skill_effect` (not changed here)
+## kcare `apply_skill_effect` (now delegates)
 
-It is keyed on kcare skill names and runs for raw open-loop / direct skills, so it would delegate like this
-(left for the kcare stream, robot_agent's public API only):
+It is keyed on kcare skill names and runs for raw open-loop / direct skills. It now delegates like this
+(robot_agent's public API only; branch arch/wiring):
 
 ```python
 from robot_agent.core.planning import action_model     # robot_agent's facade of embodiplan.action_model
@@ -214,5 +214,16 @@ def apply_skill_effect(world, skill, params=None, result=None, node=None):
         ...  # kcare extras unchanged: found_pose on Find, holding_since / holding_pose on Pick / Place
 ```
 
-The one behaviour change it would bring is E04: Pick would hold the named object instead of the found one,
-which only differs when a pick names another object than the last find.
+It passes the found object to the Pick (`world.found or obj`), so E04 keeps kcare's behaviour: the grasp
+holds what find found (`_arg_object` keeps only the first word of the arg, `water bottle` -> `water`).
+With that, the kcare column equals `action_model.apply` on every row except `arrived` (E01, E02), which
+stays with the sensor reconcile on purpose.
+
+## Post-step verify (decided)
+
+After a skill reports success, the post-step check no longer re-runs the preconditions
+(`symbolic_check` on the pre-step world): it applies the effects and checks the skill's declared
+`effects` plus its VerifySpecs (see docs/contract.md). Preconditions are only for the pre-step guard and
+plan certification. In `ClosedLoop`, which has no pre-step guard, a successful skill whose preconditions
+did not hold in the belief (e.g. a Pick the belief has no Find for) used to be rejected and replanned;
+it now stands.

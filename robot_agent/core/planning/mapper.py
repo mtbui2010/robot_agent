@@ -1,5 +1,5 @@
 # robot_agent/robot_agent/core/planning/mapper.py
-"""ActionMapper -- GRACE symbolic action -> kcare_robot skill call + state.
+"""ActionMapper -- GRACE symbolic action -> robot skill call + state.
 
 This is the robot-agnostic glue specified in ``ACTION_MAPPER_SPEC.md``. It
 turns a GRACE plan step (abstract, CamelCase) into a concrete skill call
@@ -8,13 +8,14 @@ symbolic effects onto a :class:`WorldState`, and pre-screens plans for
 actions this robot cannot perform.
 
 All robot-specific knowledge (name maps, skill selection, the supported /
-no-op / VLM action sets) is pulled from a duck-typed ``namemap`` config module
--- e.g. ``kcare_robot.configs.grace_namemap`` -- never hard-coded here. That
-module is expected to expose (see the SHARED CONTRACT):
+no-op / VLM action sets) is pulled from the robot -- a ``RobotAdapter``
+(``robot_agent.contract``; ``to_skill`` is then its ``bind``) or a duck-typed
+``<robot>.configs.grace_namemap`` module -- never hard-coded here. A namemap
+module is expected to expose (see docs/contract.md):
 
 * ``to_loc(name) -> str``           : GRACE location -> ENV/move key
 * ``to_obj(name) -> str``           : GRACE object -> detector/skill string
-* ``SKILL_MAP: dict[str, str]``     : GRACE action -> kcare skill name
+* ``SKILL_MAP: dict[str, str]``     : GRACE action -> robot skill name
 * ``SUPPORTED_ACTIONS: set[str]``   : actions this robot can execute
 * ``NOOP_ACTIONS: set[str]``        : Sit / LieOn / Serve / Wait
 * ``VLM_ACTIONS: set[str]``         : actions checked via a VLM hook
@@ -60,22 +61,30 @@ class ActionMapper:
     Parameters
     ----------
     namemap:
-        A duck-typed robot config module (see module docstring) supplying name
-        maps, the skill table, and the action category sets.
+        The robot: a ``RobotAdapter`` / ``RobotView`` (has ``bind``), or a
+        duck-typed config module (see module docstring) supplying name maps,
+        the skill table, and the action category sets.
     """
 
     def __init__(self, namemap) -> None:
         self.namemap = namemap
+        self._adapter = namemap if callable(getattr(namemap, "bind", None)) else None
 
     # ── helpers ──────────────────────────────────────────────────────────
+    def _get(self, legacy: str, name: str, default):
+        v = getattr(self.namemap, legacy, None)
+        if v is None:
+            v = getattr(self.namemap, name, None)
+        return default if v is None else v
+
     def _skill_map(self) -> dict[str, str]:
-        return getattr(self.namemap, "SKILL_MAP", {}) or {}
+        return dict(self._get("SKILL_MAP", "skill_map", {}) or {})
 
     def _supported(self) -> set[str]:
-        return set(getattr(self.namemap, "SUPPORTED_ACTIONS", set()))
+        return set(self._get("SUPPORTED_ACTIONS", "supported_actions", set()))
 
     def _noop(self) -> set[str]:
-        return set(getattr(self.namemap, "NOOP_ACTIONS", set()))
+        return set(self._get("NOOP_ACTIONS", "noop_actions", set()))
 
     @staticmethod
     def _action(step: dict) -> str:
@@ -97,7 +106,7 @@ class ActionMapper:
             If ``action`` is a no-op (``NOOP_ACTIONS``) -- the driver marks it
             done without touching the robot.
         (skill_name, params)
-            For a mappable action. ``params`` is a dict of the shape the kcare
+            For a mappable action. ``params`` is a dict of the shape the robot's
             skills expect, e.g. ``{'inputs': '<robot-name>'}``.
 
         Raises
@@ -109,6 +118,12 @@ class ActionMapper:
         action = self._action(step)
         if not action:
             raise Unmappable("step has no action")
+        if self._adapter is not None:
+            from robot_agent.contract import Unbindable
+            try:
+                return self._adapter.bind(step, world)
+            except Unbindable as e:
+                raise Unmappable(str(e)) from e
 
         # No-op actions: succeed without a skill call.
         if action in self._noop():

@@ -55,15 +55,19 @@ def test_classify_legacy_failure(msg, code):
     assert classify_legacy_failure(msg) is code
 
 
-def test_software_regex_is_the_assist_loop_one():
-    """Drift guard: assist_loop keeps its own copy until it imports this one."""
-    src = Path(__file__).resolve().parents[1] / "robot_agent" / "core" / "planning" / "assist_loop.py"
-    tree = ast.parse(src.read_text())
-    node = next(n for n in tree.body if isinstance(n, ast.Assign)
-                and getattr(n.targets[0], "id", "") == "_SOFTWARE_ERR")
-    pattern = "".join(ast.literal_eval(a) for a in [node.value.args[0]])
-    assert re.compile(pattern).pattern == SOFTWARE_ERR.pattern
+def test_failure_text_is_read_only_here():
+    """Drift guard: the planning loops keep no failure-text patterns of their own; they read the
+    FailureCode (SkillResult.from_legacy / classify_legacy_failure) and the recovery policy."""
+    planning = Path(__file__).resolve().parents[1] / "robot_agent" / "core" / "planning"
+    for src in sorted(planning.glob("*.py")):
+        tree = ast.parse(src.read_text())
+        names = {t.id for n in ast.walk(tree) if isinstance(n, ast.Assign) for t in n.targets
+                 if isinstance(t, ast.Name)}
+        assert "_SOFTWARE_ERR" not in names, src.name
+        consts = [n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)]
+        assert not any("unexpected keyword argument" in c or "still in the gripper" in c for c in consts), src.name
     assert is_software_error("TypeError: x") and not is_software_error("cup not found")
+    assert SOFTWARE_ERR.search("TypeError: execute() got an unexpected keyword argument 'type'")
 
 
 def test_default_table_covers_every_code():
