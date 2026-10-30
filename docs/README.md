@@ -4,6 +4,7 @@ Design and reference documentation of the core (rule 9 in `../CLAUDE.md`).
 One topic per file, named after the module or feature it covers.
 
 - `run_manager.md`: run ids, one active run per robot, cancel / pause / inject, intent router
+- `memory.md`: the planner's retrieval memory: the manifest seed pool, which runs are recorded, cleaning
 - `observe.md`: RunRecord, metrics line, replay CLI, `ROBOT_AGENT_DATA_DIR`, `/ws/agent` event schema
 
 The planning-layer specs written so far still live in the kcare_robot repo and

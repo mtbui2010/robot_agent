@@ -6,6 +6,10 @@ manifest format, the event schema). See `docs/contract.md`.
 ## Unreleased
 
 ### Contract
+- Manifest: optional `planner:` section, `planner: {seed_memory: <JSONL, relative to the
+  manifest>}` (`Manifest.planner`, `Manifest.seed_memory`, `Manifest.planner_path(key)`).
+  Absent = no seed pool; old manifests load unchanged. `check_manifest` errors when the seed
+  file is missing or a line is not an episode, and warns on an unknown `planner.*` key.
 - `VerifySpec.expect` (manifest `verify: [{kind: sensor, skill: ..., expect: false}]`):
   what the sensor's `isdone` must be; default true. Unknown before; old manifests
   load unchanged.
@@ -29,6 +33,13 @@ manifest format, the event schema). See `docs/contract.md`.
 - `run_control.call_cancellable` / `is_cancel`: LLM and planner calls no longer delay a stop.
 
 ### Core
+- Planner memory (docs/memory.md): runs are recorded into SAGE's live memory only when their
+  goals were seen to hold (`core/planning/episode_memory.py`; `ROBOT_AGENT_MEMORY_RECORD` /
+  option `memory_record` = `observed` (default) | `belief` (old rule) | `off`). The plain
+  ClosedLoop no longer records by default. The record carries `evidence` and `run_id`
+  (`GraceBackend.record_episode(task, steps, meta=None)` returns whether SAGE recorded it).
+  `GraceBackend(seed_memory=)` / `RobotView.seed_memory()`: the manifest seed pool is SAGE's
+  seed; `leave_one_out` is passed through.
 - Executive (fix stream `execute`, D5 D7 D8 D12 D13 D17 D25 D26):
   - AssistLoop is done only when every on / in goal is looked at (`goal_check` event: MoveTo back
     + Find at the destination; a goal inside a closed drawer stays on the belief as `ok: null`).

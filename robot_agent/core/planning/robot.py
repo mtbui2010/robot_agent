@@ -113,6 +113,15 @@ class RobotView:
             caps["hands"] = 1
         return caps
 
+    def seed_memory(self) -> Optional[str]:
+        """The robot's curated seed pool for the planner's memory (manifest ``planner.seed_memory``,
+        or the adapter's ``seed_memory``), None when it ships none."""
+        p = getattr(self.adapter, "seed_memory", None)
+        if p is None:
+            fn = getattr(self.manifest, "planner_path", None)
+            p = fn("seed_memory") if callable(fn) else None
+        return str(p) if p else None
+
     def model_capabilities(self):
         return action_model.Capabilities.from_any(self.capabilities())
 

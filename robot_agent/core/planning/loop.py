@@ -33,6 +33,7 @@ from typing import Iterator, Optional
 from robot_agent.observe.paths import data_dir
 from robot_agent.contract import classify_legacy_failure
 from robot_agent.state import current, host_id
+from . import episode_memory
 from .announcer import Announcer
 from .base import WorldState
 from .mapper import ActionMapper, Unmappable
@@ -318,6 +319,8 @@ class ClosedLoop:
             # observe.paths: ROBOT_AGENT_DATA_DIR moves them; unset = common/ as before
             "log_dir": Path(o.get("log_dir") or data_dir("task_runs", common, host_id())),
             "live_path": str(o.get("live_path") or data_dir("grace_memory", common, host_id())),
+            # which successes the planner's memory learns (ROBOT_AGENT_MEMORY_RECORD): observed | belief | off
+            "memory_record": episode_memory.record_mode(o.get("memory_record")),
         }
 
     def _make_planner(self):
@@ -331,6 +334,8 @@ class ClosedLoop:
                 safe_refine=True,
                 # the robot's body (manifest): SAGE's gate plans e.g. the MoveTo before an Open
                 capabilities=self.robot.capabilities(),
+                # the robot's curated seed pool (manifest planner.seed_memory), None = none
+                seed_memory=self.robot.seed_memory(),
             )
         if name == "llm_direct":
             return get_planner(
@@ -780,9 +785,10 @@ class ClosedLoop:
         if r.run.status != "failed":
             r.run.status = "success"
         r.run.ended_at = time.time()
-        # Memory loop: record a fully successful episode (best-effort).
-        if r.run.status == "success":
-            self._record_episode(r.planner, r.task, r.completed)
+        # Memory loop: this loop never looks at its goals, so a success is a belief; recorded only
+        # under ROBOT_AGENT_MEMORY_RECORD=belief (planning/episode_memory.py)
+        if r.run.status == "success" and episode_memory.record_mode(self.cfg.get("memory_record")) == "belief":
+            episode_memory.record_if_verified(r.planner, r.task, r.completed, (), (), mode="belief", run_id=r.run_id)
         kind = "done_success" if r.run.status == "success" else "done_fail"
         extra = r.failure_fields() if r.run.status == "failed" else {}
         if r.run.status == "failed" and r.fail_msg:
