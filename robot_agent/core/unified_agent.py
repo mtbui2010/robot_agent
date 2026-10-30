@@ -353,10 +353,14 @@ class UnifiedAgent:
                     emit({'event': 'translated', 'text': prompt_en})
 
                 # Closed-loop path. Activated either by an explicit UI planner
-                # choice ('grace' | 'direct') or the ROBOT_AGENT_CLOSED_LOOP=1 env
+                # choice ('grace' | 'direct' | 'sage' | a plug-in planner) or the ROBOT_AGENT_CLOSED_LOOP=1 env
                 # gate. The legacy open-loop flow below remains the default fallback.
                 import os as _os
                 _planner = {'grace': 'grace', 'direct': 'llm_direct', 'sage': 'sage'}.get(planner) if planner else None
+                if _planner is None and planner:
+                    # any other registry name: 'package.module:Class' or a robot_agent.planners entry point
+                    from .planning.registry import is_planner_name
+                    _planner = planner if is_planner_name(planner) else None
                 if (_planner is not None or plan_only
                         or _os.environ.get('ROBOT_AGENT_CLOSED_LOOP') == '1'):
                     from .planning.loop import ClosedLoop
@@ -367,6 +371,9 @@ class UnifiedAgent:
                     if _planner == 'sage' or (_planner is None and _os.environ.get('ROBOT_AGENT_PLANNER') == 'sage'):
                         from .planning.assist_loop import AssistLoop as _Loop, ASSIST_OPTIONS
                         _kw = {'original': prompt, **{k: v for k, v in (options or {}).items() if k in ASSIST_OPTIONS}}
+                        if (options or {}).get('generator'):
+                            # the planner behind 'sage' (default ROBOT_AGENT_SAGE_GENERATOR / grace)
+                            _kw['generator'] = options['generator']
                     _lp = _Loop(self, emit=emit, **_kw)
                     from ..observe.record import note_loop
                     note_loop(_lp, prompt_en, lang, plan_only, kwargs=_kw)   # RunRecord context (replay)

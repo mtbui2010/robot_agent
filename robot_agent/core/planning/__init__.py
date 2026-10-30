@@ -14,7 +14,10 @@ Public surface (the only names downstream code should import):
 * :class:`Planner`     -- structural Protocol every backend satisfies.
 * :class:`ActionMapper`-- GRACE step -> (skill, params) + state effects.
 * :class:`Unmappable`  -- raised for actions this robot cannot execute.
-* :func:`get_planner`  -- registry; lazily constructs a backend by name.
+* :func:`get_planner`  -- registry; lazily constructs a backend by name, by
+  ``"package.module:Class"`` or by a ``robot_agent.planners`` entry point.
+* :class:`SubgoalRepair` / :func:`planner_capabilities` -- optional planner
+  capabilities (``docs/planners.md``).
 
 Nothing here imports ``embodiplan`` -- backends that do are loaded lazily
 through :func:`get_planner`.
@@ -22,7 +25,7 @@ through :func:`get_planner`.
 
 from __future__ import annotations
 
-from .base import Planner, WorldState
+from .base import Planner, SubgoalRepair, WorldState, planner_capabilities
 from .mapper import ActionMapper, Unmappable
 from .registry import get_planner
 
@@ -32,4 +35,6 @@ __all__ = [
     "ActionMapper",
     "Unmappable",
     "get_planner",
+    "SubgoalRepair",
+    "planner_capabilities",
 ]

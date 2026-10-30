@@ -10,6 +10,13 @@ GRACE already returns steps in the canonical PlanStep shape
 (``{"action", "object", "target"?, "reason"?}``), so generate_plan / replan
 delegate directly and only coerce the returned PlanMetrics dataclass to a plain
 dict for transport across the Planner boundary.
+
+GraceBackend also offers the optional planner capabilities of ``base.py``
+(``docs/planners.md``) on top of embodiplan's public SAGE API: ``SubgoalRepair``
+(``blocks`` / ``join_blocks`` / ``repair_block`` = SAGE's ``last_blocks`` /
+``flatten`` / ``edit_block`` with its memory examples), ``ProgressReporting``
+(``progress``) and ``EpisodeMemory`` (``record_episode``). This is the only
+place that knows those SAGE names.
 """
 
 from __future__ import annotations
@@ -116,8 +123,27 @@ def _observe_llm(embodiplan) -> None:
     backend.chat = observed_chat
 
 
+def available() -> bool:
+    """True when embodiplan (the GRACE / SAGE planner) can be imported here."""
+    try:
+        import embodiplan  # noqa: F401  optional dependency
+    except Exception:
+        return False
+    return True
+
+
 class GraceBackend:
     """Planner backend backed by embodiplan's GRACEPlanner."""
+
+    _examples: tuple | None = None   # (task, SAGE memory examples block) for repair_block
+
+    @classmethod
+    def wrap(cls, planner) -> "GraceBackend":
+        """A GraceBackend around an already built SAGE / GRACE planner (any object
+        with embodiplan's public planner API, e.g. a scripted SAGEPlanner in tests)."""
+        b = cls.__new__(cls)
+        b._p = planner
+        return b
 
     def __init__(
         self,
@@ -186,6 +212,38 @@ class GraceBackend:
             visible_objects,
         )
         return list(steps), _metrics_to_dict(metrics)
+
+    # ── Optional capability: SubgoalRepair (SAGE's sub-goal-local Editing) ──
+    def blocks(self) -> list | None:
+        """SAGE's sub-goal blocks of the last generate_plan (None when this planner
+        has no editing surface). Starts a new repair session (examples re-read)."""
+        self._examples = None
+        if not callable(getattr(self._p, "edit_block", None)):
+            return None
+        return getattr(self._p, "last_blocks", None) or None
+
+    def join_blocks(self, blocks: list) -> list[dict]:
+        """SAGE's ``flatten``: the blocks' steps with the redundant ones dropped."""
+        from embodiplan.sage import flatten
+        return flatten(blocks)
+
+    def repair_block(self, block, feedback: str, *, task: str, state=None, obs: str = "") -> list[dict]:
+        """SAGEPlanner.edit_block with the memory examples for ``task``."""
+        if self._examples is None or self._examples[0] != task:
+            self._examples = (task, self._p.retrieve_examples(task)[1])
+        return self._p.edit_block(block, feedback, task=task, state=state, obs=obs,
+                                  examples_block=self._examples[1])
+
+    # ── Optional capability: ProgressReporting ───────────────────────
+    @property
+    def progress(self):
+        """SAGE's live progress hook (decompose / expand / refine)."""
+        return getattr(self._p, "progress", None)
+
+    @progress.setter
+    def progress(self, fn) -> None:
+        if hasattr(self._p, "progress"):
+            self._p.progress = fn
 
     # ── Optional passthrough ─────────────────────────────────────────
     def record_episode(self, task: str, steps: list[dict]) -> None:
