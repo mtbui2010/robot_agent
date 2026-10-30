@@ -147,6 +147,9 @@ class RunRecord(RunLogger):
             ev = payload.get('event') or {}
             keep['event'] = {k: ev.get(k) for k in ('event', 'status', 'success', 'verifies', 'index',
                                                     'run_id', 'outcome', 'state') if k in ev}
+            if ev.get('event') == 'step_done' and isinstance(ev.get('result'), dict):
+                r = ev['result']      # the step's verdict and failure code (metrics' failure_codes)
+                keep['event']['result'] = {k: r.get(k) for k in ('isdone', 'ok', 'code') if k in r}
         elif kind == 'context':
             keep['loop'] = payload.get('loop')
         with self._lock:
@@ -287,7 +290,14 @@ def metrics_of(rows: list[dict]) -> dict:
     skills = [r for r in rows if r.get('kind') == 'skill' and not r.get('depth')]
     events = [r.get('event') or {} for r in rows if r.get('kind') == 'event']
     codes: collections.Counter = collections.Counter()
-    for r in skills:
+    # failure codes of the plan's steps: a sensor read the loop makes to verify a step (e.g. "gripper empty"
+    # after Place) is a skill call too, but not a failure. Runs without step events (direct) count skill calls.
+    steps = [e for e in events if e.get('event') == 'step_done']
+    for e in steps:
+        res = e.get('result') if isinstance(e.get('result'), dict) else {}
+        if e.get('status') not in ('success', 'skipped') and not res.get('isdone', res.get('ok', False)):
+            codes[res.get('code') or 'unknown'] += 1
+    for r in ([] if steps else skills):
         res = r.get('result') or {}
         if not res.get('ok', True):
             codes[res.get('code') or 'unknown'] += 1
