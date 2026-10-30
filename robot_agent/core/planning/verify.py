@@ -1,13 +1,15 @@
 """Layered per-step verification: isdone -> symbolic -> VLM (toggleable).
 
-Planner/robot-agnostic. NO pyplanner import — the symbolic effect model mirrors
-GRACE preconditions but is self-contained here. See docs/TRACKING_VERIFY_VOICE.md §3.
+Planner/robot-agnostic. The symbolic layer decides through the shared action model
+(``.action_model`` -> ``embodiplan.action_model``), the same rules the plan checker and
+SAGE's gate use. See docs/TRACKING_VERIFY_VOICE.md §3 and docs/action_model_divergence.md.
 """
 
 from __future__ import annotations
 
 from typing import Any, Callable, Optional
 
+from . import action_model
 from .base import WorldState  # noqa: F401  (contract: do not redefine WorldState)
 from .records import VerifyResult
 
@@ -15,95 +17,19 @@ from .records import VerifyResult
 # --------------------------------------------------------------------------- #
 # Layer 2 — symbolic consistency
 # --------------------------------------------------------------------------- #
-def symbolic_check(step: dict, world: "WorldState") -> tuple[bool, str]:
-    """Apply ``step``'s effect to a COPY of ``world`` and confirm consistency.
+def symbolic_check(step: dict, world: "WorldState", *, capabilities=None,
+                   openable=None) -> tuple[bool, str]:
+    """Is ``step`` admissible in ``world`` under the action model? ``(ok, reason)``.
 
-    Mirrors GRACE preconditions for the world-changing actions. Returns
-    ``(ok, reason)``. ``world`` is never mutated (we operate on ``world.copy()``).
-    Unknown / no-op actions pass through as trivially consistent.
+    ``world`` is never mutated. ``capabilities`` defaults to
+    ``action_model.ROBOT_CAPABILITIES``; ``openable`` (names or predicate) enables the
+    not-openable rule. Actions outside the model's vocabulary pass: the robot's own
+    vocabulary is checked by the mapper / plan checker.
     """
-    action = step.get('action', '')
-    obj = step.get('object', '')
-    target = step.get('target', '')
-    w = world.copy()
-
-    if action == 'MoveTo':
-        # Locomotion: simply records arrival. Always consistent.
-        w.arrived = obj
-        return True, ''
-
-    if action == 'Find':
-        # Perception: object must be the thing we now claim to have found.
-        if not obj:
-            return False, 'Find requires an object'
-        w.found = obj
-        return True, ''
-
-    if action == 'Pick':
-        if not w.found:
-            return False, 'Pick requires a found object'
-        if w.holding:
-            return False, f'Pick requires empty gripper, holding {w.holding!r}'
-        w.holding = obj or w.found
-        w.found = None
-        return True, ''
-
-    if action == 'Place':
-        if not w.holding:
-            return False, 'Place requires holding an object'
-        w.holding = None
-        return True, ''
-
-    if action == 'PutIn':
-        container = target or obj
-        if not w.holding:
-            return False, 'PutIn requires holding an object'
-        if container not in w.opened:
-            return False, f'PutIn requires {container!r} to be open'
-        w.holding = None
-        return True, ''
-
-    if action == 'Open':
-        if obj in w.opened:
-            return False, f'{obj!r} is already open'
-        w.opened.add(obj)
-        return True, ''
-
-    if action == 'Close':
-        if obj not in w.opened:
-            return False, f'{obj!r} is not open'
-        w.opened.discard(obj)
-        return True, ''
-
-    if action == 'TurnOn':
-        if obj in w.on:
-            return False, f'{obj!r} is already on'
-        w.on.add(obj)
-        return True, ''
-
-    if action == 'TurnOff':
-        if obj not in w.on:
-            return False, f'{obj!r} is not on'
-        w.on.discard(obj)
-        return True, ''
-
-    if action == 'Wash':
-        # Requires the object in hand or found; non-state-changing otherwise.
-        if not (w.holding == obj or w.found == obj):
-            return False, f'Wash requires {obj!r} to be held or found'
-        return True, ''
-
-    if action == 'Serve':
-        if not w.holding:
-            return False, 'Serve requires holding an object'
-        w.holding = None
-        return True, ''
-
-    if action in ('Sit', 'LieOn', 'Wait'):
-        # Pose / idle actions — no symbolic precondition to break.
-        return True, ''
-
-    # Unknown action: don't block a step the symbolic model doesn't model.
+    for v in action_model.check(step, world, openable=openable,
+                                capabilities=capabilities or action_model.ROBOT_CAPABILITIES):
+        if v.is_error and v.code != "unknown_action":
+            return False, v.reason
     return True, ''
 
 
