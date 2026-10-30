@@ -164,6 +164,14 @@ class NamemapAdapter:
             return True, None, "vlm not configured (no vlm_hook)", 0.0
         return fn(step, node)
 
+    def vlm_ask(self, prompt: str, step: Optional[dict] = None, node: Any = None):
+        """A yes / no question on what the robot sees (the manifest's vlm VerifySpecs): the
+        namemap's ``vlm_ask``; LookupError when it has none (the core then looks with Find)."""
+        fn = getattr(self.namemap, "vlm_ask", None)
+        if not callable(fn):
+            raise LookupError("no VLM: the namemap has no vlm_ask()")
+        return fn(prompt, step=step, node=node)
+
     def apply_skill_effect(self, world, skill, params=None, result=None, node=None) -> None:
         fn = getattr(self.namemap, "apply_skill_effect", None)
         if callable(fn):

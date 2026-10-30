@@ -60,6 +60,9 @@ from .search_hooks import SearchHooks
 from . import goals as goal_kinds
 from .robot import run_skill
 from .verify import symbolic_check, verdict
+from .verify_vlm import refuted
+from .budget import DEFAULT_LLM_BUDGET, budget_end
+from .sensor_health import arrival_check, find_precheck
 from .understand import (LLMBadOutput, LLMBudget, LLMBudgetExceeded, LLMUnavailable, ask_json, consensus,
                          describe, find_issues, issue_question, misheard_question, sampling, typed_refusal)
 
@@ -69,7 +72,7 @@ ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify
                 "pick_retries", "ask_help", "arrive_tol", "find_min_conf", "find_verify", "reach_far", "reach_lateral",
                 "goal_check", "health_wait_s", "understand_retries", "understand_samples", "llm_budget",
                 "goal_readback", "understand_temperature", "understand_seed", "understand_sample_temperature",
-                "yes_no_reasks", "search", "search_rank", "search_half_life_s"}
+                "yes_no_reasks", "search", "search_rank", "search_half_life_s", "vlm_verify", "sensor_health"}
 _USER_WORDS = {"me", "user", "here", "you", "myself", "person"}
 
 
@@ -330,7 +333,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
             # on core LLM calls
             "understand_retries": int(overrides.get("understand_retries", env("ROBOT_AGENT_UNDERSTAND_RETRIES", "1"))),
             "understand_samples": int(overrides.get("understand_samples", env("ROBOT_AGENT_UNDERSTAND_SAMPLES", "2"))),
-            "llm_budget": int(overrides.get("llm_budget", env("ROBOT_AGENT_LLM_BUDGET", "40"))),
+            "llm_budget": int(overrides.get("llm_budget", env("ROBOT_AGENT_LLM_BUDGET", str(DEFAULT_LLM_BUDGET)))),
             "goal_readback": overrides.get("goal_readback", env("ROBOT_AGENT_GOAL_READBACK", "1") == "1"),
             # understand sampling (docs/dialog.md): temperature 0 + a fixed seed, so the same sentence gives the
             # same goals; the consistency re-samples need some spread (their seeds: seed + 1, seed + 2 ...)
@@ -742,12 +745,12 @@ class AssistLoop(SearchHooks, ClosedLoop):
         if holding:
             placed_ok[holding] = o
 
-    def _repair_plan(self, planner, task, obs, ground, world, places, goals, goal_txt):
+    def _repair_plan(self, planner, task, obs, ground, world, places, goals, goal_txt, budget=None):
         """The planner's own sub-goal repair (optional ``SubgoalRepair``, e.g. SAGE's Editing), driven by the
         checker's findings: subgoal_repair.repair_plan. Returns (plan, [edit notes]); (None, []) for a planner
-        without it."""
+        without it. Each repair call takes one unit of ``budget`` (LLMBudgetExceeded past it)."""
         from .subgoal_repair import repair_plan
-        return repair_plan(self, planner, task, obs, ground, world, places, goals, goal_txt)
+        return repair_plan(self, planner, task, obs, ground, world, places, goals, goal_txt, budget=budget)
 
     _sage_edit = _repair_plan            # pre-v2 name
 
@@ -961,19 +964,19 @@ class AssistLoop(SearchHooks, ClosedLoop):
         kind = "done_success" if status == "success" else "done_fail"
         if status == "failed":
             kw = {**self._deciding_failure(r, msg, kw), **kw}
-        say = kw.pop("say", None)
+        say, localized = kw.pop("say", None), kw.pop("localized", False)
         if say is None and status in ("failed", "refused") and msg and not msg.startswith(("internal error", "plan finished")):
             # tell the user why (dropped it, can't find it, ...), without the skill's error text
             say = re.split(r": [\'\"{]|: Exception| \(replan| \(searched", msg)[0].strip()
         return r.ev("done", status=status, run_id=r.run_id, msg=msg,
-                    say=self._in_lang(say, r.lang) if say else r.announcer.announce(kind), world=r.world.to_dict(), **kw)
+                    say=(say if localized else self._in_lang(say, r.lang)) if say else r.announcer.announce(kind), world=r.world.to_dict(), **kw)
 
     def _llm_failed(self, r, e, what="language model") -> dict:
         """The run's end when an LLM / planner call raised (understand.LLMUnavailable) or the run's LLM-call
         budget is used: `done failed` with the FailureCode and a spoken reason, never a bare `error` event."""
         if isinstance(e, LLMBudgetExceeded):
-            return self._finish(r, "failed", msg=str(e), code=FailureCode.UNKNOWN.value, device="llm",
-                                evidence={"llm_calls": r.llm_budget.used, "limit": r.llm_budget.limit}, say="I have to stop: I could not work this task out within my limit of tries.")
+            # the robot's own phrase (budget.budget_end), not translated again when it has one for this language
+            return self._finish(r, "failed", msg=str(e), **budget_end(r.robot, r.llm_budget, r.lang))
         if not isinstance(e, LLMUnavailable):
             e = LLMUnavailable(e, what)
         self._llm_unreachable = self._llm_unreachable or e.unreachable
@@ -1217,7 +1220,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
         plan_text = "\n".join(f"{skill_map.get(x['action'], x['action'])}::{x['object']}" for x in r.steps)
         yield r.ev("plan", steps=r.steps, plan_meta=r.run.plan_meta, warnings=list(r.gate_findings),
                    plan_text=plan_text, certified=r.certified, world=r.world.to_dict())
-        if r.plan_error is not None and not r.steps:     # the planner is down: say so, not "no plan"
+        if isinstance(r.plan_error, LLMBudgetExceeded) or (r.plan_error is not None and not r.steps):
+            # the planner is down / the LLM-call budget is used: say so, not "no plan"
             yield self._llm_failed(r, r.plan_error, "planner"); return True
         if r.plan_only:
             yield self._finish(r, "planned", say=r.announcer.announce("plan_ready")); return True
@@ -1255,15 +1259,18 @@ class AssistLoop(SearchHooks, ClosedLoop):
         edits = []
         if any(p_[2] for p_ in probs) and not r.compiled:
             # the planner's sub-goal-local repair with the checker's findings (SubgoalRepair, if it has it)
-            edited, edits = self._repair_plan(r.planner, r.restated, self._obs(r), lambda s: self._ground_all(r, s),
-                                              r.world, r.places, r.goals, r.goal_txt)
+            try:
+                edited, edits = self._repair_plan(r.planner, r.restated, self._obs(r), lambda s: self._ground_all(r, s),
+                                                  r.world, r.places, r.goals, r.goal_txt, budget=r.llm_budget)
+            except LLMBudgetExceeded as e:
+                edited, r.plan_error = None, e
             if edited is not None:
                 r.steps = edited
             probs = self._check(r.steps, r.world, r.places, r.goals)
             yield r.ev("gate", round=1, edits=edits, problems=[p_[1] for p_ in probs],
                        plan=[f"{x['action']} {x['object']}" for x in r.steps])
         blocking = self._blocking(r, r.steps)
-        if blocking and r.steps and not r.compiled:
+        if blocking and r.steps and not r.compiled and r.plan_error is None:
             # still critical after the planner's repair (or it has none): one fresh plan with the findings,
             # certified again
             r.steps = self._refine_plan(r, blocking)
@@ -1315,7 +1322,10 @@ class AssistLoop(SearchHooks, ClosedLoop):
         obs = self._obs(r) + "\nA checker rejected the previous plan:\n" + "\n".join(f"- {t}" for t in findings)
         from ..run_control import call_cancellable, is_cancel
         try:
+            r.llm_budget.take(what="plan refinement")
             raw, _m = call_cancellable(r.planner.generate_plan, r.restated, obs, [])
+        except LLMBudgetExceeded as e:
+            r.plan_error, raw = e, []
         except Exception as e:
             if is_cancel(e):
                 raise
@@ -1763,8 +1773,11 @@ class AssistLoop(SearchHooks, ClosedLoop):
         yield r.ev("step_start", index=r.i, action=a, object=o, skill=skill,
                    say=r.announcer.announce("step_start", **self._say(st, a, o)))
         # manifest interruptible: false (a grasp, a drawer pull): a stop meanwhile waits for it to end
-        res = run_skill(self.sr, skill, params, r.node, log_fn=self._log_fn(r.i),
-                        interruptible=r.robot.interruptible(skill))
+        # a stale camera before a Find: perception_unavailable without running it (sensor_health)
+        res = find_precheck(r.robot, r.node, st, self.cfg["sensor_health"])
+        if res is None:
+            res = run_skill(self.sr, skill, params, r.node, log_fn=self._log_fn(r.i),
+                            interruptible=r.robot.interruptible(skill))
         rec.result = res.to_legacy()
         stop = self._cancelled(r)
         if stop:
@@ -1787,6 +1800,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
         seen out of reach."""
         a, o = st["action"], st["object"]
         vres = r.verifier.verify(st, res, r.world, r.node, params=params)
+        vres += arrival_check(r.robot, r.node, st, vres, self.cfg["sensor_health"])   # a stale pose: not arrived
         if (a in ("Place", "PutIn") and vres and not vres[0].ok
                 and res.code is FailureCode.GRASP_FAILED and not self._holding(r.node, default=True)):
             # the release's own empty-gripper check fired right after letting go; looked once more
@@ -1854,9 +1868,11 @@ class AssistLoop(SearchHooks, ClosedLoop):
         if r.seen_fail[sig] > 2:
             yield self._finish(r, "failed", msg=f"{a} {o} failed again the same way: {reason}"); return _STOP
         # ── skill-level retry in place / ask the person (not planning) ──
-        recover = {"Find": self._recover_find, "Pick": self._recover_pick, "MoveTo": self._recover_move,
-                   "Place": self._recover_place, "PutIn": self._recover_place}.get(a)
-        out, extra = (yield from recover(r, st, reason, rule)) if recover else (None, "")
+        no = refuted(rec.verifies)                     # the VLM / its Find said it did not happen: replan
+        recover = None if no is not None else {"Find": self._recover_find, "Pick": self._recover_pick,
+                                               "MoveTo": self._recover_move, "Place": self._recover_place,
+                                               "PutIn": self._recover_place}.get(a)
+        out, extra = (yield from recover(r, st, reason, rule)) if recover else (None, self._refuted(r, st, no))
         if out is not None:
             return out
         # ── a new plan: the planner's suffix repair ──
@@ -2012,6 +2028,18 @@ class AssistLoop(SearchHooks, ClosedLoop):
                 return _NEXT, ""
         yield self._finish(r, "failed", msg=f"could not get to {o}: {reason}")
         return _STOP, ""
+
+    def _refuted(self, r, st, no) -> str:
+        """A step the VLM post-check refuted: its effects stay out of the belief; a release that
+        emptied the hand leaves the object's place unknown. The replan hint."""
+        if no is None:
+            return ""
+        world = r.world
+        if st.get("action") in ("Place", "PutIn") and world.holding and not self._holding(r.node, default=True):
+            r.memory.see(world.holding, None, "not seen where it was put")
+            world.holding = world.holding_since = None
+        world.found = None
+        return f"; the check after {st.get('action')} {st.get('object')} says it did not happen ({no.detail})"
 
     def _recover_place(self, r, st, reason, rule):
         """A failed release with an empty hand: the object is gone, stop; else the planner replans."""

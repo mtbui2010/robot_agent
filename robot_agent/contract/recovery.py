@@ -84,6 +84,8 @@ DEFAULT_RECOVERY: dict = {
     FailureCode.GRASP_FAILED: RecoveryRule(R.RETRY, retries=1, then=R.REPLAN, note="look + grasp again once"),
     FailureCode.DROPPED: RecoveryRule(R.REFIND, retries=1, then=R.REPLAN, report=True,
                                       note="the held object is gone: find it again"),
+    FailureCode.BUDGET_EXCEEDED: RecoveryRule(R.STOP, retry_allowed=False, report=True,
+                                              note="the run's LLM-call budget is used: stop and say so"),
     FailureCode.UNKNOWN: RecoveryRule(R.VERIFY, retries=1, then=R.REPLAN,
                                       note="no usable reason: observe, then replan"),
 }

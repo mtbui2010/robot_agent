@@ -100,6 +100,9 @@ class NodeAgent:
         # Bumped on every message a TopicAgent receives, so a reader (the camera
         # stream) can tell a fresh frame from the one it already handled.
         self.rev_seq = 0
+        # When the last message arrived (time.time()) and the smoothed gap between messages, so an
+        # adapter's health() can report frame / pose age and fps. None until the first message.
+        self.rev_time, self.rev_period = None, None
         self.id = f'{self.agent_name}.{self.conn_name}.{self.conn_type}'
         self.is_init, self.do_log_msg = is_init, do_log_msg
         self.data_interface = data_interface
@@ -528,6 +531,11 @@ class TopicAgent(NodeAgent):
             self.connected = True
         self.rev_data = data
         self.rev_seq += 1
+        now = time.time()
+        if self.rev_time is not None:
+            dt = now - self.rev_time
+            self.rev_period = dt if self.rev_period is None else 0.8 * self.rev_period + 0.2 * dt
+        self.rev_time = now
 
         if self.response_func is not None:
             self.response_func(data)
