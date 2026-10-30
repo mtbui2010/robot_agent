@@ -27,6 +27,8 @@ CORE_TEXT = {
     "cannot_do": "I can't do that: I have no {missing} skill.",
     # what a delivering robot says when it arrives (deliver goals)
     "delivery": "I have a delivery for you. Please take it.",
+    # the run used its LLM-call budget (budget.budget_end)
+    "llm_budget": "I have to stop: I could not work this task out within my limit of tries.",
 }
 
 # manifest actions that are not plan steps: sensors (Observe / Verify), the dialog (Ask, the core's
@@ -210,6 +212,18 @@ class RobotView:
             return None                          # a namemap without one: no VLM layer, as before
         fn = getattr(self.adapter, "vlm_hook", None)
         return fn if callable(fn) else None
+
+    @property
+    def vlm_ask(self):
+        """The adapter's ``vlm_ask(prompt, step=, node=)`` (a yes / no question on what the robot
+        sees, for the manifest's vlm VerifySpecs), or None."""
+        fn = getattr(self.adapter, "vlm_ask", None)
+        return fn if callable(fn) else None
+
+    def health_limits(self):
+        """Sensor-health thresholds from the manifest's ``geometry`` (``sensor_health.HealthLimits``)."""
+        from .sensor_health import HealthLimits
+        return HealthLimits.from_geometry(self.geometry)
 
     # ── failures ────────────────────────────────────────────────────────
     @staticmethod

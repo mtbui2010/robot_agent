@@ -27,6 +27,7 @@ _RULES: list[tuple[FailureCode, re.Pattern]] = [
     (FailureCode.SOFTWARE, SOFTWARE_ERR),
     # SkillRegistry.execute: the skill name resolves to nothing -> a config bug
     (FailureCode.SOFTWARE, re.compile(r'skill "[^"]*" not registered|no skill or device agent|Traceback \(most recent', _I)),
+    (FailureCode.BUDGET_EXCEEDED, re.compile(r"LLM-call budget .* used up|budget exceeded", _I)),
     (FailureCode.CANCELLED, re.compile(r"\bcancel+ed\b|aborted by (the )?user|stopped by (the )?user", _I)),
     (FailureCode.ESTOP, re.compile(r"\be-?stop\b|emergency[ _-]?(stop|button)", _I)),
     # place found the hand empty / a held object vanished
@@ -37,7 +38,7 @@ _RULES: list[tuple[FailureCode, re.Pattern]] = [
                                           r"still in the gripper|nothing in the gripper|not in the gripper", _I)),
     # could not look: no frame / depth / camera / detector
     (FailureCode.PERCEPTION_UNAVAILABLE, re.compile(
-        r"no fresh frame|no depth|no (head|wrist|arm)? ?(/ ?\w+ )?image|camera (agent )?'?[\w-]*'? ?not registered|"
+        r"no fresh (frame|pose)|no depth|no (head|wrist|arm)? ?(/ ?\w+ )?image|camera (agent )?'?[\w-]*'? ?not registered|"
         r"detector'? not registered|client '?(detector|vlms?)'? not registered|vision model failed|"
         r"sam returned none|perception (is )?(down|unavailable)|camera (is )?(down|unavailable|offline)", _I)),
     (FailureCode.TIMEOUT, re.compile(r"timed? ?out|time-out|\btimeout\b|no reply|did not answer in time", _I)),

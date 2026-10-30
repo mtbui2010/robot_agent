@@ -1,4 +1,4 @@
-"""Layered per-step verification: isdone -> symbolic effects -> VLM (toggleable) -> sensors.
+"""Layered per-step verification: isdone -> symbolic effects -> VLM (manifest / toggleable) -> sensors.
 
 Planner/robot-agnostic. ``symbolic_check`` (the pre-step guard) decides through the shared action
 model (``.action_model`` -> ``embodiplan.action_model``), the same rules the plan checker and SAGE's
@@ -124,6 +124,7 @@ class StepVerifier:
         robot: Any = None,
         sensor: Optional[Callable[[str], Any]] = None,
         locate: Optional[Callable[[str], Optional[tuple]]] = None,
+        vlm_check: Any = None,
     ) -> None:
         self.vlm_enabled = vlm_enabled
         self.vlm_actions = set(vlm_actions or ())
@@ -131,6 +132,7 @@ class StepVerifier:
         self.robot = robot
         self.sensor = sensor
         self.locate = locate
+        self.vlm_check = vlm_check      # .verify_vlm.VlmCheck: the manifest's vlm VerifySpecs
 
     def verify(
         self,
@@ -157,9 +159,14 @@ class StepVerifier:
         ok2, why = effects_check(step, world, spec.effects if spec is not None else (), params=params, main=main)
         out.append(VerifyResult('symbolic', ok2, why))
 
-        # ── Layer 3: VLM look-and-confirm (toggleable, only for some actions) ──
+        # ── Layer 3a: the manifest's vlm VerifySpecs (verify_vlm; none declared = never called) ──
         vlm_ran = False
-        if self.vlm_enabled and step.get('action') in self.vlm_actions and self.vlm_hook:
+        if ok2 and self.vlm_check is not None:
+            extra = self.vlm_check.run(step, world, node)
+            out.extend(extra)
+            vlm_ran = bool(extra)
+        # ── Layer 3b: legacy VLM hook (ROBOT_AGENT_VERIFY_VLM, the adapter's vlm_actions) ──
+        if not vlm_ran and self.vlm_enabled and step.get('action') in self.vlm_actions and self.vlm_hook:
             vlm_ran = True
             try:
                 ok3, conf, why3, ms = self.vlm_hook(step, node)

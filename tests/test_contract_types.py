@@ -8,7 +8,8 @@ from robot_agent.contract import FailureCode, Geometry, Messages, SkillResult
 def test_failure_code_values_are_the_shared_names():
     assert [c.value for c in FailureCode] == [
         "absent", "perception_unavailable", "unreachable", "blocked", "grasp_failed", "dropped",
-        "hw_fault", "estop", "timeout", "cancelled", "software", "unknown"]
+        "hw_fault", "estop", "timeout", "cancelled", "software", "unknown",
+        "budget_exceeded"]
     assert FailureCode.ABSENT == "absent"          # str enum: compares / serialises as text
 
 
