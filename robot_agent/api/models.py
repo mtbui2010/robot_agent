@@ -76,6 +76,9 @@ class WorldStateOut(_Open):
     holding_since: Optional[float] = None
     found_pose: Optional[Any] = None
     holding_pose: Optional[Any] = None
+    # per field: {source: sensor | operator | belief | unknown, ts, ...}; opened also has containers /
+    # unconfirmed (docs/guard.md)
+    provenance: Optional[dict[str, Any]] = None
 
 
 class CancelResult(_Open):

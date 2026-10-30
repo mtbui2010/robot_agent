@@ -41,6 +41,10 @@ class RobotAdapter(Protocol):
         a crash) and return it."""
         ...
 
+    # Optional (not Protocol members, so older adapters still match; docs/guard.md):
+    #   pose(node) -> {x, y, yaw?, ts? | age_s?}   the base pose; {} when it cannot be read
+    #   container_states(node) -> {key: True | False | None}   open / closed as read (None: not read)
+
     def health(self, node: Any = None) -> dict:
         """Frame age, FPS, depth, pose timestamp, e-stop, battery ... Keys are
         the adapter's; ``ok`` (bool | None) is the summary."""

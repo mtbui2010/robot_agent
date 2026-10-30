@@ -36,6 +36,8 @@ duck-typed so the executor side stays independent of the planner library.
 
 from __future__ import annotations
 
+import copy as _copy
+import time
 from dataclasses import dataclass, field
 from typing import Optional, Protocol, runtime_checkable
 
@@ -87,6 +89,66 @@ class WorldState:
     # robot_pose:[x,y,rz]}. A historical record of *how/where* it was grasped —
     # not a live target (the object now moves with the gripper).
     holding_pose: Optional[dict] = None
+    # Where each field's value came from (docs/guard.md): ``{field: {source, ts, value, ...}}`` with
+    # source ``sensor`` (read off the robot at ``ts``) / ``operator`` (PUT /agent/world) / ``belief``,
+    # and ``opened`` per container (``containers: {key: {source, ts, open}}``). An entry counts only
+    # while the field still has the value it was recorded for; any other value is a belief (a
+    # skill's effect, a load from disk). Written by :meth:`mark`, shown by :meth:`provenance_view`.
+    provenance: dict = field(default_factory=dict)
+
+    # ── provenance ─────────────────────────────────────────────────────
+    _PROV_FIELDS = ("arrived", "found", "holding", "opened", "on")
+
+    def _value(self, key: str):
+        v = getattr(self, key)
+        return sorted(v) if isinstance(v, set) else v
+
+    def mark(self, key: str, source: str, ts: Optional[float] = None, **extra) -> None:
+        """Record that ``key``'s current value comes from ``source`` (sensor / operator / belief / unknown)."""
+        old = self.provenance.get(key) or {}
+        e = {"source": source, "ts": time.time() if ts is None else ts, "value": self._value(key), **extra}
+        if key == "opened" and old.get("containers"):
+            e["containers"] = dict(old["containers"])
+        self.provenance[key] = e
+
+    def mark_container(self, key: str, is_open: bool, source: str = "sensor", ts: Optional[float] = None) -> None:
+        """Record a container's open / closed state as read (``source``) at ``ts``."""
+        op = self.provenance.setdefault("opened", {"source": "belief", "ts": None, "value": self._value("opened")})
+        op.setdefault("containers", {})[key] = {"source": source, "ts": time.time() if ts is None else ts,
+                                                "open": bool(is_open)}
+
+    def mark_edited(self, keys, source: str = "operator") -> None:
+        """An edit of ``keys`` (the dashboard's PUT /agent/world): their values are the operator's."""
+        for k in keys:
+            if k in self._PROV_FIELDS:
+                self.mark(k, source)
+            elif k == "holding_since" and self.holding:
+                self.mark("holding", source)
+
+    def provenance_of(self, key: str) -> dict:
+        """``{source, ts?, ...}`` of ``key``'s current value (``belief`` when nothing recorded it)."""
+        e = self.provenance.get(key)
+        if not e or e.get("value") != self._value(key):
+            return {"source": "belief", "ts": None}
+        return {k: v for k, v in e.items() if k not in ("value", "containers")}
+
+    def container_provenance(self, key: str) -> dict:
+        """A container's ``{source, ts, open}``; ``belief`` when no sensor read agrees with the belief."""
+        c = ((self.provenance.get("opened") or {}).get("containers") or {}).get(key)
+        if not c or bool(c.get("open")) != (key in self.opened):
+            return {"source": "belief", "ts": None, "open": key in self.opened}
+        return dict(c)
+
+    def provenance_view(self) -> dict:
+        """JSON view per field (sensor-confirmed or not); ``opened`` lists its containers and the
+        open ones no sensor confirmed (``unconfirmed``)."""
+        out = {k: self.provenance_of(k) for k in self._PROV_FIELDS}
+        conts = ((self.provenance.get("opened") or {}).get("containers") or {})
+        keys = sorted(set(conts) | set(self.opened))
+        out["opened"]["containers"] = {k: self.container_provenance(k) for k in keys}
+        out["opened"]["unconfirmed"] = [k for k in sorted(self.opened)
+                                        if out["opened"]["containers"][k]["source"] != "sensor"]
+        return out
 
     def copy(self) -> "WorldState":
         """Return a deep-enough copy (sets are duplicated) of this state."""
@@ -99,6 +161,7 @@ class WorldState:
             holding_since=self.holding_since,
             found_pose=dict(self.found_pose) if self.found_pose else None,
             holding_pose=dict(self.holding_pose) if self.holding_pose else None,
+            provenance=_copy.deepcopy(self.provenance),
         )
 
     def found_pose_is_stale(self, robot_xy, threshold: float = 0.25) -> bool:
@@ -123,6 +186,8 @@ class WorldState:
             "holding_since": self.holding_since,
             "found_pose": self.found_pose,
             "holding_pose": self.holding_pose,
+            # added in SAGE-v2 (docs/guard.md); old clients ignore it, as_text() (the planner's) has none
+            "provenance": self.provenance_view(),
         }
 
     def update_from_dict(self, d: dict) -> None:
