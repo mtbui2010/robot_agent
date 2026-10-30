@@ -52,8 +52,10 @@ _ROBOT_FLAGS = $(if $(filter 1,$(RESET_SITES)),--reset-sites,) \
                $(if $(filter 1,$(FORCE)),--force,)
 
 # Extras: net (transports), llm (backends), voice (TTS). `all` is everything
-# except grace, whose pyplanner is a local path package rather than a PyPI one.
+# except grace, whose embodiplan is a local path package rather than a PyPI one.
 EXTRAS ?= all
+# The GRACE/SAGE planner checkout installed by `make install-dev`.
+EMBODIPLAN_DIR ?= $(abspath $(ROOT)/../embodiplan)
 
 .PHONY: install install-dev robot test clean help _require-py _require-import
 
@@ -65,7 +67,7 @@ help:
 	@echo "  make install CONDA_ENV=<name>         ... into a conda env (created if missing)"
 	@echo "  make install PYTHON=<path>            ... into that exact interpreter"
 	@echo "  make install EXTRAS=net,llm           ... only these extras (default: all)"
-	@echo "  make install-dev                      Also install pyplanner + cookiecutter"
+	@echo "  make install-dev                      Also install embodiplan + cookiecutter"
 	@echo ""
 	@echo "Robots:"
 	@echo "  make robot NAME=<pkg> FROM=<src_pkg>  Fork an existing robot package"
@@ -135,11 +137,11 @@ print('[robot_agent] imports OK (numpy %s)' % numpy.__version__)"
 # The planner and the robot generator are only needed by developers of the
 # stack, not by a robot that merely depends on robot_agent.
 install-dev: install
-	@if [ -d "$(ROOT)/../pyplanner" ]; then \
-		echo "[robot_agent] pip install -e ../pyplanner (GRACE planner)"; \
-		$(ENV_PIP) install -e "$(ROOT)/../pyplanner"; \
+	@if [ -d "$(EMBODIPLAN_DIR)" ]; then \
+		echo "[robot_agent] pip install -e $(EMBODIPLAN_DIR) (GRACE/SAGE planner)"; \
+		$(ENV_PIP) install -e "$(EMBODIPLAN_DIR)"; \
 	else \
-		echo "[robot_agent] ../pyplanner not found -- skipping"; \
+		echo "[robot_agent] $(EMBODIPLAN_DIR) not found -- skipping (set EMBODIPLAN_DIR=...)"; \
 	fi
 	@echo "[robot_agent] pip install cookiecutter (for 'make robot' without FROM)"
 	@$(ENV_PIP) install -q cookiecutter

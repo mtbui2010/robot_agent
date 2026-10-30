@@ -1,7 +1,7 @@
 # robot_agent/robot_agent/core/planning/__init__.py
 """Robot-agnostic planning layer for the closed-loop GRACE driver.
 
-This package bridges abstract GRACE/pyplanner symbolic plans to concrete
+This package bridges abstract GRACE/SAGE (embodiplan) symbolic plans to concrete
 kcare_robot skill calls. See the authoritative specs:
 
 * ``kcare_robot/docs/CLOSED_LOOP_ARCHITECTURE.md``
@@ -15,7 +15,7 @@ Public surface (the only names downstream code should import):
 * :class:`Unmappable`  -- raised for actions this robot cannot execute.
 * :func:`get_planner`  -- registry; lazily constructs a backend by name.
 
-Nothing here imports ``pyplanner`` -- backends that do are loaded lazily
+Nothing here imports ``embodiplan`` -- backends that do are loaded lazily
 through :func:`get_planner`.
 """
 

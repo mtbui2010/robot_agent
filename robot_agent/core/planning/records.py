@@ -3,7 +3,7 @@
 Single source of truth for tracking (live status), verification (held results),
 and logging (serialized to JSONL). Plain dataclasses, JSON-serializable.
 
-NO pyplanner import. Timestamps are passed in by the caller — this module never
+NO embodiplan import. Timestamps are passed in by the caller — this module never
 calls ``time.time()`` at import time or implicitly (libs forbid ``Date.now``-style
 nondeterminism). See docs/TRACKING_VERIFY_VOICE.md §1–§2.
 """
@@ -142,7 +142,7 @@ class RunLogger:
     """Append-only JSONL logger for a single run.
 
     ``path`` is typically ``<kcare data>/task_runs/<run_id>.jsonl`` — never inside
-    ``pyplanner/``. Each streamed event is one line; ``snapshot()`` writes the full
+    ``embodiplan/``. Each streamed event is one line; ``snapshot()`` writes the full
     ``TaskRecord`` as the final line so the file replays exactly what the UI saw.
     """
 
