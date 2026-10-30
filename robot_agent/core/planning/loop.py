@@ -424,6 +424,33 @@ class ClosedLoop:
         except Exception:
             pass
 
+    def _reconcile(self, r: "RunContext", when: str) -> Optional[dict]:
+        """The belief brought in line with the robot (``RobotView.reconcile``: the adapter's reconcile,
+        then the declared sensors through the skill registry). The ``reconcile`` event when it changed."""
+        node = r.node
+        changed = r.robot.reconcile(r.world, node,
+                                    sense=lambda skill: run_skill(self.sr, skill, {}, node, raise_errors=True))
+        if not changed:
+            return None
+        try:
+            current().save_world()
+        except Exception:
+            pass
+        return r.ev("reconcile", when=when, changed=changed, world=r.world.to_dict())
+
+    def _pause_point(self, r: "RunContext"):
+        """Hold while the run is paused; after a real pause the belief is reconciled (things may have
+        moved meanwhile). Yields the ``reconcile`` event; returns the seconds paused (0: no pause)."""
+        from ..run_control import pause_point
+        paused: list = []
+        pause_point(on_resume=paused.append)
+        if not paused:
+            return 0.0
+        fixed = self._reconcile(r, "resume")
+        if fixed is not None:
+            yield fixed
+        return paused[0]
+
     @staticmethod
     def _crashed(r: "RunContext", e: Exception) -> dict:
         r.run.status = "aborted"
@@ -465,11 +492,13 @@ class ClosedLoop:
         r = self._open_run(task, lang, plan_only, self.cfg["planner"])
         r.mapper = ActionMapper(r.robot)
         r.verifier = self._verifier(r.node)
-        reconcile_world(r.node, r.world)
+        fixed = self._reconcile(r, "start")
         self._mute(r)
         try:
             yield r.ev("task_start", say=r.announcer.announce("task_start"),
                        task=task, run_id=r.run_id, world=r.world.to_dict())
+            if fixed is not None:
+                yield fixed
             if (yield from self._cl_plan(r)):
                 return
             if (yield from self._cl_execute(r)):
@@ -529,9 +558,9 @@ class ClosedLoop:
 
     def _cl_execute(self, r: "RunContext"):
         """Run the plan step by step. True when the run ended (cancelled)."""
-        from ..run_control import cancel_requested, wait_if_paused
+        from ..run_control import cancel_requested
         while r.i < len(r.steps):
-            wait_if_paused()         # a paused run holds here, between two steps
+            yield from self._pause_point(r)     # a paused run holds here, between two steps
             if cancel_requested():
                 yield self._aborted(r)
                 return True

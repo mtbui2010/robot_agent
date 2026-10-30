@@ -25,6 +25,7 @@ active run: a new run starts with its own, clear flag.
 """
 
 import threading
+import time
 
 _CANCEL = threading.Event()
 _LOCK = threading.Lock()
@@ -89,6 +90,22 @@ def wait_if_paused(timeout: float | None = None) -> bool:
     if run is None:
         return not _CANCEL.is_set()
     return run.wait_if_paused(timeout)
+
+
+def pause_point(on_resume=None) -> bool:
+    """:func:`wait_if_paused` plus the resume hook: when the run really was paused and is resumed
+    (not cancelled), ``on_resume(seconds_paused)`` runs here, in the executive thread, before the next
+    step (the loops reconcile their belief there: the world may have changed meanwhile)."""
+    run = current_run()
+    was_paused = run is not None and run.paused
+    t0 = time.time()
+    ok = wait_if_paused()
+    if was_paused and ok and on_resume is not None:
+        try:
+            on_resume(time.time() - t0)
+        except Exception:
+            pass
+    return ok
 
 
 def check_cancel() -> None:
