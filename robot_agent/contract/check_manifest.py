@@ -14,6 +14,7 @@ Errors (exit 1):
   * a manifest param the function cannot take (no such kwarg and no ``**kwargs``)
   * a function parameter without default that the manifest does not declare
   * a ``sensor`` verify naming a skill the robot does not have
+  * ``planner.seed_memory`` naming a file that does not exist or is not JSONL
 Warnings (exit 1 only with --strict): unknown manifest keys, an action the
 namemap's ``SKILL_MAP`` binds to a different skill, skills that cannot be
 inspected (external / defined indirectly).
@@ -35,7 +36,7 @@ from importlib.util import find_spec
 from pathlib import Path
 from typing import Optional
 
-from .manifest import ALIAS_ACTIONS_KEY, Manifest, ManifestError
+from .manifest import ALIAS_ACTIONS_KEY, PLANNER_KEYS, Manifest, ManifestError
 
 
 @dataclass
@@ -243,6 +244,7 @@ def check(target, manifest_path=None) -> Report:
         rep.errors += [f"manifest: {x}" for x in e.errors]
         return rep
 
+    _check_planner(m, rep)
     reg, notes = read_registry(pkg_dir)
     rep.registry = reg
     rep.warnings += notes
@@ -303,6 +305,28 @@ def check(target, manifest_path=None) -> Report:
                 rep.warnings.append(f"action {action}: grace_namemap.SKILL_MAP binds {skill!r}, "
                                     f"which the manifest does not declare")
     return rep
+
+
+def _check_planner(m: Manifest, rep: Report) -> None:
+    """``planner:``: unknown keys warn; the seed pool must exist and hold JSON lines."""
+    for k in sorted(set(m.planner) - PLANNER_KEYS):
+        rep.warnings.append(f"planner.{k}: not part of the contract (kept, ignored by the core)")
+    p = m.seed_memory
+    if p is None:
+        return
+    if not p.is_file():
+        rep.errors.append(f"planner.seed_memory: no file {p}")
+        return
+    for i, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError as e:
+            rep.errors.append(f"planner.seed_memory: {p.name} line {i} is not JSON ({e.msg})")
+            continue
+        if not isinstance(rec, dict) or not rec.get("task") or not (rec.get("plan_text") or rec.get("steps")):
+            rep.errors.append(f"planner.seed_memory: {p.name} line {i} needs `task` and `plan_text` / `steps`")
 
 
 def assert_manifest_matches(target, manifest_path=None, strict: bool = False) -> Report:

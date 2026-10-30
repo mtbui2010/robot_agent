@@ -54,7 +54,7 @@ from robot_agent.contract import FailureCode, Recovery, Unbindable, classify_leg
 from robot_agent.state import current, host_id
 from .loop import _DONE, _NEXT, _STOP, ClosedLoop, _vr_list, reconcile_world
 from .records import StepRecord, VerifyResult
-from . import action_model, goal_change
+from . import action_model, episode_memory, goal_change
 from . import goals as goal_kinds
 from .robot import run_skill
 from .verify import symbolic_check, verdict
@@ -2012,7 +2012,10 @@ class AssistLoop(ClosedLoop):
     def _final_check(self, r) -> dict:
         if self._goals_hold(r.goals, r.world, r.placed, r.completed, r.world_at_start.arrived):
             if not getattr(r, "compiled", False):            # the planner's memory learns its own plans only
-                self._record_episode(r.planner, r.restated, r.completed)
+                # ... and only when the goals were seen to hold (planning/episode_memory.py)
+                episode_memory.record_if_verified(r.planner, r.restated, r.completed, r.goals,
+                                                  getattr(r, "goal_checks", []),
+                                                  mode=self.cfg.get("memory_record"), run_id=r.run_id)
             return self._finish(r, "success")
         return self._finish(r, "failed", msg="plan finished but the goals do not hold: "
                             + json.dumps(r.goals, ensure_ascii=False))
