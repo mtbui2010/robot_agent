@@ -140,10 +140,21 @@ class Places:
             by_alias = [k for k in hits if any(words(a) in ht for a in self.env[k].get("aliases") or [] if a)]
             if len(by_alias) == 1:
                 return by_alias
+            # the room said with this very place ('shelf in the restroom', 'kitchen shelf'), not any room the
+            # task mentions elsewhere ('... the kitchen drawer')
+            near = [k for k in hits if self.room_said(k, ht)]
+            if len(near) == 1:
+                return near
             hinted = [k for k in hits if self.room(k) and self.room(k) in hint]
             if len(hinted) == 1:
                 return hinted
         return hits
+
+    def room_said(self, key: str, text: str) -> bool:
+        """Does *text* name *key* with its room ('shelf in the restroom', 'restroom shelf', "kitchen's shelf")?"""
+        h, rm = re.escape(words(self.head(key))), re.escape(words(self.room(key)))
+        return bool(rm) and bool(re.search(rf"\b{h}\s+(?:in|of|at|from)\s+(?:the\s+)?{rm}\b|\b{rm}(?:'s)?\s+{h}\b",
+                                           words(text)))
 
     def said(self, key: str, text: str) -> bool:
         """Does *text* name *key* (its name or an alias), not only a word of it?"""
