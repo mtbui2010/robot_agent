@@ -52,6 +52,7 @@ class SearchConfig:
     half_life_s: float = 6 * 3600.0   # a sighting's confidence halves every half_life_s
     trust: float = 0.5                # a sighting at least this confident is believed without a ranking
     rank_weight: float = 0.5          # the ranking's weight against the prior (top ranked = rank_weight)
+    habit_weight: float = 0.75        # where past episodes picked the object up (all of them there = habit_weight)
 
     @classmethod
     def from_env(cls, overrides: Optional[dict] = None, env: Callable = os.environ.get) -> "SearchConfig":
@@ -62,7 +63,8 @@ class SearchConfig:
                    rank=str(get("search_rank", "ROBOT_AGENT_SEARCH_RANK", "llm")).lower(),
                    half_life_s=float(get("search_half_life_s", "ROBOT_AGENT_SEARCH_HALF_LIFE_S", "21600")),
                    trust=float(get("search_trust", "ROBOT_AGENT_SEARCH_TRUST", "0.5")),
-                   rank_weight=float(get("search_rank_weight", "ROBOT_AGENT_SEARCH_RANK_WEIGHT", "0.5")))
+                   rank_weight=float(get("search_rank_weight", "ROBOT_AGENT_SEARCH_RANK_WEIGHT", "0.5")),
+                   habit_weight=float(get("search_habit_weight", "ROBOT_AGENT_SEARCH_HABIT_WEIGHT", "0.75")))
 
 
 def confidence(age_s: float, half_life_s: float) -> float:
@@ -114,6 +116,7 @@ class SearchBelief:
         self.sightings: dict = {}      # obj -> {place: (ts, how)}
         self.ranked: dict = {}         # obj -> [places] (asked once; [] = no usable answer)
         self.searched: dict = {}       # obj -> {place: set of containers there that were closed}
+        self.habits: dict = {}         # obj -> {place: times past episodes picked it up there}
         self.rank_calls = 0
 
     # ── what is where ───────────────────────────────────────────────────
@@ -132,6 +135,19 @@ class SearchBelief:
             return
         self.sightings.setdefault(obj, {})[place] = (self.now() if ts is None else float(ts), how)
 
+    def learn(self, obj: str, counts: dict) -> None:
+        """Experience: ``counts`` {place: times the robot's past episodes picked ``obj`` up there}
+        (search_experience.picked_at). Not a sighting: it does not decay and never sets a source."""
+        c = {p: int(n) for p, n in (counts or {}).items() if p in self.places and int(n) > 0}
+        if c:
+            self.habits[obj] = c
+
+    def habit(self, obj: str) -> dict:
+        """{place: share of the object's past picks made there}."""
+        c = self.habits.get(obj) or {}
+        n = sum(c.values())
+        return {p: k / n for p, k in c.items()} if n else {}
+
     def prior(self, obj: str) -> dict:
         """{place: confidence} of the object's sightings, decayed by their age."""
         now = self.now()
@@ -145,6 +161,9 @@ class SearchBelief:
         now, known = self.now(), []
         for p, (ts, how) in sorted(self.sightings.get(obj, {}).items(), key=lambda kv: -kv[1][0]):
             known.append(f"The {obj} was {how or 'seen'} at {p} {_age(now - ts)} ago.")
+        for p, k in sorted((self.habits.get(obj) or {}).items(), key=lambda kv: -kv[1]):
+            known.append(f"In past tasks in this home the robot picked the {obj} up at {p} "
+                         f"({k} time{'s' if k != 1 else ''}).")
         done = list(self.searched.get(obj, {}))
         if done:
             known.append(f"Already searched (not there): {', '.join(done)}.")
@@ -170,10 +189,13 @@ class SearchBelief:
 
     # ── the order ───────────────────────────────────────────────────────
     def scores(self, obj: str) -> dict:
-        """{place: prior confidence + rank_weight * (1 for the top ranked ... 1/n for the last)}."""
+        """{place: prior confidence + habit_weight * share of past picks there
+        + rank_weight * (1 for the top ranked ... 1/n for the last)}."""
         s = dict.fromkeys(self.places, 0.0)
         for p, c in self.prior(obj).items():
             s[p] = s.get(p, 0.0) + c
+        for p, h in self.habit(obj).items():
+            s[p] = s.get(p, 0.0) + self.cfg.habit_weight * h
         r = self.ranked.get(obj) or []
         for i, p in enumerate(r):
             s[p] = s.get(p, 0.0) + self.cfg.rank_weight * (len(r) - i) / len(r)
@@ -307,6 +329,7 @@ class SearchBelief:
     def to_dict(self) -> dict:
         return {"sightings": {o: {p: list(v) for p, v in d.items()} for o, d in self.sightings.items()},
                 "ranked": dict(self.ranked), "rank_calls": self.rank_calls,
+                "habits": {o: dict(d) for o, d in self.habits.items()},
                 "searched": {o: {p: sorted(c) for p, c in d.items()} for o, d in self.searched.items()}}
 
     def load(self, d: dict) -> "SearchBelief":
@@ -314,6 +337,8 @@ class SearchBelief:
         for o, dd in (d.get("sightings") or {}).items():
             self.sightings[o] = {p: (float(v[0]), str(v[1])) for p, v in dd.items()}
         self.ranked.update({o: list(v) for o, v in (d.get("ranked") or {}).items()})
+        for o, dd in (d.get("habits") or {}).items():
+            self.learn(o, dd)
         for o, dd in (d.get("searched") or {}).items():
             self.searched[o] = {p: set(c) for p, c in dd.items()}
         self.rank_calls = int(d.get("rank_calls") or 0)

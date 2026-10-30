@@ -20,10 +20,15 @@ closed drawer it had just looked at.
 | prior | object memory (`object_memory.<host>.json`: last place + time + how), the user's answers, a Find that saw it | confidence `0.5 ** (age / half_life_s)`; a miss at a place removes that sighting |
 | ranking | one LLM call per object per run (`RANK_PROMPT`, JSON `{"places": [...]}`) | cached, also when it failed; never asked again on a replan |
 | searched | each Find miss with an `absent` code (the recovery policy's `mark_searched`) | per object; a hard constraint (below) |
+| experience | the planner's live memory (`live_path`): each episode's `Pick <obj>` at the place of the `MoveTo` before it (`search_experience.py`; records `verified: false` skipped, the last 2000 lines) | `habit_weight * share of the picks there`; no decay, never a source, in the ranking prompt as "In past tasks in this home the robot picked the X up at P (n times)" |
 
-Order of the places for an object: `score = prior confidence + rank_weight * (n - i) / n` for the
-i-th of n ranked places, ties in ENV order. A 1-minute-old sighting (about 1.0) beats the top of
-the ranking (0.5); a 3-day-old one (half-life 6 h: about 0.0002) does not.
+Order of the places for an object: `score = prior confidence + habit_weight * habit share +
+rank_weight * (n - i) / n` for the i-th of n ranked places, ties in ENV order. A 1-minute-old sighting
+(about 1.0) beats where the robot always picked it up (0.75), which beats the top of the ranking (0.5);
+a 3-day-old sighting (half-life 6 h: about 0.0002) beats none of them. Why the experience: the ranking
+is an LLM's commonsense ("an apple is in the kitchen"; T2 qwen3 ranked the desk last), while the planner
+that it overrides retrieves the home's own episodes (the apple is kept on the desk): after the v2
+search the robot searched the living room and gave up (T2 S06, H04, H07, M04).
 
 ## When the core acts
 
@@ -81,6 +86,7 @@ never gets an Open step from the search.
 | `ROBOT_AGENT_SEARCH_HALF_LIFE_S` | `search_half_life_s` | `21600` | half-life of a sighting's confidence |
 | `ROBOT_AGENT_SEARCH_TRUST` | | `0.5` | a sighting at least this confident is believed without a ranking |
 | `ROBOT_AGENT_SEARCH_RANK_WEIGHT` | | `0.5` | weight of the ranking against the prior |
+| `ROBOT_AGENT_SEARCH_HABIT_WEIGHT` | `search_habit_weight` | `0.75` | weight of the experience prior; `0`: off (the v2 search) |
 
 The ranking counts against the run's LLM budget (`ROBOT_AGENT_LLM_BUDGET`); a failed or
 over-budget ranking leaves the prior alone, it never ends the run.

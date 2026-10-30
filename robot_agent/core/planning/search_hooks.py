@@ -12,6 +12,7 @@ import time
 from typing import Optional
 
 from . import search as search_belief
+from . import search_experience
 from .understand import LLMBadOutput, LLMBudgetExceeded, LLMUnavailable, ask_json
 
 
@@ -35,8 +36,9 @@ class SearchHooks:
         return place if conf >= sc.trust else None
 
     def _search_start(self, r):
-        """The run's SearchBelief, seeded from the object memory; an object with only stale sightings gets
-        its source from the belief after the LLM ranked its places (one call)."""
+        """The run's SearchBelief, seeded from the object memory and the planner's live-memory episodes
+        (search_experience: where the robot picked each goal object up before); an object with only stale
+        sightings gets its source from the belief after the LLM ranked its places (one call)."""
         sc, r.search, r.steered = self.cfg["search"], None, []
         if not sc.enabled:
             return
@@ -45,10 +47,13 @@ class SearchHooks:
             r.places.keys, sc, openable=r.places.openable, can_open="Open" in r.robot.plan_actions,
             containers=(lambda k: fn(k, r.places.env.get(k) or {})) if callable(fn)
             else search_belief.containers_from_env(r.places.env, r.places.openable))
+        exp = search_experience.picked_at(self.cfg.get("live_path"), r.places.keys) if sc.habit_weight > 0 else {}
         for g in r.goals:
             e = r.memory.data["objects"].get(_words(g.get("object"))) if g.get("object") else None
             if e:
                 r.search.see(g["object"], e.get("place"), e.get("ts"), e.get("how") or "")
+            if g.get("object") and exp:                  # where past episodes picked it up (experience prior)
+                r.search.learn(g["object"], search_experience.lookup(exp, _words(g["object"])))
         r.goals = [dict(g) for g in r.goals]           # the understand event keeps what was understood
         for g in r.goals:
             o = g.get("object")
