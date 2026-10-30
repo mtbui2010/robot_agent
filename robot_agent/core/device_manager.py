@@ -3,12 +3,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, Optional
 
+from ..connect import codecs as _codecs
 from ..connect import legacy as _legacy
 from .shared_json import SharedJson, keyed, merge_list
 
 # Persisted connections.json files may embed `from pyconnect...` snippets and
 # dotted paths from before the connect layer was absorbed — keep them loading.
 _legacy.install()
+
+
+def _device_name(config: dict, default: str = '?') -> str:
+    """The connection's name for messages (agent_name, else conn_name)."""
+    return str(config.get('agent_name') or config.get('conn_name') or default)
 
 
 def _resolve_dotted(path: str):
@@ -113,12 +119,8 @@ class DeviceManager:
         code = config.get('run_func')
         if not (isinstance(code, str) and code.strip()):
             return None
-        ns: dict = {}
-        exec(code, ns)  # noqa: S102
-        return ns.get('run_func') or next(
-            (v for v in ns.values() if callable(v) and not isinstance(v, type)),
-            None,
-        )
+        # 'codec:<name>' / 'pkg.module:func', else legacy inline source
+        return _codecs.resolve(code, 'run_func', _device_name(config), inline='always')
 
     def add_connect(self, conn_type: ConnectType, name: str, config: dict) -> tuple[str, str]:
         agent_name = config.get('agent_name') or config.get('conn_name') or str(uuid.uuid4())[:8]
@@ -155,16 +157,12 @@ class DeviceManager:
                     if not val:
                         continue
                     if isinstance(val, str):
-                        if (key in ('encode_func', 'decode_func', 'cancel_func')
-                                and ('def ' in val or 'lambda ' in val)):
-                            ns: dict = {}
-                            exec(val, ns)  # noqa: S102
-                            overrides[key] = ns.get(key) or next(
-                                (v for v in ns.values() if callable(v) and not isinstance(v, type)),
-                                None,
-                            )
-                        else:
-                            overrides[key] = _resolve_dotted(val)
+                        # 'codec:<name>' / 'pkg.module:func' / dotted path, else
+                        # legacy inline source (def / lambda) for the *_func keys
+                        inline = ('always' if key in ('encode_func', 'decode_func', 'cancel_func')
+                                  and ('def ' in val or 'lambda ' in val) else 'never')
+                        overrides[key] = _codecs.resolve(val, key, _device_name(config, agent_name),
+                                                         inline=inline)
                     else:
                         overrides[key] = val
 
@@ -222,15 +220,7 @@ class DeviceManager:
                     entry.connected = client.server_connected
                 else:
                     from ..connect.tcp_ip.server import TcpIpServer
-                    run_func = None
-                    code = config.get('run_func')
-                    if isinstance(code, str) and code.strip():
-                        ns: dict = {}
-                        exec(code, ns)  # noqa: S102
-                        run_func = ns.get('run_func') or next(
-                            (v for v in ns.values() if callable(v) and not isinstance(v, type)),
-                            None,
-                        )
+                    run_func = self._compile_run_func(config)
                     server = TcpIpServer(host=host, port=port, run_func=run_func)
                     server.spin(run_thread=True)
                     entry.client = server

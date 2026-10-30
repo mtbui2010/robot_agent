@@ -22,8 +22,11 @@ These rules apply to every change. Design docs live in `docs/` (see `docs/README
    `tests/conftest.py` and `tests/fakes.py`). Behaviour changes update the golden
    tests deliberately (`UPDATE_GOLDEN=1 make test`, then review the diff).
 7. **No `eval` / `exec` on LLM output or user input.** Use
-   `robot_agent.safe_parse`. For `connections.json`, use registered codecs, not
-   `exec` of strings.
+   `robot_agent.safe_parse`. In `connections.json`, name callables
+   (`"codec:<name>"` via `robot_agent.connect.codecs.register_codec`, or
+   `"pkg.module:func"`); inline `def`/`lambda` source is deprecated
+   (`codecs._legacy_compile` is the only `exec`; `ROBOT_AGENT_NO_INLINE_CODE=1`
+   forbids it; `python -m robot_agent.connect.codecs --scan <file>` lists it).
 8. **Repo hygiene:** never commit `__pycache__` / `*.pyc` / `*.egg-info`. Commit
    messages say what changed and why (no "YYYYMMDD -"). SemVer + CHANGELOG when a
    contract changes.
