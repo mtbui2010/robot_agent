@@ -345,6 +345,24 @@ class SearchBelief:
         return self
 
 
+def skip_relook(steps: list, i: int, obj: str, here: Optional[str]) -> tuple:
+    """``steps[i]`` (a Find of ``obj``) saw it at ``here``: a look for it right after, elsewhere and before
+    its Pick (``MoveTo Q``, Open / Close, ``Find obj``) would walk away from it (T2 S02: the banana seen
+    on the dining table, then looked for again on the counter, not there, the run gave up). That look is
+    removed; a step after it acting at Q gets its MoveTo back. Returns (steps, note)."""
+    moved_to, j = None, i + 1
+    while j < len(steps) and steps[j].get("action") in ("MoveTo",) + tuple(_BETWEEN):
+        if steps[j].get("action") == "MoveTo":
+            moved_to = steps[j].get("object")
+        j += 1
+    if (j >= len(steps) or moved_to in (None, here) or steps[j].get("action") != "Find"
+            or steps[j].get("object") != obj):
+        return steps, ""
+    new = [dict(s) for s in steps[:i + 1] + steps[j + 1:]]
+    _restore_place(new, i + 1, here, moved_to)
+    return new, f"the {obj} was seen at {here}: the look at {moved_to} is skipped"
+
+
 def _restore_place(steps: list, i: int, now_at: str, planned_at: Optional[str]) -> None:
     """After a moved look the robot stands at ``now_at``: the first step acting at a place before the
     next MoveTo gets a MoveTo there (the planner had the robot at ``planned_at``)."""
@@ -386,4 +404,5 @@ def containers_from_env(env: dict, openable: Callable[[str], bool]) -> Callable[
     return at
 
 
-__all__ = ["SearchBelief", "SearchConfig", "Leg", "confidence", "containers_from_env", "RANK_PROMPT", "RANK_SCHEMA"]
+__all__ = ["SearchBelief", "SearchConfig", "Leg", "confidence", "containers_from_env", "skip_relook", "RANK_PROMPT",
+           "RANK_SCHEMA"]

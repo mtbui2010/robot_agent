@@ -14,6 +14,13 @@ Code: `core/planning/reconcile.py` (pose / containers -> belief, the `arrived` g
    one action model and reports rule violations (Pick without Find, Place at the wrong place, an Open
    with a full hand, goals not reached ...). Critical findings go back to the planner's repair; a plan
    still critical never runs. See `assist_loop._check` and [planners.md](planners.md).
+   Before it, `core/planning/plan_tidy.py` removes the steps the action model proves do nothing (Find /
+   Pick of what is in the hand, MoveTo where the robot is, Open of an open / Close of a closed container,
+   a `MoveTo <room>` waypoint right before a MoveTo, every step after the goals are reached), on the
+   first plan, each edit, the refinement and every replan suffix; the `gate` event lists them as
+   `tidied`. `ROBOT_AGENT_PLAN_TIDY=0` (option `plan_tidy`): off. (T2: qwen3 / qwen2.5 plans with
+   "Find plate, Pick plate" twice or the task repeated failed the gate after the planner did not delete
+   them.)
 2. **Per-step guard** (`AssistLoop._guard`, right before the robot moves): the step's preconditions on
    the belief *as it is now* (things changed since the plan). Before that, a non-sensor `arrived`
    (operator / belief) is checked against a fresh pose for a step that acts at a place (Find, Pick,

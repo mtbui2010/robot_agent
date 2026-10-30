@@ -95,13 +95,17 @@ class SearchHooks:
             r.search.see(o, k, how="user said"); r.search.unsearch(o, k)
 
     def _search_effect(self, r, st) -> None:
-        """A step succeeded: a Find ends the object's search; moving an object at a place voids the
-        searches there (something changed)."""
+        """A step succeeded: a Find ends the object's search (and a look for it elsewhere right after is
+        skipped: search.skip_relook); moving an object at a place voids the searches there (something
+        changed)."""
         s = getattr(r, "search", None)
         if s is None:
             return
         if st["action"] == "Find":
             s.found(st["object"], r.world.arrived)
+            r.steps, note = search_belief.skip_relook(r.steps, r.i, st["object"], r.world.arrived)
+            if note:
+                r.steered = list(getattr(r, "steered", None) or []) + [note]
         elif st["action"] in ("Pick", "Place", "PutIn"):
             s.changed(r.world.arrived)
         elif st["action"] == "Open":

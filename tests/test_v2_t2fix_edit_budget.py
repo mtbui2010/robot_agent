@@ -42,11 +42,24 @@ def test_blocks_after_the_goals_are_emptied_without_a_call(make_assist, env):
     blocks = [Block("put the apple", GOOD)] + [Block(f"again {k}", AGAIN) for k in range(8)]
     planner = BlockPlanner(blocks)
     robot = FakeRobot(env, {"apple": DS})
-    evs = run_task(make_assist(robot, FakeLLM(APPLE, default=APPLE), planner), "Put the apple on the dining table.")
+    # plan_tidy off: the gate's sub-goal repair itself empties the blocks (no call)
+    evs = run_task(make_assist(robot, FakeLLM(APPLE, default=APPLE), planner, plan_tidy=False),
+                   "Put the apple on the dining table.")
     assert done(evs)["status"] == "success", done(evs)
     assert planner.edits == []
     assert gate(evs, 1)["plan"] == [f"{s['action']} {s['object']}" for s in GOOD]
     assert sum("emptied" in n for n in gate(evs, 1)["edits"]) == 8
+
+
+def test_plan_tidy_removes_the_repeats_before_the_gate(make_assist, env):
+    blocks = [Block("put the apple", GOOD)] + [Block(f"again {k}", AGAIN) for k in range(3)]
+    planner = BlockPlanner(blocks)
+    robot = FakeRobot(env, {"apple": DS})
+    evs = run_task(make_assist(robot, FakeLLM(APPLE, default=APPLE), planner), "Put the apple on the dining table.")
+    assert done(evs)["status"] == "success" and planner.edits == []
+    g0 = gate(evs, 0)
+    assert g0["problems"] == [] and g0["plan"] == [f"{s['action']} {s['object']}" for s in GOOD] and g0["tidied"]
+    assert not gate(evs, 1)
 
 
 def test_edits_leave_a_reserve_of_the_budget(make_assist, env):

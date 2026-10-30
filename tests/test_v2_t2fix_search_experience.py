@@ -80,3 +80,30 @@ def test_after_a_miss_the_robot_looks_where_it_picked_the_apple_before(make_assi
     assert done(evs)["status"] == "success", done(evs)
     rp = [e for e in evs if e["event"] == "replan"]
     assert "Look next at desk@study room" in rp[0]["reason"]
+
+
+def test_skip_relook_after_a_find_that_saw_it():
+    from robot_agent.core.planning.search import skip_relook
+    st = steps(f"MoveTo {DT}", "Find banana", f"MoveTo {CT}", "Find banana", "Pick banana", f"Place {CT}")
+    new, note = skip_relook(st, 1, "banana", DT)
+    assert [f"{s['action']} {s['object']}" for s in new] == [f"MoveTo {DT}", "Find banana", "Pick banana",
+                                                             f"MoveTo {CT}", f"Place {CT}"]
+    assert "skipped" in note
+    same = steps(f"MoveTo {DT}", "Find banana", "Pick banana", f"MoveTo {CT}", f"Place {CT}")
+    assert skip_relook(same, 1, "banana", DT) == (same, "")
+    other = steps(f"MoveTo {DT}", "Find banana", f"MoveTo {CT}", "Find apple")
+    assert skip_relook(other, 1, "banana", DT)[1] == ""
+
+
+def test_a_found_banana_is_picked_where_it_was_seen(make_assist, env):
+    """S02 replayed (qwen2.5): the replan looks on the dining table, then again on the counter before the
+    Pick; the banana is on the dining table: it is picked there, not left behind."""
+    banana = {"status": "clear", "reason": "", "question": "",
+              "goals": [{"type": "on", "object": "banana", "from": "", "to": "counter"}]}
+    first = steps("MoveTo entrance", "Find banana", f"MoveTo {CT}", "Find banana", "Pick banana", f"Place {CT}")
+    again = steps(f"MoveTo {DT}", "Find banana", f"MoveTo {CT}", "Find banana", "Pick banana", f"Place {CT}")
+    robot = FakeRobot(env, {"banana": DT}, reply_rules=[{"if": "where is it", "then": ""}])
+    llm = FakeLLM(banana, (r"Rank the places where the banana", {"places": [DT]}), default=banana)
+    evs = run_task(make_assist(robot, llm, ScriptedPlanner(first, replans=[again])), "Put the banana on the counter.")
+    assert done(evs)["status"] == "success", done(evs)
+    assert [o for s, o, ok, _m in robot.trace if s == "pick" and ok] == ["banana"]

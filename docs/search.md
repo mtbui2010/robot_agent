@@ -54,7 +54,10 @@ search the robot searched the living room and gave up (T2 S06, H04, H07, M04).
    has a preference) elsewhere than the belief's best place. The steps around it are kept; a Place
    that relied on the planner's place gets its MoveTo back. The `replan` event carries
    `search: [notes]` when a suffix was steered.
-5. **After a step** (`_search_effect`): a Find that saw the object ends its search; a Pick / Place /
+5. **After a step** (`_search_effect`): a Find that saw the object ends its search, and a look for it
+   right after elsewhere before its Pick (`MoveTo Q`, Open / Close, `Find` it) is removed
+   (`search.skip_relook`; a step acting at Q gets its MoveTo back: T2 S02 left the found banana on the
+   dining table to look on the counter); a Pick / Place /
    PutIn at a place voids every search there (the robot moved something); an Open there makes a
    search made while it was closed void too (the `opened` set is compared).
 
