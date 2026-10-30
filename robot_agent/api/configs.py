@@ -2,6 +2,9 @@ import copy
 from fastapi import APIRouter, HTTPException
 from ..state import current
 from ..skill_configs import PROXY_REGISTRY
+from typing import Any
+from . import models as M
+from .models import OPEN
 
 router = APIRouter()
 
@@ -18,7 +21,7 @@ def _resolve(name: str):
     return None
 
 
-@router.get('/skill-configs')
+@router.get('/skill-configs', response_model=dict[str, Any])
 def list_configs():
     result = current().cm.get_all()
     for name, proxy in PROXY_REGISTRY.items():
@@ -35,7 +38,7 @@ def get_config(name: str):
     return val
 
 
-@router.put('/skill-configs/{name}')
+@router.put('/skill-configs/{name}', response_model=M.Ok, **OPEN)
 async def update_config(name: str, body: dict):
     error = current().cm.update(name, body)
     if error:
@@ -43,7 +46,7 @@ async def update_config(name: str, body: dict):
     return {'ok': True}
 
 
-@router.patch('/skill-configs/{name}')
+@router.patch('/skill-configs/{name}', response_model=M.OkValue, **OPEN)
 async def merge_config(name: str, body: dict):
     """Body ``{base, value}``: the group as the client loaded it and as it is now.
     Only the entries the client changed are written (3-way, per top-level key —

@@ -3,6 +3,8 @@ from pydantic import BaseModel, Field
 from typing import Literal, Optional
 
 from ..state import current
+from . import models as M
+from .models import OPEN
 
 router = APIRouter()
 
@@ -34,12 +36,12 @@ class SkillUpdate(BaseModel):
     aliases: Optional[list[str]] = None
 
 
-@router.get('/skills')
+@router.get('/skills', response_model=list[M.SkillInfo], **OPEN)
 def list_skills():
     return current().sr.all()
 
 
-@router.post('/skills/reload')
+@router.post('/skills/reload', response_model=M.OkCount, **OPEN)
 def reload_skills():
     import importlib
     state = current()
@@ -69,7 +71,7 @@ def reload_skills():
     return {'ok': True, 'count': len(sr.all())}
 
 
-@router.get('/skills/status')
+@router.get('/skills/status', response_model=dict[str, M.SkillStatus], **OPEN)
 def skills_status():
     import importlib
     result = {}
@@ -93,7 +95,7 @@ def skills_status():
     return result
 
 
-@router.post('/skills')
+@router.post('/skills', response_model=M.Ok, **OPEN)
 def add_skill(skill: SkillIn):
     sr = current().sr
     with sr.lock:                       # one edit at a time; see SkillRegistry
@@ -130,7 +132,7 @@ def add_skill(skill: SkillIn):
         return {'ok': True}
 
 
-@router.put('/skills/{name}')
+@router.put('/skills/{name}', response_model=M.OkName, **OPEN)
 def update_skill(name: str, body: SkillUpdate):
     sr = current().sr
     with sr.lock:                       # one edit at a time; see SkillRegistry
@@ -179,7 +181,7 @@ def _update_skill(sr, name: str, body: SkillUpdate):
     return {'ok': True, 'name': name}
 
 
-@router.delete('/skills/{name}')
+@router.delete('/skills/{name}', response_model=M.Ok, **OPEN)
 def delete_skill(name: str):
     sr = current().sr
     with sr.lock:                       # one edit at a time; see SkillRegistry
@@ -215,7 +217,7 @@ def _ros_to_plain(obj):
     return obj
 
 
-@router.get('/agent/{agent_name}/get')
+@router.get('/agent/{agent_name}/get', response_model=M.AgentValue, **OPEN)
 def get_from_agent(agent_name: str):
     """Latest value of a device agent (e.g. ``mobile_pose``), read-only.
 

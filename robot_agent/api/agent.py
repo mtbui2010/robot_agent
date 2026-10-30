@@ -2,10 +2,12 @@ import json, os
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
-from typing import Literal, Optional
+from typing import Any, Optional
 
 from ..state import current
 from ..core.unified_agent import _serialize_result
+from . import models as M
+from .models import OPEN
 
 _PROVIDER_KEY_MAP = {
     'chatgpt': 'OPENAI_API_KEY',
@@ -23,36 +25,9 @@ def _env_file() -> Path:
 router = APIRouter()
 
 
-# ------------------------------------------------------------------
-# Skills CRUD (GET is in skills.py; add/delete managed here)
-# ------------------------------------------------------------------
-class AddSkillReq(BaseModel):
-    name: str
-    type: Literal['internal', 'external']
-    description: str = ''
-    module_path: str = ''
-    func_name: str = ''
-    url: str = ''
-
-
-@router.post('/skills')
-def add_skill(req: AddSkillReq):
-    sr = current().sr
-    if req.type == 'internal':
-        sr.register_internal(
-            name=req.name, module_path=req.module_path,
-            func_name=req.func_name or req.name, description=req.description,
-        )
-    else:
-        sr.register_external(name=req.name, url=req.url, description=req.description)
-    return {'ok': True}
-
-
-@router.delete('/skills/{name}')
-def remove_skill(name: str):
-    current().sr.remove(name)
-    return {'ok': True}
-
+# Skills CRUD (GET / POST / PUT / DELETE /skills) lives in skills.py. A second
+# POST /skills and DELETE /skills/{name} here were never reached (skills.py's
+# router is included first) and were removed.
 
 # ------------------------------------------------------------------
 # LLM config
@@ -61,13 +36,13 @@ class LLMConfigReq(BaseModel):
     config: dict
 
 
-@router.post('/agent/llm-config')
+@router.post('/agent/llm-config', response_model=M.Ok, **OPEN)
 def set_llm_config(req: LLMConfigReq):
     current().ua.configure_llm(req.config)
     return {'ok': True}
 
 
-@router.get('/agent/llm-config')
+@router.get('/agent/llm-config', response_model=dict[str, Any])
 def get_llm_config():
     """Effective LLM config the planner runs on (explicit /agent/llm-config,
     else the active 'llm' connection). Secrets are stripped."""
@@ -93,12 +68,12 @@ class WorldStateReq(BaseModel):
     holding_since: float | None = None
 
 
-@router.get('/agent/world')
+@router.get('/agent/world', response_model=M.WorldStateOut, **OPEN)
 def get_world():
     return current().world.to_dict()
 
 
-@router.put('/agent/world')
+@router.put('/agent/world', response_model=M.WorldStateOut, **OPEN)
 def set_world(req: WorldStateReq):
     # Only apply fields the client actually sent (partial edit) so omitted
     # fields keep their current value.
@@ -120,7 +95,7 @@ class ApiKeyWithValueReq(BaseModel):
     key: str
 
 
-@router.post('/agent/api-key')
+@router.post('/agent/api-key', response_model=M.Ok, **OPEN)
 def set_api_key(req: ApiKeyWithValueReq):
     env_var = _PROVIDER_KEY_MAP.get(req.provider.lower())
     if not env_var:
@@ -149,7 +124,7 @@ def set_api_key(req: ApiKeyWithValueReq):
     return {'ok': True}
 
 
-@router.get('/agent/api-keys')
+@router.get('/agent/api-keys', response_model=dict[str, bool])
 def get_api_keys():
     env_file = _env_file()
     return {
@@ -173,7 +148,7 @@ class ListenAnswer(BaseModel):
     note: Optional[str] = None
 
 
-@router.post('/agent/listen/{req_id}')
+@router.post('/agent/listen/{req_id}', response_model=M.Ok, **OPEN)
 def answer_listen(req_id: str, body: ListenAnswer):
     """The dashboard's transcript for a pending HRI listen request.
 
@@ -188,7 +163,7 @@ def answer_listen(req_id: str, body: ListenAnswer):
     return {'ok': True}
 
 
-@router.post('/agent/listen/{req_id}/audio')
+@router.post('/agent/listen/{req_id}/audio', response_model=M.OkText, **OPEN)
 async def answer_listen_audio(req_id: str, request: Request):
     """The dashboard's recording for a listen with ``capture='whisper'``.
 
@@ -207,7 +182,7 @@ async def answer_listen_audio(req_id: str, request: Request):
     return {'ok': True, 'text': text}
 
 
-@router.post('/agent/qa/end')
+@router.post('/agent/qa/end', response_model=M.QaEndResult, **OPEN)
 def end_qa():
     """End the running kcare `qa` conversation as a stop word would: it says
     goodbye, returns success and the plan goes on (unlike /agent/cancel).
@@ -219,7 +194,7 @@ def end_qa():
     return out
 
 
-@router.post('/agent/cancel')
+@router.post('/agent/cancel', response_model=M.CancelResult, **OPEN)
 def cancel_run():
     """Stop the robot: cancel every ROS command in flight and end the run.
 
@@ -257,7 +232,7 @@ def _result_or_raise(res) -> dict:
     return res.to_dict()
 
 
-@router.get('/runs')
+@router.get('/runs', response_model=M.RunList, **OPEN)
 def list_runs():
     mgr = _runs()
     act = mgr.active()
@@ -265,12 +240,35 @@ def list_runs():
             'runs': [r.to_dict() for r in mgr.list()]}
 
 
-@router.get('/runs/{run_id}')
+@router.get('/runs/{run_id}', response_model=M.RunInfo, **OPEN)
 def get_run(run_id: str, events: bool = True):
     run = _runs().get(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail=f'no run {run_id!r}')
     return run.to_dict(events=events)
+
+
+@router.get('/runs/{run_id}/record', response_model=M.RunRecordOut, **OPEN)
+def get_run_record(run_id: str, kinds: Optional[str] = None, limit: Optional[int] = None):
+    """The run's RunRecord rows (robot_agent.observe.record). ``kinds``: a
+    comma-separated filter (``llm,skill``); ``limit``: the last N rows. Works
+    for finished runs too, from disk."""
+    from ..observe.record import load_record
+    try:
+        return load_record(run_id, kinds=[k for k in (kinds or '').split(',') if k] or None, limit=limit)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f'no record of run {run_id!r}')
+
+
+@router.get('/runs/{run_id}/metrics', response_model=M.RunMetrics, **OPEN)
+def get_run_metrics(run_id: str):
+    """The run's metrics line (LLM calls, latency, replans, failure codes,
+    verified success); so far, with ``live: true``, while it runs."""
+    from ..observe.record import run_metrics
+    try:
+        return run_metrics(run_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f'no record of run {run_id!r}')
 
 
 def _control(run_id: str, action: str, body: Optional[RunControlReq]) -> dict:
@@ -279,25 +277,25 @@ def _control(run_id: str, action: str, body: Optional[RunControlReq]) -> dict:
     return _result_or_raise(fn(run_id, role=body.role, user_id=body.user_id))
 
 
-@router.post('/runs/{run_id}/cancel')
+@router.post('/runs/{run_id}/cancel', response_model=M.RunControlResult, **OPEN)
 def cancel_one_run(run_id: str, body: Optional[RunControlReq] = None):
     """Cancel one run and stop the robot at once (ROS goals, listens). A lower
     role than the run's starter is refused (403); 409 once it has ended."""
     return _control(run_id, 'cancel', body)
 
 
-@router.post('/runs/{run_id}/pause')
+@router.post('/runs/{run_id}/pause', response_model=M.RunControlResult, **OPEN)
 def pause_run(run_id: str, body: Optional[RunControlReq] = None):
     """Pause one run; it holds at the next step boundary."""
     return _control(run_id, 'pause', body)
 
 
-@router.post('/runs/{run_id}/resume')
+@router.post('/runs/{run_id}/resume', response_model=M.RunControlResult, **OPEN)
 def resume_run(run_id: str, body: Optional[RunControlReq] = None):
     return _control(run_id, 'resume', body)
 
 
-@router.post('/runs/{run_id}/inject')
+@router.post('/runs/{run_id}/inject', response_model=M.RunControlResult, **OPEN)
 def inject_run(run_id: str, body: RunInjectReq):
     """Something said / typed during the run, routed by the intent router."""
     return _result_or_raise(_runs().inject(run_id, body.text, user_id=body.user_id,
