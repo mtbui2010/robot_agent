@@ -166,6 +166,44 @@ def reconcile_world(node, world, threshold=0.8):
     return world
 
 
+# step outcomes of the phase methods (generators return one of these)
+_NEXT, _FAIL, _STOP, _DONE = "next", "fail", "stop", "done"
+
+
+class RunContext:
+    """One run's state, shared by the phase methods of a loop (ClosedLoop / AssistLoop): the
+    robot, belief, record + logger, the plan and the cursor in it."""
+
+    def __init__(self, loop, task: str, lang: str, plan_only: bool, planner_name: str):
+        self.task, self.lang, self.plan_only = task, lang, plan_only
+        self.robot = loop.robot
+        self.announcer = loop._announcer(lang)
+        self.world = current().world
+        self.node = getattr(loop.dm, "_ros_node", None)
+        self.muted = False
+        now = time.time()
+        self.run_id = time.strftime("%Y%m%d-%H%M%S", time.localtime(now)) + f"-{int(now * 1000) % 1000:03d}"
+        self.run = new_task_record(self.run_id, task, lang=lang, planner=planner_name, started_at=now)
+        self.logger = RunLogger(self.run, loop.cfg["log_dir"] / f"{self.run_id}.jsonl")
+        self.planner = None
+        self.obs, self.visible = "", []
+        self.steps: list = []
+        self.completed: list = []
+        self.i = 0
+        self.replans = 0
+
+    def ev(self, event: str, say: Optional[str] = None, **fields) -> dict:
+        """An event to stream, logged to the run's JSONL."""
+        d = {"event": event, **fields}
+        if say is not None:
+            d["say"] = say
+        try:
+            self.logger.event(event, t=time.time(), **{k: v for k, v in d.items() if k != "event"})
+        except Exception:
+            pass
+        return d
+
+
 class ClosedLoop:
     """NL -> plan -> exec -> check -> replan driver.
 
@@ -345,264 +383,272 @@ class ClosedLoop:
         return Announcer(lang=lang, speak_backend=self.cfg["speak_backend"], i18n=self.robot.i18n,
                          quiet=self.robot.quiet_skills)
 
-    def run_blocking(self, task: str, lang: str = "en",
-                     plan_only: bool = False) -> Iterator[dict]:
-        robot = self.robot
-        mapper = ActionMapper(robot)
-        announcer = self._announcer(lang)
-        world = current().world
-        node = getattr(self.dm, "_ros_node", None)
-        verifier = self._verifier(node)
-        reconcile_world(node, world)
+    # ── one run ──────────────────────────────────────────────────────────
+    def _open_run(self, task: str, lang: str, plan_only: bool, planner_name: str) -> "RunContext":
+        return RunContext(self, task, lang, plan_only, planner_name)
 
-        # Mute skill-level TTS so the plan-level announcer owns milestone speech.
-        muted = False
+    def _mute(self, r: "RunContext") -> None:
+        """Mute skill-level TTS so the plan-level announcer owns milestone speech."""
         if self.cfg["mute_skill_tts"]:
             try:
                 from robot_agent.utils import set_skill_tts_muted
                 set_skill_tts_muted(True)
-                muted = True
+                r.muted = True
             except Exception:
                 pass
 
-        now = time.time()
-        run_id = time.strftime("%Y%m%d-%H%M%S", time.localtime(now)) + f"-{int(now * 1000) % 1000:03d}"
-        run = new_task_record(
-            run_id, task, lang=lang, planner=self.cfg["planner"], started_at=now
-        )
-        logger = RunLogger(run, self.cfg["log_dir"] / f"{run_id}.jsonl")
-
-        def ev(event: str, say: Optional[str] = None, **fields) -> dict:
-            d = {"event": event, **fields}
-            if say is not None:
-                d["say"] = say
+    def _close_run(self, r: "RunContext") -> None:
+        if r.muted:
             try:
-                logger.event(event, t=time.time(), **{k: v for k, v in d.items() if k != "event"})
+                from robot_agent.utils import set_skill_tts_muted
+                set_skill_tts_muted(False)
             except Exception:
                 pass
-            return d
-
         try:
-            yield ev("task_start", say=announcer.announce("task_start"),
-                     task=task, run_id=run_id, world=world.to_dict())
+            r.logger.snapshot()
+        except Exception:
+            pass
 
-            # ── Ground ───────────────────────────────────────────────────
-            obs, visible = robot.observe(node)
-            # Feed the persisted world summary to the planner so the LLM knows
-            # current holding/location.
-            try:
-                obs = (obs + "\n" if obs else "") + "Robot state: " + world.as_text()
-            except Exception:
-                pass
-            run.obs, run.visible = obs, list(visible)
+    @staticmethod
+    def _crashed(r: "RunContext", e: Exception) -> dict:
+        r.run.status = "aborted"
+        r.run.ended_at = time.time()
+        return {"event": "error", "msg": str(e), "trace": traceback.format_exc()}
 
-            # ── Plan ─────────────────────────────────────────────────────
-            yield ev("status", msg="Generating task plan...")
-            planner = self._make_planner()
-            # Stream live multi-step progress (decompose/expand/refine) for
-            # planners exposing a `progress` hook (GRACE). Best-effort.
-            try:
-                inner = getattr(planner, "_p", planner)
-                if self._emit is not None and hasattr(inner, "progress"):
-                    _emit = self._emit
-                    def _on_progress(d):
-                        try: _emit({"event": "plan_step", **d})
-                        except Exception: pass
-                    inner.progress = _on_progress
-            except Exception:
-                pass
-            steps, meta = planner.generate_plan(task, obs, visible)
-            steps = list(steps)
-            run.plan_meta = meta or {}
-            warnings = mapper.screen(steps)
-            run.warnings = warnings
-            run.status = "running"
-            plan_text = self._plan_text(steps, run.plan_meta, mapper, world)
-            yield ev("plan", steps=steps, plan_meta=run.plan_meta, warnings=warnings,
-                     plan_text=plan_text, world=world.to_dict())
-            for w in warnings:
-                yield ev("warning", msg=w)
+    def _hook_progress(self, planner) -> None:
+        """Stream live multi-step progress (decompose/expand/refine) for planners exposing a
+        `progress` hook (GRACE). Best-effort."""
+        try:
+            inner = getattr(planner, "_p", planner)
+            if self._emit is not None and hasattr(inner, "progress"):
+                _emit = self._emit
 
-            # Plan-only mode: stop after generating the plan (no execution).
-            if plan_only:
-                run.status = "planned"
-                run.ended_at = time.time()
-                yield ev("done", status="planned", run_id=run_id,
-                         say=announcer.announce("plan_ready"), world=world.to_dict())
-                return
-
-            completed: list[dict] = []
-            i = 0
-            replans = 0
-
-            from ..run_control import cancel_requested, wait_if_paused
-
-            def _abort():
-                """End the run on a cancel — no verify, no replan."""
-                run.status = "aborted"
-                run.ended_at = time.time()
-                return ev("done", status="aborted", run_id=run_id,
-                          msg="Cancelled by user", world=world.to_dict())
-
-            while i < len(steps):
-                wait_if_paused()         # a paused run holds here, between two steps
-                if cancel_requested():
-                    yield _abort()
-                    return
-                step = steps[i]
-                action = step.get("action", "")
-                obj = step.get("object", "")
-                started = time.time()
-
-                # ── Map ──────────────────────────────────────────────────
-                try:
-                    mapped = mapper.to_skill(step, world)
-                except Unmappable as e:
-                    reason = str(e)
-                    rec = StepRecord(index=i, action=action, object=obj, skill=None,
-                                     status="failed", started_at=started, ended_at=time.time(),
-                                     verifies=[VerifyResult("isdone", False, reason)])
-                    run.steps.append(rec)
-                    yield ev("step_done", index=i, status="failed",
-                             say=announcer.announce("step_fail", **self._say(step, action, obj), reason=reason),
-                             reason=reason, world=world.to_dict())
-                    ok_to_replan, steps, i, replans = self._maybe_replan(
-                        planner, task, completed, step, reason, obs, visible,
-                        run, replans, announcer)
-                    if not ok_to_replan:
-                        run.status = "failed"
-                        break
-                    for e2 in self._drain_replan_event(reason, announcer, i, world):
-                        yield e2
-                    continue
-
-                # ── No-op ────────────────────────────────────────────────
-                if mapped is None:
-                    rec = StepRecord(index=i, action=action, object=obj, skill=None,
-                                     status="success", started_at=started, ended_at=time.time(),
-                                     verifies=[VerifyResult("isdone", True, "no-op")])
-                    run.steps.append(rec)
-                    completed.append(step)
-                    yield ev("step_done", index=i, status="success", skill=None,
-                             world=world.to_dict())
-                    i += 1
-                    continue
-
-                skill_name, mapped_params = mapped
-                params = dict(mapped_params or {})        # bind() = the robot's names + build_params
-                rec = StepRecord(index=i, action=action, object=obj, skill=skill_name,
-                                 params=params, status="running", started_at=started)
-
-                yield ev("step_start", index=i, action=action, object=obj, skill=skill_name,
-                         say=announcer.announce("step_start", **self._say(step, action, obj)))
-
-                # ── Execute ──────────────────────────────────────────────
-                try:
-                    # The open-loop path attaches a per-step emitter; this one never
-                    # did, so under the closed-loop planner every log_data() call —
-                    # images, datasets, and an HRI skill's speak / listen — was
-                    # silently dropped. `say` stays off: the announcer owns
-                    # narration here, the same reason skill TTS is muted.
-                    log_fn = None
-                    if self._emit is not None:
-                        from ..unified_agent import _make_log_fn
-                        log_fn = _make_log_fn(self._emit, i, allow_say=False)
-                except Exception:
-                    log_fn = None
-                res = run_skill(self.sr, skill_name, params, node, log_fn=log_fn)
-                rec.result = res.to_legacy()
-
-                # A cancelled skill fails like any other, but replanning around
-                # it would start the robot moving again — stop instead.
-                if cancel_requested():
-                    rec.status = "aborted"
-                    rec.ended_at = time.time()
-                    run.steps.append(rec)
-                    yield _abort()
-                    return
-
-                # ── Check (layered) ──────────────────────────────────────
-                vres = verifier.verify(step, res, world, node, params=params)
-                rec.verifies = vres
-                ok, reason = verdict(vres)
-                rec.ended_at = time.time()
-                yield ev("step_verify", index=i, verifies=_vr_list(vres))
-
-                if ok:
-                    rec.status = "success"
-                    mapper.apply_effect(step, world)
-                    # stamp/clear the grasp clock (no gripper sensor → belief + timestamp)
-                    _act = step.get("action", "")
-                    if _act == "Pick":
-                        world.holding_since = time.time()
-                    elif _act in ("Place", "PutIn"):
-                        world.holding_since = None
+                def _on_progress(d):
                     try:
-                        current().save_world()   # persist belief after each effect
+                        _emit({"event": "plan_step", **d})
                     except Exception:
                         pass
-                    completed.append(step)
-                    run.steps.append(rec)
-                    yield ev("step_done", index=i, status="success", result=rec.result,
-                             say=announcer.announce("step_success", **self._say(step, action, obj)),
-                             world=world.to_dict())
-                    i += 1
-                else:
-                    rec.status = "failed"
-                    run.steps.append(rec)
-                    yield ev("step_done", index=i, status="failed", result=rec.result, reason=reason,
-                             say=announcer.announce("step_fail", **self._say(step, action, obj), reason=reason),
-                             world=world.to_dict())
-                    code = robot.failure_code(res, reason)
-                    if robot.stops_now(code):
-                        # e-stop / cancelled / a skill bug: a replan cannot help (recovery policy)
-                        yield ev("recover", at_index=i, kind="stop", code=code.value,
-                                 msg=f"{skill_name} failed ({code.value}), not retried: {reason}")
-                        run.status = "failed"
-                        break
-                    # fresh observation before replanning
-                    obs, visible = robot.observe(node)
-                    ok_to_replan, steps, i, replans = self._maybe_replan(
-                        planner, task, completed, step, reason, obs, visible,
-                        run, replans, announcer)
-                    if not ok_to_replan:
-                        run.status = "failed"
-                        break
-                    yield ev("replan", at_index=i, reason=reason,
-                             say=announcer.announce("replan"), world=world.to_dict())
+                inner.progress = _on_progress
+        except Exception:
+            pass
 
-            if run.status != "failed":
-                run.status = "success"
-            run.ended_at = time.time()
+    def _log_fn(self, i: int):
+        """The per-step emitter of the open-loop path: images, datasets and an HRI skill's speak /
+        listen reach the dashboard. `say` stays off: the announcer owns narration here, the same
+        reason skill TTS is muted."""
+        if self._emit is None:
+            return None
+        try:
+            from ..unified_agent import _make_log_fn
+            return _make_log_fn(self._emit, i, allow_say=False)
+        except Exception:
+            return None
 
-            # Memory loop: record a fully successful episode (best-effort).
-            if run.status == "success":
-                try:
-                    rec_fn = getattr(planner, "record_episode", None)
-                    if callable(rec_fn):
-                        rec_fn(task, completed)
-                except Exception:
-                    pass
-
-            kind = "done_success" if run.status == "success" else "done_fail"
-            yield ev("done", status=run.status, run_id=run_id, say=announcer.announce(kind),
-                     world=world.to_dict())
-
+    # ── main loop ────────────────────────────────────────────────────────
+    def run_blocking(self, task: str, lang: str = "en",
+                     plan_only: bool = False) -> Iterator[dict]:
+        r = self._open_run(task, lang, plan_only, self.cfg["planner"])
+        r.mapper = ActionMapper(r.robot)
+        r.verifier = self._verifier(r.node)
+        reconcile_world(r.node, r.world)
+        self._mute(r)
+        try:
+            yield r.ev("task_start", say=r.announcer.announce("task_start"),
+                       task=task, run_id=r.run_id, world=r.world.to_dict())
+            if (yield from self._cl_plan(r)):
+                return
+            if (yield from self._cl_execute(r)):
+                return
+            yield from self._cl_finish(r)
         except Exception as e:
-            run.status = "aborted"
-            run.ended_at = time.time()
-            yield {"event": "error", "msg": str(e), "trace": traceback.format_exc()}
+            yield self._crashed(r, e)
         finally:
-            if muted:
-                try:
-                    from robot_agent.utils import set_skill_tts_muted
-                    set_skill_tts_muted(False)
-                except Exception:
-                    pass
-            try:
-                logger.snapshot()
-            except Exception:
-                pass
+            self._close_run(r)
+
+    def _cl_plan(self, r: "RunContext"):
+        """Ground (observe + belief), plan, screen. True when the run ended (plan only)."""
+        obs, visible = r.robot.observe(r.node)
+        # Feed the persisted world summary to the planner so the LLM knows
+        # current holding/location.
+        try:
+            obs = (obs + "\n" if obs else "") + "Robot state: " + r.world.as_text()
+        except Exception:
+            pass
+        r.obs, r.visible = obs, list(visible)
+        r.run.obs, r.run.visible = obs, list(visible)
+
+        yield r.ev("status", msg="Generating task plan...")
+        r.planner = self._make_planner()
+        self._hook_progress(r.planner)
+        steps, meta = r.planner.generate_plan(r.task, obs, visible)
+        r.steps = list(steps)
+        r.run.plan_meta = meta or {}
+        warnings = r.mapper.screen(r.steps)
+        r.run.warnings = warnings
+        r.run.status = "running"
+        plan_text = self._plan_text(r.steps, r.run.plan_meta, r.mapper, r.world)
+        yield r.ev("plan", steps=r.steps, plan_meta=r.run.plan_meta, warnings=warnings,
+                   plan_text=plan_text, world=r.world.to_dict())
+        for w in warnings:
+            yield r.ev("warning", msg=w)
+
+        # Plan-only mode: stop after generating the plan (no execution).
+        if r.plan_only:
+            r.run.status = "planned"
+            r.run.ended_at = time.time()
+            yield r.ev("done", status="planned", run_id=r.run_id,
+                       say=r.announcer.announce("plan_ready"), world=r.world.to_dict())
+            return True
+        return False
+
+    def _aborted(self, r: "RunContext", rec: Optional[StepRecord] = None) -> dict:
+        """End the run on a cancel — no verify, no replan."""
+        if rec is not None:
+            rec.status = "aborted"
+            rec.ended_at = time.time()
+            r.run.steps.append(rec)
+        r.run.status = "aborted"
+        r.run.ended_at = time.time()
+        return r.ev("done", status="aborted", run_id=r.run_id,
+                    msg="Cancelled by user", world=r.world.to_dict())
+
+    def _cl_execute(self, r: "RunContext"):
+        """Run the plan step by step. True when the run ended (cancelled)."""
+        from ..run_control import cancel_requested, wait_if_paused
+        while r.i < len(r.steps):
+            wait_if_paused()         # a paused run holds here, between two steps
+            if cancel_requested():
+                yield self._aborted(r)
+                return True
+            out = yield from self._cl_step(r, r.steps[r.i])
+            if out is _STOP:
+                return True
+            if out is _FAIL:
+                r.run.status = "failed"
+                break
+        return False
+
+    def _cl_step(self, r: "RunContext", step: dict):
+        """Map, execute and check one step. Returns _NEXT, _FAIL or _STOP."""
+        from ..run_control import cancel_requested
+        action, obj, started = step.get("action", ""), step.get("object", ""), time.time()
+        try:
+            mapped = r.mapper.to_skill(step, r.world)
+        except Unmappable as e:
+            return (yield from self._cl_unmappable(r, step, started, str(e)))
+        if mapped is None:                                   # no-op
+            r.run.steps.append(StepRecord(index=r.i, action=action, object=obj, skill=None,
+                                          status="success", started_at=started, ended_at=time.time(),
+                                          verifies=[VerifyResult("isdone", True, "no-op")]))
+            r.completed.append(step)
+            yield r.ev("step_done", index=r.i, status="success", skill=None, world=r.world.to_dict())
+            r.i += 1
+            return _NEXT
+
+        skill_name, mapped_params = mapped
+        params = dict(mapped_params or {})        # bind() = the robot's names + build_params
+        rec = StepRecord(index=r.i, action=action, object=obj, skill=skill_name,
+                         params=params, status="running", started_at=started)
+        yield r.ev("step_start", index=r.i, action=action, object=obj, skill=skill_name,
+                   say=r.announcer.announce("step_start", **self._say(step, action, obj)))
+        res = run_skill(self.sr, skill_name, params, r.node, log_fn=self._log_fn(r.i))
+        rec.result = res.to_legacy()
+        # A cancelled skill fails like any other, but replanning around
+        # it would start the robot moving again — stop instead.
+        if cancel_requested():
+            yield self._aborted(r, rec)
+            return _STOP
+
+        # ── Check (layered) ──
+        vres = r.verifier.verify(step, res, r.world, r.node, params=params)
+        rec.verifies = vres
+        ok, reason = verdict(vres)
+        rec.ended_at = time.time()
+        yield r.ev("step_verify", index=r.i, verifies=_vr_list(vres))
+        if ok:
+            yield from self._cl_succeeded(r, step, rec)
+            return _NEXT
+        return (yield from self._cl_failed(r, step, rec, res, reason))
+
+    def _cl_unmappable(self, r: "RunContext", step: dict, started: float, reason: str):
+        action, obj = step.get("action", ""), step.get("object", "")
+        r.run.steps.append(StepRecord(index=r.i, action=action, object=obj, skill=None,
+                                      status="failed", started_at=started, ended_at=time.time(),
+                                      verifies=[VerifyResult("isdone", False, reason)]))
+        yield r.ev("step_done", index=r.i, status="failed",
+                   say=r.announcer.announce("step_fail", **self._say(step, action, obj), reason=reason),
+                   reason=reason, world=r.world.to_dict())
+        ok_to_replan, r.steps, r.i, r.replans = self._maybe_replan(
+            r.planner, r.task, r.completed, step, reason, r.obs, r.visible, r.run, r.replans, r.announcer)
+        if not ok_to_replan:
+            return _FAIL
+        for e2 in self._drain_replan_event(reason, r.announcer, r.i, r.world):
+            yield e2
+        return _NEXT
+
+    def _cl_succeeded(self, r: "RunContext", step: dict, rec: StepRecord):
+        action, obj = step.get("action", ""), step.get("object", "")
+        rec.status = "success"
+        r.mapper.apply_effect(step, r.world)
+        # stamp/clear the grasp clock (no gripper sensor → belief + timestamp)
+        if action == "Pick":
+            r.world.holding_since = time.time()
+        elif action in ("Place", "PutIn"):
+            r.world.holding_since = None
+        try:
+            current().save_world()   # persist belief after each effect
+        except Exception:
+            pass
+        r.completed.append(step)
+        r.run.steps.append(rec)
+        yield r.ev("step_done", index=r.i, status="success", result=rec.result,
+                   say=r.announcer.announce("step_success", **self._say(step, action, obj)),
+                   world=r.world.to_dict())
+        r.i += 1
+
+    def _cl_failed(self, r: "RunContext", step: dict, rec: StepRecord, res, reason: str):
+        """A failed step: stop when the recovery policy forbids a retry, else replan. _NEXT / _FAIL."""
+        action, obj = step.get("action", ""), step.get("object", "")
+        rec.status = "failed"
+        r.run.steps.append(rec)
+        yield r.ev("step_done", index=r.i, status="failed", result=rec.result, reason=reason,
+                   say=r.announcer.announce("step_fail", **self._say(step, action, obj), reason=reason),
+                   world=r.world.to_dict())
+        code = r.robot.failure_code(res, reason)
+        if r.robot.stops_now(code):
+            # e-stop / cancelled / a skill bug: a replan cannot help (recovery policy)
+            yield r.ev("recover", at_index=r.i, kind="stop", code=code.value,
+                       msg=f"{rec.skill} failed ({code.value}), not retried: {reason}")
+            return _FAIL
+        # fresh observation before replanning
+        r.obs, r.visible = r.robot.observe(r.node)
+        ok_to_replan, r.steps, r.i, r.replans = self._maybe_replan(
+            r.planner, r.task, r.completed, step, reason, r.obs, r.visible, r.run, r.replans, r.announcer)
+        if not ok_to_replan:
+            return _FAIL
+        yield r.ev("replan", at_index=r.i, reason=reason,
+                   say=r.announcer.announce("replan"), world=r.world.to_dict())
+        return _NEXT
+
+    def _cl_finish(self, r: "RunContext"):
+        if r.run.status != "failed":
+            r.run.status = "success"
+        r.run.ended_at = time.time()
+        # Memory loop: record a fully successful episode (best-effort).
+        if r.run.status == "success":
+            self._record_episode(r.planner, r.task, r.completed)
+        kind = "done_success" if r.run.status == "success" else "done_fail"
+        yield r.ev("done", status=r.run.status, run_id=r.run_id, say=r.announcer.announce(kind),
+                   world=r.world.to_dict())
+
+    @staticmethod
+    def _record_episode(planner, task: str, completed: list) -> None:
+        try:
+            rec_fn = getattr(planner, "record_episode", None)
+            if callable(rec_fn):
+                rec_fn(task, completed)
+        except Exception:
+            pass
 
     # ── replan bookkeeping ───────────────────────────────────────────────
     def _maybe_replan(self, planner, task, completed, failed_step, reason,

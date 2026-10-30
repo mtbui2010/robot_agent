@@ -40,8 +40,8 @@ from typing import Iterator, Optional
 
 from robot_agent.contract import FailureCode, Unbindable
 from robot_agent.state import current, host_id
-from .loop import ClosedLoop, _vr_list, reconcile_world
-from .records import RunLogger, StepRecord, VerifyResult, new_task_record
+from .loop import _DONE, _NEXT, _STOP, ClosedLoop, _vr_list, reconcile_world
+from .records import StepRecord, VerifyResult
 from . import action_model
 from .robot import run_skill
 from .verify import symbolic_check, verdict
@@ -517,82 +517,16 @@ class AssistLoop(ClosedLoop):
         The action rules are the shared action model's; this adds the goal / ENV findings and the wording."""
         probs = []
         P = lambda i, txt, crit=True: probs.append((i, txt, crit))
-        need_open = {g["to"] for g in goals if g["type"] == "in"} | {g["object"] for g in goals if g["type"] == "open"}
-        need_close = {g["object"] for g in goals if g["type"] == "close"}
         src_of = {g["object"]: g.get("from") for g in goals}
-        known = self.robot.plan_actions
-        nice = lambda k: (k or "").replace("@", " in the ")
-        ctx = dict(capabilities=self.robot.model_capabilities(), actions=known, openable=places.openable,
-                   containers=places.openable, object_places={o: f for o, f in src_of.items() if f})
+        c = {"need_open": {g["to"] for g in goals if g["type"] == "in"} | {g["object"] for g in goals if g["type"] == "open"},
+             "need_close": {g["object"] for g in goals if g["type"] == "close"}, "src_of": src_of,
+             "ctx": dict(capabilities=self.robot.model_capabilities(), actions=self.robot.plan_actions,
+                         openable=places.openable, containers=places.openable,
+                         object_places={o: f for o, f in src_of.items() if f})}
         w, placed_ok = world.copy(), {}
         for i, st in enumerate(steps):
-            a, o = st.get("action"), st.get("object") or ""
-            bad_place = not st.get("grounded", True) or o.startswith("@")
-            vs, said, holding = {v.code: v for v in action_model.check(st, w, **ctx)}, set(), w.holding
-
-            def has(*codes):                             # did the model find one of these? (marks them worded)
-                hit = [c for c in codes if c in vs]
-                said.update(hit)
-                return bool(hit)
-            if has("unknown_action"):
-                P(i, f"step {i + 1} '{a} {o}': the robot has no action {a} (use MoveTo, Find, Pick, Place, PutIn, Open, Close)")
-                continue
-            if a == "MoveTo":
-                if bad_place:
-                    P(i, f"step {i + 1} 'MoveTo {o}': {o.lstrip('@')} is not a place the robot can go to; use one of the listed places")
-                    continue
-                if has("already_there"):
-                    P(i, f"step {i + 1} 'MoveTo {o}': the robot is already there", False)
-            elif a in ("Open", "Close"):
-                if has("not_openable"):
-                    P(i, f"step {i + 1} '{a} {o}': {nice(o)} cannot be opened or closed")
-                    continue
-                if o not in (need_open if a == "Open" else need_close) and o not in src_of.values():
-                    P(i, f"step {i + 1} '{a} {o}': no goal needs it; remove it")
-                if has("hand_full"):
-                    P(i, f"step {i + 1} '{a} {o}': the robot cannot {a.lower()} it while holding the {holding}; do it before the Pick")
-                if has("interact_without_find"):
-                    P(i, f"step {i + 1} '{a} {o}': the robot must MoveTo {o} first")
-                if has("already_open"):
-                    P(i, f"step {i + 1} 'Open {o}': {nice(o)} is already open; remove this step")
-                if has("close_not_opened"):
-                    P(i, f"step {i + 1} 'Close {o}': {nice(o)} is not open; remove this step")
-            elif a == "Find":
-                if has("find_held"):
-                    P(i, f"step {i + 1} 'Find {o}': already done (the {o} is in the hand); delete this step")
-                if has("find_wrong_place"):
-                    P(i, f"step {i + 1} 'Find {o}': the user said it is on {nice(src_of[o])}; MoveTo {src_of[o]} first")
-            elif a == "Pick":
-                g_ = next((g for g in goals if g["object"] == o), None)
-                if g_ and placed_ok.get(o) == g_.get("to"):
-                    P(i, f"step {i + 1} 'Pick {o}': the {o} was already placed on {g_['to']} by an earlier step; delete the steps that move it again")
-                if has("already_holding", "no_find_before_pick", "pick_not_found"):
-                    if holding and holding == o:
-                        P(i, f"step {i + 1} 'Pick {o}': already done by an earlier step (the {o} is in the hand); delete this step")
-                    elif holding:
-                        P(i, f"step {i + 1} 'Pick {o}': the hand already holds the {holding}; Place it first")
-                    else:
-                        P(i, f"step {i + 1} 'Pick {o}': needs 'Find {o}' just before it, at the same place")
-            elif a in ("Place", "PutIn"):
-                g = next((g for g in goals if g["object"] == holding), None)
-                if has("place_without_holding"):
-                    P(i, f"step {i + 1} '{a} {o}': nothing is in the hand")
-                if bad_place:
-                    has("empty_object", "place_wrong_location")
-                    P(i, f"step {i + 1} '{a} {o}': not a place" + (f"; the destination is {g['to']}" if g else ""))
-                elif g and g.get("to") and o != g["to"]:
-                    has("place_wrong_location")
-                    P(i, f"step {i + 1} '{a} {o}': the {holding} must go to {g['to']}, not {o}")
-                elif has("place_wrong_location"):
-                    P(i, f"step {i + 1} '{a} {o}': the robot must MoveTo {o} first")
-                if has("putin_closed_container"):
-                    P(i, f"step {i + 1} 'PutIn {o}': {nice(o)} is closed; Open it before the Pick")
-                if holding:
-                    placed_ok[holding] = o
-            for code, v in vs.items():                   # any other rule of the model, in its own words
-                if code not in said:
-                    P(i, f"step {i + 1} '{a} {o}': {v.reason}", v.is_error)
-            action_model.apply(st, w, inplace=True)
+            if self._check_step(i, st, w, goals, c, placed_ok, P):
+                action_model.apply(st, w, inplace=True)
         missing = self._missing(steps, world, goals)
         if missing:
             P(len(steps), "the plan does not achieve: " + "; ".join(missing))
@@ -601,6 +535,93 @@ class AssistLoop(ClosedLoop):
                 if self._reaches(steps[:k], world, goals):
                     P(k, f"the goals are done after step {k}; remove the steps after it (do not repeat the task)"); break
         return probs
+
+    def _check_step(self, i, st, w, goals, c, placed_ok, P) -> bool:
+        """The findings of step i in the simulated world `w`, worded for SAGE. False: skip its effect."""
+        a, o = st.get("action"), st.get("object") or ""
+        vs, said = {v.code: v for v in action_model.check(st, w, **c["ctx"])}, set()
+
+        def has(*codes):                             # did the model find one of these? (marks them worded)
+            hit = [c_ for c_ in codes if c_ in vs]
+            said.update(hit)
+            return bool(hit)
+        if not self._word_step(i, a, o, st, w.holding, has, goals, c, placed_ok, P):
+            return False
+        for code, v in vs.items():                   # any other rule of the model, in its own words
+            if code not in said:
+                P(i, f"step {i + 1} '{a} {o}': {v.reason}", v.is_error)
+        return True
+
+    def _word_step(self, i, a, o, st, holding, has, goals, c, placed_ok, P) -> bool:
+        """The checker's own wording of the model's findings for the step's action. False: skip the step."""
+        bad_place = not st.get("grounded", True) or o.startswith("@")
+        nice = lambda k: (k or "").replace("@", " in the ")
+        src_of = c["src_of"]
+        if has("unknown_action"):
+            P(i, f"step {i + 1} '{a} {o}': the robot has no action {a} (use MoveTo, Find, Pick, Place, PutIn, Open, Close)")
+            return False
+        if a == "MoveTo":
+            if bad_place:
+                P(i, f"step {i + 1} 'MoveTo {o}': {o.lstrip('@')} is not a place the robot can go to; use one of the listed places")
+                return False
+            if has("already_there"):
+                P(i, f"step {i + 1} 'MoveTo {o}': the robot is already there", False)
+        elif a in ("Open", "Close"):
+            if has("not_openable"):
+                P(i, f"step {i + 1} '{a} {o}': {nice(o)} cannot be opened or closed")
+                return False
+            if o not in (c["need_open"] if a == "Open" else c["need_close"]) and o not in src_of.values():
+                P(i, f"step {i + 1} '{a} {o}': no goal needs it; remove it")
+            if has("hand_full"):
+                P(i, f"step {i + 1} '{a} {o}': the robot cannot {a.lower()} it while holding the {holding}; do it before the Pick")
+            if has("interact_without_find"):
+                P(i, f"step {i + 1} '{a} {o}': the robot must MoveTo {o} first")
+            if has("already_open"):
+                P(i, f"step {i + 1} 'Open {o}': {nice(o)} is already open; remove this step")
+            if has("close_not_opened"):
+                P(i, f"step {i + 1} 'Close {o}': {nice(o)} is not open; remove this step")
+        elif a == "Find":
+            if has("find_held"):
+                P(i, f"step {i + 1} 'Find {o}': already done (the {o} is in the hand); delete this step")
+            if has("find_wrong_place"):
+                P(i, f"step {i + 1} 'Find {o}': the user said it is on {nice(src_of[o])}; MoveTo {src_of[o]} first")
+        elif a == "Pick":
+            self._word_pick(i, o, holding, has, goals, placed_ok, P)
+        elif a in ("Place", "PutIn"):
+            self._word_place(i, a, o, holding, bad_place, has, goals, placed_ok, P)
+        return True
+
+    @staticmethod
+    def _word_pick(i, o, holding, has, goals, placed_ok, P) -> None:
+        g_ = next((g for g in goals if g["object"] == o), None)
+        if g_ and placed_ok.get(o) == g_.get("to"):
+            P(i, f"step {i + 1} 'Pick {o}': the {o} was already placed on {g_['to']} by an earlier step; delete the steps that move it again")
+        if has("already_holding", "no_find_before_pick", "pick_not_found"):
+            if holding and holding == o:
+                P(i, f"step {i + 1} 'Pick {o}': already done by an earlier step (the {o} is in the hand); delete this step")
+            elif holding:
+                P(i, f"step {i + 1} 'Pick {o}': the hand already holds the {holding}; Place it first")
+            else:
+                P(i, f"step {i + 1} 'Pick {o}': needs 'Find {o}' just before it, at the same place")
+
+    @staticmethod
+    def _word_place(i, a, o, holding, bad_place, has, goals, placed_ok, P) -> None:
+        nice = lambda k: (k or "").replace("@", " in the ")
+        g = next((g for g in goals if g["object"] == holding), None)
+        if has("place_without_holding"):
+            P(i, f"step {i + 1} '{a} {o}': nothing is in the hand")
+        if bad_place:
+            has("empty_object", "place_wrong_location")
+            P(i, f"step {i + 1} '{a} {o}': not a place" + (f"; the destination is {g['to']}" if g else ""))
+        elif g and g.get("to") and o != g["to"]:
+            has("place_wrong_location")
+            P(i, f"step {i + 1} '{a} {o}': the {holding} must go to {g['to']}, not {o}")
+        elif has("place_wrong_location"):
+            P(i, f"step {i + 1} '{a} {o}': the robot must MoveTo {o} first")
+        if has("putin_closed_container"):
+            P(i, f"step {i + 1} 'PutIn {o}': {nice(o)} is closed; Open it before the Pick")
+        if holding:
+            placed_ok[holding] = o
 
     def _sage_edit(self, planner, task, obs, ground, world, places, goals, goal_txt):
         """SAGE's own Editing, driven by the checker: every sub-goal block with a critical finding is re-done by
@@ -821,448 +842,496 @@ class AssistLoop(ClosedLoop):
             return best[1]
         return None
 
-    # ── main ──────────────────────────────────────────────────────────────
+    # ── main: the phases of one run ───────────────────────────────────────
     def run_blocking(self, task: str, lang: str = "en", plan_only: bool = False) -> Iterator[dict]:
-        robot = self.robot
-        announcer = self._announcer(lang)
-        world = current().world
-        node = getattr(self.dm, "_ros_node", None)
-        reconcile_world(node, world)
+        r = self._open_run(task, lang, plan_only, "sage+assist")
+        reconcile_world(r.node, r.world)
         from robot_agent.skill_configs import ENV
-        places = Places(dict(ENV), openable=robot.openable)
-        verifier = self._verifier(node, places.env)
-        memory = Memory(self.cfg["memory_path"])
-
-        muted = False
-        if self.cfg["mute_skill_tts"]:
-            try:
-                from robot_agent.utils import set_skill_tts_muted
-                set_skill_tts_muted(True); muted = True
-            except Exception:
-                pass
-        now = time.time()
-        run_id = time.strftime("%Y%m%d-%H%M%S", time.localtime(now)) + f"-{int(now * 1000) % 1000:03d}"
-        run = new_task_record(run_id, task, lang=lang, planner="sage+assist", started_at=now)
-        logger = RunLogger(run, self.cfg["log_dir"] / f"{run_id}.jsonl")
-
-        def ev(event: str, say: Optional[str] = None, **fields) -> dict:
-            d = {"event": event, **fields}
-            if say is not None:
-                d["say"] = say
-            try:
-                logger.event(event, t=time.time(), **{k: v for k, v in d.items() if k != "event"})
-            except Exception:
-                pass
-            return d
-
-        def log_fn_for(i):
-            if self._emit is None:
-                return None
-            from ..unified_agent import _make_log_fn
-            return _make_log_fn(self._emit, i, allow_say=False)
-
-        from ..run_control import cancel_requested, wait_if_paused
-
-        def finish(status, msg="", **kw):
-            run.status = status; run.ended_at = time.time()
-            kind = "done_success" if status == "success" else "done_fail"
-            say = kw.pop("say", None)
-            if say is None and status in ("failed", "refused") and msg and not msg.startswith(("internal error", "plan finished")):
-                # tell the user why (dropped it, can't find it, ...), without the skill's error text
-                say = re.split(r": [\'\"{]|: Exception| \(replan| \(searched", msg)[0].strip()
-            return ev("done", status=status, run_id=run_id, msg=msg,
-                      say=self._in_lang(say, lang) if say else announcer.announce(kind), world=world.to_dict(), **kw)
-
+        r.places = Places(dict(ENV), openable=r.robot.openable)
+        r.verifier = self._verifier(r.node, r.places.env)
+        r.memory = Memory(self.cfg["memory_path"])
+        self._mute(r)
         try:
-            yield ev("task_start", say=announcer.announce("task_start"), task=task, run_id=run_id,
-                     world=world.to_dict())
-
-            # ── 1. understand + clarify ───────────────────────────────────
-            dialogue, asked, confirms, pin_to = [], 0, 0, None
-            while True:
-                yield ev("status", msg="Understanding the task...")
-                u = self._understand(task, places, memory, world, dialogue)
-                if pin_to:
-                    # "no, the shelf in the restroom" after a read-back names the destination (a 7B model put
-                    # it in `from`): pin it instead of trusting the model's slots
-                    for g in u["goals"]:
-                        if g.get("type") in ("on", "in"):
-                            if places.ground(g.get("from") or "", g.get("from") or "") == pin_to:
-                                g["from"] = ""
-                            g["to"] = pin_to
-                answers = [t for w_, t in dialogue if w_ == "user"]
-                goals, q = self._ground_goals(u["goals"], places, memory,
-                                              " ".join([task, self.original or ""] + answers),
-                                              latest=answers[-1] if answers else "")
-                yield ev("understand", status=u["status"], reason=u.get("reason"), goals=goals,
-                         question=u.get("question") or q)
-                if u["status"] == "infeasible" and dialogue and goals:
-                    u["status"] = "clear"                # the user already answered: a 7B model called a plain
-                                                         # move "infeasible" after "no, the shelf in the restroom"
-                if u["status"] in ("unsafe", "infeasible"):
-                    msg = u.get("reason") or "I can't do that."
-                    yield finish("refused", msg=msg, say=f"I can't do that: {msg}")
-                    return
-                # the grounding decides about places; the model's "ambiguous" counts only when it found nothing
-                # to do (after "no, the shelf in the restroom" a 7B model kept asking which shelf)
-                if u["status"] == "ambiguous" and u.get("question") and not goals:
-                    q = u["question"] if not q else f"{u['question']} {q}"
-                if not goals and not q:
-                    q = u.get("question") or "What should I do exactly?"
-                if not q:
-                    # read the goals back when the user answered something (a misheard answer is only caught
-                    # here) or always (`confirm_task`, a voice user whose command itself may be misheard)
-                    if not ((dialogue and self.cfg["confirm_answers"]) or self.cfg["confirm_task"]):
-                        break
-                    if confirms >= 2:
-                        yield finish("failed", msg="the user did not confirm the task"); return
-                    confirms += 1
-                    cq = f"{self.summary(goals)} Is that right?"
-                    yield ev("clarify", question=cq, round=confirms, kind="confirm")
-                    ans, _n = self._ask_heard(cq, node, log_fn_for(-1), lang)
-                    if cancel_requested():
-                        yield finish("aborted", msg="Cancelled by user"); return
-                    ok_, rest = self.yes_no(ans)
-                    if ok_ is True:
-                        break
-                    if ok_ is None:
-                        yield finish("failed", msg=f"no answer to: {cq}"); return
-                    dialogue += [("robot", cq), ("user", ans)]
-                    if not rest:                     # a bare "no": ask what instead
-                        q = "Sorry. What should I do?"
-                    else:
-                        memory.remember_answer(task, cq, ans)
-                        k = places.ground(rest, rest)
-                        if k and not re.search(r"\b(from|take|pick)\b", rest):
-                            pin_to = k
-                        continue
-                if asked >= self.cfg["clarify_rounds"]:
-                    yield finish("failed", msg=f"still unclear after {asked} questions: {q}")
-                    return
-                asked += 1
-                yield ev("clarify", question=q, round=asked)
-                ans, _n = self._ask_heard(q, node, log_fn_for(-1), lang)
-                if cancel_requested():
-                    yield finish("aborted", msg="Cancelled by user"); return
-                if not ans:
-                    yield finish("failed", msg=f"no answer to: {q}")
-                    return
-                memory.remember_answer(task, q, ans)
-                dialogue += [("robot", q), ("user", ans)]
-
-            run.obs = "goals: " + json.dumps(goals, ensure_ascii=False)
-
-            # ── 2. plan: SAGE generates, the checker reports, SAGE edits ──
-            yield ev("status", msg="Generating task plan...")
-            restated = task + ("" if not dialogue else " (" + "; ".join(t for w_, t in dialogue if w_ == "user") + ")")
-            goal_txt = "; ".join(f"{g['type']} {g['object']}" + (f" from {g['from']}" if g.get('from') else "")
-                                 + (f" to {g['to']}" if g.get('to') else "") for g in goals)
-            searched, seen_far = [], []
-
-            def make_obs():
-                txt = ("Places the robot can go to (use exactly these):\n" + "\n".join(f"- {k}" for k in places.keys)
-                       + "\nGoals: " + goal_txt + "\nRobot state: " + world.as_text())
-                if searched:
-                    txt += "\nAlready looked (object not there): " + ", ".join(searched)
-                return txt
-
-            planner = self._make_planner()
-            try:
-                inner = getattr(planner, "_p", planner)
-                if self._emit is not None and hasattr(inner, "progress"):
-                    _emit = self._emit
-                    inner.progress = lambda d: _emit({"event": "plan_step", **d})
-            except Exception:
-                pass
-            ground = lambda seq: [self._ground_step(x, places, goals, task) for x in seq]
-            t_plan = time.time()
-            try:
-                raw, meta = planner.generate_plan(restated, make_obs(), [])
-            except Exception as e:
-                raw, meta = [], {"error": str(e)}
-            steps = ground(raw)
-            probs = self._check(steps, world, places, goals)
-            yield ev("gate", round=0, problems=[p_[1] for p_ in probs], plan=[f"{x['action']} {x['object']}" for x in steps])
-            edits = []
-            if any(p_[2] for p_ in probs):
-                # SAGE's sub-goal-local Editing with the checker's findings (SAGEPlanner.edit_block per block)
-                edited, edits = self._sage_edit(planner, restated, make_obs(), ground, world, places, goals, goal_txt)
-                if edited is not None:
-                    steps = edited
-                probs = self._check(steps, world, places, goals)
-                yield ev("gate", round=1, edits=edits, problems=[p_[1] for p_ in probs],
-                         plan=[f"{x['action']} {x['object']}" for x in steps])
-            run.plan_meta = dict(meta or {}, plan_sec=round(time.time() - t_plan, 2), llm_plan=ground(raw), edits=edits)
-            skill_map = robot.skill_map
-            plan_text = "\n".join(f"{skill_map.get(x['action'], x['action'])}::{x['object']}" for x in steps)
-            yield ev("plan", steps=steps, plan_meta=run.plan_meta, warnings=[], plan_text=plan_text,
-                     world=world.to_dict())
-            if plan_only:
-                yield finish("planned", say=announcer.announce("plan_ready")); return
-            if not steps:
-                yield finish("failed", msg="the planner produced no plan for the goals"); return
-
-            # ── 3. execute: guard each step; new plans only from SAGE ─────
-            completed, placed = [], {}
-            pick_tries, move_tries, helped, seen_fail, seen_at, find_fails = {}, {}, set(), {}, {}, {}
-            replans, i = 0, 0
-
-            def sage_replan(failed, reason):
-                """SAGE suffix repair from step i. Returns the event to yield, or None when out of budget."""
-                nonlocal steps, replans
-                if replans >= self.cfg["max_replans"]:
-                    return None
-                replans += 1
-                ers = (f"E: {failed.get('action')} {failed.get('object')} failed. R: {reason}. "
-                       f"S: robot at {world.arrived}, holding {world.holding or 'nothing'}; goals: {goal_txt}")
-                try:
-                    suffix, _m = planner.replan(restated, completed, failed, ers, make_obs(), [])
-                    suffix = ground(suffix)
-                except Exception as e:
-                    suffix = []; ers += f"; replan error: {e}"
-                probs = [p_[1] for p_ in self._check(completed + suffix, world_at_start, places, goals) if p_[2]]
-                run.replans.append({"at_index": i, "failed": failed, "reason": ers, "suffix_len": len(suffix),
-                                    "problems": probs})
-                steps = steps[:i] + suffix
-                return ev("replan", at_index=i, reason=ers, problems=probs,
-                          plan=[f"{x['action']} {x['object']}" for x in suffix],
-                          say=announcer.announce("replan"), world=world.to_dict())
-
-            world_at_start = world.copy()
-            while True:
-                if i >= len(steps):
-                    if self._goals_hold(goals, world, placed):
-                        break
-                    e_ = sage_replan({"action": "Check", "object": "goals"},
-                                     "the plan ended but the goals are not reached: "
-                                     + "; ".join(self._missing(completed, world_at_start, goals)))
-                    if e_ is None or i >= len(steps):
-                        yield finish("failed", msg="plan finished but the goals do not hold: " + goal_txt); return
-                    yield e_
-                    continue
-                wait_if_paused()             # a paused run holds here, between two steps
-                if cancel_requested():
-                    yield finish("aborted", msg="Cancelled by user"); return
-                st = steps[i]
-                a, o = st["action"], st["object"]
-                started = time.time()
-
-                # ── preconditions, before the robot moves (violations go to SAGE) ──
-                why = ""
-                if a in ("Place", "PutIn", "Open", "Close") and o in places.env and world.arrived != o:
-                    why = f"the robot is at {world.arrived}, not at {o}"
-                elif a in ("Open", "Close") and world.holding:
-                    why = f"the robot cannot {a.lower()} {o} while holding the {world.holding}"
-                else:
-                    ok_pre, why_ = symbolic_check(st, world, openable=places.openable)
-                    why = "" if ok_pre else why_
-                if not why and a in ("Place", "PutIn") and world.holding:
-                    # still in the hand? (dropped on the way: `place` would otherwise go and pick something up)
-                    if not self._holding(node, default=True):
-                        lost = world.holding
-                        memory.see(lost, None, "dropped")
-                        world.holding = world.holding_since = None
-                        yield ev("recover", at_index=i, kind="dropped", msg=f"{lost} is no longer in the gripper")
-                        yield finish("failed", msg=f"I dropped the {lost} on the way to {o.replace('@', ' in the ')}. "
-                                                   f"Please pick it up; I can't pick things up from the floor.")
-                        return
-                if why:
-                    sig = ("pre", a, o, why)
-                    seen_fail[sig] = seen_fail.get(sig, 0) + 1
-                    e_ = sage_replan(st, f"precondition: {why}") if seen_fail[sig] <= 1 else None
-                    if e_ is None:
-                        yield finish("failed", msg=f"{a} {o}: {why}"); return
-                    yield e_
-                    continue
-
-                try:
-                    mapped = self._bind(st, world)
-                except Unbindable as e:
-                    mapped = e
-                if mapped is None:                                   # no-op action
-                    run.steps.append(StepRecord(index=i, action=a, object=o, skill=None, status="success",
-                                                started_at=started, ended_at=time.time(),
-                                                verifies=[VerifyResult("isdone", True, "no-op")]))
-                    completed.append(st); i += 1
-                    yield ev("step_done", index=i - 1, status="success", skill=None, world=world.to_dict())
-                    continue
-                if isinstance(mapped, Exception):
-                    e_ = sage_replan(st, f"no skill for this step: {mapped}")
-                    if e_ is None:
-                        yield finish("failed", msg=f"{a} {o}: {mapped}"); return
-                    yield e_
-                    continue
-
-                skill, params = mapped
-                rec = StepRecord(index=i, action=a, object=o, skill=skill, params=params,
-                                 status="running", started_at=started)
-                yield ev("step_start", index=i, action=a, object=o, skill=skill,
-                         say=announcer.announce("step_start", **self._say(st, a, o)))
-                res = run_skill(self.sr, skill, params, node, log_fn=log_fn_for(i))
-                rec.result = res.to_legacy()
-                if cancel_requested():
-                    rec.status = "aborted"; run.steps.append(rec)
-                    yield finish("aborted", msg="Cancelled by user"); return
-
-                # ── post-checks: after a reported success, the effects + the skill's VerifySpecs (manifest:
-                # Pick looked at again once the arm is folded, MoveTo measured against the ENV loc) ──
-                vres = verifier.verify(st, res, world, node, params=params)
-                if (a in ("Place", "PutIn") and vres and not vres[0].ok
-                        and res.code is FailureCode.GRASP_FAILED and not self._holding(node, default=True)):
-                    # the release's own empty-gripper check fired right after letting go; looked once more
-                    vres = [VerifyResult("isdone", True, f"{skill}: second look, gripper empty"),
-                            VerifyResult("recheck", True, f"first check: {vres[0].detail}")]
-                if a == "Find" and vres and vres[0].ok:
-                    p3 = self._found_point(rec.result, o)
-                    seen_at[o] = p3
-                    if p3 and math.hypot(p3[0], p3[1]) > self.cfg["reach_far"]:
-                        near = self._place_of_far_point(p3, node, places, world)
-                        vres.append(VerifyResult("reach", False, f"the {o} was seen {math.hypot(p3[0], p3[1]):.1f} m away"
-                                                 + (f", near {near}" if near else ", not near any place") + ", out of reach from here"))
-                        if near:
-                            seen_far.append(near); memory.see(o, near, "seen from afar")
-                rec.verifies = vres
-                ok, reason = verdict(vres)
-                rec.ended_at = time.time()
-                yield ev("step_verify", index=i, verifies=_vr_list(vres))
-
-                if ok:
-                    rec.status = "success"; run.steps.append(rec)
-                    self._effect(st, world, memory, placed)
-                    completed.append(st)
-                    yield ev("step_done", index=i, status="success", result=rec.result,
-                             say=announcer.announce("step_success", **self._say(st, a, o)), world=world.to_dict())
-                    i += 1
-                    if i < len(steps) and self._goals_hold(goals, world, placed):
-                        # the user's goals are met: end the task here rather than run what is left of the plan
-                        yield ev("status", msg=f"goals reached; {len(steps) - i} remaining plan steps not run")
-                        break
-                    continue
-
-                rec.status = "failed"; run.steps.append(rec)
-                yield ev("step_done", index=i, status="failed", result=rec.result, reason=reason,
-                         say=announcer.announce("step_fail", **self._say(st, a, o), reason=reason),
-                         world=world.to_dict())
-
-                # ── stop at once: the recovery policy does not retry it (a skill bug, an e-stop), or the same
-                # failure twice ──
-                code = robot.failure_code(res, reason)
-                rule = robot.policy.rule_for(code)
-                if not rule.retry_allowed:
-                    what = "internal error in" if code is FailureCode.SOFTWARE else f"{code.value} in"
-                    yield finish("failed", msg=f"{what} the {skill} skill (not retried): {reason}"); return
-                sig = (a, o, world.arrived, re.sub(r"[-\d.]+", "#", str(reason))[:160])
-                seen_fail[sig] = seen_fail.get(sig, 0) + 1
-                if seen_fail[sig] > 2:
-                    yield finish("failed", msg=f"{a} {o} failed again the same way: {reason}"); return
-
-                # ── skill-level retry in place / ask the person (not planning) ──
-                extra = ""
-                if a == "Find":
-                    world.found = None
-                    # absent: the place counts as searched; could not look / out of reach: it does not (policy)
-                    if world.arrived and world.arrived not in searched and rule.mark_searched:
-                        searched.append(world.arrived)
-                    find_fails[o] = find_fails.get(o, 0) + 1
-                    if find_fails[o] > self.cfg["search_max"] and self.cfg["ask_help"] and ("where", o) not in helped:
-                        helped.add(("where", o))
-                        q = f"I couldn't find the {o}. Where is it?"
-                        yield ev("clarify", question=q, round=0)
-                        ans = self._ask(q, node, log_fn_for(i), lang)
-                        k = places.ground(ans, ans) if ans else None
-                        if not k:
-                            yield finish("failed", msg=f"could not find the {o} (looked at {', '.join(searched)})"); return
-                        memory.remember_answer(task, q, ans); memory.see(o, k, "user said")
-                        if k in searched:
-                            searched.remove(k)
-                        extra = f"; the user says the {o} is on {k}"
-                    elif find_fails[o] > self.cfg["search_max"] + 1:
-                        yield finish("failed", msg=f"could not find the {o} (looked at {', '.join(searched)})"); return
-                    else:
-                        extra = (f"; it is not at {world.arrived}. Choose where to look next among the places not yet "
-                                 f"searched" + (f" (it was seen near {seen_far[-1]})" if seen_far else ""))
-                elif a == "Pick":
-                    if self._holding(node, default=False):
-                        # failed, yet something is in the gripper (a neighbour?): never carry on with an unknown object
-                        world.holding = f"unknown object (picking {o})"
-                        yield finish("failed", msg=f"the pick of the {o} failed but something is in my gripper; "
-                                                   f"please take it from me: {reason}"); return
-                    pick_tries[o] = pick_tries.get(o, 0) + 1
-                    p3 = seen_at.get(o)
-                    out_of_reach = bool(p3) and abs(p3[1]) > self.cfg["reach_lateral"]
-                    if pick_tries[o] <= self.cfg["pick_retries"] and not out_of_reach:
-                        # retry the same skill pair in place: look again, grasp again
-                        steps[i:i] = [{"action": "Find", "object": o}]
-                        world.found = None
-                        yield ev("recover", at_index=i, kind="retry", msg=f"pick {o} failed; looking again")
-                        continue
-                    if self.cfg["ask_help"] and ("pick", o) not in helped:
-                        helped.add(("pick", o))
-                        q = (f"The {o} is too far for my arm. Could you move it closer to the edge, then say yes?"
-                             if out_of_reach else f"I can't pick up the {o}. Could you move it closer to the edge, then say yes?")
-                        yield ev("clarify", question=q, round=0)
-                        ans = self._ask(q, node, log_fn_for(i), lang)
-                        k = places.ground(ans, ans) if ans else None
-                        if ans and self.yes_no(ans)[0] is True:
-                            steps[i:i] = [{"action": "Find", "object": o}]
-                            world.found = None
-                            yield ev("recover", at_index=i, kind="asked", msg="user helped; trying again")
-                            continue
-                        if k and k != world.arrived:
-                            memory.see(o, k, "user said"); world.found = None
-                            extra = f"; the user says the {o} is on {k}"
-                    if not extra:
-                        yield finish("failed", msg=f"could not pick up the {o}: {reason}"); return
-                elif a == "MoveTo":
-                    move_tries[o] = move_tries.get(o, 0) + 1
-                    if move_tries[o] <= 1:
-                        yield ev("recover", at_index=i, kind="retry", msg=f"move to {o} again"); continue
-                    if self.cfg["ask_help"] and ("move", o) not in helped:
-                        helped.add(("move", o))
-                        q = (f"I can't get to the {o.replace('@', ' in the ')}. Is something in the way? "
-                             f"Please clear the way and say yes.")
-                        yield ev("clarify", question=q, round=0)
-                        ans, _n = self._ask_heard(q, node, log_fn_for(i), lang)
-                        if self.yes_no(ans)[0] is True:
-                            yield ev("recover", at_index=i, kind="asked", msg="user cleared the way; trying again")
-                            continue
-                    yield finish("failed", msg=f"could not get to {o}: {reason}"); return
-                elif a in ("Place", "PutIn"):
-                    if not self._holding(node, default=True):
-                        if world.holding:
-                            memory.see(world.holding, None, "dropped")
-                        world.holding = world.holding_since = None
-                        yield finish("failed", msg=f"place failed and the object is no longer in the hand: {reason}"); return
-
-                # ── a new plan: SAGE suffix repair ──
-                e_ = sage_replan(st, f"{reason}{extra}")
-                if e_ is None:
-                    yield finish("failed", msg=f"{a} {o} failed: {reason} (replan budget used)"); return
-                yield e_
-
-            # ── 4. done only when the goals hold ──────────────────────────
-            if self._goals_hold(goals, world, placed):
-                try:
-                    rec_fn = getattr(planner, "record_episode", None)
-                    if callable(rec_fn):
-                        rec_fn(restated, completed)
-                except Exception:
-                    pass
-                yield finish("success")
-            else:
-                yield finish("failed", msg="plan finished but the goals do not hold: "
-                             + json.dumps(goals, ensure_ascii=False))
+            yield r.ev("task_start", say=r.announcer.announce("task_start"), task=task, run_id=r.run_id,
+                       world=r.world.to_dict())
+            if (yield from self._understand_phase(r)):            # 1. understand + clarify
+                return
+            if (yield from self._plan_phase(r)):                  # 2. SAGE plans, the checker certifies
+                return
+            if (yield from self._execute_phase(r)):               # 3. guard each step, recover, replan
+                return
+            yield self._final_check(r)                            # 4. done only when the goals hold
         except Exception as e:
-            run.status = "aborted"; run.ended_at = time.time()
-            yield {"event": "error", "msg": str(e), "trace": traceback.format_exc()}
+            yield self._crashed(r, e)
         finally:
-            if muted:
-                try:
-                    from robot_agent.utils import set_skill_tts_muted
-                    set_skill_tts_muted(False)
-                except Exception:
-                    pass
-            try:
-                logger.snapshot()
-            except Exception:
-                pass
+            self._close_run(r)
+
+    def _finish(self, r, status, msg="", **kw) -> dict:
+        """The run's `done` event; a failure / refusal tells the user why (in their language)."""
+        r.run.status = status; r.run.ended_at = time.time()
+        kind = "done_success" if status == "success" else "done_fail"
+        say = kw.pop("say", None)
+        if say is None and status in ("failed", "refused") and msg and not msg.startswith(("internal error", "plan finished")):
+            # tell the user why (dropped it, can't find it, ...), without the skill's error text
+            say = re.split(r": [\'\"{]|: Exception| \(replan| \(searched", msg)[0].strip()
+        return r.ev("done", status=status, run_id=r.run_id, msg=msg,
+                    say=self._in_lang(say, r.lang) if say else r.announcer.announce(kind), world=r.world.to_dict(), **kw)
+
+    def _cancelled(self, r) -> Optional[dict]:
+        from ..run_control import cancel_requested
+        return self._finish(r, "aborted", msg="Cancelled by user") if cancel_requested() else None
+
+    # ── 1. understand + clarify ───────────────────────────────────────────
+    def _understand_phase(self, r):
+        """Goals from the task and the user's answers. True when the run ended."""
+        r.dialogue, r.asked, r.confirms, r.pin_to, r.goals = [], 0, 0, None, []
+        while True:
+            out = yield from self._understand_round(r)
+            if out is _STOP:
+                return True
+            if out is _DONE:
+                break
+        r.run.obs = "goals: " + json.dumps(r.goals, ensure_ascii=False)
+        return False
+
+    def _understand_round(self, r):
+        """One understanding of the task: _DONE (goals settled), _NEXT (asked something) or _STOP."""
+        yield r.ev("status", msg="Understanding the task...")
+        u = self._understand(r.task, r.places, r.memory, r.world, r.dialogue)
+        if r.pin_to:
+            # "no, the shelf in the restroom" after a read-back names the destination (a 7B model put
+            # it in `from`): pin it instead of trusting the model's slots
+            for g in u["goals"]:
+                if g.get("type") in ("on", "in"):
+                    if r.places.ground(g.get("from") or "", g.get("from") or "") == r.pin_to:
+                        g["from"] = ""
+                    g["to"] = r.pin_to
+        answers = [t for w_, t in r.dialogue if w_ == "user"]
+        r.goals, q = self._ground_goals(u["goals"], r.places, r.memory,
+                                        " ".join([r.task, self.original or ""] + answers),
+                                        latest=answers[-1] if answers else "")
+        yield r.ev("understand", status=u["status"], reason=u.get("reason"), goals=r.goals,
+                   question=u.get("question") or q)
+        if u["status"] == "infeasible" and r.dialogue and r.goals:
+            u["status"] = "clear"                # the user already answered: a 7B model called a plain
+                                                 # move "infeasible" after "no, the shelf in the restroom"
+        if u["status"] in ("unsafe", "infeasible"):
+            msg = u.get("reason") or "I can't do that."
+            yield self._finish(r, "refused", msg=msg, say=f"I can't do that: {msg}")
+            return _STOP
+        # the grounding decides about places; the model's "ambiguous" counts only when it found nothing
+        # to do (after "no, the shelf in the restroom" a 7B model kept asking which shelf)
+        if u["status"] == "ambiguous" and u.get("question") and not r.goals:
+            q = u["question"] if not q else f"{u['question']} {q}"
+        if not r.goals and not q:
+            q = u.get("question") or "What should I do exactly?"
+        if not q:
+            out, q = yield from self._read_back(r)
+            if out is not None:
+                return out
+        return (yield from self._ask_clarify(r, q))
+
+    def _read_back(self, r):
+        """Read the goals back when the user answered something (a misheard answer is only caught
+        here) or always (`confirm_task`, a voice user whose command itself may be misheard).
+        Returns (outcome or None, the question to ask next)."""
+        if not ((r.dialogue and self.cfg["confirm_answers"]) or self.cfg["confirm_task"]):
+            return _DONE, None
+        if r.confirms >= 2:
+            yield self._finish(r, "failed", msg="the user did not confirm the task"); return _STOP, None
+        r.confirms += 1
+        cq = f"{self.summary(r.goals)} Is that right?"
+        yield r.ev("clarify", question=cq, round=r.confirms, kind="confirm")
+        ans, _n = self._ask_heard(cq, r.node, self._log_fn(-1), r.lang)
+        stop = self._cancelled(r)
+        if stop:
+            yield stop; return _STOP, None
+        ok_, rest = self.yes_no(ans)
+        if ok_ is True:
+            return _DONE, None
+        if ok_ is None:
+            yield self._finish(r, "failed", msg=f"no answer to: {cq}"); return _STOP, None
+        r.dialogue += [("robot", cq), ("user", ans)]
+        if not rest:                     # a bare "no": ask what instead
+            return None, "Sorry. What should I do?"
+        r.memory.remember_answer(r.task, cq, ans)
+        k = r.places.ground(rest, rest)
+        if k and not re.search(r"\b(from|take|pick)\b", rest):
+            r.pin_to = k
+        return _NEXT, None
+
+    def _ask_clarify(self, r, q):
+        """Ask the user `q` (bounded by clarify_rounds): _NEXT with the answer in the dialogue, or _STOP."""
+        if r.asked >= self.cfg["clarify_rounds"]:
+            yield self._finish(r, "failed", msg=f"still unclear after {r.asked} questions: {q}")
+            return _STOP
+        r.asked += 1
+        yield r.ev("clarify", question=q, round=r.asked)
+        ans, _n = self._ask_heard(q, r.node, self._log_fn(-1), r.lang)
+        stop = self._cancelled(r)
+        if stop:
+            yield stop; return _STOP
+        if not ans:
+            yield self._finish(r, "failed", msg=f"no answer to: {q}")
+            return _STOP
+        r.memory.remember_answer(r.task, q, ans)
+        r.dialogue += [("robot", q), ("user", ans)]
+        return _NEXT
+
+    # ── 2. plan: SAGE generates, the checker reports, SAGE edits ──────────
+    def _obs(self, r) -> str:
+        txt = ("Places the robot can go to (use exactly these):\n" + "\n".join(f"- {k}" for k in r.places.keys)
+               + "\nGoals: " + r.goal_txt + "\nRobot state: " + r.world.as_text())
+        if r.searched:
+            txt += "\nAlready looked (object not there): " + ", ".join(r.searched)
+        return txt
+
+    def _ground_all(self, r, seq) -> list:
+        return [self._ground_step(x, r.places, r.goals, r.task) for x in seq]
+
+    def _plan_phase(self, r):
+        """The certified plan in r.steps. True when the run ended (plan only / no plan)."""
+        yield r.ev("status", msg="Generating task plan...")
+        r.restated = r.task + ("" if not r.dialogue else " (" + "; ".join(t for w_, t in r.dialogue if w_ == "user") + ")")
+        r.goal_txt = "; ".join(f"{g['type']} {g['object']}" + (f" from {g['from']}" if g.get('from') else "")
+                               + (f" to {g['to']}" if g.get('to') else "") for g in r.goals)
+        r.searched, r.seen_far = [], []
+        r.planner = self._make_planner()
+        self._hook_progress(r.planner)
+        yield from self._generate_and_certify(r)
+        skill_map = r.robot.skill_map
+        plan_text = "\n".join(f"{skill_map.get(x['action'], x['action'])}::{x['object']}" for x in r.steps)
+        yield r.ev("plan", steps=r.steps, plan_meta=r.run.plan_meta, warnings=[], plan_text=plan_text,
+                   world=r.world.to_dict())
+        if r.plan_only:
+            yield self._finish(r, "planned", say=r.announcer.announce("plan_ready")); return True
+        if not r.steps:
+            yield self._finish(r, "failed", msg="the planner produced no plan for the goals"); return True
+        return False
+
+    def _generate_and_certify(self, r):
+        """SAGE's plan, checked as written; critical findings go back to SAGE's sub-goal editing."""
+        t_plan = time.time()
+        try:
+            raw, meta = r.planner.generate_plan(r.restated, self._obs(r), [])
+        except Exception as e:
+            raw, meta = [], {"error": str(e)}
+        r.steps = self._ground_all(r, raw)
+        probs = self._check(r.steps, r.world, r.places, r.goals)
+        yield r.ev("gate", round=0, problems=[p_[1] for p_ in probs], plan=[f"{x['action']} {x['object']}" for x in r.steps])
+        edits = []
+        if any(p_[2] for p_ in probs):
+            # SAGE's sub-goal-local Editing with the checker's findings (SAGEPlanner.edit_block per block)
+            edited, edits = self._sage_edit(r.planner, r.restated, self._obs(r), lambda s: self._ground_all(r, s),
+                                            r.world, r.places, r.goals, r.goal_txt)
+            if edited is not None:
+                r.steps = edited
+            probs = self._check(r.steps, r.world, r.places, r.goals)
+            yield r.ev("gate", round=1, edits=edits, problems=[p_[1] for p_ in probs],
+                       plan=[f"{x['action']} {x['object']}" for x in r.steps])
+        r.run.plan_meta = dict(meta or {}, plan_sec=round(time.time() - t_plan, 2), llm_plan=self._ground_all(r, raw),
+                               edits=edits)
+
+    # ── 3. execute: guard each step; new plans only from SAGE ─────────────
+    def _sage_replan(self, r, failed, reason) -> Optional[dict]:
+        """SAGE suffix repair from step r.i. Returns the event to yield, or None when out of budget."""
+        if r.replans >= self.cfg["max_replans"]:
+            return None
+        r.replans += 1
+        world = r.world
+        ers = (f"E: {failed.get('action')} {failed.get('object')} failed. R: {reason}. "
+               f"S: robot at {world.arrived}, holding {world.holding or 'nothing'}; goals: {r.goal_txt}")
+        try:
+            suffix, _m = r.planner.replan(r.restated, r.completed, failed, ers, self._obs(r), [])
+            suffix = self._ground_all(r, suffix)
+        except Exception as e:
+            suffix = []; ers += f"; replan error: {e}"
+        probs = [p_[1] for p_ in self._check(r.completed + suffix, r.world_at_start, r.places, r.goals) if p_[2]]
+        r.run.replans.append({"at_index": r.i, "failed": failed, "reason": ers, "suffix_len": len(suffix),
+                              "problems": probs})
+        r.steps = r.steps[:r.i] + suffix
+        return r.ev("replan", at_index=r.i, reason=ers, problems=probs,
+                    plan=[f"{x['action']} {x['object']}" for x in suffix],
+                    say=r.announcer.announce("replan"), world=world.to_dict())
+
+    def _replan_or_fail(self, r, failed, reason, fail_msg):
+        """SAGE replan, else end the run with `fail_msg`: _NEXT or _STOP."""
+        e_ = self._sage_replan(r, failed, reason)
+        if e_ is None:
+            yield self._finish(r, "failed", msg=fail_msg); return _STOP
+        yield e_
+        return _NEXT
+
+    def _execute_phase(self, r):
+        """Run the plan step by step. True when the run ended."""
+        from ..run_control import wait_if_paused
+        r.placed = {}
+        r.pick_tries, r.move_tries, r.helped, r.seen_fail, r.seen_at, r.find_fails = {}, {}, set(), {}, {}, {}
+        r.completed, r.replans, r.i = [], 0, 0
+        r.world_at_start = r.world.copy()
+        while True:
+            if r.i >= len(r.steps):
+                out = yield from self._plan_ended(r)
+            else:
+                wait_if_paused()             # a paused run holds here, between two steps
+                stop = self._cancelled(r)
+                if stop:
+                    yield stop; return True
+                out = yield from self._run_step(r, r.steps[r.i])
+            if out is _STOP:
+                return True
+            if out is _DONE:
+                return False
+
+    def _plan_ended(self, r):
+        """The plan ran out: _DONE when the goals hold, else a replan (_NEXT) or _STOP."""
+        if self._goals_hold(r.goals, r.world, r.placed):
+            return _DONE
+        e_ = self._sage_replan(r, {"action": "Check", "object": "goals"},
+                               "the plan ended but the goals are not reached: "
+                               + "; ".join(self._missing(r.completed, r.world_at_start, r.goals)))
+        if e_ is None or r.i >= len(r.steps):
+            yield self._finish(r, "failed", msg="plan finished but the goals do not hold: " + r.goal_txt); return _STOP
+        yield e_
+        return _NEXT
+
+    def _precondition(self, r, st) -> str:
+        """Why the step cannot run in the belief ('' when it can)."""
+        a, o, world = st["action"], st["object"], r.world
+        if a in ("Place", "PutIn", "Open", "Close") and o in r.places.env and world.arrived != o:
+            return f"the robot is at {world.arrived}, not at {o}"
+        if a in ("Open", "Close") and world.holding:
+            return f"the robot cannot {a.lower()} {o} while holding the {world.holding}"
+        ok_pre, why_ = symbolic_check(st, world, openable=r.places.openable, capabilities=r.robot.model_capabilities())
+        return "" if ok_pre else why_
+
+    def _guard(self, r, st):
+        """Preconditions before the robot moves (violations go to SAGE): None (go on), _NEXT, _STOP."""
+        a, o, world = st["action"], st["object"], r.world
+        why = self._precondition(r, st)
+        if not why and a in ("Place", "PutIn") and world.holding:
+            # still in the hand? (dropped on the way: `place` would otherwise go and pick something up)
+            if not self._holding(r.node, default=True):
+                lost = world.holding
+                r.memory.see(lost, None, "dropped")
+                world.holding = world.holding_since = None
+                yield r.ev("recover", at_index=r.i, kind="dropped", msg=f"{lost} is no longer in the gripper")
+                yield self._finish(r, "failed", msg=f"I dropped the {lost} on the way to {o.replace('@', ' in the ')}. "
+                                                    f"Please pick it up; I can't pick things up from the floor.")
+                return _STOP
+        if not why:
+            return None
+        sig = ("pre", a, o, why)
+        r.seen_fail[sig] = r.seen_fail.get(sig, 0) + 1
+        e_ = self._sage_replan(r, st, f"precondition: {why}") if r.seen_fail[sig] <= 1 else None
+        if e_ is None:
+            yield self._finish(r, "failed", msg=f"{a} {o}: {why}"); return _STOP
+        yield e_
+        return _NEXT
+
+    def _run_step(self, r, st):
+        """Guard, bind, run and check one step: _NEXT, _DONE (goals reached) or _STOP."""
+        a, o, started = st["action"], st["object"], time.time()
+        out = yield from self._guard(r, st)
+        if out is not None:
+            return out
+        try:
+            mapped = self._bind(st, r.world)
+        except Unbindable as e:
+            return (yield from self._replan_or_fail(r, st, f"no skill for this step: {e}", f"{a} {o}: {e}"))
+        if mapped is None:                                   # no-op action
+            r.run.steps.append(StepRecord(index=r.i, action=a, object=o, skill=None, status="success",
+                                          started_at=started, ended_at=time.time(),
+                                          verifies=[VerifyResult("isdone", True, "no-op")]))
+            r.completed.append(st); r.i += 1
+            yield r.ev("step_done", index=r.i - 1, status="success", skill=None, world=r.world.to_dict())
+            return _NEXT
+        skill, params = mapped
+        rec = StepRecord(index=r.i, action=a, object=o, skill=skill, params=params,
+                         status="running", started_at=started)
+        yield r.ev("step_start", index=r.i, action=a, object=o, skill=skill,
+                   say=r.announcer.announce("step_start", **self._say(st, a, o)))
+        res = run_skill(self.sr, skill, params, r.node, log_fn=self._log_fn(r.i))
+        rec.result = res.to_legacy()
+        stop = self._cancelled(r)
+        if stop:
+            rec.status = "aborted"; r.run.steps.append(rec)
+            yield stop; return _STOP
+        vres = self._post_check(r, st, skill, res, params, rec)
+        rec.verifies = vres
+        ok, reason = verdict(vres)
+        rec.ended_at = time.time()
+        yield r.ev("step_verify", index=r.i, verifies=_vr_list(vres))
+        if ok:
+            return (yield from self._step_succeeded(r, st, rec))
+        return (yield from self._step_failed(r, st, skill, rec, res, reason))
+
+    def _post_check(self, r, st, skill, res, params, rec) -> list:
+        """After a reported success, the effects + the skill's VerifySpecs (manifest: Pick looked at again
+        once the arm is folded, MoveTo measured against the ENV loc); a release looked at twice; a Find
+        seen out of reach."""
+        a, o = st["action"], st["object"]
+        vres = r.verifier.verify(st, res, r.world, r.node, params=params)
+        if (a in ("Place", "PutIn") and vres and not vres[0].ok
+                and res.code is FailureCode.GRASP_FAILED and not self._holding(r.node, default=True)):
+            # the release's own empty-gripper check fired right after letting go; looked once more
+            vres = [VerifyResult("isdone", True, f"{skill}: second look, gripper empty"),
+                    VerifyResult("recheck", True, f"first check: {vres[0].detail}")]
+        if a == "Find" and vres and vres[0].ok:
+            p3 = self._found_point(rec.result, o)
+            r.seen_at[o] = p3
+            if p3 and math.hypot(p3[0], p3[1]) > self.cfg["reach_far"]:
+                near = self._place_of_far_point(p3, r.node, r.places, r.world)
+                vres.append(VerifyResult("reach", False, f"the {o} was seen {math.hypot(p3[0], p3[1]):.1f} m away"
+                                         + (f", near {near}" if near else ", not near any place") + ", out of reach from here"))
+                if near:
+                    r.seen_far.append(near); r.memory.see(o, near, "seen from afar")
+        return vres
+
+    def _step_succeeded(self, r, st, rec):
+        a, o = st["action"], st["object"]
+        rec.status = "success"; r.run.steps.append(rec)
+        self._effect(st, r.world, r.memory, r.placed)
+        r.completed.append(st)
+        yield r.ev("step_done", index=r.i, status="success", result=rec.result,
+                   say=r.announcer.announce("step_success", **self._say(st, a, o)), world=r.world.to_dict())
+        r.i += 1
+        if r.i < len(r.steps) and self._goals_hold(r.goals, r.world, r.placed):
+            # the user's goals are met: end the task here rather than run what is left of the plan
+            yield r.ev("status", msg=f"goals reached; {len(r.steps) - r.i} remaining plan steps not run")
+            return _DONE
+        return _NEXT
+
+    def _step_failed(self, r, st, skill, rec, res, reason):
+        """A failed step: stop (policy / same failure again), recover in place, or SAGE replan."""
+        a, o = st["action"], st["object"]
+        rec.status = "failed"; r.run.steps.append(rec)
+        yield r.ev("step_done", index=r.i, status="failed", result=rec.result, reason=reason,
+                   say=r.announcer.announce("step_fail", **self._say(st, a, o), reason=reason),
+                   world=r.world.to_dict())
+        # ── stop at once: the recovery policy does not retry it (a skill bug, an e-stop), or the same
+        # failure twice ──
+        code = r.robot.failure_code(res, reason)
+        rule = r.robot.policy.rule_for(code)
+        if not rule.retry_allowed:
+            what = "internal error in" if code is FailureCode.SOFTWARE else f"{code.value} in"
+            yield self._finish(r, "failed", msg=f"{what} the {skill} skill (not retried): {reason}"); return _STOP
+        sig = (a, o, r.world.arrived, re.sub(r"[-\d.]+", "#", str(reason))[:160])
+        r.seen_fail[sig] = r.seen_fail.get(sig, 0) + 1
+        if r.seen_fail[sig] > 2:
+            yield self._finish(r, "failed", msg=f"{a} {o} failed again the same way: {reason}"); return _STOP
+        # ── skill-level retry in place / ask the person (not planning) ──
+        recover = {"Find": self._recover_find, "Pick": self._recover_pick, "MoveTo": self._recover_move,
+                   "Place": self._recover_place, "PutIn": self._recover_place}.get(a)
+        out, extra = (yield from recover(r, st, reason, rule)) if recover else (None, "")
+        if out is not None:
+            return out
+        # ── a new plan: SAGE suffix repair ──
+        return (yield from self._replan_or_fail(r, st, f"{reason}{extra}",
+                                                f"{a} {o} failed: {reason} (replan budget used)"))
+
+    def _recover_find(self, r, st, reason, rule):
+        """Not seen here: mark the place searched (absence only, the policy says), search on through
+        SAGE, ask the person where it is after search_max. Returns (outcome or None, replan hint)."""
+        o, world = st["object"], r.world
+        world.found = None
+        # absent: the place counts as searched; could not look / out of reach: it does not (policy)
+        if world.arrived and world.arrived not in r.searched and rule.mark_searched:
+            r.searched.append(world.arrived)
+        r.find_fails[o] = r.find_fails.get(o, 0) + 1
+        if r.find_fails[o] > self.cfg["search_max"] and self.cfg["ask_help"] and ("where", o) not in r.helped:
+            r.helped.add(("where", o))
+            q = f"I couldn't find the {o}. Where is it?"
+            yield r.ev("clarify", question=q, round=0)
+            ans = self._ask(q, r.node, self._log_fn(r.i), r.lang)
+            k = r.places.ground(ans, ans) if ans else None
+            if not k:
+                yield self._finish(r, "failed", msg=f"could not find the {o} (looked at {', '.join(r.searched)})")
+                return _STOP, ""
+            r.memory.remember_answer(r.task, q, ans); r.memory.see(o, k, "user said")
+            if k in r.searched:
+                r.searched.remove(k)
+            return None, f"; the user says the {o} is on {k}"
+        if r.find_fails[o] > self.cfg["search_max"] + 1:
+            yield self._finish(r, "failed", msg=f"could not find the {o} (looked at {', '.join(r.searched)})")
+            return _STOP, ""
+        return None, (f"; it is not at {world.arrived}. Choose where to look next among the places not yet "
+                      f"searched" + (f" (it was seen near {r.seen_far[-1]})" if r.seen_far else ""))
+
+    def _recover_pick(self, r, st, reason, rule):
+        """Look + grasp again in place (pick_retries, not when out of lateral reach), then ask the person
+        to move it closer. Returns (outcome or None, replan hint)."""
+        o, world = st["object"], r.world
+        if self._holding(r.node, default=False):
+            # failed, yet something is in the gripper (a neighbour?): never carry on with an unknown object
+            world.holding = f"unknown object (picking {o})"
+            yield self._finish(r, "failed", msg=f"the pick of the {o} failed but something is in my gripper; "
+                                                f"please take it from me: {reason}")
+            return _STOP, ""
+        r.pick_tries[o] = r.pick_tries.get(o, 0) + 1
+        p3 = r.seen_at.get(o)
+        out_of_reach = bool(p3) and abs(p3[1]) > self.cfg["reach_lateral"]
+        if r.pick_tries[o] <= self.cfg["pick_retries"] and not out_of_reach:
+            # retry the same skill pair in place: look again, grasp again
+            r.steps[r.i:r.i] = [{"action": "Find", "object": o}]
+            world.found = None
+            yield r.ev("recover", at_index=r.i, kind="retry", msg=f"pick {o} failed; looking again")
+            return _NEXT, ""
+        extra = ""
+        if self.cfg["ask_help"] and ("pick", o) not in r.helped:
+            r.helped.add(("pick", o))
+            q = (f"The {o} is too far for my arm. Could you move it closer to the edge, then say yes?"
+                 if out_of_reach else f"I can't pick up the {o}. Could you move it closer to the edge, then say yes?")
+            yield r.ev("clarify", question=q, round=0)
+            ans = self._ask(q, r.node, self._log_fn(r.i), r.lang)
+            k = r.places.ground(ans, ans) if ans else None
+            if ans and self.yes_no(ans)[0] is True:
+                r.steps[r.i:r.i] = [{"action": "Find", "object": o}]
+                world.found = None
+                yield r.ev("recover", at_index=r.i, kind="asked", msg="user helped; trying again")
+                return _NEXT, ""
+            if k and k != world.arrived:
+                r.memory.see(o, k, "user said"); world.found = None
+                extra = f"; the user says the {o} is on {k}"
+        if not extra:
+            yield self._finish(r, "failed", msg=f"could not pick up the {o}: {reason}")
+            return _STOP, ""
+        return None, extra
+
+    def _recover_move(self, r, st, reason, rule):
+        """Move again once, then ask the person to clear the way; else stop."""
+        o = st["object"]
+        r.move_tries[o] = r.move_tries.get(o, 0) + 1
+        if r.move_tries[o] <= 1:
+            yield r.ev("recover", at_index=r.i, kind="retry", msg=f"move to {o} again")
+            return _NEXT, ""
+        if self.cfg["ask_help"] and ("move", o) not in r.helped:
+            r.helped.add(("move", o))
+            q = (f"I can't get to the {o.replace('@', ' in the ')}. Is something in the way? "
+                 f"Please clear the way and say yes.")
+            yield r.ev("clarify", question=q, round=0)
+            ans, _n = self._ask_heard(q, r.node, self._log_fn(r.i), r.lang)
+            if self.yes_no(ans)[0] is True:
+                yield r.ev("recover", at_index=r.i, kind="asked", msg="user cleared the way; trying again")
+                return _NEXT, ""
+        yield self._finish(r, "failed", msg=f"could not get to {o}: {reason}")
+        return _STOP, ""
+
+    def _recover_place(self, r, st, reason, rule):
+        """A failed release with an empty hand: the object is gone, stop; else SAGE replans."""
+        world = r.world
+        if not self._holding(r.node, default=True):
+            if world.holding:
+                r.memory.see(world.holding, None, "dropped")
+            world.holding = world.holding_since = None
+            yield self._finish(r, "failed", msg=f"place failed and the object is no longer in the hand: {reason}")
+            return _STOP, ""
+        return None, ""
+
+    # ── 4. done only when the goals hold ──────────────────────────────────
+    def _final_check(self, r) -> dict:
+        if self._goals_hold(r.goals, r.world, r.placed):
+            self._record_episode(r.planner, r.restated, r.completed)
+            return self._finish(r, "success")
+        return self._finish(r, "failed", msg="plan finished but the goals do not hold: "
+                            + json.dumps(r.goals, ensure_ascii=False))
