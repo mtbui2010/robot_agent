@@ -58,6 +58,7 @@ from . import action_model, episode_memory, goal_change
 from . import search as search_belief
 from .search_hooks import SearchHooks
 from . import goals as goal_kinds
+from . import goal_filter, plan_tidy
 from . import reconcile as sensed
 from .robot import run_skill
 from .verify import symbolic_check, verdict
@@ -75,7 +76,8 @@ ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify
                 "goal_check", "health_wait_s", "understand_retries", "understand_samples", "llm_budget",
                 "goal_readback", "understand_temperature", "understand_seed", "understand_sample_temperature",
                 "yes_no_reasks", "search", "search_rank", "search_half_life_s", "vlm_verify", "sensor_health",
-                "reconcile"}
+                "reconcile", "search_habit_weight", "edit_reserve", "plan_tidy",
+                "goal_filter"}
 _USER_WORDS = {"me", "user", "here", "you", "myself", "person"}
 
 
@@ -315,6 +317,12 @@ class AssistLoop(SearchHooks, ClosedLoop):
             "pick_retries": int(overrides.get("pick_retries", 1)),
             # planner repairs (SubgoalRepair) of the first plan driven by the checker's findings
             "edit_rounds": int(overrides.get("edit_rounds", env("ROBOT_AGENT_EDIT_ROUNDS", "3"))),
+            # LLM calls the gate's edits leave for the rest of the run (subgoal_repair.edit_reserve)
+            "edit_reserve": int(overrides.get("edit_reserve", env("ROBOT_AGENT_EDIT_RESERVE", "6"))),
+            # steps the action model proves do nothing are removed before the gate (plan_tidy.py)
+            "plan_tidy": str(overrides.get("plan_tidy", env("ROBOT_AGENT_PLAN_TIDY", "1"))) not in ("0", "False", "false"),
+            # understood goals the words do not ask for are dropped (goal_filter.py)
+            "goal_filter": str(overrides.get("goal_filter", env("ROBOT_AGENT_GOAL_FILTER", "1"))) not in ("0", "False", "false"),
             "silence_retries": int(overrides.get("silence_retries", env("ROBOT_AGENT_SILENCE_RETRIES", "1"))),
             "confirm_answers": overrides.get("confirm_answers", env("ROBOT_AGENT_CONFIRM_ANSWERS", "1") == "1"),
             "confirm_task": overrides.get("confirm_task", env("ROBOT_AGENT_CONFIRM_TASK", "0") == "1"),
@@ -1035,7 +1043,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
             yield self._llm_failed(r, e); return _STOP
         r.goals, q = self._ground_understood(r, u)
         yield r.ev("understand", status=u["status"], reason=u.get("reason"), goals=r.goals,
-                   question=u.get("question") or q)
+                   question=u.get("question") or q, **({"filtered": r.filtered} if r.filtered else {}))
         if u["status"] == "infeasible" and r.dialogue and r.goals:
             u["status"] = "clear"                # the user already answered: a 7B model called a plain
                                                  # move "infeasible" after "no, the shelf in the restroom"
@@ -1084,8 +1092,13 @@ class AssistLoop(SearchHooks, ClosedLoop):
                         g["from"] = ""
                     g["to"] = r.pin_to
         answers = [t for w_, t in r.dialogue if w_ == "user"]
-        return self._ground_goals(u["goals"], r.places, r.memory, " ".join([r.task, self.original or ""] + answers),
-                                  latest=answers[-1] if answers else "")
+        words_ = " ".join([r.task, self.original or ""] + answers)
+        on = self.cfg["goal_filter"]                                        # goals not asked for (goal_filter.py)
+        raw, r.filtered = goal_filter.before_grounding(u["goals"], r.task) if on else (u["goals"], [])
+        goals, q = self._ground_goals(raw, r.places, r.memory, words_, latest=answers[-1] if answers else "")
+        goals, more = goal_filter.after_grounding(goals, " ".join([r.task] + answers), r.places) if on else (goals, [])
+        r.filtered += more
+        return goals, q
 
     def _issues(self, r, goals) -> list:
         """understand.find_issues of `goals` against everything the person said (task, own words, answers)."""
@@ -1265,9 +1278,10 @@ class AssistLoop(SearchHooks, ClosedLoop):
             if is_cancel(e):
                 raise
             raw, meta, r.plan_error = [], {"error": str(e)}, e
-        r.steps = self._ground_all(r, raw)
+        r.steps, tidied = self._tidy(r, self._ground_all(r, raw))     # provable no-op steps out (plan_tidy.py)
         probs = self._check(r.steps, r.world, r.places, r.goals)
-        yield r.ev("gate", round=0, problems=[p_[1] for p_ in probs], plan=[f"{x['action']} {x['object']}" for x in r.steps])
+        yield r.ev("gate", round=0, problems=[p_[1] for p_ in probs], plan=[f"{x['action']} {x['object']}" for x in r.steps],
+                   **({"tidied": tidied} if tidied else {}))
         edits = []
         if any(p_[2] for p_ in probs) and not r.compiled:
             # the planner's sub-goal-local repair with the checker's findings (SubgoalRepair, if it has it)
@@ -1277,7 +1291,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
             except LLMBudgetExceeded as e:
                 edited, r.plan_error = None, e
             if edited is not None:
-                r.steps = edited
+                r.steps, more = self._tidy(r, edited)
+                edits += more
             probs = self._check(r.steps, r.world, r.places, r.goals)
             yield r.ev("gate", round=1, edits=edits, problems=[p_[1] for p_ in probs],
                        plan=[f"{x['action']} {x['object']}" for x in r.steps])
@@ -1285,12 +1300,20 @@ class AssistLoop(SearchHooks, ClosedLoop):
         if blocking and r.steps and not r.compiled and r.plan_error is None:
             # still critical after the planner's repair (or it has none): one fresh plan with the findings,
             # certified again
-            r.steps = self._refine_plan(r, blocking)
+            r.steps = self._tidy(r, self._refine_plan(r, blocking))[0]
             blocking = self._blocking(r, r.steps)
             yield r.ev("gate", round=2, problems=blocking, plan=[f"{x['action']} {x['object']}" for x in r.steps])
         r.certified, r.gate_findings = not blocking, blocking
         r.run.plan_meta = dict(meta or {}, plan_sec=round(time.time() - t_plan, 2), llm_plan=self._ground_all(r, raw),
                                edits=edits, certified=r.certified, gate_findings=blocking)
+
+    def _tidy(self, r, steps) -> tuple:
+        """plan_tidy.tidy of `steps` on the belief now: (steps, notes); `plan_tidy` off: unchanged."""
+        if not self.cfg["plan_tidy"] or not steps:
+            return steps, []
+        ctx = dict(capabilities=self.robot.model_capabilities(), actions=self.robot.plan_actions,
+                   openable=r.places.openable, containers=r.places.openable)
+        return plan_tidy.tidy(steps, r.world, r.goals, self._reaches, ctx)
 
     def _blocking(self, r, steps) -> list:
         """The findings that keep a plan from running (the certified gate): the checker's critical
@@ -1389,7 +1412,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
         try:
             r.llm_budget.take(what="replan")
             suffix, _m = call_cancellable(r.planner.replan, r.restated, r.completed, failed, ers, self._obs(r), [])
-            return self._search_steer(r, self._ground_all(r, suffix or [])), ers
+            return self._tidy(r, self._search_steer(r, self._ground_all(r, suffix or [])))[0], ers
         except Exception as e:
             if is_cancel(e):
                 raise

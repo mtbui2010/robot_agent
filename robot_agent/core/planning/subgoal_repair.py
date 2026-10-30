@@ -7,16 +7,37 @@ Each round, every sub-goal block that owns a step with a critical finding is re-
 achieved is asked for no steps. A planner without the capability gets ``(None, [])`` and the gate falls
 back to one fresh plan with the findings (AssistLoop._refine_plan). See docs/planners.md.
 
-Each ``repair_block`` call takes one unit of the run's LLM-call budget (``budget``; LLMBudgetExceeded
-propagates to the caller), and the rounds stop as soon as one leaves as many critical findings as the
-round before (``budget.EditProgress``; docs/verify.md).
+Each ``repair_block`` call takes one unit of the run's LLM-call budget (``budget``), and the rounds stop
+as soon as one leaves as many critical findings as the round before (``budget.EditProgress``;
+docs/verify.md). Two rules keep the edits from eating the run's budget (T2 H01: a 61-step plan of
+22 one-word sub-goals spent the whole cap of 20 on edits and the run ended before it started):
+
+* a block after the point where the earlier blocks already reach the goals is emptied by the core
+  (the action model proves it), not by an LLM call that can only answer ``{"steps": []}``;
+* a round starts only when its calls leave ``edit_reserve`` calls (at most a third of the cap) of the
+  budget for the rest of the run (the gate's refinement, the replans); else the edits stop and the gate goes on with the plan as
+  edited so far. Edits made before the budget ran out are kept, never thrown away.
 """
 
 from __future__ import annotations
 
+import os
+
 from . import action_model
 from .base import subgoal_repair
 from .budget import EditProgress
+from .understand import LLMBudgetExceeded
+
+# the findings text of a block the earlier blocks make unnecessary (see _findings_per_block)
+_NO_STEPS = 'sub-goal needs no steps: return {"steps": []}'
+DEFAULT_EDIT_RESERVE = 6
+
+
+def edit_reserve(loop) -> int:
+    """LLM calls the gate's edits leave for the rest of the run (``edit_reserve`` option, else
+    ``$ROBOT_AGENT_EDIT_RESERVE``, default 6)."""
+    v = (getattr(loop, "cfg", None) or {}).get("edit_reserve")
+    return int(v if v is not None else os.environ.get("ROBOT_AGENT_EDIT_RESERVE", DEFAULT_EDIT_RESERVE))
 
 
 def _block_ranges(loop, blocks, join, ground, world, goals):
@@ -41,7 +62,7 @@ def _findings_per_block(loop, blocks, join, ground, world, places, goals, goal_t
     for k in range(len(blocks)):
         if done_at is not None and k >= done_at and blocks[k].steps:
             todo[k] = [f"the goals ({goal_txt}) are already achieved by the earlier sub-goals, so this "
-                       f'sub-goal needs no steps: return {{"steps": []}}']
+                       + _NO_STEPS]
     for i_, txt, _c in probs:
         if txt.startswith("the goals are done after step"):
             continue                             # handled per block above
@@ -53,11 +74,20 @@ def _findings_per_block(loop, blocks, join, ground, world, places, goals, goal_t
     return todo, len(probs)
 
 
+def _needless(items) -> bool:
+    """Do the earlier blocks already reach the goals (the block's other findings go with its steps)?"""
+    return any(_NO_STEPS in t for t in items)
+
+
 def _repair_round(loop, rep, blocks, todo, task, obs, goal_txt, notes, budget=None) -> None:
     """One call of ``rep.repair_block`` per block in ``todo`` (each takes a unit of ``budget``); the
-    blocks' steps are replaced in place."""
+    blocks' steps are replaced in place. A needless block is emptied without a call."""
     from ..run_control import call_cancellable, is_cancel
     for k, items in sorted(todo.items()):
+        if _needless(items):
+            blocks[k].steps = []
+            notes.append(f"sub-goal {k + 1} '{blocks[k].name}': emptied (the goals are reached before it)")
+            continue
         prev = [s_ for b in blocks[:k] for s_ in b.steps]
         state = action_model.simulate(prev, stop_on_error=False,
                                       capabilities=loop.robot.model_capabilities()).final_state
@@ -88,6 +118,7 @@ def repair_plan(loop, planner, task, obs, ground, world, places, goals, goal_txt
         return None, []
     notes: list = []
     progress = EditProgress()
+    used0 = budget.used if budget is not None else 0
     for _round in range(loop.cfg["edit_rounds"]):
         todo, n = _findings_per_block(loop, blocks, rep.join_blocks, ground, world, places, goals, goal_txt)
         if progress.stalled(n):
@@ -95,5 +126,17 @@ def repair_plan(loop, planner, task, obs, ground, world, places, goals, goal_txt
             break
         if not todo:
             break
-        _repair_round(loop, rep, blocks, todo, task, obs, goal_txt, notes, budget=budget)
+        calls = sum(1 for items in todo.values() if not _needless(items))
+        keep = min(edit_reserve(loop), budget.limit // 3) if budget is not None and budget.limit else 0
+        if calls and budget is not None and budget.limit and 0 < budget.left() < calls + keep:
+            notes.append(f"edits stopped: {calls} sub-goal edit(s) would leave less than {keep} "
+                         f"of the {budget.left()} LLM calls left")
+            break
+        try:
+            _repair_round(loop, rep, blocks, todo, task, obs, goal_txt, notes, budget=budget)
+        except LLMBudgetExceeded as e:
+            if budget.used == used0:                     # no edit at all was possible: the caller ends the run
+                raise
+            notes.append(f"edits stopped: {e}")         # the edits made so far are kept
+            break
     return ground(rep.join_blocks(blocks)), notes

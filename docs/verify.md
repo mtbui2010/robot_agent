@@ -108,6 +108,13 @@ The gate's sub-goal repair (`subgoal_repair.repair_plan`, the planner's optional
 `edit_rounds`, default 3) takes one unit per `repair_block` call and stops as soon as a round leaves as many
 critical findings as the round before (`budget.EditProgress`): the run's `gate` event lists
 "edits stopped: N finding(s), not fewer than the round before".
+A block after the point where the earlier blocks already reach the goals is emptied by the core (no
+call: the planner could only answer `{"steps": []}`), and a round starts only when its calls leave
+`edit_reserve` calls (`ROBOT_AGENT_EDIT_RESERVE`, default 6, at most a third of the cap) for the rest of
+the run; else "edits stopped: N sub-goal edit(s) would leave less than R of the L LLM calls left" and the
+gate goes on with the plan as edited (its one fresh plan, then certify). Edits made before the budget ran
+out are kept; with no call left at all the first edit raises `LLMBudgetExceeded` as before. (T2 H01: a
+61-step plan of 22 one-word SAGE sub-goals spent the whole cap on edits before the robot moved.)
 
 The scenario suite records the calls: every result row carries `llm_calls` (the test's fake-LLM
 and fake-planner calls, `scenarios/harness/fakes.py` `LLM_CALLS`).
