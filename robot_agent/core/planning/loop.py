@@ -192,6 +192,7 @@ class RunContext:
         self.completed: list = []
         self.i = 0
         self.replans = 0
+        self.fail_msg = ""          # why a failed run failed (the done event's msg)
 
     def ev(self, event: str, say: Optional[str] = None, **fields) -> dict:
         """An event to stream, logged to the run's JSONL."""
@@ -580,9 +581,7 @@ class ClosedLoop:
         yield r.ev("step_done", index=r.i, status="failed",
                    say=r.announcer.announce("step_fail", **self._say(step, action, obj), reason=reason),
                    reason=reason, world=r.world.to_dict())
-        ok_to_replan, r.steps, r.i, r.replans = self._maybe_replan(
-            r.planner, r.task, r.completed, step, reason, r.obs, r.visible, r.run, r.replans, r.announcer)
-        if not ok_to_replan:
+        if not self._cl_replan(r, step, reason):
             return _FAIL
         for e2 in self._drain_replan_event(reason, r.announcer, r.i, r.world):
             yield e2
@@ -621,18 +620,23 @@ class ClosedLoop:
             # e-stop / cancelled / a skill bug: a replan cannot help (recovery policy)
             yield r.ev("recover", at_index=r.i, kind="stop", code=code.value,
                        msg=f"{rec.skill} failed ({code.value}), not retried: {reason}")
+            r.fail_msg = f"{action} {obj}: {rec.skill} failed ({code.value}), not retried: {reason}"
             return _FAIL
         # fresh observation before replanning
         r.obs, r.visible = r.robot.observe(r.node)
-        ok_to_replan, r.steps, r.i, r.replans = self._maybe_replan(
-            r.planner, r.task, r.completed, step, reason, r.obs, r.visible, r.run, r.replans, r.announcer)
-        if not ok_to_replan:
+        if not self._cl_replan(r, step, reason):
             return _FAIL
         yield r.ev("replan", at_index=r.i, reason=reason,
                    say=r.announcer.announce("replan"), world=r.world.to_dict())
         return _NEXT
 
     def _cl_finish(self, r: "RunContext"):
+        # success only when every planned step ran: a plan cut short (an empty replan after a
+        # failure) or no plan at all is a failure with its reason, never a success
+        if r.run.status != "failed" and (not r.completed or r.i < len(r.steps)):
+            r.run.status = "failed"
+            r.fail_msg = r.fail_msg or ("the planner produced no plan" if not r.steps
+                                        else "the plan stopped before its last step")
         if r.run.status != "failed":
             r.run.status = "success"
         r.run.ended_at = time.time()
@@ -640,8 +644,23 @@ class ClosedLoop:
         if r.run.status == "success":
             self._record_episode(r.planner, r.task, r.completed)
         kind = "done_success" if r.run.status == "success" else "done_fail"
+        extra = {"msg": r.fail_msg} if r.run.status == "failed" and r.fail_msg else {}
         yield r.ev("done", status=r.run.status, run_id=r.run_id, say=r.announcer.announce(kind),
-                   world=r.world.to_dict())
+                   world=r.world.to_dict(), **extra)
+
+    def _cl_replan(self, r: "RunContext", step: dict, reason: str) -> bool:
+        """Replan after a failed / unbindable step. False (with ``r.fail_msg``) when the budget is
+        used or the planner has no steps to offer: the plan was cut short, the task not done."""
+        action, obj = step.get("action", ""), step.get("object", "")
+        ok, r.steps, r.i, r.replans = self._maybe_replan(
+            r.planner, r.task, r.completed, step, reason, r.obs, r.visible, r.run, r.replans, r.announcer)
+        if not ok:
+            r.fail_msg = f"{action} {obj} failed: {reason} (replan budget used)"
+            return False
+        if r.i >= len(r.steps):
+            r.fail_msg = f"{action} {obj} failed: {reason}; the planner has no new plan"
+            return False
+        return True
 
     @staticmethod
     def _record_episode(planner, task: str, completed: list) -> None:
