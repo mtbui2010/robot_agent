@@ -94,16 +94,20 @@ def parse_json_object(raw) -> Optional[dict]:
 
 
 def ask_json(llm, prompt: str, schema: dict, budget: Optional[LLMBudget] = None, retries: int = 1,
-             where: str = "understand") -> dict:
+             where: str = "understand", call=None, passthrough=None) -> dict:
     """One JSON answer from ``llm.chat``: on a non-JSON answer, up to ``retries`` repair calls (the bad answer
-    quoted back). Raises LLMUnavailable (client error), LLMBudgetExceeded, LLMBadOutput (still not JSON)."""
+    quoted back). Raises LLMUnavailable (client error), LLMBudgetExceeded, LLMBadOutput (still not JSON).
+    ``call(fn, **kw)`` runs each request (e.g. run_control.call_cancellable); an exception ``passthrough(e)``
+    accepts (the run's stop) is raised as is, not as LLMUnavailable."""
     p, last = prompt, ""
     for _k in range(1 + max(0, int(retries))):
         if budget is not None:
             budget.take(what=where)
         try:
-            raw = llm.chat(prompt=p, format=schema)
+            raw = call(llm.chat, prompt=p, format=schema) if call else llm.chat(prompt=p, format=schema)
         except Exception as e:                       # connection refused, read timeout, HTTP 5xx ...
+            if passthrough is not None and passthrough(e):
+                raise
             raise LLMUnavailable(e, where) from e
         d = parse_json_object(raw)
         if d is not None:

@@ -24,6 +24,8 @@ Stop pressed for a run still finishing. It now never clears the cancel of an
 active run: a new run starts with its own, clear flag.
 """
 
+import contextlib
+import os
 import threading
 
 _CANCEL = threading.Event()
@@ -58,9 +60,126 @@ def manager():
 
 def _on_run_cancel(run) -> None:
     """A run was cancelled through the manager (a spoken "stop", POST
-    /runs/{id}/cancel): stop the robot now, not only at the next step."""
+    /runs/{id}/cancel): stop the robot now, not only at the next step; inside a
+    non-interruptible skill (Pick mid-grasp, a drawer pull) after it ends, see
+    :func:`uninterruptible`. The run itself is cancelled at once either way."""
+    held = run.defer_stop() if run is not None else None
+    if held is not None:
+        token, skill = held
+        max_s = uninterruptible_max_s()
+        run.publish({'event': 'run_stop_deferred', 'skill': skill, 'max_s': max_s, 'origin': 'run_control',
+                     'msg': f'stopping when {skill} has finished (it must not be cut)'})
+        t = threading.Timer(max_s, _deferred_stop_due, (run, token))
+        t.daemon = True
+        t.start()
+        return
     with _LOCK:
         _stop_robot()
+
+
+def uninterruptible_max_s() -> float:
+    """How long a stop waits for a non-interruptible skill before it cuts it anyway."""
+    try:
+        return float(os.environ.get('ROBOT_AGENT_UNINTERRUPTIBLE_MAX_S', '30'))
+    except ValueError:
+        return 30.0
+
+
+def _deferred_stop_due(run, token) -> None:
+    if run.take_deferred_stop(token):
+        with _LOCK:
+            _stop_robot()
+
+
+@contextlib.contextmanager
+def uninterruptible(skill: str, interruptible: bool = False):
+    """Run a skill the manifest marks ``interruptible: false`` inside this: a
+    stop of the run that arrives meanwhile does not cancel the robot's goals
+    until the skill has finished (at most :func:`uninterruptible_max_s`), so a
+    grasp or a drawer pull is not cut half-way. The run is cancelled at once and
+    the executive stops at the step boundary. ``interruptible`` True (or no run)
+    is a no-op. The hardware e-stop never goes through here."""
+    run = current_run() if not interruptible else None
+    if run is None:
+        yield
+        return
+    token = run.begin_critical(skill)
+    try:
+        yield
+    finally:
+        if run.end_critical(token):
+            with _LOCK:
+                _stop_robot()
+
+
+def is_cancel(exc: BaseException) -> bool:
+    """Is ``exc`` the run's stop (``RunCancelled``)?"""
+    from ..interact.run_manager import RunCancelled
+    return isinstance(exc, RunCancelled)
+
+
+def call_cancellable(fn, *args, poll: float = 0.01, **kwargs):
+    """``fn(*args, **kwargs)`` (an LLM / planner call) that a stop does not wait
+    for: it runs in a worker thread and ``RunCancelled`` is raised within
+    ``poll`` s of the run's stop (the call's result is then dropped). With no
+    run, a plain call."""
+    run = current_run()
+    if run is None:
+        return fn(*args, **kwargs)
+    from ..interact.run_manager import RunCancelled
+    run.check_cancel()
+    box: dict = {}
+    done = threading.Event()
+
+    def work():
+        try:
+            box['value'] = fn(*args, **kwargs)
+        except BaseException as e:      # noqa: BLE001 - re-raised in the caller
+            box['error'] = e
+        finally:
+            done.set()
+    threading.Thread(target=work, name='cancellable-call', daemon=True).start()
+    while not done.wait(poll):
+        if run.cancel_requested:
+            raise RunCancelled(run.run_id)
+    if 'error' in box:
+        raise box['error']
+    return box['value']
+
+
+# ── the robot's questions (state in robot_agent.interact.dialog) ─────────────
+def ask_person(question: str, io, silence_retries: int = 0, again: str | None = None):
+    """Ask the person ``question`` through ``io`` (the robot's Ask skill) with
+    the current run waiting on it, so a typed / injected answer from any client
+    answers it. Returns ``(Answer, times asked)``; ``Answer.source`` is
+    'robot' (heard), 'typed' (injected) or '' (no answer / stopped)."""
+    from ..interact import dialog
+    kw = {'again': again} if again else {}
+    return dialog.ask_heard(current_run(), question, io, silence_retries=silence_retries, **kw)
+
+
+def yes_no(text):
+    """(True | False | None, correction text) of a spoken confirmation."""
+    from ..interact.dialog import yes_no as _yn
+    return _yn(text)
+
+
+# ── suspended tasks (a NEW command that goes first) ──────────────────────────
+def suspend_task(task: str, goals: list, achieved: list, belief: dict, reason: str = ''):
+    """Push the current run's task on the task stack. None with no run."""
+    run = current_run()
+    if run is None:
+        return None
+    from ..interact.run_manager import TaskFrame
+    return _manager().suspend(run, TaskFrame(run_id=run.run_id, task=task, goals=list(goals),
+                                             achieved=list(achieved), belief=dict(belief), reason=reason))
+
+
+def resume_task():
+    """Pop the current run's last suspended task (runs the manager's
+    ``on_resume`` hooks); None when there is none."""
+    run = current_run()
+    return _manager().resume_task(run) if run is not None else None
 
 
 def current_run():

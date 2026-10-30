@@ -47,7 +47,7 @@ from robot_agent.contract import FailureCode, Unbindable
 from robot_agent.state import current, host_id
 from .loop import _DONE, _NEXT, _STOP, ClosedLoop, _vr_list, reconcile_world
 from .records import StepRecord, VerifyResult
-from . import action_model
+from . import action_model, goal_change
 from .robot import run_skill
 from .verify import symbolic_check, verdict
 from .understand import (LLMBadOutput, LLMBudget, LLMBudgetExceeded, LLMUnavailable, ask_json, consensus,
@@ -59,9 +59,6 @@ ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify
                 "pick_retries", "ask_help", "arrive_tol", "find_min_conf", "find_verify", "reach_far", "reach_lateral",
                 "understand_retries", "understand_samples", "llm_budget", "goal_check"}
 _USER_WORDS = {"me", "user", "here", "you", "myself", "person"}
-# spoken yes / no (ko / vi / en) for read-backs
-_YES = re.compile(r"\b(yes|yeah|yep|ok|okay|right|correct|sure|go ahead|네|예|응|맞아|맞아요|좋아|có|đúng|vâng|ừ)\b")
-_NO = re.compile(r"\b(no|nope|not|wrong|아니|아니요|아뇨|không|sai)\b")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -277,6 +274,8 @@ Task: {task}{original}
 class AssistLoop(ClosedLoop):
     """See the module docstring."""
 
+    _answer_source = "robot"          # where the last answer came from (interact.dialog: robot | typed | '')
+
     def __init__(self, agent, emit=None, **overrides) -> None:
         overrides = dict(overrides)
         self.original = overrides.pop("original", None)
@@ -355,8 +354,10 @@ class AssistLoop(ClosedLoop):
             if dialogue else "", task=task,
             # the user's own words: a translation loses names (식탁 'dining table' came out as 'table')
             original=(f"\n(the user's own words: {self.original})" if self.original and self.original != task else ""))
-        try:
-            d = ask_json(self._llm(), prompt, UNDERSTAND_SCHEMA, budget=budget, retries=self.cfg["understand_retries"])
+        from ..run_control import call_cancellable, is_cancel
+        try:                                     # every call (repairs too) cancellable: a stop does not wait
+            d = ask_json(self._llm(), prompt, UNDERSTAND_SCHEMA, budget=budget, retries=self.cfg["understand_retries"],
+                         call=call_cancellable, passthrough=is_cancel)
         except LLMBadOutput:
             d = {"unparsed": True}
         d.setdefault("status", "clear"); d.setdefault("question", "")
@@ -463,7 +464,16 @@ class AssistLoop(ClosedLoop):
         return cache[(text, name)]
 
     def _ask(self, question, node, log_fn, lang) -> str:
-        """Ask the user through the robot's Ask skill (manifest). '' when there is no answer / no channel."""
+        """Ask the user (``interact.dialog`` via run_control: the run waits on the question, so an answer
+        typed / sent by any client answers it; the robot's Ask skill does the I/O). '' when there is no
+        answer / no channel. Where the answer came from: ``self._answer_source`` (robot | typed | '')."""
+        from ..run_control import ask_person
+        ans, _n = ask_person(question, lambda q: self._ask_io(q, node, log_fn, lang))
+        self._answer_source = ans.source
+        return ans.text
+
+    def _ask_io(self, question, node, log_fn, lang) -> str:
+        """The robot's Ask skill (manifest): say the question, listen. '' when there is no answer / no channel."""
         spec = self.robot.ask_spec()
         if spec is None:
             return ""
@@ -479,27 +489,17 @@ class AssistLoop(ClosedLoop):
 
     def _ask_heard(self, question, node, log_fn, lang):
         """Ask; on silence ask again (`silence_retries`). Returns (answer, n_asked)."""
-        n = 0
-        for k in range(1 + self.cfg["silence_retries"]):
-            n += 1
-            ans = self._ask(question if k == 0 else f"Sorry, I didn't hear you. {question}", node, log_fn, lang)
-            if ans:
-                return ans, n
-        return "", n
+        from ..run_control import ask_person
+        ans, n = ask_person(question, lambda q: self._ask_io(q, node, log_fn, lang),
+                            silence_retries=self.cfg["silence_retries"])
+        self._answer_source = ans.source
+        return ans.text, n
 
     @staticmethod
     def yes_no(text):
-        """(True | False | None, correction text) from a spoken yes / no answer."""
-        t = (text or "").strip()
-        if not t:
-            return None, ""
-        low = t.lower()
-        if _NO.search(low):
-            rest = _NO.sub(" ", low, count=1).strip(" ,.!?")
-            return False, rest
-        if _YES.search(low):
-            return True, ""
-        return False, t                              # anything else: a correction ("the restroom one")
+        """(True | False | None, correction text) from a spoken yes / no answer (``interact.dialog``)."""
+        from ..run_control import yes_no
+        return yes_no(text)
 
     @staticmethod
     def summary(goals):
@@ -693,9 +693,13 @@ class AssistLoop(ClosedLoop):
                                               capabilities=self.robot.model_capabilities()).final_state
                 fb = ("Checker findings (fix them; places must be exactly the listed ones):\n"
                       + "\n".join(f"- {t}" for t in items) + f"\nGoals of the whole task: {goal_txt}")
+                from ..run_control import call_cancellable, is_cancel
                 try:
-                    new_steps = inner.edit_block(blocks[k], fb, task=task, state=state, obs=obs, examples_block=ex_block)
+                    new_steps = call_cancellable(inner.edit_block, blocks[k], fb, task=task, state=state, obs=obs,
+                                                 examples_block=ex_block)
                 except Exception as e:
+                    if is_cancel(e):
+                        raise
                     notes.append(f"sub-goal {k + 1} edit failed: {e}"); continue
                 empty_ok = any('"steps": []' in t for t in items)
                 if new_steps or empty_ok:
@@ -889,7 +893,9 @@ class AssistLoop(ClosedLoop):
                 return
             yield self._final_check(r)                            # 4. done only when the goals hold
         except Exception as e:
-            yield self._crashed(r, e)
+            from ..run_control import is_cancel
+            # a stop during an LLM / planner call (run_control.call_cancellable) ends the run at once
+            yield self._finish(r, "aborted", msg="Cancelled by user") if is_cancel(e) else self._crashed(r, e)
         finally:
             self._close_run(r)
 
@@ -924,6 +930,7 @@ class AssistLoop(ClosedLoop):
     def _understand_phase(self, r):
         """Goals from the task and the user's answers. True when the run ended."""
         r.dialogue, r.asked, r.confirms, r.pin_to, r.goals = [], 0, 0, None, []
+        r.heard = 0                      # answers heard through the robot's I/O (a typed one cannot be misheard)
         while True:
             out = yield from self._understand_round(r)
             if out is _STOP:
@@ -1033,7 +1040,7 @@ class AssistLoop(ClosedLoop):
         here) or always (`confirm_task`, a voice user whose command itself may be misheard).
         Returns (outcome or None, the question to ask next)."""
         unsure = getattr(r, "unsure", None)
-        if not ((r.dialogue and self.cfg["confirm_answers"]) or self.cfg["confirm_task"] or unsure):
+        if not ((r.dialogue and r.heard and self.cfg["confirm_answers"]) or self.cfg["confirm_task"] or unsure):
             return _DONE, None
         if r.confirms >= 2:
             yield self._finish(r, "failed", msg="the user did not confirm the task"); return _STOP, None
@@ -1042,6 +1049,7 @@ class AssistLoop(ClosedLoop):
             f"{self.summary(r.goals)} Is that right?"
         yield r.ev("clarify", question=cq, round=r.confirms, kind="confirm")
         ans, _n = self._ask_heard(cq, r.node, self._log_fn(-1), r.lang)
+        r.heard += self._answer_source == "robot"
         stop = self._cancelled(r)
         if stop:
             yield stop; return _STOP, None
@@ -1067,6 +1075,7 @@ class AssistLoop(ClosedLoop):
         r.asked += 1
         yield r.ev("clarify", question=q, round=r.asked)
         ans, _n = self._ask_heard(q, r.node, self._log_fn(-1), r.lang)
+        r.heard += self._answer_source == "robot"
         stop = self._cancelled(r)
         if stop:
             yield stop; return _STOP
@@ -1085,6 +1094,12 @@ class AssistLoop(ClosedLoop):
             txt += "\nAlready looked (object not there): " + ", ".join(r.searched)
         return txt
 
+    @staticmethod
+    def _goal_text(goals) -> str:
+        """The goals as the planner reads them: 'on apple from desk to dining table; ...'."""
+        return "; ".join(f"{g['type']} {g['object']}" + (f" from {g['from']}" if g.get('from') else "")
+                         + (f" to {g['to']}" if g.get('to') else "") for g in goals)
+
     def _ground_all(self, r, seq) -> list:
         return [self._ground_step(x, r.places, r.goals, r.task) for x in seq]
 
@@ -1092,8 +1107,7 @@ class AssistLoop(ClosedLoop):
         """The certified plan in r.steps. True when the run ended (plan only / no plan)."""
         yield r.ev("status", msg="Generating task plan...")
         r.restated = r.task + ("" if not r.dialogue else " (" + "; ".join(t for w_, t in r.dialogue if w_ == "user") + ")")
-        r.goal_txt = "; ".join(f"{g['type']} {g['object']}" + (f" from {g['from']}" if g.get('from') else "")
-                               + (f" to {g['to']}" if g.get('to') else "") for g in r.goals)
+        r.goal_txt = self._goal_text(r.goals)
         r.searched, r.seen_far = [], []
         r.planner = self._make_planner()
         self._hook_progress(r.planner)
@@ -1113,10 +1127,13 @@ class AssistLoop(ClosedLoop):
     def _generate_and_certify(self, r):
         """SAGE's plan, checked as written; critical findings go back to SAGE's sub-goal editing."""
         t_plan, r.plan_error = time.time(), None
+        from ..run_control import call_cancellable, is_cancel
         try:
             r.llm_budget.take(what="plan")
-            raw, meta = r.planner.generate_plan(r.restated, self._obs(r), [])
+            raw, meta = call_cancellable(r.planner.generate_plan, r.restated, self._obs(r), [])
         except Exception as e:                       # kept: the run ends with it (_plan_phase), not "no plan"
+            if is_cancel(e):
+                raise
             raw, meta, r.plan_error = [], {"error": str(e)}, e
         r.steps = self._ground_all(r, raw)
         probs = self._check(r.steps, r.world, r.places, r.goals)
@@ -1143,11 +1160,14 @@ class AssistLoop(ClosedLoop):
         world = r.world
         ers = (f"E: {failed.get('action')} {failed.get('object')} failed. R: {reason}. "
                f"S: robot at {world.arrived}, holding {world.holding or 'nothing'}; goals: {r.goal_txt}")
+        from ..run_control import call_cancellable, is_cancel
         try:
             r.llm_budget.take(what="replan")
-            suffix, _m = r.planner.replan(r.restated, r.completed, failed, ers, self._obs(r), [])
+            suffix, _m = call_cancellable(r.planner.replan, r.restated, r.completed, failed, ers, self._obs(r), [])
             suffix = self._ground_all(r, suffix)
         except Exception as e:
+            if is_cancel(e):
+                raise
             suffix = []; ers += f"; replan error: {e}"
             r.replan_error = e
         if getattr(r, "replan_error", None) is not None:
@@ -1176,6 +1196,166 @@ class AssistLoop(ClosedLoop):
         yield e_
         return _NEXT
 
+    # ── 3b. what the person says during the run (Run.pending, taken between two steps) ──
+    def _apply_pending(self, r):
+        """MODIFY / ADD / DROP / NEW said since the last step boundary, applied before the next step
+        (proposal 3.3): None (nothing changed), _NEXT (goals changed, the plan repaired) or _STOP."""
+        from ..run_control import current_run
+        run = current_run()
+        events = run.take_pending() if run is not None else []
+        changed = False
+        for e in events:
+            out = yield from (self._new_command(r, run, e) if e.get("intent") == "new" else self._goal_edit(r, e))
+            if out is _STOP:
+                return _STOP
+            changed = changed or out is _NEXT
+        if not changed:
+            return None
+        return (yield from self._repair_goals(r, "; ".join(str(e.get("text") or "") for e in events)))
+
+    def _goal_edit(self, r, e):
+        """MODIFY (goal diff), ADD (merged into the goals), DROP (goals removed; the held object first).
+        _NEXT when the goals changed; None when the change could not be applied (the person is told)."""
+        intent, text = e.get("intent") or "modify", str(e.get("text") or "")
+        ch = goal_change.read(text, intent, r.goals, r.places, r.world.holding,
+                              reached=lambda g: self._goals_hold([g], r.world, r.placed))
+        ch = ch if ch is not None and not ch.empty else self._llm_goal_change(r, text)
+        if ch is None or ch.empty:
+            yield r.ev("goal_change", applied=False, intent=intent, text=text, goals=r.goals,
+                       say=self._in_lang(f"Sorry, I could not apply that: {text}. I will carry on.", r.lang))
+            return None
+        put_back = self._held_dropped(r, ch)
+        r.goals = ch.goals + ([put_back] if put_back else [])
+        say = self.summary(r.goals) if r.goals else "OK, I will not do that."
+        yield r.ev("goal_change", applied=True, intent=intent, text=text, how=ch.how, goals=r.goals,
+                   added=ch.added, removed=ch.removed, changed=[n for _o, n in ch.changed],
+                   say=self._in_lang(("OK. " if r.goals else "") + say, r.lang))
+        return _NEXT
+
+    def _llm_goal_change(self, r, text):
+        """The understand LLM reads the change against the task (the cheap reading failed): GoalChange or None."""
+        from ..run_control import is_cancel
+        dialogue = list(r.dialogue) + [("robot", self.summary(r.goals)), ("user", text)]
+        try:
+            u = self._understand(r.task, r.places, r.memory, r.world, dialogue, budget=r.llm_budget)
+        except Exception as e:
+            if is_cancel(e):
+                raise
+            return None
+        goals, q = self._ground_goals(u["goals"], r.places, r.memory, " ".join([r.task, text]), latest=text)
+        if q or u.get("status") != "clear":
+            return None
+        key = lambda g: (g.get("type"), g.get("object"), g.get("to"))
+        old, new = {key(g) for g in r.goals}, {key(g) for g in goals}
+        return goal_change.GoalChange(goals=goals, added=[g for g in goals if key(g) not in old],
+                                      removed=[g for g in r.goals if key(g) not in new], how="llm")
+
+    def _held_dropped(self, r, ch):
+        """A goal of the object in the hand was dropped: the goal that puts it back where it was taken
+        from (cfg drop_held 'put_back', the default) or down here ('place_here'); else None."""
+        held = r.world.holding
+        if not held or any(g.get("object") == held for g in ch.goals) or not any(
+                g.get("object") == held for g in ch.removed):
+            return None
+        src = next((g.get("from") for g in ch.removed if g.get("object") == held and g.get("from")), "")
+        if not src:
+            moves = [st["object"] for st in r.completed if st.get("action") == "MoveTo"]
+            src = moves[-1] if moves else (r.world.arrived or "")
+        to = r.world.arrived if self.cfg.get("drop_held") == "place_here" else src
+        return {"type": "on", "object": held, "from": "", "to": to} if to else None
+
+    def _new_command(self, r, run, e):
+        """NEW during a run: someone who outranks the run's starter goes first; else the person is asked
+        "first, or after this task?" (no answer: after). First = the current task is suspended on the
+        task stack (goals, achieved goals, belief) and resumed afterwards. None / _NEXT / _STOP."""
+        text = str(e.get("text") or "")
+        ch = goal_change.read(text, "new", [], r.places) or self._llm_new_task(r, text)
+        if ch is None or not ch.goals:
+            yield r.ev("goal_change", applied=False, intent="new", text=text, goals=r.goals,
+                       say=self._in_lang(f"Sorry, I did not understand: {text}. I will finish this task first.", r.lang))
+            return None
+        new = ch.goals
+        key = lambda g: (g.get("type"), g.get("object"), g.get("to"))
+        if {key(g) for g in new} <= {key(g) for g in r.goals}:
+            yield r.ev("goal_change", applied=False, intent="new", text=text, goals=r.goals,
+                       say=self._in_lang(f"I am already doing that. {self.summary(r.goals)}", r.lang))
+            return None
+        first = run is not None and run.outranked_by(e.get("role"))
+        if not first:
+            q = (f"Someone asked me to {self.summary(new)[len('I will '):].rstrip('.')}. Should I do that first? "
+                 f"If not, I will do it after the current task.")
+            yield r.ev("clarify", question=q, round=0, kind="new_task")
+            ans = self._ask(q, r.node, self._log_fn(r.i), r.lang)
+            stop = self._cancelled(r)
+            if stop:
+                yield stop; return _STOP
+            first = self.yes_no(ans)[0] is True or bool(re.search(r"\b(now|first|right away)\b", ans.lower()))
+        if not first:
+            r.goals = r.goals + [g for g in new if g not in r.goals]
+            yield r.ev("goal_change", applied=True, intent="new", text=text, how=ch.how, goals=r.goals, added=new,
+                       say=self._in_lang(f"OK, after this task. {self.summary(new)}", r.lang))
+            return _NEXT
+        yield from self._suspend_for(r, new, text)
+        return _NEXT
+
+    def _llm_new_task(self, r, text):
+        from ..run_control import is_cancel
+        try:
+            u = self._understand(text, r.places, r.memory, r.world, [], budget=r.llm_budget)
+        except Exception as e:
+            if is_cancel(e):
+                raise
+            return None
+        goals, q = self._ground_goals(u["goals"], r.places, r.memory, text)
+        return None if q or u.get("status") != "clear" else goal_change.GoalChange(goals=goals, added=goals, how="llm")
+
+    def _suspend_for(self, r, new, text):
+        """Suspend the current task on the task stack and make ``new`` the goals. An object in the hand
+        is put down here first (the suspended task picks it up from here again)."""
+        from ..run_control import suspend_task
+        held, here = r.world.holding, r.world.arrived
+        old = [dict(g) for g in r.goals]
+        put_down = []
+        if held and here and not r.places.openable(here):
+            put_down = [{"type": "on", "object": held, "from": "", "to": here}]
+            for g in old:
+                if g.get("object") == held:
+                    g["from"] = here
+        achieved = [g for g in old if self._goals_hold([g], r.world, r.placed)]
+        frame = suspend_task(r.task, old, achieved, r.world.to_dict(), reason=f"new task first: {text}")
+        r.saved_goals = getattr(r, "saved_goals", []) + [old]          # the stack is the run's; this a fallback
+        r.suspended += 1
+        r.goals = put_down + [dict(g) for g in new]
+        yield r.ev("goal_change", applied=True, intent="new", text=text, goals=r.goals, suspended=old,
+                   suspended_frame=frame.to_dict() if frame is not None else None,
+                   say=self._in_lang(f"OK, first that. {self.summary(new)} Then I will go back to my task.", r.lang))
+
+    def _resume_suspended(self, r):
+        """The interrupting task is done: take the suspended one back (task stack), observe again
+        (reconcile), and repair the plan from here. _NEXT, _DONE (nothing left to do) or _STOP."""
+        from ..run_control import resume_task
+        frame = resume_task()
+        old = frame.goals if frame is not None else r.saved_goals[-1]
+        r.saved_goals = r.saved_goals[:-1]
+        r.suspended -= 1
+        reconcile_world(r.node, r.world)
+        r.goals = [dict(g) for g in old]
+        yield r.ev("task_resumed", goals=r.goals, say=self._in_lang("Now back to my task. " + self.summary(r.goals), r.lang))
+        if self._goals_hold(r.goals, r.world, r.placed):
+            return _DONE
+        return (yield from self._repair_goals(r, "resumed the task the new one interrupted"))
+
+    def _repair_goals(self, r, said):
+        """The goals changed: SAGE suffix repair from here. _NEXT or _STOP."""
+        r.goal_txt = self._goal_text(r.goals)
+        r.run.obs = "goals: " + json.dumps(r.goals, ensure_ascii=False)
+        if self._goals_hold(r.goals, r.world, r.placed):
+            r.steps = r.steps[:r.i]
+            return _NEXT
+        return (yield from self._replan_or_fail(r, {"action": "Change", "object": "goals"},
+                                                f"the user changed the goals ({said})",
+                                                f"could not replan for the changed goals: {r.goal_txt}"))
+
     def _execute_phase(self, r):
         """Run the plan step by step. True when the run ended."""
         from ..run_control import wait_if_paused
@@ -1183,15 +1363,17 @@ class AssistLoop(ClosedLoop):
         r.pick_tries, r.move_tries, r.helped, r.seen_fail, r.seen_at, r.find_fails = {}, {}, set(), {}, {}, {}
         r.completed, r.replans, r.i, r.replan_error = [], 0, 0, None
         r.world_at_start = r.world.copy()
+        r.suspended = 0                      # tasks this run put on the task stack (a NEW one went first)
         while True:
-            if r.i >= len(r.steps):
-                out = yield from self._plan_ended(r)
-            else:
-                wait_if_paused()             # a paused run holds here, between two steps
-                stop = self._cancelled(r)
-                if stop:
-                    yield stop; return True
-                out = yield from self._run_step(r, r.steps[r.i])
+            wait_if_paused()                 # a paused run holds here, between two steps
+            stop = self._cancelled(r)
+            if stop:
+                yield stop; return True
+            out = yield from self._apply_pending(r)          # what the person said meanwhile
+            if out is None:
+                out = (yield from self._plan_ended(r)) if r.i >= len(r.steps) else (yield from self._run_step(r, r.steps[r.i]))
+            if out is _DONE and r.suspended:
+                out = yield from self._resume_suspended(r)  # back to the task the NEW one interrupted
             if out is _STOP:
                 return True
             if out is _DONE:
@@ -1265,11 +1447,15 @@ class AssistLoop(ClosedLoop):
                          status="running", started_at=started)
         yield r.ev("step_start", index=r.i, action=a, object=o, skill=skill,
                    say=r.announcer.announce("step_start", **self._say(st, a, o)))
-        res = run_skill(self.sr, skill, params, r.node, log_fn=self._log_fn(r.i))
+        # manifest interruptible: false (a grasp, a drawer pull): a stop meanwhile waits for it to end
+        res = run_skill(self.sr, skill, params, r.node, log_fn=self._log_fn(r.i),
+                        interruptible=r.robot.interruptible(skill))
         rec.result = res.to_legacy()
         stop = self._cancelled(r)
         if stop:
             rec.status = "aborted"; r.run.steps.append(rec)
+            if res.ok:
+                self._effect(st, r.world, r.memory, r.placed)   # it finished: the belief keeps what it did
             yield stop; return _STOP
         vres = self._post_check(r, st, skill, res, params, rec)
         rec.verifies = vres

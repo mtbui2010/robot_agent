@@ -485,6 +485,9 @@ class ClosedLoop:
         try:
             steps, meta = r.planner.generate_plan(r.task, obs, visible)
         except Exception as e:
+            from ..run_control import is_cancel
+            if is_cancel(e):
+                raise
             yield self._planner_failed(r, e)
             return True
         r.steps = list(steps)
@@ -536,6 +539,7 @@ class ClosedLoop:
             if cancel_requested():
                 yield self._aborted(r)
                 return True
+            yield from self._cl_pending(r)
             out = yield from self._cl_step(r, r.steps[r.i])
             if out is _STOP:
                 return True
@@ -543,6 +547,18 @@ class ClosedLoop:
                 r.run.status = "failed"
                 break
         return False
+
+    def _cl_pending(self, r: "RunContext"):
+        """MODIFY / ADD / DROP / NEW said during the run (Run.pending): this loop plans from the task
+        text and has no goals to edit (AssistLoop applies them), so it says the change was not applied
+        instead of losing it silently."""
+        from ..run_control import current_run
+        run = current_run()
+        for e in (run.take_pending() if run is not None else []):
+            text = str(e.get("text") or "")
+            yield r.ev("goal_change", applied=False, intent=e.get("intent"), text=text,
+                       say=f"I heard '{text}', but I cannot change the running task. I will finish it first; "
+                           f"please tell me again afterwards.")
 
     def _cl_step(self, r: "RunContext", step: dict):
         """Map, execute and check one step. Returns _NEXT, _FAIL or _STOP."""
@@ -567,7 +583,8 @@ class ClosedLoop:
                          params=params, status="running", started_at=started)
         yield r.ev("step_start", index=r.i, action=action, object=obj, skill=skill_name,
                    say=r.announcer.announce("step_start", **self._say(step, action, obj)))
-        res = run_skill(self.sr, skill_name, params, r.node, log_fn=self._log_fn(r.i))
+        res = run_skill(self.sr, skill_name, params, r.node, log_fn=self._log_fn(r.i),
+                        interruptible=r.robot.interruptible(skill_name))
         rec.result = res.to_legacy()
         # A cancelled skill fails like any other, but replanning around
         # it would start the robot moving again — stop instead.
