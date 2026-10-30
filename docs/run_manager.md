@@ -25,6 +25,9 @@ Now each robot has at most one active `Run`:
 `RunManager.start()` while a run is active does not start another. It returns the active run with
 `decision='busy'`; the caller observes that run and sends its text in with `inject()`.
 
+`RunManager.on_start` / `on_finish` (lists of callables, like `on_cancel`) run after a run is
+created and after it finished; `run_control.manager()` hooks the RunRecord in there (`observe.md`).
+
 ## Cooperative points
 
 The executive calls these between steps (not inside a skill):
