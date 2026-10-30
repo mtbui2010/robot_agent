@@ -5,7 +5,8 @@ look or an arrival, and how many LLM calls one run may make. Robot-agnostic: eve
 prompt and sensor comes from the robot's adapter / `manifest.yaml`.
 
 Code: `core/planning/verify.py` (layers), `core/planning/verify_vlm.py` (VLM layer),
-`core/planning/sensor_health.py` (health), `core/planning/budget.py` (budget). The hooks in
+`core/planning/sensor_health.py` (health), `core/planning/budget.py` (budget, used by
+`core/planning/subgoal_repair.py`). The hooks in
 `assist_loop.py` / `loop.py` are a few lines each.
 
 ## Layers after a step
@@ -101,7 +102,8 @@ recovery STOP, never retried), `device: llm`, `evidence: {llm_calls, limit}` and
 phrase `llm_budget` (i18n; the core's English text otherwise). A phrase the robot has in the
 user's language is not translated again.
 
-The gate's sub-goal edits (`edit_rounds`, default 3) stop as soon as a round leaves as many
+The gate's sub-goal repair (`subgoal_repair.repair_plan`, the planner's optional `SubgoalRepair`;
+`edit_rounds`, default 3) takes one unit per `repair_block` call and stops as soon as a round leaves as many
 critical findings as the round before (`budget.EditProgress`): the run's `gate` event lists
 "edits stopped: N finding(s), not fewer than the round before".
 

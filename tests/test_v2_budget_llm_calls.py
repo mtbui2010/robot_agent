@@ -1,4 +1,5 @@
-"""v2 verify-budget, P1.14: the run's LLM-call cap and the gate's edit-round stop (core/planning/budget.py)."""
+"""v2 verify-budget, P1.14: the run's LLM-call cap and the gate's edit-round stop (core/planning/budget.py,
+subgoal_repair.repair_plan)."""
 
 from robot_agent.contract import DEFAULT_RECOVERY, FailureCode, classify_legacy_failure
 from robot_agent.core.planning.base import WorldState
@@ -98,15 +99,18 @@ class Block:
 
 
 class Sage:
-    """SAGE's editing surface; each edit returns the next item of ``fixes``."""
+    """A planner with the SubgoalRepair capability; each repair returns the next item of ``fixes``."""
 
     def __init__(self, blocks, fixes):
-        self.last_blocks, self.fixes, self.calls = blocks, list(fixes), []
+        self._blocks, self.fixes, self.calls = blocks, list(fixes), []
 
-    def retrieve_examples(self, task):
-        return [], ""
+    def blocks(self):
+        return self._blocks
 
-    def edit_block(self, block, feedback, *, task, state=None, obs="", visible_objects=None, examples_block=None):
+    def join_blocks(self, blocks):
+        return [dict(s) for b in blocks for s in b.steps]
+
+    def repair_block(self, block, feedback, *, task, state=None, obs=""):
         self.calls.append(feedback)
         return self.fixes.pop(0) if self.fixes else block.steps
 
@@ -119,7 +123,7 @@ def _edit(make_assist, env, sage, budget=None, rounds=3):
     from robot_agent.core.planning.assist_loop import Places
     loop = make_assist(FakeRobot(env, {"orange": DT}), FakeLLM(), ScriptedPlanner([]), edit_rounds=rounds)
     ground = lambda seq: [dict(s, grounded=True) for s in seq]                 # noqa: E731
-    return loop._sage_edit(sage, "orange in the drawer", "", ground, WorldState(), Places(env, openable=loop.robot.openable), GOALS,
+    return loop._repair_plan(sage, "orange in the drawer", "", ground, WorldState(), Places(env, openable=loop.robot.openable), GOALS,
                            "in orange to drawer", budget=budget)
 
 

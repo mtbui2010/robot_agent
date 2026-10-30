@@ -414,11 +414,8 @@ def replay(target, mode: str = 'plan', planner: str = 'auto', robot_pkg: Optiona
             use = planner
             if use == 'auto':
                 has_ep = any(r.get('source') == 'embodiplan' for r in store.rows)
-                try:
-                    import embodiplan  # noqa: F401
-                    ep_ok = True
-                except Exception:
-                    ep_ok = False
+                from ..core.planning.registry import planner_available
+                ep_ok = planner_available('grace')          # embodiplan importable here
                 use = 'live' if (has_ep and ep_ok) else 'recorded'
             if use == 'recorded':
                 rp = ReplayPlanner(rec.rows, res.warnings, mismatches)

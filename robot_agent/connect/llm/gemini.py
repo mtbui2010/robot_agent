@@ -51,7 +51,8 @@ class GeminiClient(LLMobj):
         model_name = kwargs.get("model", self.current_model)
         model = self._genai.GenerativeModel(model_name)
         # Gemini's generate_content takes the conversation list directly.
-        resp = model.generate_content(msgs)
+        gen = {'temperature': kwargs['temperature']} if kwargs.get('temperature') is not None else None
+        resp = model.generate_content(msgs, generation_config=gen) if gen else model.generate_content(msgs)
         return resp.text
 
 

@@ -29,6 +29,8 @@ CORE_TEXT = {
     "delivery": "I have a delivery for you. Please take it.",
     # the run used its LLM-call budget (budget.budget_end)
     "llm_budget": "I have to stop: I could not work this task out within my limit of tries.",
+    # an unclear answer to a yes / no question ("yet", noise) is asked again with this (interact.dialog)
+    "yes_or_no": "Sorry, I didn't catch that. Please answer yes or no.",
 }
 
 # manifest actions that are not plan steps: sensors (Observe / Verify), the dialog (Ask, the core's
@@ -114,6 +116,15 @@ class RobotView:
         if "hands" not in caps and "arms" not in caps:
             caps["hands"] = 1
         return caps
+
+    def seed_memory(self) -> Optional[str]:
+        """The robot's curated seed pool for the planner's memory (manifest ``planner.seed_memory``,
+        or the adapter's ``seed_memory``), None when it ships none."""
+        p = getattr(self.adapter, "seed_memory", None)
+        if p is None:
+            fn = getattr(self.manifest, "planner_path", None)
+            p = fn("seed_memory") if callable(fn) else None
+        return str(p) if p else None
 
     def model_capabilities(self):
         return action_model.Capabilities.from_any(self.capabilities())

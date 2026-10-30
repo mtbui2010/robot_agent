@@ -11,7 +11,7 @@ it has no skill for, and how the goal is reached by a plan / holds after a run:
   deliver        the robot takes what it carries to a place and
                  waits until a person takes it                      MoveTo + WaitForUnload
 
-The manipulation kinds are planned by SAGE; the others (``TEMPLATE_KINDS``) are a fixed
+The manipulation kinds are planned by the planner (SAGE or a plug-in); the others (``TEMPLATE_KINDS``) are a fixed
 sequence of steps, compiled here without an LLM (``compile_steps``). Nothing in this module
 knows a robot: the actions a robot has come from its manifest (``RobotView.plan_actions``).
 """
@@ -104,6 +104,29 @@ def conflicts(goals: list) -> tuple:
     return kept, q
 
 
+# words for the person speaking; "me" is a destination (deliver to the speaker), never a source
+SPEAKER_WORDS = frozenset({"me", "user", "here", "you", "myself", "person", "the user", "the person"})
+
+
+def is_speaker(v) -> bool:
+    return " ".join(str(v or "").lower().replace("_", " ").split()) in SPEAKER_WORDS
+
+
+def speaker_slots(goals: list) -> list:
+    """The understood goals with "me" kept to the destination (FROM_ME): a model that put the speaker in
+    `from` ("bring me the cup" -> from "me") gets it moved to an empty `to`, else dropped (the source is
+    then searched for / taken from the memory), so the robot never asks "Where are you?" for the pick."""
+    out = []
+    for g in goals:
+        g = dict(g)
+        if g.get("type") in ("on", "in") and is_speaker(g.get("from")):
+            if not g.get("to"):
+                g["to"] = g["from"]
+            g["from"] = ""
+        out.append(g)
+    return out
+
+
 def describe(g: dict) -> str:
     """The goal in the obs / goal-text form: '<type> <object>[ from <from>][ to <to>]'."""
     return (f"{g['type']} {g.get('object') or ''}".rstrip() + (f" from {g['from']}" if g.get("from") else "")
@@ -169,4 +192,4 @@ def _same_text(a, b) -> bool:
 
 
 __all__ = ["GoalKind", "GOAL_KINDS", "MANIPULATION", "TEMPLATE_KINDS", "missing_actions", "kinds_for",
-           "prompt_lines", "is_template", "conflicts", "describe", "summary", "compile_steps", "reached"]
+           "prompt_lines", "is_template", "conflicts", "SPEAKER_WORDS", "is_speaker", "speaker_slots", "describe", "summary", "compile_steps", "reached"]

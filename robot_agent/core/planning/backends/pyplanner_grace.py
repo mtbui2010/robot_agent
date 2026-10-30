@@ -10,12 +10,24 @@ GRACE already returns steps in the canonical PlanStep shape
 (``{"action", "object", "target"?, "reason"?}``), so generate_plan / replan
 delegate directly and only coerce the returned PlanMetrics dataclass to a plain
 dict for transport across the Planner boundary.
+
+GraceBackend also offers the optional planner capabilities of ``base.py``
+(``docs/planners.md``) on top of embodiplan's public SAGE API: ``SubgoalRepair``
+(``blocks`` / ``join_blocks`` / ``repair_block`` = SAGE's ``last_blocks`` /
+``flatten`` / ``edit_block`` with its memory examples), ``ProgressReporting``
+(``progress``) and ``EpisodeMemory`` (``record_episode``). This is the only
+place that knows those SAGE names.
 """
 
 from __future__ import annotations
 
 import dataclasses
+import inspect
+import logging
+import os
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 
 # Kwargs that embodiplan's SAGEPlanner (alias GRACEPlanner, registry name "GRACE")
@@ -35,6 +47,8 @@ _GRACE_KWARGS = (
     # the robot's body (manifest capabilities: hands, find_reaches): SAGE's symbolic gate
     # then plans e.g. the MoveTo to a drawer before its Open
     "capabilities",
+    # evaluation: never retrieve the query task itself (embodiplan >= 0.2.3)
+    "leave_one_out",
 )
 
 
@@ -116,8 +130,46 @@ def _observe_llm(embodiplan) -> None:
     backend.chat = observed_chat
 
 
+def available() -> bool:
+    """True when embodiplan (the GRACE / SAGE planner) can be imported here."""
+    try:
+        import embodiplan  # noqa: F401  optional dependency
+    except Exception:
+        return False
+    return True
+
+
+def _seed_gt_path(seed_memory) -> str:
+    """A JSONL seed pool as SAGE's ``gt_path`` ("" when there is none, or when this
+    embodiplan reads only its JSON dataset format: embodiplan < 0.2.3)."""
+    if not seed_memory:
+        return ""
+    path = str(seed_memory)
+    if not os.path.isfile(path):
+        log.warning("seed memory %s not found: SAGE starts without a seed pool", path)
+        return ""
+    try:
+        from embodiplan.memory_retriever import SEED_FORMATS
+    except ImportError:
+        SEED_FORMATS = ("json",)
+    if path.endswith(".jsonl") and "jsonl" not in SEED_FORMATS:
+        log.warning("embodiplan < 0.2.3 cannot read the JSONL seed pool %s: not used", path)
+        return ""
+    return path
+
+
 class GraceBackend:
     """Planner backend backed by embodiplan's GRACEPlanner."""
+
+    _examples: tuple | None = None   # (task, SAGE memory examples block) for repair_block
+
+    @classmethod
+    def wrap(cls, planner) -> "GraceBackend":
+        """A GraceBackend around an already built SAGE / GRACE planner (any object
+        with embodiplan's public planner API, e.g. a scripted SAGEPlanner in tests)."""
+        b = cls.__new__(cls)
+        b._p = planner
+        return b
 
     def __init__(
         self,
@@ -128,6 +180,7 @@ class GraceBackend:
         gt_path: str = "",
         live_path: str = "",
         safe_refine: bool = True,
+        seed_memory: Any = None,
         **cfg: Any,
     ) -> None:
         try:
@@ -137,6 +190,9 @@ class GraceBackend:
                 "pip install -e embodiplan to use the GRACE planner"
             ) from e
         _observe_llm(embodiplan)
+        # the robot's curated seed pool (manifest planner.seed_memory) is SAGE's seed pool
+        # unless a gt_path is given
+        gt_path = gt_path or _seed_gt_path(seed_memory)
 
         # Assemble the candidate kwargs, then keep only those embodiplan accepts.
         candidate: dict[str, Any] = {
@@ -187,9 +243,49 @@ class GraceBackend:
         )
         return list(steps), _metrics_to_dict(metrics)
 
+    # ── Optional capability: SubgoalRepair (SAGE's sub-goal-local Editing) ──
+    def blocks(self) -> list | None:
+        """SAGE's sub-goal blocks of the last generate_plan (None when this planner
+        has no editing surface). Starts a new repair session (examples re-read)."""
+        self._examples = None
+        if not callable(getattr(self._p, "edit_block", None)):
+            return None
+        return getattr(self._p, "last_blocks", None) or None
+
+    def join_blocks(self, blocks: list) -> list[dict]:
+        """SAGE's ``flatten``: the blocks' steps with the redundant ones dropped."""
+        from embodiplan.sage import flatten
+        return flatten(blocks)
+
+    def repair_block(self, block, feedback: str, *, task: str, state=None, obs: str = "") -> list[dict]:
+        """SAGEPlanner.edit_block with the memory examples for ``task``."""
+        if self._examples is None or self._examples[0] != task:
+            self._examples = (task, self._p.retrieve_examples(task)[1])
+        return self._p.edit_block(block, feedback, task=task, state=state, obs=obs,
+                                  examples_block=self._examples[1])
+
+    # ── Optional capability: ProgressReporting ───────────────────────
+    @property
+    def progress(self):
+        """SAGE's live progress hook (decompose / expand / refine)."""
+        return getattr(self._p, "progress", None)
+
+    @progress.setter
+    def progress(self, fn) -> None:
+        if hasattr(self._p, "progress"):
+            self._p.progress = fn
+
     # ── Optional passthrough ─────────────────────────────────────────
-    def record_episode(self, task: str, steps: list[dict]) -> None:
-        """Record a successful episode into GRACE's live memory, if supported."""
+    def record_episode(self, task: str, steps: list[dict], meta: dict | None = None) -> bool:
+        """Record a verified episode into SAGE's live memory, if supported. ``meta`` (how
+        the goals were verified, the run id) is stored with it on embodiplan >= 0.2.3.
+        True when SAGE recorded it (its own gate: the plan passes the action model)."""
         rec = getattr(self._p, "record_episode", None)
-        if callable(rec):
-            rec(task=task, plan=steps, success=True)
+        if not callable(rec):
+            return False
+        try:
+            takes_meta = "meta" in inspect.signature(rec).parameters
+        except (TypeError, ValueError):
+            takes_meta = False
+        out = rec(task=task, plan=steps, success=True, **({"meta": dict(meta)} if meta and takes_meta else {}))
+        return out is not False

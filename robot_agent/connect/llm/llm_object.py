@@ -13,6 +13,16 @@ cache_dir = lambda: str(_log_dir('llm', 'guide_cache'))
 
 fname = lambda p: os.path.splitext(os.path.split(p)[-1])[0]
 
+def sampling_options(base, kwargs) -> dict | None:
+    """``base`` options plus the call's ``temperature`` / ``seed`` (the understand call sends 0 / a fixed
+    seed), in the Ollama ``options`` form; None when there is nothing to send."""
+    opts = dict(base or {})
+    for k in ('temperature', 'seed'):
+        if kwargs.get(k) is not None:
+            opts[k] = kwargs[k]
+    return opts or None
+
+
 class LLMobj(ABC):
     """Abstract base class for all LLM backends.
 

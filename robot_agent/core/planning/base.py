@@ -10,6 +10,10 @@ driver, the action mapper, and every planner backend:
 * :class:`Planner` -- a structural ``typing.Protocol`` describing the
   ``generate_plan`` / ``replan`` surface that GRACE and any other backend
   expose (see ``ACTION_MAPPER_SPEC.md`` section 1).
+* Optional planner capabilities (:class:`SubgoalRepair`,
+  :class:`ProgressReporting`, :class:`EpisodeMemory`): extra surfaces a planner
+  MAY offer; the core uses them only through :func:`subgoal_repair` /
+  :func:`planner_capabilities` and works without them (``docs/planners.md``).
 
 PlanStep
 --------
@@ -208,3 +212,88 @@ class Planner(Protocol):
         steps are spliced after it by the driver.
         """
         ...
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Optional planner capabilities (docs/planners.md). A planner offers one by
+# having the methods / attribute; the core checks them with the helpers below
+# (plain attribute look-ups, so they also see through transparent proxies such
+# as observe.record's RecordingPlanner) and never reaches into a planner's own
+# private state.
+# ─────────────────────────────────────────────────────────────────────────────
+@runtime_checkable
+class PlanBlock(Protocol):
+    """One sub-goal of a plan and the steps that implement it. The core may
+    replace ``steps`` (the result of :meth:`SubgoalRepair.repair_block`)."""
+
+    name: str
+    steps: list[dict]
+
+
+@runtime_checkable
+class SubgoalRepair(Protocol):
+    """Sub-goal-local repair of the last plan (SAGE's Editing is one).
+
+    The certified gate of AssistLoop hands every block that carries a critical
+    checker finding back to the planner with that finding as feedback. A
+    planner without this capability gets one fresh ``generate_plan`` with the
+    findings instead; either way, only a plan that passes the gate runs.
+    """
+
+    def blocks(self) -> Optional[list[PlanBlock]]:
+        """The sub-goal blocks of the last ``generate_plan`` (None / [] = none)."""
+        ...
+
+    def join_blocks(self, blocks: list[PlanBlock]) -> list[dict]:
+        """The flat plan of ``blocks``, as ``generate_plan`` returns it."""
+        ...
+
+    def repair_block(self, block: PlanBlock, feedback: str, *, task: str,
+                     state=None, obs: str = "") -> list[dict]:
+        """New steps for ``block`` given ``feedback`` (checker findings);
+        ``state`` is the action model's symbolic state at the block's start.
+        Returns [] when nothing usable came back; raises on planner errors."""
+        ...
+
+
+@runtime_checkable
+class ProgressReporting(Protocol):
+    """Live planning progress: the core sets ``progress`` to a callable taking
+    one dict (e.g. ``{"phase": "expand", "index": 0}``); each call is streamed
+    to the dashboard as a ``plan_step`` event."""
+
+    progress: object
+
+
+@runtime_checkable
+class EpisodeMemory(Protocol):
+    """Learning from success: called once with the executed steps of every
+    run that ended in success."""
+
+    def record_episode(self, task: str, steps: list[dict]) -> None:
+        ...
+
+
+_CAPABILITY_MEMBERS = {
+    "subgoal_repair": ("blocks", "join_blocks", "repair_block"),
+    "episode_memory": ("record_episode",),
+}
+
+
+def _has_methods(planner, names) -> bool:
+    return all(callable(getattr(planner, n, None)) for n in names)
+
+
+def subgoal_repair(planner) -> Optional[SubgoalRepair]:
+    """``planner`` when it offers :class:`SubgoalRepair`, else None."""
+    return planner if _has_methods(planner, _CAPABILITY_MEMBERS["subgoal_repair"]) else None
+
+
+def planner_capabilities(planner) -> set[str]:
+    """The optional capabilities ``planner`` offers: a subset of
+    ``{"subgoal_repair", "progress", "episode_memory"}`` (for logs, tests and
+    tools; the core itself uses the per-capability checks)."""
+    out = {k for k, names in _CAPABILITY_MEMBERS.items() if _has_methods(planner, names)}
+    if hasattr(planner, "progress"):
+        out.add("progress")
+    return out
