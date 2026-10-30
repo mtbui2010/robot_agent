@@ -225,6 +225,18 @@ def _runs():
     return manager()
 
 
+_OK_STATUS = ('success', 'aborted', 'planned')
+
+
+def _done_ok(done: dict) -> bool:
+    """Did the run end well? The planning loops say so in ``status`` (success / aborted / planned vs
+    failed / refused ...); the open-loop path only in ``success``."""
+    st = done.get('status')
+    if st:
+        return str(st) in _OK_STATUS
+    return bool(done.get('success', True))
+
+
 def _result_or_raise(res) -> dict:
     if not res.ok and res.action == 'refused':
         status = {'not_found': 404, 'not_active': 409}.get(res.code, 403)
@@ -475,9 +487,7 @@ async def agent_ws(websocket: WebSocket):
             if safe_event.get('event') == 'error':
                 outcome.update(ok=False, outcome='error')
             elif safe_event.get('event') == 'done':
-                outcome.update(ok=bool(safe_event.get('success', True)) or
-                               safe_event.get('status') == 'aborted',
-                               outcome=str(safe_event.get('status') or ''))
+                outcome.update(ok=_done_ok(safe_event), outcome=str(safe_event.get('status') or ''))
             await sender.send(safe_event)
 
     except WebSocketDisconnect:

@@ -30,7 +30,8 @@ _RULES: list[tuple[FailureCode, re.Pattern]] = [
     (FailureCode.CANCELLED, re.compile(r"\bcancel+ed\b|aborted by (the )?user|stopped by (the )?user", _I)),
     (FailureCode.ESTOP, re.compile(r"\be-?stop\b|emergency[ _-]?(stop|button)", _I)),
     # place found the hand empty / a held object vanished
-    (FailureCode.DROPPED, re.compile(r"no longer in the hand|\bdropped\b|slipped (out|from)|lost the object", _I)),
+    (FailureCode.DROPPED, re.compile(r"no longer in the (hand|gripper)|\bdropped\b|slipped (out|from)|"
+                                     r"lost the object", _I)),
     # pick closed on nothing; place could not let go ("still in the gripper")
     (FailureCode.GRASP_FAILED, re.compile(r"gripper is empty|could not grasp|failed to grasp|grasp(ing)? fail|"
                                           r"still in the gripper|nothing in the gripper|not in the gripper", _I)),
@@ -44,7 +45,9 @@ _RULES: list[tuple[FailureCode, re.Pattern]] = [
     (FailureCode.UNREACHABLE, re.compile(r"out of reach|beyond the arm reach|\bunreachable\b|too far for my arm|"
                                          r"more than max_shift|m deep from the robot|outside the reach|"
                                          r"stopped [\d.]+ m from|can'?t get to|could not get to|cannot reach", _I)),
-    (FailureCode.BLOCKED, re.compile(r"\bblocked\b|obstacle|in the way|no free spot|collision|occupied", _I)),
+    # ... or a drawer / door that will not move
+    (FailureCode.BLOCKED, re.compile(r"\bblocked\b|obstacle|in the way|no free spot|collision|occupied|"
+                                     r"\bstuck\b|\bjammed\b|will not (open|close|move)|won'?t (open|close|move)", _I)),
     (FailureCode.HW_FAULT, re.compile(r"connection refused|not reachable|\bservo\b|\bmotor\b|hardware fault|"
                                       r"adapterbusy|device (is )?(busy|offline|fault)|no vla-serve server", _I)),
     # looked, not there

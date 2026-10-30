@@ -106,9 +106,9 @@ def test_after_one_question_the_read_back_names_the_doubt(make_assist, env):
     assert d["status"] == "success"                       # the person confirmed the reading
 
 
-def test_goal_check_can_be_turned_off(make_assist, env):
+def test_goal_readback_can_be_turned_off(make_assist, env):
     robot = FakeRobot(env, HOUSE)
     llm = FakeLLM(default=U(("on", "apple", "", "dining table")))
     plan = steps(f"MoveTo {DS}", "Find apple", "Pick apple", f"MoveTo {DT}", f"Place {DT}")
-    d = done(run_task(make_assist(robot, llm, ScriptedPlanner(plan), goal_check=False), TWO))
+    d = done(run_task(make_assist(robot, llm, ScriptedPlanner(plan), goal_readback=False), TWO))
     assert d["status"] == "success" and robot.asked == []

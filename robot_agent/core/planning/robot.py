@@ -162,6 +162,38 @@ class RobotView:
         except Exception as e:
             return {"ok": None, "error": str(e)}
 
+    def reconcile(self, world: Any, node: Any = None, sense=None) -> dict:
+        """Bring the belief ``world`` in line with the robot (run start, after a crash, on resume).
+
+        The adapter's ``reconcile(world, node)`` goes first (it owns its sensors: pose, gripper ...);
+        then the core checks what a declared sensor can check and the adapter left standing: a
+        believed-held object is dropped from the belief when the holding sensor, run through
+        ``sense(skill) -> SkillResult``, reads an empty hand (a sensor that cannot be read changes
+        nothing). Returns ``{belief: [before, after]}`` of what changed."""
+        before = _belief(world)
+        try:
+            fn = getattr(self.adapter, "reconcile", None)
+            if callable(fn):
+                fn(world, node)
+            else:                                # an adapter without one: the core's pose + ENV match
+                from .loop import reconcile_world
+                reconcile_world(node, world)
+        except Exception:
+            pass
+        skill = self.holding_sensor() if sense is not None and getattr(world, "holding", None) else None
+        if skill is not None:
+            try:
+                held = sense(skill).ok
+            except Exception:
+                held = None
+            if held is False:
+                world.holding = None
+                for k in ("holding_since", "holding_pose"):
+                    if hasattr(world, k):
+                        setattr(world, k, None)
+        after = _belief(world)
+        return {k: [before[k], after[k]] for k in before if before[k] != after[k]}
+
     @property
     def vlm_hook(self):
         nm = getattr(self.adapter, "namemap", None)
@@ -205,6 +237,13 @@ class RobotView:
 
     def __repr__(self) -> str:
         return f"RobotView({self.adapter!r})"
+
+
+def _belief(world: Any) -> dict:
+    """The belief keys reconcile may change, comparable before / after."""
+    g = lambda k: getattr(world, k, None)                              # noqa: E731
+    return {"arrived": g("arrived"), "holding": g("holding"), "found": g("found"),
+            "opened": sorted(g("opened") or ())}
 
 
 def run_skill(sr, skill: str, params: dict, node: Any = None, log_fn=None, strict: bool = True,

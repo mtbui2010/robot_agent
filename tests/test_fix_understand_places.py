@@ -23,7 +23,7 @@ def test_shelf_in_the_restroom_is_not_asked_again(make_assist, env):
     task = "Put the mug on the shelf in the restroom and the orange in the kitchen drawer."
     llm = FakeLLM(default=U(("on", "mug", "", "shelf in the restroom"), ("in", "orange", "", "kitchen drawer")))
     loop = make_assist(robot, llm, ScriptedPlanner([]))
-    loop.cfg["goal_check"] = False
+    loop.cfg["goal_readback"] = False
     evs = run_task(loop, task, plan_only=True)
     und = next(e for e in evs if e["event"] == "understand")
     assert und["question"] is None and [g["to"] for g in und["goals"]] == [SR, DR] and robot.asked == []

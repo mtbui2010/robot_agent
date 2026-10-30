@@ -27,6 +27,7 @@ active run: a new run starts with its own, clear flag.
 import contextlib
 import os
 import threading
+import time
 
 _CANCEL = threading.Event()
 _LOCK = threading.Lock()
@@ -49,6 +50,9 @@ def _manager():
         from ..observe.record import on_run_start, on_run_finish
         mgr.on_start.append(on_run_start)
         mgr.on_finish.append(on_run_finish)
+        # a resume (pause ended / suspended task taken back): the executive reconciles at its next
+        # pause_point, in its own thread
+        mgr.on_resume.append(_on_run_resume)
         mgr._run_control_hooked = True
     return mgr
 
@@ -208,6 +212,43 @@ def wait_if_paused(timeout: float | None = None) -> bool:
     if run is None:
         return not _CANCEL.is_set()
     return run.wait_if_paused(timeout)
+
+
+def _on_run_resume(run) -> None:
+    """RunManager ``on_resume`` hook: count the resume; :func:`pause_point` acts on it."""
+    run.resumes = getattr(run, 'resumes', 0) + 1
+
+
+def pause_point(on_resume=None) -> bool:
+    """:func:`wait_if_paused` plus the resume hook: after the run carried on from a hold (a pause ended,
+    the RunManager's ``on_resume`` fired), ``on_resume(seconds_held)`` runs here, in the executive
+    thread, before the next step (the loops reconcile their belief there: the world may have changed
+    meanwhile). Each resume triggers it once, whether the executive or the hook sees it first; never
+    after a cancel."""
+    run = current_run()
+    was_paused = run is not None and run.paused
+    t0 = time.time()
+    ok = wait_if_paused()
+    if not ok or run is None:
+        return ok
+    seen, resumes = getattr(run, '_resumes_seen', 0), getattr(run, 'resumes', 0)
+    if was_paused or resumes > seen:
+        # the hook may not have run yet when this thread woke up: count that resume as seen already
+        run._resumes_seen = max(resumes, seen + 1)
+        if on_resume is not None:
+            try:
+                on_resume(time.time() - t0)
+            except Exception:
+                pass
+    return ok
+
+
+def mark_resumed() -> None:
+    """The executive reconciled after a resume itself (a suspended task taken back): the pending
+    ``on_resume`` count needs no :func:`pause_point` reconcile."""
+    run = current_run()
+    if run is not None:
+        run._resumes_seen = getattr(run, 'resumes', 0)
 
 
 def check_cancel() -> None:

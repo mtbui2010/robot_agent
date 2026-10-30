@@ -73,6 +73,7 @@ class TaskRecord:
     status: str = 'planning'                # planning|running|success|failed|aborted
     started_at: float = 0.0
     ended_at: Optional[float] = None
+    failure: dict = field(default_factory=dict)          # a failed run's deciding {code, device, evidence}
 
 
 # --------------------------------------------------------------------------- #

@@ -167,6 +167,16 @@ def reconcile_world(node, world, threshold=0.8):
     return world
 
 
+def _manager_run_id() -> Optional[str]:
+    """The run_id of the RunManager run the calling thread acts for, or None."""
+    try:
+        from ..run_control import current_run
+        run = current_run()
+        return run.run_id if run is not None and run.active else None
+    except Exception:
+        return None
+
+
 # step outcomes of the phase methods (generators return one of these)
 _NEXT, _FAIL, _STOP, _DONE = "next", "fail", "stop", "done"
 
@@ -183,7 +193,10 @@ class RunContext:
         self.node = getattr(loop.dm, "_ros_node", None)
         self.muted = False
         now = time.time()
-        self.run_id = time.strftime("%Y%m%d-%H%M%S", time.localtime(now)) + f"-{int(now * 1000) % 1000:03d}"
+        # one id per run: the RunManager run this executive acts for (events, RunLogger file and RunRecord
+        # agree, GET /runs/<id> finds it); a run started outside the RunManager gets a time-based one
+        self.run_id = _manager_run_id() or (time.strftime("%Y%m%d-%H%M%S", time.localtime(now))
+                                            + f"-{int(now * 1000) % 1000:03d}")
         self.run = new_task_record(self.run_id, task, lang=lang, planner=planner_name, started_at=now)
         self.logger = RunLogger(self.run, loop.cfg["log_dir"] / f"{self.run_id}.jsonl")
         self.planner = None
@@ -192,6 +205,24 @@ class RunContext:
         self.completed: list = []
         self.i = 0
         self.replans = 0
+        # the failure that decided the run (FailureCode, device, evidence): on the `done` event
+        self.failure: dict = {}
+
+    def failed_with(self, code, device: Optional[str] = None, evidence=None, step: Optional[dict] = None) -> None:
+        """Remember the deciding failure (the last one wins: it is the one the run ends on)."""
+        c = getattr(code, "value", code)
+        self.failure = {k: v for k, v in (("code", c), ("device", device), ("evidence", evidence),
+                                          ("failed_step", step)) if v not in (None, "", [], {})}
+        self.run.failure = dict(self.failure)
+
+    def failure_fields(self) -> dict:
+        """The `done` fields of a failed run: code / device / evidence and a msg saying why."""
+        f = dict(self.failure)
+        st = f.get("failed_step") or {}
+        if f.get("code"):
+            f.setdefault("msg", f"{st.get('action', '')} {st.get('object', '')} failed ({f['code']}): "
+                                f"{f.get('evidence') or ''}".strip())
+        return f
 
     def ev(self, event: str, say: Optional[str] = None, **fields) -> dict:
         """An event to stream, logged to the run's JSONL."""
@@ -411,6 +442,33 @@ class ClosedLoop:
         except Exception:
             pass
 
+    def _reconcile(self, r: "RunContext", when: str) -> Optional[dict]:
+        """The belief brought in line with the robot (``RobotView.reconcile``: the adapter's reconcile,
+        then the declared sensors through the skill registry). The ``reconcile`` event when it changed."""
+        node = r.node
+        changed = r.robot.reconcile(r.world, node,
+                                    sense=lambda skill: run_skill(self.sr, skill, {}, node, raise_errors=True))
+        if not changed:
+            return None
+        try:
+            current().save_world()
+        except Exception:
+            pass
+        return r.ev("reconcile", when=when, changed=changed, world=r.world.to_dict())
+
+    def _pause_point(self, r: "RunContext"):
+        """Hold while the run is paused; after a real pause the belief is reconciled (things may have
+        moved meanwhile). Yields the ``reconcile`` event; returns the seconds paused (0: no pause)."""
+        from ..run_control import pause_point
+        paused: list = []
+        pause_point(on_resume=paused.append)
+        if not paused:
+            return 0.0
+        fixed = self._reconcile(r, "resume")
+        if fixed is not None:
+            yield fixed
+        return paused[0]
+
     @staticmethod
     def _crashed(r: "RunContext", e: Exception) -> dict:
         r.run.status = "aborted"
@@ -452,11 +510,13 @@ class ClosedLoop:
         r = self._open_run(task, lang, plan_only, self.cfg["planner"])
         r.mapper = ActionMapper(r.robot)
         r.verifier = self._verifier(r.node)
-        reconcile_world(r.node, r.world)
+        fixed = self._reconcile(r, "start")
         self._mute(r)
         try:
             yield r.ev("task_start", say=r.announcer.announce("task_start"),
                        task=task, run_id=r.run_id, world=r.world.to_dict())
+            if fixed is not None:
+                yield fixed
             if (yield from self._cl_plan(r)):
                 return
             if (yield from self._cl_execute(r)):
@@ -515,9 +575,10 @@ class ClosedLoop:
         """The planner (its LLM) raised: `done failed` with a FailureCode and a spoken reason, not an `error`."""
         from .understand import LLMUnavailable
         u = LLMUnavailable(e, "plan")
+        r.failed_with(u.code, "planner", {"call": "generate_plan", "error": str(e)[:300]})
         r.run.status = "failed"
         r.run.ended_at = time.time()
-        return r.ev("done", status="failed", run_id=r.run_id, code=u.code.value, msg=u.message("planner"),
+        return r.ev("done", status="failed", run_id=r.run_id, **dict(r.failure_fields(), msg=u.message("planner")),
                     say=r.announcer.announce("llm_down" if u.unreachable else "done_fail"), world=r.world.to_dict())
 
     def _aborted(self, r: "RunContext", rec: Optional[StepRecord] = None) -> dict:
@@ -533,9 +594,9 @@ class ClosedLoop:
 
     def _cl_execute(self, r: "RunContext"):
         """Run the plan step by step. True when the run ended (cancelled)."""
-        from ..run_control import cancel_requested, wait_if_paused
+        from ..run_control import cancel_requested
         while r.i < len(r.steps):
-            wait_if_paused()         # a paused run holds here, between two steps
+            yield from self._pause_point(r)     # a paused run holds here, between two steps
             if cancel_requested():
                 yield self._aborted(r)
                 return True
@@ -648,6 +709,7 @@ class ClosedLoop:
                    say=r.announcer.announce("step_fail", **self._say(step, action, obj), reason=reason),
                    world=r.world.to_dict())
         code = r.robot.failure_code(res, reason)
+        r.failed_with(code, res.device or rec.skill, reason, {"action": action, "object": obj})
         if r.robot.stops_now(code):
             # e-stop / cancelled / a skill bug: a replan cannot help (recovery policy)
             yield r.ev("recover", at_index=r.i, kind="stop", code=code.value,
@@ -672,7 +734,7 @@ class ClosedLoop:
             self._record_episode(r.planner, r.task, r.completed)
         kind = "done_success" if r.run.status == "success" else "done_fail"
         yield r.ev("done", status=r.run.status, run_id=r.run_id, say=r.announcer.announce(kind),
-                   world=r.world.to_dict())
+                   world=r.world.to_dict(), **(r.failure_fields() if r.run.status == "failed" else {}))
 
     @staticmethod
     def _record_episode(planner, task: str, completed: list) -> None:

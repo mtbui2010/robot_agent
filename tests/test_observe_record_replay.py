@@ -111,7 +111,10 @@ def test_record_has_every_part_of_the_run(make_assist, env, data):
     assert m["llm_calls"] == 2 and m["planner_calls"] == 2 and m["replans"] == 1
     assert m["failure_codes"] == {"absent": 1}
     assert m["verified_success"] is True
-    assert m["task_run_id"] and m["task_run_id"] != run_id      # the loop's own task_runs id
+    # one id per run (D26): the loop takes the RunManager's run_id, so there is no second task_runs id
+    assert m["task_run_id"] is None
+    assert {e.get("run_id") for e in evs} == {run_id}
+    assert m["failure_code"] is None
 
 
 def test_replay_plan_is_identical(make_assist, env, data):

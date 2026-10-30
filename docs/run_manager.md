@@ -33,6 +33,10 @@ created and after it finished; `run_control.manager()` hooks the RunRecord in th
 The executive calls these between steps (not inside a skill):
 
 - `run_control.wait_if_paused()` blocks while the run is paused. A cancel always wakes it.
+- `run_control.pause_point(on_resume)` is `wait_if_paused()` plus a resume hook: after a real pause
+  (not a cancel) `on_resume(seconds_paused)` runs in the executive thread. The planning loops use it to
+  reconcile the belief (`RobotView.reconcile`, a `reconcile` event when it changed); AssistLoop also
+  looks again before a Pick that would act on a Find made before the pause.
 - `run_control.cancel_requested()` / `check_cancel()` (the second raises `RunCancelled`).
 
 `wait_if_paused()` was added before the step-level cancel checks in `unified_agent.run` / `run_direct`,

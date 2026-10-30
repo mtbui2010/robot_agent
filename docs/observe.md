@@ -47,8 +47,10 @@ skip these paths (a fake skill registry, a scripted LLM, a scripted planner) are
 Recording is best-effort and never raises into a run. `ROBOT_AGENT_RECORD=0` turns it off. If there is
 no data dir (no `AgentState`, as in the API unit tests), nothing is recorded.
 
-Two ids remain. The planning loops still stamp their own time-based `run_id` (the `task_runs/` file
-name) on `task_start` / `done`. The metrics line gives it as `task_run_id`, so the two can be joined.
+One id per run: a planning loop started under a RunManager run takes that run's `run_id` (events,
+the `task_runs/<run_id>.jsonl` file and the RunRecord agree). Only a loop run outside the RunManager
+(CLI, tests) stamps its own time-based id; the metrics line then gives it as `task_run_id` (an alias,
+None when the ids are the same).
 
 ## Metrics
 
@@ -56,7 +58,8 @@ When a run ends, one line is appended to `<data_dir('metrics')>` (`run_records/<
 
 `run_id, task_run_id, robot_id, user_id, goal, loop, started, duration_s, outcome, status,
 llm_calls, llm_errors, llm_latency_ms, planner_calls, skill_calls, replans, failure_codes
-({code: n} over top-level skill calls), success, verified_success`
+({code: n} over top-level skill calls), failure_code, failure_device (the deciding failure of a failed
+run, from its `done` event), success, verified_success`
 
 `verified_success` means the run succeeded and, for every step that was verified, the last
 `step_verify` passed. An open-loop or direct run never verifies its steps, so it can have

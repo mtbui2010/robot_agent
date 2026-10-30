@@ -202,10 +202,14 @@ class ObsPlanner(ScriptedPlanner):
 def test_only_an_absence_marks_the_place_searched(make_assist, env, msg, searched):
     robot = FakeRobot(env, HOUSE, faults=[{"skill": "find", "kind": "fail", "nth": 1, "msg": msg}])
     planner = ObsPlanner(BASIC, replans=[BASIC])
-    evs = run_task(make_assist(robot, FakeLLM(APPLE), planner), TASK)
+    evs = run_task(make_assist(robot, FakeLLM(APPLE), planner, health_wait_s=0), TASK)
     assert done(evs)["status"] == "success"
-    obs = next(c[1] for c in planner.calls if c[0] == "obs")
-    assert ("Already looked (object not there): " + DS in obs) is searched
+    obs = [c[1] for c in planner.calls if c[0] == "obs"]
+    if searched:
+        assert "Already looked (object not there): " + DS in obs[0]
+    else:
+        # could not look: the policy (WAIT_HEALTH) looks again in place, no replan, nothing searched
+        assert obs == [] and any(e.get("kind") == "wait_health" for e in evs)
 
 
 def test_capabilities_reach_the_planner(make_assist, env, monkeypatch):
