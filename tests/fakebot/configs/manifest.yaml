@@ -14,6 +14,7 @@ capabilities:
   drawer: true
   voice: true                 # reply / ask / announce (TTS + STT)
   find_reaches: false         # find only looks: a found drawer still needs a MoveTo before Open
+  vlm_verify: false           # as KAAIR: the vlm verify specs run only when turned on (docs/verify.md)
   # robot_agent/skill_configs.py STANDING_OBJ_NAMES / LYING_OBJ_NAMES:
   # detection names whose grasp approach is upright / lying
   standing_objects: [cup, can, bottle]

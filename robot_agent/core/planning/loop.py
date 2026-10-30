@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Iterator, Optional
 
 from robot_agent.observe.paths import data_dir
-from robot_agent.contract import classify_legacy_failure
+from robot_agent.contract import FailureCode, classify_legacy_failure
 from robot_agent.state import current, host_id
 from . import episode_memory, robot_prompt
 from .announcer import Announcer
@@ -41,6 +41,7 @@ from .records import RunLogger, StepRecord, VerifyResult, new_task_record
 from .registry import get_planner
 from .robot import RobotView, current_robot, run_skill
 from .verify import StepVerifier, verdict
+from .verify_vlm import VlmCheck, vlm_enabled
 
 
 def _vr_list(results: list[VerifyResult]) -> list[dict]:
@@ -312,6 +313,11 @@ class ClosedLoop:
                 "speak_backend", env("ROBOT_AGENT_VOICE_BACKEND", "0") != "0"
             ),
             "mute_skill_tts": o.get("mute_skill_tts", True),
+            # the manifest's vlm VerifySpecs (verify_vlm): '1' / '0' forces them on / off; unset =
+            # the manifest's capabilities.vlm_verify (default on when a skill declares one)
+            "vlm_verify": o.get("vlm_verify", env("ROBOT_AGENT_VLM_VERIFY")),
+            # sensor_health: a stale camera before a Find / a stale pose after a MoveTo (manifest limits)
+            "sensor_health": o.get("sensor_health", env("ROBOT_AGENT_SENSOR_HEALTH", "1") == "1"),
             "max_replans": int(o.get("max_replans", env("ROBOT_AGENT_MAX_REPLANS", "3"))),
             "host": self._llm_cfg.get("url") or self._llm_cfg.get("host"),
             "model": self._llm_cfg.get("model"),
@@ -430,9 +436,26 @@ class ClosedLoop:
             l = ((e or {}).get(key) or {}).get("loc") or {}
             return (float(l["x"]), float(l["y"])) if "x" in l and "y" in l else None
         robot = self.robot
+        vlm = VlmCheck(robot, vlm_enabled(self.cfg.get("vlm_verify"), robot.capabilities()),
+                       observe=self._observe_object, min_conf=float(robot.geometry.extra.get("vlm_min_conf", 0) or 0))
         return StepVerifier(self.cfg["vlm_enabled"], robot.vlm_actions, robot.vlm_hook, robot=robot,
                             sensor=lambda skill: run_skill(self.sr, skill, {}, node, raise_errors=True),
-                            locate=locate)
+                            locate=locate, vlm_check=vlm)
+
+    def _observe_object(self, obj: str, node=None):
+        """The VLM fallback's look: the robot's Find of ``obj`` here. True seen, False not seen,
+        None when it could not look (no Find skill, no camera, a skill error)."""
+        try:
+            mapped = self.robot.bind({"action": "Find", "object": obj}, None)
+        except Exception:
+            return None
+        if not mapped:
+            return None
+        res = run_skill(self.sr, mapped[0], mapped[1], node)
+        if res.ok:
+            return True
+        code = self.robot.failure_code(res, res.msg)
+        return False if code in (FailureCode.ABSENT, FailureCode.UNKNOWN) else None
 
     def _announcer(self, lang: str) -> Announcer:
         return Announcer(lang=lang, speak_backend=self.cfg["speak_backend"], i18n=self.robot.i18n,

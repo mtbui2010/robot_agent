@@ -31,8 +31,8 @@ Full rule text and reasons: [docs/rules.md](docs/rules.md). Docs index: [docs/RE
 - [docs/dialog.md](docs/dialog.md): dialog, yes/no answers, typed refusals, understand sampling
 - [docs/planners.md](docs/planners.md): planner interface, plug-ins by module:Class / entry point
 - [docs/memory.md](docs/memory.md): planner memory (seed pool, recording, cleaning)
+- [docs/verify.md](docs/verify.md): verification layers, VLM verify, sensor health, LLM-call budget
+- [docs/search.md](docs/search.md): object search with a belief
 - [docs/observe.md](docs/observe.md): RunRecord, metrics, replay, event schema
 - [docs/action_model_divergence.md](docs/action_model_divergence.md): the one action model
-- [docs/CLOSED_LOOP_ARCHITECTURE.md](docs/CLOSED_LOOP_ARCHITECTURE.md): closed-loop planning
-- [docs/ACTION_MAPPER_SPEC.md](docs/ACTION_MAPPER_SPEC.md): plan step -> skill call
-- [docs/TRACKING_VERIFY_VOICE.md](docs/TRACKING_VERIFY_VOICE.md): records, verification, announcements
+- Planning-layer specs: [closed loop](docs/CLOSED_LOOP_ARCHITECTURE.md), [action mapper](docs/ACTION_MAPPER_SPEC.md), [records / verify / voice](docs/TRACKING_VERIFY_VOICE.md)

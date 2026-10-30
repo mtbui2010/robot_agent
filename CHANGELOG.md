@@ -10,16 +10,18 @@ manifest format, the event schema). See `docs/contract.md`.
   `description` (string, no check_manifest warning): the robot's / skill's text in the planner
   prompts (core/planning/robot_prompt.py, docs/planner_guide.md). Old manifests load unchanged.
 
-### Planner prompts (docs/planner_guide.md)
-- SAGE (`grace` / `sage`) gets the robot's plan actions and description from the manifest
-  (embodiplan >= 0.2.4 `SAGEPlanner(actions, robot_description)`); `ROBOT_AGENT_SAGE_ROBOT_PROMPT=0`
-  restores embodiplan's household prompts. Plug-in planners get `robot_description` too.
-- Planner Guide placeholders `{ROBOT}`, `{ACTIONS}`, `{EXAMPLES}` (seed pool + verified live memory,
-  top `ROBOT_AGENT_GUIDE_EXAMPLES` (3), leave-one-out with `ROBOT_AGENT_GUIDE_LOO=1`); a guide
-  without them is sent unchanged. New seed versions (`guide_v2`) are added once, inactive, to an
-  existing guides.json (`seeded` list).
-- `GET /guides?planner=` adds `used_by`, `active_planner`, `active_planner_uses_guide` and per-version
-  `placeholders`; `POST /guides/preview` renders a guide for a command.
+- `FailureCode.BUDGET_EXCEEDED` (`budget_exceeded`): the run used its LLM-call budget (recovery STOP,
+  not retried). Appended after `unknown`.
+- Manifest `verify: [{kind: vlm, prompt}]` is now run (`core/planning/verify_vlm.py`) through the
+  adapter's optional `vlm_ask(prompt, step=, node=)`; `capabilities.vlm_verify: false` keeps it off
+  (`ROBOT_AGENT_VLM_VERIFY` / the `vlm_verify` option win). `NamemapAdapter.vlm_ask` passes through to
+  the namemap's.
+- `RobotAdapter.health()` keys the core reads: `frame_age_s`, `fps`, `depth`, `pose_age_s`, `ok`;
+  limits in manifest `geometry`: `frame_max_age_s`, `min_fps`, `need_depth`, `pose_max_age_s`,
+  `vlm_min_conf` (`core/planning/sensor_health.py`, `ROBOT_AGENT_SENSOR_HEALTH`). docs/verify.md.
+- `ROBOT_AGENT_LLM_BUDGET` default 20 (was 40); plan edits and the gate's refinement count too
+  (`subgoal_repair.repair_plan(..., budget=)`); the edit rounds stop when the findings do not decrease. i18n key `llm_budget`.
+- `connect.ros.node.NodeAgent.rev_time` / `rev_period`: receive time and smoothed gap of a subscription.
 - Manifest: optional `planner:` section, `planner: {seed_memory: <JSONL, relative to the
   manifest>}` (`Manifest.planner`, `Manifest.seed_memory`, `Manifest.planner_path(key)`).
   Absent = no seed pool; old manifests load unchanged. `check_manifest` errors when the seed
@@ -30,6 +32,17 @@ manifest format, the event schema). See `docs/contract.md`.
 - `NamemapAdapter.to_loc` / `to_obj`: the robot's names, passed through from the namemap.
 - Adapter extras read by the core (optional): `is_openable(key, entry)`, `quiet_skills`,
   `i18n.phrases` keys `verb.<Action>`, `robot_description`, `verify_failed.<Action>`.
+
+### Planner prompts (docs/planner_guide.md)
+- SAGE (`grace` / `sage`) gets the robot's plan actions and description from the manifest
+  (embodiplan >= 0.2.4 `SAGEPlanner(actions, robot_description)`); `ROBOT_AGENT_SAGE_ROBOT_PROMPT=0`
+  restores embodiplan's household prompts. Plug-in planners get `robot_description` too.
+- Planner Guide placeholders `{ROBOT}`, `{ACTIONS}`, `{EXAMPLES}` (seed pool + verified live memory,
+  top `ROBOT_AGENT_GUIDE_EXAMPLES` (3), leave-one-out with `ROBOT_AGENT_GUIDE_LOO=1`); a guide
+  without them is sent unchanged. New seed versions (`guide_v2`) are added once, inactive, to an
+  existing guides.json (`seeded` list).
+- `GET /guides?planner=` adds `used_by`, `active_planner`, `active_planner_uses_guide` and per-version
+  `placeholders`; `POST /guides/preview` renders a guide for a command.
 
 ### Interaction (run manager, dialog)
 - MODIFY / ADD / DROP / NEW said during a run are applied by AssistLoop at the next step boundary

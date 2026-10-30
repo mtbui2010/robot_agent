@@ -28,6 +28,7 @@ class FailureCode(str, Enum):
     CANCELLED = "cancelled"                             # the user stopped it
     SOFTWARE = "software"                               # a bug in the skill: retrying cannot help
     UNKNOWN = "unknown"                                 # legacy result with no usable reason
+    BUDGET_EXCEEDED = "budget_exceeded"                 # the run used its LLM-call budget: not retried
 
     @classmethod
     def parse(cls, value) -> "FailureCode":
