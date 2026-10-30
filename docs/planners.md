@@ -77,7 +77,9 @@ Config: `grace` and `llm_direct` get their config as before. A plug-in's constru
 set that it accepts (all of them when it takes `**kwargs`; `None` values are left out):
 `host`, `model` (the LLM config), `live_path` (a per-machine data path for memory), `llm_cfg`,
 `robot_pkg`, `capabilities` (the manifest capabilities, with the core's defaults), `actions` (the
-robot's plan actions).
+robot's plan actions), `robot_description` (the robot's body in one sentence, from the manifest;
+see [planner_guide.md](planner_guide.md)). A planner that plans with the dashboard's Planner Guide
+says so with a class attribute `uses_guide = True` (`GET /guides` then reports it as a guide user).
 
 ## Writing a planner in its own repo
 

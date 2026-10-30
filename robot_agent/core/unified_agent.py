@@ -392,7 +392,9 @@ class UnifiedAgent:
                 # Active versioned guide (UI-editable), else the robot's guide
                 # modules. `format` None → freeform; a JSON schema → structured.
                 from .guide_manager import resolve_guide
-                _guide, _fmt = resolve_guide(_pkg)
+                from .guide_manager import guide_command
+                with guide_command(prompt_en):      # {EXAMPLES}: the examples similar to this command
+                    _guide, _fmt = resolve_guide(_pkg)
                 try:
                     if _fmt is not None:
                         plan_raw = llm.chat(prompt=prompt_en, guide=_guide, format=_fmt)

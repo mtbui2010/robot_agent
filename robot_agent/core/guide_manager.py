@@ -21,7 +21,10 @@ This module is robot-agnostic: the robot package is only referenced by name
 (``importlib``), exactly like the rest of the planning layer.
 """
 
+import contextlib
+import contextvars
 import importlib
+import os
 import threading
 from pathlib import Path
 
@@ -30,7 +33,11 @@ from .shared_json import SharedJson, merge_map
 # Guide modules to seed from on first run (best-effort; missing ones are skipped).
 # The first one that imports cleanly becomes the initial active version — keep
 # ``guide_struct`` first so the seeded default matches the legacy first-choice.
-_SEED_MODULES = ['guide_struct', 'guide', 'guide_short', 'guide_struct_kr']
+_SEED_MODULES = ['guide_struct', 'guide', 'guide_short', 'guide_struct_kr', 'guide_v2']
+# What a store written before ``seeded`` was tracked had been seeded from: those are not
+# re-added when the operator deleted them. A module added to _SEED_MODULES later (guide_v2)
+# is added once to an existing store, never active, and not again after a delete.
+_LEGACY_SEEDS = ('guide_struct', 'guide', 'guide_short', 'guide_struct_kr')
 
 
 def _merge_guides(base, mine, theirs) -> dict:
@@ -41,7 +48,11 @@ def _merge_guides(base, mine, theirs) -> dict:
     active = mine.get('active') if mine.get('active') != base.get('active') else theirs.get('active')
     if active not in versions:
         active = next(iter(versions), None)
-    return {'active': active, 'versions': versions}
+    out = {'active': active, 'versions': versions}
+    seeded = set(mine.get('seeded') or ()) | set(theirs.get('seeded') or ())
+    if seeded:
+        out['seeded'] = sorted(seeded)
+    return out
 
 
 class GuideManager:
@@ -51,6 +62,8 @@ class GuideManager:
         self._file = self.data_dir / 'guides.json'
         # versions: {name: {'guide': str, 'format': dict | None}}
         self._data: dict = {'active': None, 'versions': {}}
+        # seed module names already offered once (guides.json 'seeded')
+        self._seeded: set = set()
         # Saves merge into the shared file; reads pick up other machines' saves.
         self._store = SharedJson(self._file, merge=_merge_guides, indent=1, ensure_ascii=False)
         self._lock = threading.RLock()
@@ -65,6 +78,8 @@ class GuideManager:
         d = self._store.read()
         if self._valid(d):
             self._data = {'active': d.get('active'), 'versions': d['versions']}
+            self._seeded = set(d['seeded']) if isinstance(d.get('seeded'), list) else set(_LEGACY_SEEDS)
+            self._add_new_seeds()
             return
         if d is not None:
             print('[GuideManager] could not read guides.json; reseeding')
@@ -73,9 +88,10 @@ class GuideManager:
     def _save(self) -> None:
         with self._lock:
             try:
-                merged = self._store.save(self._data)
+                merged = self._store.save({**self._data, 'seeded': sorted(self._seeded)})
                 if self._valid(merged):
                     self._data = {'active': merged.get('active'), 'versions': merged['versions']}
+                    self._seeded |= set(merged.get('seeded') or ())
             except Exception as e:
                 print(f'[GuideManager] could not persist guides: {e}')
 
@@ -94,24 +110,45 @@ class GuideManager:
             self._data = {'active': d.get('active'), 'versions': d['versions']}
             return True
 
+    def _seed_version(self, name: str):
+        """``{'guide', 'format'}`` of the robot's guide module ``name``, None when absent."""
+        try:
+            m = importlib.import_module(f'{self.robot_pkg}.configs.{name}')
+        except Exception:
+            return None
+        guide = getattr(m, 'GUIDE', None)
+        if not isinstance(guide, str) or not guide.strip():
+            return None
+        fmt = getattr(m, 'FORMAT', None)
+        if fmt is not None and not isinstance(fmt, (dict, list)):
+            fmt = None  # only keep JSON-serializable formats
+        return {'guide': guide, 'format': fmt}
+
     def _seed(self) -> None:
         versions: dict = {}
         active = None
         for name in _SEED_MODULES:
-            try:
-                m = importlib.import_module(f'{self.robot_pkg}.configs.{name}')
-            except Exception:
+            v = self._seed_version(name)
+            if v is None:
                 continue
-            guide = getattr(m, 'GUIDE', None)
-            if not isinstance(guide, str) or not guide.strip():
-                continue
-            fmt = getattr(m, 'FORMAT', None)
-            if fmt is not None and not isinstance(fmt, (dict, list)):
-                fmt = None  # only keep JSON-serializable formats
-            versions[name] = {'guide': guide, 'format': fmt}
+            versions[name] = v
             if active is None:
                 active = name
         self._data = {'active': active, 'versions': versions}
+        self._seeded = set(_SEED_MODULES)
+        self._save()
+
+    def _add_new_seeds(self) -> None:
+        """Offer the seed modules this store has not seen yet (e.g. guide_v2) as new,
+        inactive versions; an existing version of that name is never overwritten."""
+        new = [n for n in _SEED_MODULES if n not in self._seeded]
+        if not new:
+            return
+        for name in new:
+            v = self._seed_version(name)
+            if v is not None and name not in self._data['versions']:
+                self._data['versions'][name] = v
+        self._seeded |= set(new)
         self._save()
 
     # ── CRUD (used by api/guides.py) ─────────────────────────────────────
@@ -220,14 +257,159 @@ def _fill_locations(guide: str) -> str:
         return guide
 
 
-def resolve_guide(robot_pkg: str):
+# ---------------------------------------------------------------------------
+# Placeholders: the robot, its actions and similar examples (docs/planner_guide.md)
+# ---------------------------------------------------------------------------
+
+PLACEHOLDERS = ('{ROBOT}', '{ACTIONS}', '{EXAMPLES}')
+
+# the planners that plan with the guide (the direct path and the llm_direct backend);
+# SAGE (grace / sage) builds its own prompts from the manifest
+GUIDE_USERS = ('direct', 'llm_direct')
+
+
+def placeholders_in(guide: str) -> list:
+    """The placeholders ``guide`` uses (``[]`` = a legacy guide, sent as written)."""
+    return [p for p in PLACEHOLDERS if p in (guide or '')]
+
+
+def default_planner() -> str:
+    """The planner a request that names none runs: the direct path, unless
+    ``ROBOT_AGENT_CLOSED_LOOP=1`` (then ``ROBOT_AGENT_PLANNER``, default grace)."""
+    if os.environ.get('ROBOT_AGENT_CLOSED_LOOP') == '1':
+        return os.environ.get('ROBOT_AGENT_PLANNER') or 'grace'
+    return 'direct'
+
+
+def planner_uses_guide(planner=None) -> bool:
+    """Does ``planner`` (a /ws/agent planner choice; None = :func:`default_planner`) plan
+    with the guide? direct / llm_direct do; grace does not; sage does only when its
+    generator (``ROBOT_AGENT_SAGE_GENERATOR``) is llm_direct; a plug-in planner when its
+    class says ``uses_guide = True``."""
+    p = (planner or default_planner()).strip()
+    if p in GUIDE_USERS:
+        return True
+    if p == 'sage':
+        return planner_uses_guide(os.environ.get('ROBOT_AGENT_SAGE_GENERATOR') or 'grace')
+    if p == 'grace':
+        return False
+    try:
+        from .planning.registry import resolve_planner
+        factory, _builtin = resolve_planner(p)
+        return bool(getattr(factory, 'uses_guide', False))
+    except Exception:
+        return False
+
+
+def _live_memory_path():
+    """The planner's live memory file (the one ClosedLoop records into), None outside a runtime."""
+    try:
+        from ..observe.paths import data_dir
+        from ..state import current, host_id
+        return str(data_dir('grace_memory', Path(getattr(current(), 'common_dir', '.')), host_id()))
+    except Exception:
+        return None
+
+
+def example_program(view, steps) -> str:
+    """A plan as the guide's ``skill::input`` lines (the robot's skill names; no-ops dropped)."""
+    sm = view.skill_map
+    lines = []
+    for st in steps or []:
+        a, o = st.get('action', ''), st.get('object', '')
+        if a in sm:
+            lines.append(f'{sm[a]}::{o}')
+    return '\n'.join(lines)
+
+
+def format_examples(view, examples) -> str:
+    """``Command: ...`` / ``Program:`` blocks of the retrieved examples."""
+    return '\n\n'.join(f"Command: {ex['task']}\nProgram:\n{example_program(view, ex['steps'])}"
+                       for ex in examples)
+
+
+def guide_examples(view, command: str = '', k: int = None, leave_one_out: bool = None,
+                   pool=None, live_path=None) -> list:
+    """The ``k`` examples most similar to ``command`` from the manifest seed pool and the
+    verified live memory (or from ``pool``, a list of ``{task, steps}``). ``k`` default
+    ``ROBOT_AGENT_GUIDE_EXAMPLES`` (3); leave-one-out default ``ROBOT_AGENT_GUIDE_LOO=1``."""
+    from .planning.backends import examples as ex
+    k = int(os.environ.get('ROBOT_AGENT_GUIDE_EXAMPLES', '3')) if k is None else int(k)
+    loo = os.environ.get('ROBOT_AGENT_GUIDE_LOO') == '1' if leave_one_out is None else bool(leave_one_out)
+    if pool is not None:
+        return ex.rank(command or '', pool, k, loo)
+    live = live_path if live_path is not None else _live_memory_path()
+    return ex.similar_examples(command or '', view.seed_memory(), live, k, loo)
+
+
+def render_guide(guide: str, robot_pkg: str = None, command: str = None, *, view=None, **examples_kw):
+    """``guide`` with ``{ROBOT}`` / ``{ACTIONS}`` / ``{EXAMPLES}`` filled from the robot's
+    manifest (core/planning/robot_prompt.py) and the examples similar to ``command``
+    (:func:`guide_examples`, ``examples_kw`` = its k / leave_one_out / pool / live_path).
+    A guide without placeholders is returned unchanged (byte for byte)."""
+    used = placeholders_in(guide)
+    if not used:
+        return guide
+    from .planning import robot_prompt
+    from .planning.robot import RobotView
+    view = view or RobotView.load(robot_pkg)
+    if '{ROBOT}' in used:
+        guide = guide.replace('{ROBOT}', robot_prompt.describe_robot(view))
+    if '{ACTIONS}' in used:
+        guide = guide.replace('{ACTIONS}', '\n'.join(robot_prompt.action_lines(view, style='skill')))
+    if '{EXAMPLES}' in used:
+        guide = guide.replace('{EXAMPLES}', format_examples(view, guide_examples(view, command or '', **examples_kw)))
+    return guide
+
+
+def preview_guide(guide: str, robot_pkg: str, command: str = '', **examples_kw) -> dict:
+    """What the LLM would receive for ``command``: the guide rendered (placeholders, then
+    the LOCATIONS / PLAN_SKILLS markers, then COMMAND_HERE), with the examples used."""
+    used = placeholders_in(guide)
+    examples = []
+    if '{EXAMPLES}' in used:
+        from .planning.robot import RobotView
+        view = RobotView.load(robot_pkg)
+        examples = guide_examples(view, command or '', **examples_kw)
+        rendered = render_guide(guide, view=view, command=command, pool=examples, k=len(examples))
+    else:
+        rendered = render_guide(guide, robot_pkg, command)
+    rendered = _fill_plan_skills(_fill_locations(rendered))
+    if command:
+        rendered = rendered.replace('COMMAND_HERE', command)
+    return {'rendered': rendered, 'placeholders': used, 'legacy': not used,
+            'examples': [{k: e.get(k) for k in ('task', 'score', 'source')} for e in examples]}
+
+
+_COMMAND: contextvars.ContextVar = contextvars.ContextVar('guide_command', default=None)
+
+
+@contextlib.contextmanager
+def guide_command(command: str):
+    """Within it, :func:`resolve_guide` retrieves the ``{EXAMPLES}`` for ``command``."""
+    token = _COMMAND.set(command)
+    try:
+        yield
+    finally:
+        _COMMAND.reset(token)
+
+
+def resolve_guide(robot_pkg: str, command: str = None):
     """``(guide_text, format)`` to plan with: the active stored version if any,
     else the robot's ``guide_struct`` / ``guide`` module (legacy fallback).
     ``format`` is ``None`` for a freeform guide, a JSON schema dict otherwise.
-    A ``LOCATIONS_HERE`` marker in the text is filled with the ENV locations,
+    ``{ROBOT}`` / ``{ACTIONS}`` / ``{EXAMPLES}`` placeholders are filled from the
+    manifest and the examples similar to ``command`` (default: the one of the enclosing
+    :func:`guide_command`; :func:`render_guide`),
+    a ``LOCATIONS_HERE`` marker with the ENV locations,
     a ``PLAN_SKILLS_HERE`` marker with the plan skills.
     """
     guide, fmt = _resolve_guide(robot_pkg)
+    if placeholders_in(guide):
+        try:
+            guide = render_guide(guide, robot_pkg, command if command is not None else _COMMAND.get())
+        except Exception as e:                  # the guide is still sent, placeholders unfilled
+            print(f'[guides] could not fill the guide placeholders: {e}')
     return _fill_plan_skills(_fill_locations(guide)), fmt
 
 

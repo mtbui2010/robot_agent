@@ -6,6 +6,20 @@ manifest format, the event schema). See `docs/contract.md`.
 ## Unreleased
 
 ### Contract
+- Manifest: optional top-level `description` (`Manifest.description`) and skill-level
+  `description` (string, no check_manifest warning): the robot's / skill's text in the planner
+  prompts (core/planning/robot_prompt.py, docs/planner_guide.md). Old manifests load unchanged.
+
+### Planner prompts (docs/planner_guide.md)
+- SAGE (`grace` / `sage`) gets the robot's plan actions and description from the manifest
+  (embodiplan >= 0.2.4 `SAGEPlanner(actions, robot_description)`); `ROBOT_AGENT_SAGE_ROBOT_PROMPT=0`
+  restores embodiplan's household prompts. Plug-in planners get `robot_description` too.
+- Planner Guide placeholders `{ROBOT}`, `{ACTIONS}`, `{EXAMPLES}` (seed pool + verified live memory,
+  top `ROBOT_AGENT_GUIDE_EXAMPLES` (3), leave-one-out with `ROBOT_AGENT_GUIDE_LOO=1`); a guide
+  without them is sent unchanged. New seed versions (`guide_v2`) are added once, inactive, to an
+  existing guides.json (`seeded` list).
+- `GET /guides?planner=` adds `used_by`, `active_planner`, `active_planner_uses_guide` and per-version
+  `placeholders`; `POST /guides/preview` renders a guide for a command.
 - Manifest: optional `planner:` section, `planner: {seed_memory: <JSONL, relative to the
   manifest>}` (`Manifest.planner`, `Manifest.seed_memory`, `Manifest.planner_path(key)`).
   Absent = no seed pool; old manifests load unchanged. `check_manifest` errors when the seed

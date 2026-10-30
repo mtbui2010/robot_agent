@@ -52,6 +52,11 @@ Lookups: `skill_for("Pick")`, `skill("pick")`, `actions`, `has("base")`,
 Optional planner data: `planner: {seed_memory: ../planner/seed_memory.jsonl}` (paths
 relative to the manifest; `Manifest.seed_memory`). See `memory.md`.
 
+Optional prompt text: a top-level `description:` (one or two sentences about the robot's body;
+`Manifest.description`) and a skill-level `description:` (what the skill does). The planner
+prompts use them instead of the text made from `capabilities` and the action
+([planner_guide.md](planner_guide.md)); absent = generated. `check_manifest` does not warn on them.
+
 `verify` entries, run by the core after a skill **reported success** (never the
 preconditions again; those are the pre-step guard's and the plan gate's):
 
