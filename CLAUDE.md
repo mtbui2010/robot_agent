@@ -34,6 +34,7 @@ Full rule text and reasons: [docs/rules.md](docs/rules.md). Docs index: [docs/RE
 - [docs/planner_guide.md](docs/planner_guide.md): Planner Guide (direct planner only), placeholders, prompts from the manifest
 - [docs/verify.md](docs/verify.md): verification layers, VLM verify, sensor health, LLM-call budget
 - [docs/search.md](docs/search.md): object search with a belief
+- [docs/guard.md](docs/guard.md): precondition layers, reconcile with sensors, provenance
 - [docs/observe.md](docs/observe.md): RunRecord, metrics, replay, event schema
 - [docs/action_model_divergence.md](docs/action_model_divergence.md): the one action model
 - Planning-layer specs: [closed loop](docs/CLOSED_LOOP_ARCHITECTURE.md), [action mapper](docs/ACTION_MAPPER_SPEC.md), [records / verify / voice](docs/TRACKING_VERIFY_VOICE.md)
