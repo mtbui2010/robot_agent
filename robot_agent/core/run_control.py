@@ -168,6 +168,14 @@ def yes_no(text):
     return _yn(text)
 
 
+def ask_yes_no(question: str, ask, again: str, reasks: int = 1):
+    """A yes / no question asked with ``ask`` (question -> heard text); an unclear answer ("yet", noise)
+    is asked again with ``again`` up to ``reasks`` times (``interact.dialog.ask_yes_no``).
+    Returns ``(answer text, Reply, times asked)``."""
+    from ..interact.dialog import ask_yes_no as _ayn
+    return _ayn(ask, question, again, reasks=reasks, stopped=cancel_requested)
+
+
 # ── suspended tasks (a NEW command that goes first) ──────────────────────────
 def suspend_task(task: str, goals: list, achieved: list, belief: dict, reason: str = ''):
     """Push the current run's task on the task stack. None with no run."""

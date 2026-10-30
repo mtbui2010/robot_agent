@@ -3,6 +3,9 @@
 * ``LLMBudget``: a per-run cap on the LLM calls the core makes (understand, its repairs and samples, planner calls).
 * ``ask_json``: one JSON call with a bounded repair retry when the answer is not JSON; a client error (server down,
   timeout) becomes ``LLMUnavailable`` with a FailureCode, so the run can end with a clear message.
+* ``sampling``: the understand call's temperature / seed (default 0 / fixed: the same sentence, the same goals).
+* ``typed_refusal``: a refusal only for a typed reason (capability / safety / the person declined), never for the
+  model's free text alone; a refusal that only a misheard answer could have caused is asked again instead.
 * ``coverage``: a deterministic read-back of the understood goals against the person's words: every place the
   words name (outside conditions, negations and self-corrections) must be used by a goal, every open / close the
   words ask for must have its goal, every object the words name must be moved, and no goal may go to a place the
@@ -16,6 +19,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from typing import Optional
 
 from robot_agent.contract import FailureCode
@@ -93,18 +97,30 @@ def parse_json_object(raw) -> Optional[dict]:
     return None
 
 
+def sampling(temperature, seed=None) -> dict:
+    """The sampling kwargs of a chat call (UND_T0): ``temperature`` (None = the client's default) and a fixed
+    ``seed`` (None / '' / negative = none); the clients pass them on where the server takes them."""
+    out = {}
+    if temperature is not None and str(temperature).strip() != "":
+        out["temperature"] = float(temperature)
+    if seed is not None and str(seed).strip() != "" and int(seed) >= 0:
+        out["seed"] = int(seed)
+    return out
+
+
 def ask_json(llm, prompt: str, schema: dict, budget: Optional[LLMBudget] = None, retries: int = 1,
-             where: str = "understand", call=None, passthrough=None) -> dict:
+             where: str = "understand", call=None, passthrough=None, options: Optional[dict] = None) -> dict:
     """One JSON answer from ``llm.chat``: on a non-JSON answer, up to ``retries`` repair calls (the bad answer
     quoted back). Raises LLMUnavailable (client error), LLMBudgetExceeded, LLMBadOutput (still not JSON).
     ``call(fn, **kw)`` runs each request (e.g. run_control.call_cancellable); an exception ``passthrough(e)``
-    accepts (the run's stop) is raised as is, not as LLMUnavailable."""
-    p, last = prompt, ""
+    accepts (the run's stop) is raised as is, not as LLMUnavailable. ``options``: extra chat kwargs
+    (``sampling()``: temperature / seed)."""
+    p, last, kw = prompt, "", dict(options or {})
     for _k in range(1 + max(0, int(retries))):
         if budget is not None:
             budget.take(what=where)
         try:
-            raw = call(llm.chat, prompt=p, format=schema) if call else llm.chat(prompt=p, format=schema)
+            raw = call(llm.chat, prompt=p, format=schema, **kw) if call else llm.chat(prompt=p, format=schema, **kw)
         except Exception as e:                       # connection refused, read timeout, HTTP 5xx ...
             if passthrough is not None and passthrough(e):
                 raise
@@ -327,3 +343,56 @@ def consensus(samples: list, need: int = 2):
             count[sig] = (n + 1, goals)
     best = max(count.values(), key=lambda x: x[0], default=None)
     return best[1] if best and best[0] >= need else None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# refusals from a typed reason (ASR1)
+# ─────────────────────────────────────────────────────────────────────────────
+CAPABILITY, SAFETY, DECLINED = "capability", "safety", "declined"
+# words that make a request unsafe / beyond a household robot (the understand prompt's "It cannot" list):
+# a refusal the model gives after an answer heard through the microphone needs one of them in the person's words
+_MARK = {
+    SAFETY: re.compile(r"\b(?:knife|knives|blade|scissors|razor|fire|flame|stove|burn|hot|boil|window|throw|"
+                       r"hit|hurt|poison|bleach|medicine|pills?|child|baby|kid|outside)\b|칼|불|창문|던지|가위|독|약|"
+                       r"아이|dao|lửa|cửa sổ|ném|thuốc|trẻ", re.I),
+    CAPABILITY: re.compile(r"\b(?:throw|pour|cook|wash|washer|climb|window|door|tools?|turn on|switch on|lift|"
+                           r"furniture|sofa|bed|leave|outside|clean)\b|던지|붓|요리|씻|세탁|올라|창문|문을|켜|"
+                           r"ném|đổ|nấu|giặt|leo|bật", re.I),
+}
+
+
+@dataclass(frozen=True)
+class Refusal:
+    """Why the robot will not do a request. ``kind``: capability (the manifest has no skill a goal needs,
+    or the request asks for something no household robot does) | safety | declined (the person said no).
+    ``misheard``: the model refused only after an answer heard through the microphone that names nothing
+    unsafe or impossible: not a refusal, the question is asked again."""
+    kind: str
+    msg: str = ""
+    say: str = ""
+    missing: str = ""
+    misheard: bool = False
+
+
+def typed_refusal(status: str, reason: str, missing: Optional[str], words: str,
+                  answer_heard: bool) -> Optional[Refusal]:
+    """The refusal of one understanding, or None. ``status`` / ``reason``: the model's typed status and its
+    sentence; ``missing``: the actions the goals need that the manifest lacks; ``words``: everything the
+    person said; ``answer_heard``: the last thing in play is an answer heard through the robot's I/O (a
+    typed one cannot be misheard). The model's free text never refuses by itself."""
+    if status in ("unsafe", "infeasible"):
+        kind = SAFETY if status == "unsafe" else CAPABILITY
+        if answer_heard and not _MARK[kind].search(words or ""):
+            return Refusal(kind, misheard=True)
+        msg = (reason or "").strip() or "I can't do that."
+        return Refusal(kind, msg=msg, say=f"I can't do that: {msg}")
+    if missing:
+        return Refusal(CAPABILITY, msg=f"this robot has no {missing} skill", missing=missing)
+    return None
+
+
+def misheard_question(dialogue: list) -> tuple:
+    """(dialogue without the misheard answer, the question to ask again)."""
+    if len(dialogue) >= 2 and dialogue[-1][0] == "user" and dialogue[-2][0] == "robot":
+        return dialogue[:-2], f"Sorry, I may have misheard you. {dialogue[-2][1]}"
+    return dialogue, "Sorry, I may have misheard you. Could you say that again?"

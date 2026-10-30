@@ -57,14 +57,15 @@ from . import goals as goal_kinds
 from .robot import run_skill
 from .verify import symbolic_check, verdict
 from .understand import (LLMBadOutput, LLMBudget, LLMBudgetExceeded, LLMUnavailable, ask_json, consensus,
-                         describe, find_issues, issue_question)
+                         describe, find_issues, issue_question, misheard_question, sampling, typed_refusal)
 
 _LOC_ACTIONS = {"MoveTo", "Place", "PutIn", "Open", "Close"}
 # per-run overrides accepted from /ws/agent `options`
 ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify_rounds", "search_max",
                 "pick_retries", "ask_help", "arrive_tol", "find_min_conf", "find_verify", "reach_far", "reach_lateral",
                 "goal_check", "health_wait_s", "understand_retries", "understand_samples", "llm_budget",
-                "goal_readback"}
+                "goal_readback", "understand_temperature", "understand_seed", "understand_sample_temperature",
+                "yes_no_reasks"}
 _USER_WORDS = {"me", "user", "here", "you", "myself", "person"}
 
 
@@ -327,6 +328,15 @@ class AssistLoop(ClosedLoop):
             "understand_samples": int(overrides.get("understand_samples", env("ROBOT_AGENT_UNDERSTAND_SAMPLES", "2"))),
             "llm_budget": int(overrides.get("llm_budget", env("ROBOT_AGENT_LLM_BUDGET", "40"))),
             "goal_readback": overrides.get("goal_readback", env("ROBOT_AGENT_GOAL_READBACK", "1") == "1"),
+            # understand sampling (docs/dialog.md): temperature 0 + a fixed seed, so the same sentence gives the
+            # same goals; the consistency re-samples need some spread (their seeds: seed + 1, seed + 2 ...)
+            "understand_temperature": overrides.get("understand_temperature",
+                                                    env("ROBOT_AGENT_UNDERSTAND_TEMPERATURE", "0")),
+            "understand_seed": overrides.get("understand_seed", env("ROBOT_AGENT_UNDERSTAND_SEED", "0")),
+            "understand_sample_temperature": overrides.get("understand_sample_temperature",
+                                                           env("ROBOT_AGENT_UNDERSTAND_SAMPLE_TEMPERATURE", "0.7")),
+            # an unclear answer to a yes / no question ("yet", noise) is asked again this many times
+            "yes_no_reasks": int(overrides.get("yes_no_reasks", env("ROBOT_AGENT_YES_NO_REASKS", "1"))),
             # done: every on / in goal is looked at (Find at its destination, going back there when the robot
             # is elsewhere); "belief" trusts the belief as before
             "goal_check": overrides.get("goal_check", env("ROBOT_AGENT_GOAL_CHECK", "observe")),
@@ -351,7 +361,13 @@ class AssistLoop(ClosedLoop):
             self._llm_client = init_llm_client(cfg=self._llm_cfg)
         return self._llm_client
 
-    def _understand(self, task, places, memory, world, dialogue, budget=None) -> dict:
+    def _sampling(self, sample: int = 0) -> dict:
+        """The understand call's temperature / seed (0 = the first reading, k = the k-th re-sample)."""
+        c, seed = self.cfg, self.cfg["understand_seed"]
+        seed = int(seed) + sample if str(seed).strip() not in ("", "none", "None") and int(seed) >= 0 else None
+        return sampling(c["understand_sample_temperature"] if sample else c["understand_temperature"], seed)
+
+    def _understand(self, task, places, memory, world, dialogue, budget=None, sample: int = 0) -> dict:
         """The understand call (understand.ask_json: one repair retry on a non-JSON answer). Raises
         LLMUnavailable / LLMBudgetExceeded; a model that still answers no JSON gives no goals (``unparsed``)."""
         prompt = UNDERSTAND_PROMPT.format(
@@ -371,7 +387,7 @@ class AssistLoop(ClosedLoop):
         from ..run_control import call_cancellable, is_cancel
         try:                                     # every call (repairs too) cancellable: a stop does not wait
             d = ask_json(self._llm(), prompt, self._understand_schema(), budget=budget, retries=self.cfg["understand_retries"],
-                         call=call_cancellable, passthrough=is_cancel)
+                         call=call_cancellable, passthrough=is_cancel, options=self._sampling(sample))
         except LLMBadOutput:
             d = {"unparsed": True}
         d.setdefault("status", "clear"); d.setdefault("question", "")
@@ -382,6 +398,7 @@ class AssistLoop(ClosedLoop):
                            else _strip_article(words(g.get("object"))))
             for k in ("from", "to"):
                 g[k] = (g.get(k) or "").strip()
+        d["goals"] = goal_kinds.speaker_slots(d["goals"])     # "me" only as a destination (FROM_ME)
         return d
 
     def _understand_schema(self) -> dict:
@@ -1055,15 +1072,18 @@ class AssistLoop(ClosedLoop):
         if u["status"] == "infeasible" and r.dialogue and r.goals:
             u["status"] = "clear"                # the user already answered: a 7B model called a plain
                                                  # move "infeasible" after "no, the shelf in the restroom"
-        if u["status"] in ("unsafe", "infeasible"):
-            msg = u.get("reason") or "I can't do that."
-            yield self._finish(r, "refused", msg=msg, say=f"I can't do that: {msg}")
-            return _STOP
-        missing = self._cannot_do(r.goals)
-        if missing:
-            # a goal needs an action this robot has no skill for: refuse before planning or moving
-            yield self._finish(r, "refused", say=r.robot.text("cannot_do", "en", missing=missing),
-                               msg=f"this robot has no {missing} skill, needed for: "
+        # a refusal only for a typed reason (understand.typed_refusal): a goal needs an action this robot has
+        # no skill for, or the model's unsafe / infeasible on words that are not a misheard answer
+        heard = bool(r.dialogue) and r.dialogue[-1][0] == "user" and self._answer_source == "robot"
+        ref = typed_refusal(u["status"], u.get("reason"), self._cannot_do(r.goals),
+                            " ".join([r.task, self.original or ""] + [t for w_, t in r.dialogue if w_ == "user"]), heard)
+        if ref is not None and ref.misheard:
+            r.dialogue, q_again = misheard_question(r.dialogue)
+            yield r.ev("understand_check", issues=[f"{ref.kind} refusal after a heard answer"], misheard=True)
+            return (yield from self._ask_clarify(r, q_again))
+        if ref is not None:
+            yield self._finish(r, "refused", refusal=ref.kind, say=ref.say or r.robot.text("cannot_do", "en", missing=ref.missing),
+                               msg=ref.msg if not ref.missing else f"{ref.msg}, needed for: "
                                    + "; ".join(goal_kinds.describe(g) for g in r.goals))
             return _STOP
         r.goals, conflict = goal_kinds.conflicts(r.goals)          # the goal validator
@@ -1134,7 +1154,7 @@ class AssistLoop(ClosedLoop):
         samples = []
         for _k in range(self.cfg["understand_samples"]):
             try:
-                u = self._understand(r.task, r.places, r.memory, r.world, r.dialogue, budget=r.llm_budget)
+                u = self._understand(r.task, r.places, r.memory, r.world, r.dialogue, budget=r.llm_budget, sample=_k + 1)
             except LLMBudgetExceeded:
                 break
             except LLMUnavailable as e:
@@ -1160,12 +1180,10 @@ class AssistLoop(ClosedLoop):
         cq = (f"I am not sure I understood ({'; '.join(unsure)}). " if unsure else "") + \
             f"{self.summary(r.goals)} Is that right?"
         yield r.ev("clarify", question=cq, round=r.confirms, kind="confirm")
-        ans, _n = self._ask_heard(cq, r.node, self._log_fn(-1), r.lang)
-        r.heard += self._answer_source == "robot"
+        ans, ok_, rest = self._ask_yes_no(r, cq)
         stop = self._cancelled(r)
         if stop:
             yield stop; return _STOP, None
-        ok_, rest = self.yes_no(ans)
         if ok_ is True:
             return _DONE, None
         if ok_ is None:
@@ -1178,6 +1196,19 @@ class AssistLoop(ClosedLoop):
         if k and not re.search(r"\b(from|take|pick)\b", rest):
             r.pin_to = k
         return _NEXT, None
+
+    def _ask_yes_no(self, r, q):
+        """A yes / no question (``interact.dialog.ask_yes_no``): an unclear answer ("yet", noise) is asked again
+        (`yes_no_reasks`, the robot's i18n `yes_or_no`); still unclear = a bare "no" (an open question next).
+        Returns (answer, True | False | None, correction text)."""
+        from ..run_control import ask_yes_no
+
+        def ask(question):
+            a, _n = self._ask_heard(question, r.node, self._log_fn(-1), r.lang)
+            r.heard += self._answer_source == "robot"
+            return a
+        ans, rep, _n = ask_yes_no(q, ask, r.robot.text("yes_or_no", r.lang), reasks=self.cfg["yes_no_reasks"])
+        return ans, rep.ok, ("" if rep.kind == "unclear" else rep.rest)
 
     def _ask_clarify(self, r, q):
         """Ask the user `q` (bounded by clarify_rounds): _NEXT with the answer in the dialogue, or _STOP."""
