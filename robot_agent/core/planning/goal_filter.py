@@ -63,7 +63,9 @@ def stated_sources(goals: list, text: str, places) -> tuple:
     """(goals, notes): a move goal to where the object is, while the object has another destination,
     becomes that destination goal's source. "Where it is": the words say so ("the spoon is in the
     drawer"), or another goal takes it from there and the words never name the place as a destination
-    ("take the spoon out of the drawer, put it on the counter, and close the drawer")."""
+    ("take the spoon out of the drawer, put it on the counter, and close the drawer"). A goal to where
+    the words say the object is, that they never ask for, is dropped also without another destination
+    (the read-back then checks the understanding again: T2 H02 read "bring it to the sofa" as a 'go')."""
     goals, notes = [dict(g) for g in goals], []
     for g in list(goals):
         o, k = g.get("object"), g.get("to")
@@ -71,13 +73,20 @@ def stated_sources(goals: list, text: str, places) -> tuple:
             continue
         others = [h for h in goals if h is not g and h.get("type") in _MOVES and h.get("object") == o
                   and h.get("to") and h.get("to") != k]
-        taken = any(h.get("from") == k for h in others) and not _named_as_destination(k, text, places)
-        if others and (taken or k in _stated_at(o, text, places)):
+        dest = _named_as_destination(k, text, places)
+        taken = any(h.get("from") == k for h in others) and not dest
+        stated = k in _stated_at(o, text, places)
+        if others and (taken or stated):
             goals.remove(g)
             for h in others:
                 if not h.get("from"):
                     h["from"] = k
             notes.append(f"the {o} is at {k} (said): its source, not a goal")
+        elif stated and not dest:
+            # "The spoon is in the kitchen drawer. Bring it to the sofa." read as [in spoon -> drawer, go sofa]:
+            # where it is, not a request; the read-back then finds the spoon in no goal and checks again
+            goals.remove(g)
+            notes.append(f"the {o} is at {k} (said): not a request")
     return goals, notes
 
 

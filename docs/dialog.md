@@ -27,7 +27,10 @@ not hide it. Three are corrected from the person's own words, without an LLM cal
   to that place is dropped and the other goal takes it as `from`. The same for a goal into the place
   another goal takes the object from, when the words never name it as a destination ("take the spoon out
   of the drawer, put it on the counter, and close the drawer": M03, H09, V09); "... then put it back in
-  the drawer" keeps both for the validator;
+  the drawer" keeps both for the validator. A goal to where the words say the object is, that they never
+  ask for, is dropped also without another destination: `[in spoon -> drawer, go sofa]` for the H02
+  sentence ran to a "success" with the spoon back in the drawer; now the read-back finds the spoon in no
+  goal and re-samples / asks;
 * a negated object is not a goal: a move goal for an object named only inside "don't ...", "except ...",
   "not ...", "without ..." (the English task) is dropped before grounding ("but don't touch the mug" asked
   "Where should I put the mug?");

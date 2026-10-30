@@ -101,3 +101,30 @@ def test_put_back_keeps_both_for_the_validator(places):
     out, _n = F.after_grounding(goals, "Take the spoon out of the drawer, put it on the dining table, then put it "
                                        "back in the drawer.", places)
     assert out == goals
+
+
+def test_a_stated_location_alone_beside_a_go_is_not_a_request(places):
+    """H02 (final T2 run): [in spoon -> drawer, go sofa] was planned and 'succeeded' with the spoon
+    back in the drawer (a false success). The stated location is dropped; the read-back sees the spoon in
+    no goal."""
+    goals = [G("in", "spoon", "", DR), G("go", "", "", SF)]
+    out, notes = F.after_grounding(goals, "The spoon is in the kitchen drawer. Bring it to the sofa.", places)
+    assert out == [G("go", "", "", SF)] and "not a request" in notes[0]
+
+
+def test_h02_go_misreading_is_never_a_success(make_assist, env):
+    und = {"status": "clear", "reason": "", "question": "",
+           "goals": [G("in", "spoon", "", "kitchen drawer"), G("go", "", "", "sofa")]}
+    right = {"status": "clear", "reason": "", "question": "",
+             "goals": [G("on", "spoon", "kitchen drawer", "sofa")]}
+    plan = steps(f"MoveTo {DR}", f"Open {DR}", "Find spoon", "Pick spoon", f"MoveTo {SF}", f"Place {SF}")
+    robot = FakeRobot(env, {"spoon": DR + "/in"}, reply_rules=[{"if": "", "then": ""}])
+    evs = run_task(make_assist(robot, FakeLLM(und, right, right, default=right), ScriptedPlanner(plan)),
+                   "The spoon is in the kitchen drawer. Bring it to the sofa.")
+    assert done(evs)["status"] == "success", done(evs)
+    ck = next(e for e in evs if e["event"] == "understand_check")
+    assert ck["agreed"] and robot.obj["spoon"] == SF
+    robot = FakeRobot(env, {"spoon": DR + "/in"}, reply_rules=[{"if": "", "then": ""}])
+    evs = run_task(make_assist(robot, FakeLLM(und, default=und), ScriptedPlanner(plan)),
+                   "The spoon is in the kitchen drawer. Bring it to the sofa.")
+    assert done(evs)["status"] != "success" and robot.asked
