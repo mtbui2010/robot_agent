@@ -256,8 +256,8 @@ def check(target, manifest_path=None) -> Report:
     for s in m.skills:
         where = f"skill {s.name!r} ({s.action})"
         for k in s.extra:
-            if k == ALIAS_ACTIONS_KEY:
-                continue
+            if k == ALIAS_ACTIONS_KEY or (k == "description" and isinstance(s.extra[k], str)):
+                continue                    # description: the planner prompts' text of the skill
             rep.warnings.append(f"{where}: key {k!r} is not part of the contract (kept, ignored by the core)")
         for v in s.verify:
             if v.kind == "sensor" and not known(v.skill):

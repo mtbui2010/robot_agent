@@ -12,6 +12,10 @@ manifest format, the event schema). See `docs/contract.md`.
   `mark_edited`, `provenance_of`, `provenance_view`); `to_dict()` gains a `provenance` key (others
   unchanged); `PUT /agent/world` marks the edited fields `operator`. AssistLoop option `reconcile`
   (`ROBOT_AGENT_RECONCILE`, default 1).
+- Manifest: optional top-level `description` (`Manifest.description`) and skill-level
+  `description` (string, no check_manifest warning): the robot's / skill's text in the planner
+  prompts (core/planning/robot_prompt.py, docs/planner_guide.md). Old manifests load unchanged.
+
 - `FailureCode.BUDGET_EXCEEDED` (`budget_exceeded`): the run used its LLM-call budget (recovery STOP,
   not retried). Appended after `unknown`.
 - Manifest `verify: [{kind: vlm, prompt}]` is now run (`core/planning/verify_vlm.py`) through the
@@ -34,6 +38,17 @@ manifest format, the event schema). See `docs/contract.md`.
 - `NamemapAdapter.to_loc` / `to_obj`: the robot's names, passed through from the namemap.
 - Adapter extras read by the core (optional): `is_openable(key, entry)`, `quiet_skills`,
   `i18n.phrases` keys `verb.<Action>`, `robot_description`, `verify_failed.<Action>`.
+
+### Planner prompts (docs/planner_guide.md)
+- SAGE (`grace` / `sage`) gets the robot's plan actions and description from the manifest
+  (embodiplan >= 0.2.4 `SAGEPlanner(actions, robot_description)`); `ROBOT_AGENT_SAGE_ROBOT_PROMPT=0`
+  restores embodiplan's household prompts. Plug-in planners get `robot_description` too.
+- Planner Guide placeholders `{ROBOT}`, `{ACTIONS}`, `{EXAMPLES}` (seed pool + verified live memory,
+  top `ROBOT_AGENT_GUIDE_EXAMPLES` (3), leave-one-out with `ROBOT_AGENT_GUIDE_LOO=1`); a guide
+  without them is sent unchanged. New seed versions (`guide_v2`) are added once, inactive, to an
+  existing guides.json (`seeded` list).
+- `GET /guides?planner=` adds `used_by`, `active_planner`, `active_planner_uses_guide` and per-version
+  `placeholders`; `POST /guides/preview` renders a guide for a command.
 
 ### Interaction (run manager, dialog)
 - MODIFY / ADD / DROP / NEW said during a run are applied by AssistLoop at the next step boundary

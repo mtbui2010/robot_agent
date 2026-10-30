@@ -15,6 +15,7 @@ Core design:
 - [dialog.md](dialog.md): the robot's questions, yes / no answers (unclear ones asked again), typed refusals, the understand call's sampling
 - [planners.md](planners.md): planner interface, optional capabilities (sub-goal repair), plug-ins by `module:Class` / entry point
 - [memory.md](memory.md): the planner's retrieval memory: the manifest seed pool, which runs are recorded, cleaning
+- [planner_guide.md](planner_guide.md): the Planner Guide (which planners use it, `{ROBOT}` / `{ACTIONS}` / `{EXAMPLES}`), the robot's prompts from the manifest, evaluating a guide change
 - [verify.md](verify.md): step verification layers, the manifest's VLM verify, sensor health, the LLM-call budget
 - [guard.md](guard.md): precondition layers (gate, per-step guard, skill), reconcile with the sensors, provenance
 - [search.md](search.md): search with a belief: location prior, one LLM ranking per object, searched places as a hard constraint
