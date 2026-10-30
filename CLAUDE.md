@@ -29,6 +29,7 @@ Full rule text and reasons: [docs/rules.md](docs/rules.md). Docs index: [docs/RE
 - [docs/contract.md](docs/contract.md): adapter, manifest, contract types
 - [docs/run_manager.md](docs/run_manager.md): runs, cancel / pause, intent router
 - [docs/dialog.md](docs/dialog.md): dialog, yes/no answers, typed refusals, understand sampling
+- [docs/planners.md](docs/planners.md): planner interface, plug-ins by module:Class / entry point
 - [docs/observe.md](docs/observe.md): RunRecord, metrics, replay, event schema
 - [docs/action_model_divergence.md](docs/action_model_divergence.md): the one action model
 - [docs/CLOSED_LOOP_ARCHITECTURE.md](docs/CLOSED_LOOP_ARCHITECTURE.md): closed-loop planning

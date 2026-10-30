@@ -336,7 +336,20 @@ class ClosedLoop:
             return get_planner(
                 "llm_direct", llm_cfg=self._llm_cfg, robot_pkg=self.robot_pkg
             )
-        return get_planner(name)
+        # a plug-in ("package.module:Class" / entry point): the config keys its constructor accepts
+        return get_planner(name, **self._planner_cfg())
+
+    def _planner_cfg(self) -> dict:
+        """What the core offers every plug-in planner's constructor (docs/planners.md)."""
+        return {
+            "host": self.cfg.get("host"),
+            "model": self.cfg.get("model"),
+            "live_path": self.cfg.get("live_path"),
+            "llm_cfg": self._llm_cfg,
+            "robot_pkg": self.robot_pkg,
+            "capabilities": self.robot.capabilities(),
+            "actions": sorted(self.robot.plan_actions),
+        }
 
     # ── helpers ──────────────────────────────────────────────────────────
     def _arg_name(self, action: str, obj: str) -> str:
@@ -477,11 +490,10 @@ class ClosedLoop:
         return {"event": "error", "msg": str(e), "trace": traceback.format_exc()}
 
     def _hook_progress(self, planner) -> None:
-        """Stream live multi-step progress (decompose/expand/refine) for planners exposing a
-        `progress` hook (GRACE). Best-effort."""
+        """Stream live multi-step progress (decompose/expand/refine) for planners with the optional
+        ``progress`` hook (base.ProgressReporting; GRACE / SAGE has it). Best-effort."""
         try:
-            inner = getattr(planner, "_p", planner)
-            if self._emit is not None and hasattr(inner, "progress"):
+            if self._emit is not None and hasattr(planner, "progress"):
                 _emit = self._emit
 
                 def _on_progress(d):
@@ -489,7 +501,7 @@ class ClosedLoop:
                         _emit({"event": "plan_step", **d})
                     except Exception:
                         pass
-                inner.progress = _on_progress
+                planner.progress = _on_progress
         except Exception:
             pass
 

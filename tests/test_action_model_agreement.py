@@ -264,7 +264,9 @@ def test_sage_edit_uses_public_api():
              {"action": "PutIn", "object": D}]
     sage = PublicOnlySage(blocks, fixed)
     ground = lambda seq: [dict(s, grounded=True) for s in seq]
-    plan, notes = al._sage_edit(sage, "put the cup in the drawer", "", ground, WorldState(), PLACES,
+    # the core reaches SAGE's editing only through GraceBackend's SubgoalRepair capability
+    from robot_agent.core.planning.backends.pyplanner_grace import GraceBackend
+    plan, notes = al._sage_edit(GraceBackend.wrap(sage), "put the cup in the drawer", "", ground, WorldState(), PLACES,
                                 GOALS_IN, "cup in drawer")
     assert [s["action"] for s in plan] == [s["action"] for s in fixed]
     assert sage.calls and "while holding the cup" in sage.calls[0][1]

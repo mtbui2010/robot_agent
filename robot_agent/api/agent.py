@@ -434,7 +434,7 @@ async def agent_ws(websocket: WebSocket):
         prompt  = data.get('prompt', '')
         lang    = data.get('lang', 'en')
         direct    = data.get('direct', False)
-        planner   = data.get('planner')         # 'grace' | 'direct' | None (legacy)
+        planner   = data.get('planner')         # 'grace' | 'direct' | 'sage' | 'package.module:Class' | None (legacy)
         plan_only = data.get('plan_only', False) # generate plan, don't execute
         log_data  = data.get('log_data', False)  # save rgb/depth/results of vision
         # 'backend' writes the dataset to disk here; 'frontend' streams it to the
@@ -443,6 +443,9 @@ async def agent_ws(websocket: WebSocket):
         log_all   = data.get('log_all', True)
         # planner options (SAGE: confirm_task, confirm_answers, find_min_conf, ...); unknown keys are ignored
         options   = data.get('options') if isinstance(data.get('options'), dict) else None
+        # 'sage' only: the planner behind it (a registry name or 'package.module:Class'; default grace)
+        if data.get('generator'):
+            options = dict(options or {}, generator=data['generator'])
         # who is asking (optional; a client without them acts as the owner, as before)
         user_id   = str(data.get('user_id') or '')
         role      = data.get('role')

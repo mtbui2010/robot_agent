@@ -11,7 +11,7 @@ it has no skill for, and how the goal is reached by a plan / holds after a run:
   deliver        the robot takes what it carries to a place and
                  waits until a person takes it                      MoveTo + WaitForUnload
 
-The manipulation kinds are planned by SAGE; the others (``TEMPLATE_KINDS``) are a fixed
+The manipulation kinds are planned by the planner (SAGE or a plug-in); the others (``TEMPLATE_KINDS``) are a fixed
 sequence of steps, compiled here without an LLM (``compile_steps``). Nothing in this module
 knows a robot: the actions a robot has come from its manifest (``RobotView.plan_actions``).
 """
