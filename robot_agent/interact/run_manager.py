@@ -21,10 +21,12 @@ cannot cancel, pause, resume, answer for or change that run; they get a
 refusal with a reason, and the refusal is recorded on the run so the owner's
 dashboard sees it. STATUS is open to everyone.
 
-Not here yet (see docs/run_manager.md): applying MODIFY / ADD / DROP / NEW to
-the running plan. They are queued on ``Run.pending`` for the executive to take
-with :meth:`Run.take_pending`; :class:`TaskStack` is the interface a persistent
-suspended-task stack will implement.
+MODIFY / ADD / DROP / NEW are queued on ``Run.pending``; the executive takes
+them at its step boundaries (:meth:`Run.take_pending`) and applies them. A NEW
+task that goes first suspends the current one on the :class:`TaskStack`
+(:meth:`RunManager.suspend` / :meth:`RunManager.resume_task`). A stop during a
+non-interruptible skill holds the robot stop until the skill ends
+(:meth:`Run.begin_critical`, used by ``core.run_control``).
 """
 
 from __future__ import annotations
@@ -35,8 +37,8 @@ import itertools
 import threading
 import time
 import uuid
-from dataclasses import dataclass
-from typing import Callable, Optional, Protocol
+from dataclasses import dataclass, field
+from typing import Callable, Optional
 
 from .intent_router import Intent, IntentDecision, IntentRouter
 
@@ -125,14 +127,59 @@ class InjectResult:
         return d
 
 
-class TaskStack(Protocol):
-    """TODO(step 6b): a persistent stack of suspended runs (goals, achieved
-    goals, belief) so a NEW command can suspend the current task and resume it
-    later after ``reconcile()``. Not implemented; RunManager accepts one."""
+@dataclass
+class TaskFrame:
+    """A task suspended by a NEW command (proposal 3.3): what it wanted, what
+    it had already achieved (never undone) and the belief when it stopped."""
+    run_id: str
+    task: str
+    goals: list
+    achieved: list = field(default_factory=list)
+    belief: dict = field(default_factory=dict)
+    reason: str = ''
+    at: float = field(default_factory=time.time)
 
-    def push(self, run: 'Run') -> None: ...
-    def pop(self, robot_id: str) -> Optional['Run']: ...
-    def peek(self, robot_id: str) -> Optional['Run']: ...
+    def to_dict(self) -> dict:
+        return {'run_id': self.run_id, 'task': self.task, 'goals': list(self.goals),
+                'achieved': list(self.achieved), 'reason': self.reason, 'at': self.at}
+
+
+class TaskStack:
+    """Suspended tasks per robot, last in first out. In memory: a suspended
+    task lives as long as the run that suspended it (one robot per process)."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._frames: dict[str, list[TaskFrame]] = {}
+
+    def push(self, robot_id: str, frame: TaskFrame) -> None:
+        with self._lock:
+            self._frames.setdefault(robot_id, []).append(frame)
+
+    def pop(self, robot_id: str, run_id: str | None = None) -> Optional[TaskFrame]:
+        """The last suspended task (of ``run_id`` when given), removed."""
+        with self._lock:
+            st = self._frames.get(robot_id) or []
+            if st and (run_id is None or st[-1].run_id == run_id):
+                return st.pop()
+            return None
+
+    def peek(self, robot_id: str) -> Optional[TaskFrame]:
+        with self._lock:
+            st = self._frames.get(robot_id) or []
+            return st[-1] if st else None
+
+    def frames(self, robot_id: str) -> list[TaskFrame]:
+        with self._lock:
+            return list(self._frames.get(robot_id) or [])
+
+    def drop_run(self, robot_id: str, run_id: str) -> int:
+        """Forget the frames of a run that ended. Returns how many."""
+        with self._lock:
+            st = self._frames.get(robot_id) or []
+            keep = [f for f in st if f.run_id != run_id]
+            self._frames[robot_id] = keep
+            return len(st) - len(keep)
 
 
 _ids = itertools.count(1)
@@ -239,6 +286,10 @@ class Run:
             self._set_state(RunState.RUNNING)
             self._resume.set()
             return True
+
+    def outranked_by(self, role) -> bool:
+        """Does ``role`` rank above the run's starter (a NEW from them goes first)?"""
+        return Role.parse(role).priority > self.role.priority
 
     # ---- questions ---------------------------------------------------
     @property
@@ -384,7 +435,7 @@ class RunManager:
         self._runs: collections.OrderedDict[str, Run] = collections.OrderedDict()
         self._local = threading.local()
         self.router = router or IntentRouter()
-        self.task_stack = task_stack        # TODO(step 6b): suspend on NEW
+        self.task_stack = task_stack if task_stack is not None else TaskStack()
         # Called with the run after a successful cancel, outside the locks:
         # run_control hooks the robot stop in (cancel ROS goals, release listens).
         self.on_cancel: list[Callable[[Run], None]] = []
@@ -393,6 +444,10 @@ class RunManager:
         # locks; robot_agent.observe opens / closes the run's RunRecord here.
         self.on_start: list[Callable[[Run], None]] = []
         self.on_finish: list[Callable[[Run], None]] = []
+        # Called with the run when it carries on after a hold: a pause ended
+        # (resume) or a suspended task was taken back (resume_task); outside the
+        # locks. The place for a reconcile (observe again before acting).
+        self.on_resume: list[Callable[[Run], None]] = []
 
     # ---- lifecycle ---------------------------------------------------
     def start(self, goal: str = '', robot_id: str = DEFAULT_ROBOT, user_id: str = '',
@@ -437,6 +492,7 @@ class RunManager:
         with self._lock:
             if self._active.get(run.robot_id) is run:
                 del self._active[run.robot_id]
+        self.task_stack.drop_run(run.robot_id, run.run_id)
         run.publish({'event': 'run_state', 'state': run.state.value, 'outcome': run.outcome,
                      'origin': 'run_manager'})
         self._call_hooks(self.on_finish, run)
@@ -527,7 +583,30 @@ class RunManager:
         return self._control(run_id, role, user_id, 'pause', Run._pause_now)
 
     def resume(self, run_id: str, role: Role | str = Role.OWNER, user_id: str = '') -> InjectResult:
-        return self._control(run_id, role, user_id, 'resume', Run._resume_now)
+        run = self.get(run_id)
+        was_paused = run is not None and run.paused
+        res = self._control(run_id, role, user_id, 'resume', Run._resume_now)
+        if res.action == 'resumed' and was_paused and run.state == RunState.RUNNING:
+            self._call_hooks(self.on_resume, run)
+        return res
+
+    # ---- suspended tasks (NEW) ---------------------------------------
+    def suspend(self, run: Run, frame: TaskFrame) -> TaskFrame:
+        """Put the run's current task on the task stack (a NEW one goes first)."""
+        self.task_stack.push(run.robot_id, frame)
+        run.publish({'event': 'task_suspended', 'task': frame.task, 'goals': list(frame.goals),
+                     'achieved': list(frame.achieved), 'reason': frame.reason, 'origin': 'run_manager'})
+        return frame
+
+    def resume_task(self, run: Run) -> Optional[TaskFrame]:
+        """Take back the run's last suspended task (None when there is none);
+        :attr:`on_resume` runs before the executive acts on it again."""
+        frame = self.task_stack.pop(run.robot_id, run.run_id)
+        if frame is not None:
+            run.publish({'event': 'task_resumed', 'task': frame.task, 'goals': list(frame.goals),
+                         'origin': 'run_manager'})
+            self._call_hooks(self.on_resume, run)
+        return frame
 
     def inject(self, run_id: str, text: str = '', user_id: str = '',
                role: Role | str = Role.OWNER,

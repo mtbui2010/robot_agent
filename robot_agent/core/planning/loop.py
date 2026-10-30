@@ -522,6 +522,7 @@ class ClosedLoop:
             if cancel_requested():
                 yield self._aborted(r)
                 return True
+            yield from self._cl_pending(r)
             out = yield from self._cl_step(r, r.steps[r.i])
             if out is _STOP:
                 return True
@@ -529,6 +530,18 @@ class ClosedLoop:
                 r.run.status = "failed"
                 break
         return False
+
+    def _cl_pending(self, r: "RunContext"):
+        """MODIFY / ADD / DROP / NEW said during the run (Run.pending): this loop plans from the task
+        text and has no goals to edit (AssistLoop applies them), so it says the change was not applied
+        instead of losing it silently."""
+        from ..run_control import current_run
+        run = current_run()
+        for e in (run.take_pending() if run is not None else []):
+            text = str(e.get("text") or "")
+            yield r.ev("goal_change", applied=False, intent=e.get("intent"), text=text,
+                       say=f"I heard '{text}', but I cannot change the running task. I will finish it first; "
+                           f"please tell me again afterwards.")
 
     def _cl_step(self, r: "RunContext", step: dict):
         """Map, execute and check one step. Returns _NEXT, _FAIL or _STOP."""

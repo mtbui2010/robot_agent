@@ -164,6 +164,24 @@ def yes_no(text):
     return _yn(text)
 
 
+# ── suspended tasks (a NEW command that goes first) ──────────────────────────
+def suspend_task(task: str, goals: list, achieved: list, belief: dict, reason: str = ''):
+    """Push the current run's task on the task stack. None with no run."""
+    run = current_run()
+    if run is None:
+        return None
+    from ..interact.run_manager import TaskFrame
+    return _manager().suspend(run, TaskFrame(run_id=run.run_id, task=task, goals=list(goals),
+                                             achieved=list(achieved), belief=dict(belief), reason=reason))
+
+
+def resume_task():
+    """Pop the current run's last suspended task (runs the manager's
+    ``on_resume`` hooks); None when there is none."""
+    run = current_run()
+    return _manager().resume_task(run) if run is not None else None
+
+
 def current_run():
     """The run the calling thread acts for (bound by :func:`begin_run`, else
     the active run), or None."""
