@@ -108,18 +108,82 @@ role-checked.
   `{"user_id", "role"[, "text"]}`. They return 403 when the role is refused, 404 for an unknown run and
   409 for a run that has ended.
 
+## Goal changes during a run (MODIFY / ADD / DROP / NEW)
+
+`AssistLoop` takes `Run.take_pending()` at every step boundary (after `wait_if_paused()` and the cancel
+check, before the next step or the end-of-plan check), so a change said during a skill takes effect when
+that skill ends. Code: `AssistLoop._apply_pending` and `core/planning/goal_change.py`.
+
+1. Each utterance is read by `goal_change.read(text, intent, goals, places, holding)`: plain English
+   edits ("put it on the counter instead", "also bring the mug to the dining table", "forget the
+   apple", "don't bring it, put the apple back on the desk"). `it` is the current goal (the object in the
+   hand, else the first goal not reached). Places are grounded on the ENV; a phrase that does not name
+   exactly one place, or a clause it cannot read, gives None.
+2. None -> the understand LLM reads the change against the task (the dialogue plus the read-back of the
+   current goals). Still nothing -> a `goal_change` event with `applied: false` and a sentence for the
+   person ("Sorry, I could not apply that ..."): a change is never dropped silently.
+3. Applied -> a `goal_change` event (`added`, `removed`, `changed`, `goals`, `say` = the new read-back) and
+   a SAGE suffix repair from the current step (failed step `{"action": "Change"}`). Goals that already
+   hold end the run there.
+
+| intent | effect |
+|---|---|
+| MODIFY | goal diff (a destination changed, a goal swapped by the LLM), then local repair |
+| ADD | merged into the goal set (after the current goals) |
+| DROP | goals removed; the object in the hand first: it is put back where it was taken (`drop_held: put_back`, default) or down here (`place_here`) |
+| NEW | someone who outranks the run's starter goes first; else the robot asks "Should I do that first? If not, I will do it after the current task." (no answer: after). After = appended to the goals. First = the current task is suspended on the `TaskStack` (goals, achieved goals, belief); an object in the hand is put down here first; when the new goals hold, the task is taken back (`resume_task`), the world is reconciled and the plan repaired. Goals already achieved stay achieved. A NEW that repeats a current goal is answered "I am already doing that". |
+
+`ClosedLoop` (plans from the task text, has no goals) takes the pending events too and says each one was
+not applied ("I will finish it first; please tell me again afterwards").
+
+`TaskStack` (`interact/run_manager.py`): `push(robot_id, TaskFrame)`, `pop(robot_id, run_id=None)`,
+`peek`, `frames`, `drop_run`. In memory; a finished run's frames are dropped. `RunManager.suspend(run,
+frame)` / `resume_task(run)` publish `task_suspended` / `task_resumed`; the shims are
+`run_control.suspend_task(...)` / `resume_task()`.
+
+`RunManager.on_resume` (list of callables, like `on_cancel`): called with the run when it carries on
+after a hold, i.e. a pause ended (`resume` of a paused run) or a suspended task was taken back. It is
+the place for a reconcile (observe again before acting).
+
+## Dialog: the robot's questions are on the run
+
+`interact/dialog.py` owns the question state; the robot's Ask skill (manifest `Ask`) only does the I/O
+(say, listen, show on the screen). `dialog.ask(run, question, io)` sets `Run.set_awaiting(question)`,
+runs `io` in a worker and returns the first of: the robot's answer (`source='robot'`), an ANSWER injected
+into the run by any client (`source='typed'`; the dashboard listen is ended so the skill returns), or a
+stop (empty, at once). `ask_heard` asks again on silence; `yes_no` reads a confirmation. AssistLoop asks
+through `run_control.ask_person(question, io, silence_retries)`. A read-back ("I will ... Is that
+right?") follows only answers heard through the robot's I/O: a typed answer cannot have been misheard.
+
+## Stop latency
+
+- **Non-interruptible skills.** A skill whose manifest says `interruptible: false` (KAAIR: pick, place,
+  open_drawer, close_drawer) runs inside `run_control.uninterruptible(skill)` (`run_skill(...,
+  interruptible=False)`). A stop of the run that arrives meanwhile cancels the run at once
+  (`cancel_requested()` is true, nothing new starts), but the robot's goals are cancelled only when the
+  skill ends, at most `ROBOT_AGENT_UNINTERRUPTIBLE_MAX_S` (default 30 s) later. A `run_stop_deferred`
+  event says so. The dashboard Stop button (`request_cancel`) and the hardware e-stop stay immediate.
+- **LLM / planner calls.** `run_control.call_cancellable(fn, ...)` runs the understand call, SAGE's
+  `generate_plan` / `edit_block` / `replan` in a worker and raises `RunCancelled` within 10 ms of a stop;
+  AssistLoop ends the run `aborted`. The abandoned call finishes in the background and is ignored.
+
+Measured on the scenario suite (T1, fake robot, 10 runs each, median / max):
+
+| interrupt | robot stopped | run ended `aborted` |
+|---|---|---|
+| "stop" while driving (interruptible) | 0.7 / 1.1 ms | 2.4 / 3.9 ms |
+| "stop" 50 ms into a 250 ms Pick (non-interruptible) | when the Pick ends: 200 / 202 ms | 201 / 206 ms |
+| "stop" during a 1.2 s understand LLM call | (no motion) | 9.5 / 10 ms (was 1202 ms) |
+| "stop" while the robot asks | (no motion) | 3.8 / 5.4 ms |
+
 ## Not done yet
 
-- **Applying goal changes.** MODIFY / ADD / DROP / NEW are queued on `Run.pending` but no executive
-  consumes them yet (`Run.take_pending()`). A second client's command is therefore recorded and
-  reported to it as `queued`, not executed. This is deliberate: no parallel run.
-- **Task stack.** The `TaskStack` protocol (`push` / `pop` / `peek`) is the interface for suspending a
-  run on NEW and resuming it after `reconcile()`. `RunManager(task_stack=...)` accepts one; nothing
-  implements it.
-- **Dialog.** Dialog is still in kcare's `ask` skill. `Run.ask()` is the hook it will move to, so that
-  an interjection during a question is routed as ANSWER.
-- **Pause mid-skill.** Pause holds between steps only. A non-interruptible skill and a held object need
-  the policy of proposal 3.3.
+- **Persistent task stack.** Suspended tasks live in memory, as long as their run.
+- **Dialog in the robot.** kcare's `ask` skill still matches options and re-asks inside itself when it is
+  given `options` / `retries`; AssistLoop passes `retries: 0` and no options, so the core decides.
+- **Safe release.** A non-interruptible skill is waited for; there is no manifest "release" skill to call
+  instead yet.
+- **Pause mid-skill.** Pause holds between steps only.
 - The thread binding is best effort. If another `begin_run()` (a skill command) runs between `start()`
   and the run's own `begin_run()`, that thread is bound instead. The executive then falls back to "the
   active run", which is the same run with one robot per process.

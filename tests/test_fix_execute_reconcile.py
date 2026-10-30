@@ -116,3 +116,26 @@ def test_resume_looks_again_before_the_pick(make_assist, env, monkeypatch):
     assert after == ["find", "move"]                             # looked again (missed), no Pick on the old Find
     assert any(e.get("kind") == "refind" for e in evs)
     assert done(evs)["status"] == "success" and robot.obj["apple"] == DT
+
+
+def test_run_manager_on_resume_triggers_one_reconcile():
+    """The RunManager's on_resume hook (pause ended / task taken back) reaches pause_point once, whether
+    the executive wakes before or after the hook ran."""
+    from robot_agent.interact.run_manager import reset_manager
+    mgr = reset_manager()
+    try:
+        run = mgr.start(goal="g").run
+        run_control.begin_run()                                  # hooks run_control into this manager
+        calls = []
+        mgr.pause(run.run_id)
+        threading.Timer(0.05, lambda: mgr.resume(run.run_id)).start()
+        assert run_control.pause_point(calls.append) and len(calls) == 1
+        assert run_control.pause_point(calls.append) and len(calls) == 1      # the same resume, not again
+        run_control._on_run_resume(run)                          # a suspended task taken back
+        assert run_control.pause_point(calls.append) and len(calls) == 2
+        run_control._on_run_resume(run)
+        run_control.mark_resumed()                               # the executive reconciled itself
+        assert run_control.pause_point(calls.append) and len(calls) == 2
+        mgr.finish(run.run_id)
+    finally:
+        reset_manager()

@@ -24,6 +24,8 @@ Stop pressed for a run still finishing. It now never clears the cancel of an
 active run: a new run starts with its own, clear flag.
 """
 
+import contextlib
+import os
 import threading
 import time
 
@@ -48,6 +50,9 @@ def _manager():
         from ..observe.record import on_run_start, on_run_finish
         mgr.on_start.append(on_run_start)
         mgr.on_finish.append(on_run_finish)
+        # a resume (pause ended / suspended task taken back): the executive reconciles at its next
+        # pause_point, in its own thread
+        mgr.on_resume.append(_on_run_resume)
         mgr._run_control_hooked = True
     return mgr
 
@@ -59,9 +64,126 @@ def manager():
 
 def _on_run_cancel(run) -> None:
     """A run was cancelled through the manager (a spoken "stop", POST
-    /runs/{id}/cancel): stop the robot now, not only at the next step."""
+    /runs/{id}/cancel): stop the robot now, not only at the next step; inside a
+    non-interruptible skill (Pick mid-grasp, a drawer pull) after it ends, see
+    :func:`uninterruptible`. The run itself is cancelled at once either way."""
+    held = run.defer_stop() if run is not None else None
+    if held is not None:
+        token, skill = held
+        max_s = uninterruptible_max_s()
+        run.publish({'event': 'run_stop_deferred', 'skill': skill, 'max_s': max_s, 'origin': 'run_control',
+                     'msg': f'stopping when {skill} has finished (it must not be cut)'})
+        t = threading.Timer(max_s, _deferred_stop_due, (run, token))
+        t.daemon = True
+        t.start()
+        return
     with _LOCK:
         _stop_robot()
+
+
+def uninterruptible_max_s() -> float:
+    """How long a stop waits for a non-interruptible skill before it cuts it anyway."""
+    try:
+        return float(os.environ.get('ROBOT_AGENT_UNINTERRUPTIBLE_MAX_S', '30'))
+    except ValueError:
+        return 30.0
+
+
+def _deferred_stop_due(run, token) -> None:
+    if run.take_deferred_stop(token):
+        with _LOCK:
+            _stop_robot()
+
+
+@contextlib.contextmanager
+def uninterruptible(skill: str, interruptible: bool = False):
+    """Run a skill the manifest marks ``interruptible: false`` inside this: a
+    stop of the run that arrives meanwhile does not cancel the robot's goals
+    until the skill has finished (at most :func:`uninterruptible_max_s`), so a
+    grasp or a drawer pull is not cut half-way. The run is cancelled at once and
+    the executive stops at the step boundary. ``interruptible`` True (or no run)
+    is a no-op. The hardware e-stop never goes through here."""
+    run = current_run() if not interruptible else None
+    if run is None:
+        yield
+        return
+    token = run.begin_critical(skill)
+    try:
+        yield
+    finally:
+        if run.end_critical(token):
+            with _LOCK:
+                _stop_robot()
+
+
+def is_cancel(exc: BaseException) -> bool:
+    """Is ``exc`` the run's stop (``RunCancelled``)?"""
+    from ..interact.run_manager import RunCancelled
+    return isinstance(exc, RunCancelled)
+
+
+def call_cancellable(fn, *args, poll: float = 0.01, **kwargs):
+    """``fn(*args, **kwargs)`` (an LLM / planner call) that a stop does not wait
+    for: it runs in a worker thread and ``RunCancelled`` is raised within
+    ``poll`` s of the run's stop (the call's result is then dropped). With no
+    run, a plain call."""
+    run = current_run()
+    if run is None:
+        return fn(*args, **kwargs)
+    from ..interact.run_manager import RunCancelled
+    run.check_cancel()
+    box: dict = {}
+    done = threading.Event()
+
+    def work():
+        try:
+            box['value'] = fn(*args, **kwargs)
+        except BaseException as e:      # noqa: BLE001 - re-raised in the caller
+            box['error'] = e
+        finally:
+            done.set()
+    threading.Thread(target=work, name='cancellable-call', daemon=True).start()
+    while not done.wait(poll):
+        if run.cancel_requested:
+            raise RunCancelled(run.run_id)
+    if 'error' in box:
+        raise box['error']
+    return box['value']
+
+
+# ── the robot's questions (state in robot_agent.interact.dialog) ─────────────
+def ask_person(question: str, io, silence_retries: int = 0, again: str | None = None):
+    """Ask the person ``question`` through ``io`` (the robot's Ask skill) with
+    the current run waiting on it, so a typed / injected answer from any client
+    answers it. Returns ``(Answer, times asked)``; ``Answer.source`` is
+    'robot' (heard), 'typed' (injected) or '' (no answer / stopped)."""
+    from ..interact import dialog
+    kw = {'again': again} if again else {}
+    return dialog.ask_heard(current_run(), question, io, silence_retries=silence_retries, **kw)
+
+
+def yes_no(text):
+    """(True | False | None, correction text) of a spoken confirmation."""
+    from ..interact.dialog import yes_no as _yn
+    return _yn(text)
+
+
+# ── suspended tasks (a NEW command that goes first) ──────────────────────────
+def suspend_task(task: str, goals: list, achieved: list, belief: dict, reason: str = ''):
+    """Push the current run's task on the task stack. None with no run."""
+    run = current_run()
+    if run is None:
+        return None
+    from ..interact.run_manager import TaskFrame
+    return _manager().suspend(run, TaskFrame(run_id=run.run_id, task=task, goals=list(goals),
+                                             achieved=list(achieved), belief=dict(belief), reason=reason))
+
+
+def resume_task():
+    """Pop the current run's last suspended task (runs the manager's
+    ``on_resume`` hooks); None when there is none."""
+    run = current_run()
+    return _manager().resume_task(run) if run is not None else None
 
 
 def current_run():
@@ -92,20 +214,41 @@ def wait_if_paused(timeout: float | None = None) -> bool:
     return run.wait_if_paused(timeout)
 
 
+def _on_run_resume(run) -> None:
+    """RunManager ``on_resume`` hook: count the resume; :func:`pause_point` acts on it."""
+    run.resumes = getattr(run, 'resumes', 0) + 1
+
+
 def pause_point(on_resume=None) -> bool:
-    """:func:`wait_if_paused` plus the resume hook: when the run really was paused and is resumed
-    (not cancelled), ``on_resume(seconds_paused)`` runs here, in the executive thread, before the next
-    step (the loops reconcile their belief there: the world may have changed meanwhile)."""
+    """:func:`wait_if_paused` plus the resume hook: after the run carried on from a hold (a pause ended,
+    the RunManager's ``on_resume`` fired), ``on_resume(seconds_held)`` runs here, in the executive
+    thread, before the next step (the loops reconcile their belief there: the world may have changed
+    meanwhile). Each resume triggers it once, whether the executive or the hook sees it first; never
+    after a cancel."""
     run = current_run()
     was_paused = run is not None and run.paused
     t0 = time.time()
     ok = wait_if_paused()
-    if was_paused and ok and on_resume is not None:
-        try:
-            on_resume(time.time() - t0)
-        except Exception:
-            pass
+    if not ok or run is None:
+        return ok
+    seen, resumes = getattr(run, '_resumes_seen', 0), getattr(run, 'resumes', 0)
+    if was_paused or resumes > seen:
+        # the hook may not have run yet when this thread woke up: count that resume as seen already
+        run._resumes_seen = max(resumes, seen + 1)
+        if on_resume is not None:
+            try:
+                on_resume(time.time() - t0)
+            except Exception:
+                pass
     return ok
+
+
+def mark_resumed() -> None:
+    """The executive reconciled after a resume itself (a suspended task taken back): the pending
+    ``on_resume`` count needs no :func:`pause_point` reconcile."""
+    run = current_run()
+    if run is not None:
+        run._resumes_seen = getattr(run, 'resumes', 0)
 
 
 def check_cancel() -> None:
