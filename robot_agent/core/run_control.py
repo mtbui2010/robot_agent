@@ -63,6 +63,41 @@ def _on_run_cancel(run) -> None:
         _stop_robot()
 
 
+def is_cancel(exc: BaseException) -> bool:
+    """Is ``exc`` the run's stop (``RunCancelled``)?"""
+    from ..interact.run_manager import RunCancelled
+    return isinstance(exc, RunCancelled)
+
+
+def call_cancellable(fn, *args, poll: float = 0.01, **kwargs):
+    """``fn(*args, **kwargs)`` (an LLM / planner call) that a stop does not wait
+    for: it runs in a worker thread and ``RunCancelled`` is raised within
+    ``poll`` s of the run's stop (the call's result is then dropped). With no
+    run, a plain call."""
+    run = current_run()
+    if run is None:
+        return fn(*args, **kwargs)
+    from ..interact.run_manager import RunCancelled
+    run.check_cancel()
+    box: dict = {}
+    done = threading.Event()
+
+    def work():
+        try:
+            box['value'] = fn(*args, **kwargs)
+        except BaseException as e:      # noqa: BLE001 - re-raised in the caller
+            box['error'] = e
+        finally:
+            done.set()
+    threading.Thread(target=work, name='cancellable-call', daemon=True).start()
+    while not done.wait(poll):
+        if run.cancel_requested:
+            raise RunCancelled(run.run_id)
+    if 'error' in box:
+        raise box['error']
+    return box['value']
+
+
 def current_run():
     """The run the calling thread acts for (bound by :func:`begin_run`, else
     the active run), or None."""

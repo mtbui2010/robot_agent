@@ -329,7 +329,8 @@ class AssistLoop(ClosedLoop):
             if dialogue else "", task=task,
             # the user's own words: a translation loses names (식탁 'dining table' came out as 'table')
             original=(f"\n(the user's own words: {self.original})" if self.original and self.original != task else ""))
-        raw = self._llm().chat(prompt=prompt, format=UNDERSTAND_SCHEMA)
+        from ..run_control import call_cancellable
+        raw = call_cancellable(self._llm().chat, prompt=prompt, format=UNDERSTAND_SCHEMA)   # a stop does not wait
         try:
             d = json.loads(raw)
         except Exception:
@@ -668,9 +669,13 @@ class AssistLoop(ClosedLoop):
                                               capabilities=self.robot.model_capabilities()).final_state
                 fb = ("Checker findings (fix them; places must be exactly the listed ones):\n"
                       + "\n".join(f"- {t}" for t in items) + f"\nGoals of the whole task: {goal_txt}")
+                from ..run_control import call_cancellable, is_cancel
                 try:
-                    new_steps = inner.edit_block(blocks[k], fb, task=task, state=state, obs=obs, examples_block=ex_block)
+                    new_steps = call_cancellable(inner.edit_block, blocks[k], fb, task=task, state=state, obs=obs,
+                                                 examples_block=ex_block)
                 except Exception as e:
+                    if is_cancel(e):
+                        raise
                     notes.append(f"sub-goal {k + 1} edit failed: {e}"); continue
                 empty_ok = any('"steps": []' in t for t in items)
                 if new_steps or empty_ok:
@@ -863,7 +868,9 @@ class AssistLoop(ClosedLoop):
                 return
             yield self._final_check(r)                            # 4. done only when the goals hold
         except Exception as e:
-            yield self._crashed(r, e)
+            from ..run_control import is_cancel
+            # a stop during an LLM / planner call (run_control.call_cancellable) ends the run at once
+            yield self._finish(r, "aborted", msg="Cancelled by user") if is_cancel(e) else self._crashed(r, e)
         finally:
             self._close_run(r)
 
@@ -1013,9 +1020,12 @@ class AssistLoop(ClosedLoop):
     def _generate_and_certify(self, r):
         """SAGE's plan, checked as written; critical findings go back to SAGE's sub-goal editing."""
         t_plan = time.time()
+        from ..run_control import call_cancellable, is_cancel
         try:
-            raw, meta = r.planner.generate_plan(r.restated, self._obs(r), [])
+            raw, meta = call_cancellable(r.planner.generate_plan, r.restated, self._obs(r), [])
         except Exception as e:
+            if is_cancel(e):
+                raise
             raw, meta = [], {"error": str(e)}
         r.steps = self._ground_all(r, raw)
         probs = self._check(r.steps, r.world, r.places, r.goals)
@@ -1042,10 +1052,13 @@ class AssistLoop(ClosedLoop):
         world = r.world
         ers = (f"E: {failed.get('action')} {failed.get('object')} failed. R: {reason}. "
                f"S: robot at {world.arrived}, holding {world.holding or 'nothing'}; goals: {r.goal_txt}")
+        from ..run_control import call_cancellable, is_cancel
         try:
-            suffix, _m = r.planner.replan(r.restated, r.completed, failed, ers, self._obs(r), [])
+            suffix, _m = call_cancellable(r.planner.replan, r.restated, r.completed, failed, ers, self._obs(r), [])
             suffix = self._ground_all(r, suffix)
         except Exception as e:
+            if is_cancel(e):
+                raise
             suffix = []; ers += f"; replan error: {e}"
         probs = [p_[1] for p_ in self._check(r.completed + suffix, r.world_at_start, r.places, r.goals) if p_[2]]
         r.run.replans.append({"at_index": r.i, "failed": failed, "reason": ers, "suffix_len": len(suffix),
