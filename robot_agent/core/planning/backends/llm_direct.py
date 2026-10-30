@@ -48,9 +48,10 @@ class LlmDirectBackend:
             plan_raw = llm.chat_guide(prompt=task, guide=guide, reuse=False)
 
         from robot_agent.core.guide_manager import reconstruct_plan
+        from robot_agent.safe_parse import parse_plan_answer
 
         try:
-            plan_dict = eval(str(plan_raw))  # noqa: S307 - mirrors legacy behaviour
+            plan_dict = parse_plan_answer(plan_raw)
             plan = reconstruct_plan(plan_dict)
         except Exception:
             plan = str(plan_raw)

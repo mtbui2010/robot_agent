@@ -15,6 +15,7 @@ import numpy as np
 
 from robot_agent.connect.helpers import get_attrs, set_atrrs, update_dict  # noqa: F401
 from robot_agent.connect.helpers import evaluate
+from robot_agent.safe_parse import parse_kwargs
 from robot_agent.connect.llm import init_llm_client
 from robot_agent.connect.parallel import run_parallel, run_parallel_check  # noqa: F401
 from robot_agent.connect.serde import dict2str, str2dict  # noqa: F401
@@ -666,9 +667,8 @@ def refine_inputs(inputs):
     if len(inputs.strip()) == 0:
         return {}
     if '=' not in inputs:
-        inputs = evaluate(inputs, recursive=False)
-        inputs = f'inputs="{inputs}"' if isinstance(inputs, str) else f'inputs={inputs}'
-    return eval(f'dict({inputs})')
+        return {'inputs': evaluate(inputs, recursive=False)}
+    return parse_kwargs(inputs)
 
 
 # ---------------------------------------------------------------------------

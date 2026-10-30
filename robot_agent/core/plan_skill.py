@@ -32,6 +32,8 @@ import re
 import threading
 import time
 
+from ..safe_parse import parse_kwargs
+
 logger = logging.getLogger(__name__)
 
 # $name$ or $name=default$
@@ -56,7 +58,7 @@ def parse_inputs(s: str) -> dict:
     if '=' not in s:
         return {'inputs': s}
     try:
-        return eval(f'dict({s})')
+        return parse_kwargs(s)
     except Exception:
         if '->' in s:
             # loc=식탁->table@kitchen: falling back to inputs would run the

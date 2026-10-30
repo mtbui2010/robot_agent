@@ -389,8 +389,9 @@ class UnifiedAgent:
                 emit({'event': 'plan_raw', 'plan': str(plan_raw)})
 
                 from .guide_manager import reconstruct_plan
+                from ..safe_parse import parse_plan_answer
                 try:
-                    plan_dict = eval(str(plan_raw))
+                    plan_dict = parse_plan_answer(plan_raw)
                     plan = reconstruct_plan(plan_dict)
                 except Exception:
                     plan = str(plan_raw)
