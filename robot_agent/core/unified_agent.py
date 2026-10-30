@@ -558,9 +558,6 @@ class UnifiedAgent:
                 if _ds_dir:
                     emit({'event': 'log_dir', 'log_dir': _ds_dir})
                 tasks = self._parse_plan(plan)
-                import logging as _lg      # [spoken-debug] temporary
-                _lg.getLogger('robot_agent.spoken_debug').warning(
-                    '[spoken-debug] run_direct plan=%r tasks=%r', plan, tasks)
                 if not tasks:
                     emit({'event': 'error', 'msg': 'No valid commands found'})
                     return
