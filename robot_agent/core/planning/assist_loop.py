@@ -996,18 +996,23 @@ class AssistLoop(ClosedLoop):
         r.restated = r.task + ("" if not r.dialogue else " (" + "; ".join(t for w_, t in r.dialogue if w_ == "user") + ")")
         r.goal_txt = "; ".join(f"{g['type']} {g['object']}" + (f" from {g['from']}" if g.get('from') else "")
                                + (f" to {g['to']}" if g.get('to') else "") for g in r.goals)
-        r.searched, r.seen_far = [], []
+        r.searched, r.seen_far, r.uncertified = [], [], []
         r.planner = self._make_planner()
         self._hook_progress(r.planner)
         yield from self._generate_and_certify(r)
         skill_map = r.robot.skill_map
         plan_text = "\n".join(f"{skill_map.get(x['action'], x['action'])}::{x['object']}" for x in r.steps)
-        yield r.ev("plan", steps=r.steps, plan_meta=r.run.plan_meta, warnings=[], plan_text=plan_text,
-                   world=r.world.to_dict())
+        yield r.ev("plan", steps=r.steps, plan_meta=r.run.plan_meta, warnings=list(r.gate_findings),
+                   plan_text=plan_text, certified=r.certified, world=r.world.to_dict())
         if r.plan_only:
             yield self._finish(r, "planned", say=r.announcer.announce("plan_ready")); return True
         if not r.steps:
             yield self._finish(r, "failed", msg="the planner produced no plan for the goals"); return True
+        if not r.certified:
+            # an uncertified plan never runs (the gate's findings are the reason)
+            yield self._finish(r, "failed", msg="I could not make a plan that passes my checks: "
+                                                + "; ".join(r.gate_findings[:3]))
+            return True
         return False
 
     def _generate_and_certify(self, r):
@@ -1030,23 +1035,76 @@ class AssistLoop(ClosedLoop):
             probs = self._check(r.steps, r.world, r.places, r.goals)
             yield r.ev("gate", round=1, edits=edits, problems=[p_[1] for p_ in probs],
                        plan=[f"{x['action']} {x['object']}" for x in r.steps])
+        blocking = self._blocking(r, r.steps)
+        if blocking and r.steps:
+            # still critical after SAGE's edits: one fresh plan with the findings, certified again
+            r.steps = self._refine_plan(r, blocking)
+            blocking = self._blocking(r, r.steps)
+            yield r.ev("gate", round=2, problems=blocking, plan=[f"{x['action']} {x['object']}" for x in r.steps])
+        r.certified, r.gate_findings = not blocking, blocking
         r.run.plan_meta = dict(meta or {}, plan_sec=round(time.time() - t_plan, 2), llm_plan=self._ground_all(r, raw),
-                               edits=edits)
+                               edits=edits, certified=r.certified, gate_findings=blocking)
+
+    def _blocking(self, r, steps) -> list:
+        """The findings that keep a plan from running (the certified gate): the checker's critical
+        ones on the plan as written, and steps the robot cannot bind."""
+        probs = [p_[1] for p_ in self._check(steps, r.world, r.places, r.goals) if p_[2]]
+        return list(dict.fromkeys(probs + self._hard_findings(r, steps)))
+
+    def _hard_findings(self, r, steps, start: int = 0) -> list:
+        """Steps (from index `start`) no belief can make runnable: an action the robot does not
+        have, a place not in the ENV, a step its adapter cannot bind (simulated as written)."""
+        out, w = [], r.world.copy()
+        for i, st in enumerate(steps):
+            a, o = st.get("action", ""), st.get("object") or ""
+            if i >= start:
+                if a not in r.robot.plan_actions:
+                    out.append(f"step {i + 1} '{a} {o}': the robot has no action {a}")
+                elif a in _LOC_ACTIONS and (not st.get("grounded", True) or o.startswith("@")):
+                    out.append(f"step {i + 1} '{a} {o}': {o.lstrip('@')} is not a place the robot can go to")
+                else:
+                    try:
+                        self.robot.bind(dict(st), w)
+                    except Unbindable as e:
+                        out.append(f"step {i + 1} '{a} {o}': {e}")
+                    except Exception:
+                        pass                          # an adapter error is the step's own, at run time
+            action_model.apply(st, w, inplace=True)
+        return out
+
+    def _refine_plan(self, r, findings) -> list:
+        """A fresh SAGE plan told why the last one was rejected (the gate refines at most once)."""
+        obs = self._obs(r) + "\nA checker rejected the previous plan:\n" + "\n".join(f"- {t}" for t in findings)
+        try:
+            raw, _m = r.planner.generate_plan(r.restated, obs, [])
+        except Exception:
+            raw = []
+        return self._ground_all(r, raw or [])
 
     # ── 3. execute: guard each step; new plans only from SAGE ─────────────
     def _sage_replan(self, r, failed, reason) -> Optional[dict]:
-        """SAGE suffix repair from step r.i. Returns the event to yield, or None when out of budget."""
+        """SAGE suffix repair from step r.i. Returns the event to yield, or None when out of budget or
+        the new suffix fails the gate (``r.uncertified``: why)."""
+        r.uncertified = []
         if r.replans >= self.cfg["max_replans"]:
             return None
         r.replans += 1
         world = r.world
         ers = (f"E: {failed.get('action')} {failed.get('object')} failed. R: {reason}. "
                f"S: robot at {world.arrived}, holding {world.holding or 'nothing'}; goals: {r.goal_txt}")
-        try:
-            suffix, _m = r.planner.replan(r.restated, r.completed, failed, ers, self._obs(r), [])
-            suffix = self._ground_all(r, suffix)
-        except Exception as e:
-            suffix = []; ers += f"; replan error: {e}"
+        suffix, ers = self._replan_suffix(r, failed, ers)
+        bad = self._hard_findings(r, suffix)
+        if bad and r.replans < self.cfg["max_replans"]:
+            r.replans += 1                            # one refinement with the gate's findings
+            suffix, ers = self._replan_suffix(r, failed, ers + "; the new plan was rejected: " + "; ".join(bad))
+            bad = self._hard_findings(r, suffix)
+        if bad:
+            # an uncertified suffix never runs: the future of the plan is dropped
+            r.uncertified = bad
+            r.run.replans.append({"at_index": r.i, "failed": failed, "reason": ers, "suffix_len": len(suffix),
+                                  "problems": bad, "certified": False})
+            r.steps = r.steps[:r.i]
+            return None
         probs = [p_[1] for p_ in self._check(r.completed + suffix, r.world_at_start, r.places, r.goals) if p_[2]]
         r.run.replans.append({"at_index": r.i, "failed": failed, "reason": ers, "suffix_len": len(suffix),
                               "problems": probs})
@@ -1055,11 +1113,25 @@ class AssistLoop(ClosedLoop):
                     plan=[f"{x['action']} {x['object']}" for x in suffix],
                     say=r.announcer.announce("replan"), world=world.to_dict())
 
+    def _replan_suffix(self, r, failed, ers):
+        """SAGE's suffix for the failure `ers`, grounded: (suffix, ers + any planner error)."""
+        try:
+            suffix, _m = r.planner.replan(r.restated, r.completed, failed, ers, self._obs(r), [])
+            return self._ground_all(r, suffix or []), ers
+        except Exception as e:
+            return [], ers + f"; replan error: {e}"
+
+    @staticmethod
+    def _no_replan(r, fail_msg) -> str:
+        """Why there is no new plan: its suffix failed the gate, else `fail_msg`."""
+        bad = getattr(r, "uncertified", None)
+        return f"the new plan did not pass my checks: {'; '.join(bad[:3])}" if bad else fail_msg
+
     def _replan_or_fail(self, r, failed, reason, fail_msg):
         """SAGE replan, else end the run with `fail_msg`: _NEXT or _STOP."""
         e_ = self._sage_replan(r, failed, reason)
         if e_ is None:
-            yield self._finish(r, "failed", msg=fail_msg); return _STOP
+            yield self._finish(r, "failed", msg=self._no_replan(r, fail_msg)); return _STOP
         yield e_
         return _NEXT
 
@@ -1092,7 +1164,8 @@ class AssistLoop(ClosedLoop):
                                "the plan ended but the goals are not reached: "
                                + "; ".join(self._missing(r.completed, r.world_at_start, r.goals)))
         if e_ is None or r.i >= len(r.steps):
-            yield self._finish(r, "failed", msg="plan finished but the goals do not hold: " + r.goal_txt); return _STOP
+            yield self._finish(r, "failed", msg=self._no_replan(r, "plan finished but the goals do not hold: "
+                                                                 + r.goal_txt)); return _STOP
         yield e_
         return _NEXT
 
@@ -1126,7 +1199,7 @@ class AssistLoop(ClosedLoop):
         r.seen_fail[sig] = r.seen_fail.get(sig, 0) + 1
         e_ = self._sage_replan(r, st, f"precondition: {why}") if r.seen_fail[sig] <= 1 else None
         if e_ is None:
-            yield self._finish(r, "failed", msg=f"{a} {o}: {why}"); return _STOP
+            yield self._finish(r, "failed", msg=self._no_replan(r, f"{a} {o}: {why}")); return _STOP
         yield e_
         return _NEXT
 
