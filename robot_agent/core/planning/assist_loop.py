@@ -55,6 +55,8 @@ from robot_agent.state import current, host_id
 from .loop import _DONE, _NEXT, _STOP, ClosedLoop, _vr_list, reconcile_world
 from .records import StepRecord, VerifyResult
 from . import action_model, episode_memory, goal_change
+from . import search as search_belief
+from .search_hooks import SearchHooks
 from . import goals as goal_kinds
 from .robot import run_skill
 from .verify import symbolic_check, verdict
@@ -67,7 +69,7 @@ ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify
                 "pick_retries", "ask_help", "arrive_tol", "find_min_conf", "find_verify", "reach_far", "reach_lateral",
                 "goal_check", "health_wait_s", "understand_retries", "understand_samples", "llm_budget",
                 "goal_readback", "understand_temperature", "understand_seed", "understand_sample_temperature",
-                "yes_no_reasks"}
+                "yes_no_reasks", "search", "search_rank", "search_half_life_s"}
 _USER_WORDS = {"me", "user", "here", "you", "myself", "person"}
 
 
@@ -281,7 +283,7 @@ Task: {task}{original}
 # ─────────────────────────────────────────────────────────────────────────────
 # the loop
 # ─────────────────────────────────────────────────────────────────────────────
-class AssistLoop(ClosedLoop):
+class AssistLoop(SearchHooks, ClosedLoop):
     """See the module docstring."""
 
     _answer_source = "robot"          # where the last answer came from (interact.dialog: robot | typed | '')
@@ -345,6 +347,9 @@ class AssistLoop(ClosedLoop):
             # recovery policy WAIT_HEALTH (camera / detector gave no image): seconds to wait for health
             "health_wait_s": float(overrides.get("health_wait_s", env("ROBOT_AGENT_HEALTH_WAIT_S", "0.5"))),
             "memory_path": Path(overrides.get("memory_path") or data_dir("object_memory", common, host_id())),  # observe.paths
+            # search with a belief (search.py, docs/search.md): prior from the object memory, one LLM ranking
+            # per object, searched places never again
+            "search": search_belief.SearchConfig.from_env(overrides),
             "generator": self.cfg["planner"],
             "planner": "sage",
         })
@@ -524,7 +529,7 @@ class AssistLoop(ClosedLoop):
                 if len(drawers) == 1:
                     g["to"] = drawers[0]
             if not g.get("from") and not g.get("from_any"):
-                g["from"] = memory.where(g["object"]) or ""
+                g["from"] = self._remembered(memory, g["object"]) or ""
             if g.get("from") and g.get("from") == g.get("to"):
                 g["from"] = ""                       # already where it should go? search rather than trust it
             out.append(g)
@@ -1188,7 +1193,7 @@ class AssistLoop(ClosedLoop):
                + "\nGoals: " + r.goal_txt + "\nRobot state: " + r.world.as_text())
         if r.searched:
             txt += "\nAlready looked (object not there): " + ", ".join(r.searched)
-        return txt
+        return txt + self._search_obs(r)
 
     @staticmethod
     def _goal_text(goals) -> str:
@@ -1202,8 +1207,9 @@ class AssistLoop(ClosedLoop):
         """The certified plan in r.steps. True when the run ended (plan only / no plan)."""
         yield r.ev("status", msg="Generating task plan...")
         r.restated = r.task + ("" if not r.dialogue else " (" + "; ".join(t for w_, t in r.dialogue if w_ == "user") + ")")
-        r.goal_txt = self._goal_text(r.goals)
         r.searched, r.seen_far, r.uncertified = [], [], []
+        yield from self._search_start(r)                 # may give a goal its source (search.py)
+        r.goal_txt = self._goal_text(r.goals)
         r.planner = self._make_planner()
         self._hook_progress(r.planner)
         yield from self._generate_and_certify(r)
@@ -1351,7 +1357,7 @@ class AssistLoop(ClosedLoop):
         r.run.replans.append({"at_index": r.i, "failed": failed, "reason": ers, "suffix_len": len(suffix),
                               "problems": probs})
         r.steps = r.steps[:r.i] + suffix
-        return r.ev("replan", at_index=r.i, reason=ers, problems=probs,
+        return r.ev("replan", at_index=r.i, reason=ers, problems=probs, search=getattr(r, "steered", None) or None,
                     plan=[f"{x['action']} {x['object']}" for x in suffix],
                     say=r.announcer.announce("replan"), world=world.to_dict())
 
@@ -1361,7 +1367,7 @@ class AssistLoop(ClosedLoop):
         try:
             r.llm_budget.take(what="replan")
             suffix, _m = call_cancellable(r.planner.replan, r.restated, r.completed, failed, ers, self._obs(r), [])
-            return self._ground_all(r, suffix or []), ers
+            return self._search_steer(r, self._ground_all(r, suffix or [])), ers
         except Exception as e:
             if is_cancel(e):
                 raise
@@ -1795,11 +1801,14 @@ class AssistLoop(ClosedLoop):
                                          + (f", near {near}" if near else ", not near any place") + ", out of reach from here"))
                 if near:
                     r.seen_far.append(near); r.memory.see(o, near, "seen from afar")
+                    if getattr(r, "search", None) is not None:
+                        r.search.see(o, near, how="seen from afar")
         return vres
 
     def _step_succeeded(self, r, st, rec):
         a, o = st["action"], st["object"]
         rec.status = "success"; r.run.steps.append(rec)
+        self._search_effect(r, st)                       # before the effect: where the robot did it
         self._effect(st, r.world, r.memory, r.placed)
         if st.get("verify_goal"):
             r.placed[o] = st["verify_goal"]             # seen at its destination: the goal holds
@@ -1912,8 +1921,11 @@ class AssistLoop(ClosedLoop):
         # absent: the place counts as searched; could not look / out of reach: it does not (policy)
         if world.arrived and world.arrived not in r.searched and rule.mark_searched:
             r.searched.append(world.arrived)
+        leg = yield from self._search_missed(r, o, rule)
+        # the belief has nowhere left to look (searched places are never searched again): ask / give up now
+        nowhere = leg is None and rule.mark_searched and getattr(r, "search", None) is not None
         r.find_fails[o] = r.find_fails.get(o, 0) + 1
-        if r.find_fails[o] > self.cfg["search_max"] and self.cfg["ask_help"] and ("where", o) not in r.helped:
+        if (r.find_fails[o] > self.cfg["search_max"] or nowhere) and self.cfg["ask_help"] and ("where", o) not in r.helped:
             r.helped.add(("where", o))
             q = f"I couldn't find the {o}. Where is it?"
             yield r.ev("clarify", question=q, round=0)
@@ -1923,10 +1935,11 @@ class AssistLoop(ClosedLoop):
                 yield self._finish(r, "failed", msg=f"could not find the {o} (looked at {', '.join(r.searched)})")
                 return _STOP, ""
             r.memory.remember_answer(r.task, q, ans); r.memory.see(o, k, "user said")
+            self._search_told(r, o, k)
             if k in r.searched:
                 r.searched.remove(k)
             return None, f"; the user says the {o} is on {k}"
-        if r.find_fails[o] > self.cfg["search_max"] + 1:
+        if r.find_fails[o] > self.cfg["search_max"] + 1 or nowhere:
             yield self._finish(r, "failed", msg=f"could not find the {o} (looked at {', '.join(r.searched)})")
             return _STOP, ""
         near = f" (it was seen near {r.seen_far[-1]})" if r.seen_far else ""
@@ -1935,8 +1948,10 @@ class AssistLoop(ClosedLoop):
         if not rule.mark_searched:
             # could not look: no evidence that it is not here (the replan reason is worded by code)
             return None, f"; the {o} could not be checked at {here} ({code}): it may still be there{near}"
-        return None, (f"; it is not at {world.arrived}. Choose where to look next among the places not yet "
-                      f"searched" + (f" (it was seen near {r.seen_far[-1]})" if r.seen_far else ""))
+        nxt = (f"Look next at {leg.text()}" if leg is not None else
+               "Choose where to look next among the places not yet searched")
+        return None, (f"; it is not at {world.arrived}. {nxt}"
+                      + (f" (it was seen near {r.seen_far[-1]})" if r.seen_far else ""))
 
     def _recover_pick(self, r, st, reason, rule):
         """Look + grasp again in place (pick_retries, not when out of lateral reach), then ask the person
@@ -1972,6 +1987,7 @@ class AssistLoop(ClosedLoop):
                 return _NEXT, ""
             if k and k != world.arrived:
                 r.memory.see(o, k, "user said"); world.found = None
+                self._search_told(r, o, k)
                 extra = f"; the user says the {o} is on {k}"
         if not extra:
             yield self._finish(r, "failed", msg=f"could not pick up the {o}: {reason}")

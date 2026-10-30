@@ -31,6 +31,7 @@ Full rule text and reasons: [docs/rules.md](docs/rules.md). Docs index: [docs/RE
 - [docs/dialog.md](docs/dialog.md): dialog, yes/no answers, typed refusals, understand sampling
 - [docs/planners.md](docs/planners.md): planner interface, plug-ins by module:Class / entry point
 - [docs/memory.md](docs/memory.md): planner memory (seed pool, recording, cleaning)
+- [docs/search.md](docs/search.md): object search with a belief
 - [docs/observe.md](docs/observe.md): RunRecord, metrics, replay, event schema
 - [docs/action_model_divergence.md](docs/action_model_divergence.md): the one action model
 - [docs/CLOSED_LOOP_ARCHITECTURE.md](docs/CLOSED_LOOP_ARCHITECTURE.md): closed-loop planning

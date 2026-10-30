@@ -202,7 +202,9 @@ class ObsPlanner(ScriptedPlanner):
 def test_only_an_absence_marks_the_place_searched(make_assist, env, msg, searched):
     robot = FakeRobot(env, HOUSE, faults=[{"skill": "find", "kind": "fail", "nth": 1, "msg": msg}])
     planner = ObsPlanner(BASIC, replans=[BASIC])
-    evs = run_task(make_assist(robot, FakeLLM(APPLE), planner, health_wait_s=0), TASK)
+    # search=False: the apple IS on the desk (a false "not found"); with the search belief on, the desk would
+    # never be looked at again after an absence (tests/test_v2_search_loop.py)
+    evs = run_task(make_assist(robot, FakeLLM(APPLE), planner, health_wait_s=0, search=False), TASK)
     assert done(evs)["status"] == "success"
     obs = [c[1] for c in planner.calls if c[0] == "obs"]
     if searched:
