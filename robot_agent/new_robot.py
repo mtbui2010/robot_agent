@@ -56,7 +56,7 @@ SKIP_DIRS = {'.git', '__pycache__', '.pytest_cache', '.mypy_cache', '.ruff_cache
              # tool permissions and paths of whoever last worked on the source
              '.claude'}
 SKIP_GLOBS = ('*.pyc', '*.pyo', '*.egg-info', '*.log', '*.npy', '*.png',
-              '*.jpg', '*.bak', 'task_runs')
+              '*.jpg', '*.bak', 'task_runs', 'run_records')
 # Files whose contents get the identifier rewrite. Anything else is copied
 # byte-for-byte.
 TEXT_SUFFIXES = {'.py', '.toml', '.cfg', '.ini', '.md', '.txt', '.json', '.yaml',

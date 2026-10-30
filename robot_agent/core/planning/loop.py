@@ -28,6 +28,7 @@ import traceback
 from pathlib import Path
 from typing import Iterator, Optional
 
+from robot_agent.observe.paths import data_dir
 from robot_agent.state import current, host_id
 from .announcer import Announcer
 from .base import WorldState
@@ -213,8 +214,9 @@ class ClosedLoop:
             "host": self._llm_cfg.get("url") or self._llm_cfg.get("host"),
             "model": self._llm_cfg.get("model"),
             # Per machine (common/ is shared by every robot using this folder).
-            "log_dir": Path(o.get("log_dir") or (common / "task_runs" / host_id())),
-            "live_path": str(o.get("live_path") or (common / f"grace_memory.{host_id()}.jsonl")),
+            # observe.paths: ROBOT_AGENT_DATA_DIR moves them; unset = common/ as before
+            "log_dir": Path(o.get("log_dir") or data_dir("task_runs", common, host_id())),
+            "live_path": str(o.get("live_path") or data_dir("grace_memory", common, host_id())),
         }
 
     def _make_planner(self):

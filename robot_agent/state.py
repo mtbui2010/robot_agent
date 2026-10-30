@@ -155,7 +155,10 @@ class AgentState:
     def _world_file(self) -> Path:
         # Per machine: the belief is about THIS robot (what it holds, where it
         # is). One shared world_state.json let a second robot inherit it.
-        return self.common_dir / f'world_state.{host_id()}.json'
+        # common_dir/world_state.<host>.json unless ROBOT_AGENT_DATA_DIR is set
+        # (robot_agent.observe.paths; the old file is read when the new one is missing).
+        from .observe.paths import data_dir
+        return data_dir('world_state', self.common_dir, host_id())
 
     def save_world(self) -> None:
         """Persist the symbolic world belief (best-effort). ``arrived`` is saved

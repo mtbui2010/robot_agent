@@ -35,6 +35,7 @@ import traceback
 from pathlib import Path
 from typing import Iterator, Optional
 
+from robot_agent.observe.paths import data_dir
 from robot_agent.state import current, host_id
 from .announcer import Announcer
 from .loop import ClosedLoop, _vr_list, reconcile_world
@@ -287,7 +288,7 @@ class AssistLoop(ClosedLoop):
             "reach_far": float(overrides.get("reach_far", env("ROBOT_AGENT_REACH_FAR", "1.0"))),
             "reach_lateral": float(overrides.get("reach_lateral", env("ROBOT_AGENT_REACH_LATERAL", "0.78"))),
             "ask_help": overrides.get("ask_help", env("ROBOT_AGENT_ASK_HELP", "1") == "1"),
-            "memory_path": Path(overrides.get("memory_path") or (common / f"object_memory.{host_id()}.json")),
+            "memory_path": Path(overrides.get("memory_path") or data_dir("object_memory", common, host_id())),  # observe.paths
             "generator": self.cfg["planner"],
             "planner": "sage",
         })
