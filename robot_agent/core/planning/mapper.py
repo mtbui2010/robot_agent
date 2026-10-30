@@ -28,13 +28,14 @@ Mapping policy (``ACTION_MAPPER_SPEC.md`` sections 2 & 6):
   entry)                                       -> raises :class:`Unmappable`.
 * Everything else                              -> ``(skill_name, params)``.
 
-This module does NOT import ``pyplanner``.
+The symbolic effects come from the shared action model (``.action_model``).
 """
 
 from __future__ import annotations
 
 from typing import Optional
 
+from . import action_model
 from .base import WorldState
 
 # GRACE param fields that name a location (vs. an object) for param building.
@@ -155,35 +156,11 @@ class ActionMapper:
         """Mutate ``world`` to mirror the GRACE symbolic effect of ``step``.
 
         Called by the driver only after the real skill reported success, so the
-        mapper's state stays consistent with physical ground truth (mirror of
-        ``pyplanner.verifier._apply``; ``ACTION_MAPPER_SPEC.md`` section 3).
+        mapper's state stays consistent with physical ground truth. The effect is
+        the shared action model's (``embodiplan.action_model.apply``;
+        ``ACTION_MAPPER_SPEC.md`` section 3).
         """
-        action = self._action(step)
-        obj = self._object(step)
-
-        if action == "MoveTo":
-            world.arrived = obj
-            # Reset 'found' on a move unless we re-arrived where we found it.
-            if world.found != obj:
-                world.found = None
-        elif action == "Find":
-            world.found = obj
-        elif action == "Pick":
-            world.holding = world.found
-            world.found = None
-        elif action in ("Place", "PutIn"):
-            world.holding = None
-        elif action == "Open":
-            if obj:
-                world.opened.add(obj)
-        elif action == "Close":
-            world.opened.discard(obj)
-        elif action == "TurnOn":
-            if obj:
-                world.on.add(obj)
-        elif action == "TurnOff":
-            world.on.discard(obj)
-        # Sit/LieOn/Serve/Wait/Wash: no symbolic effect.
+        action_model.apply(step, world, inplace=True)
 
     def screen(self, steps: list[dict]) -> list[str]:
         """Return pre-flight human warnings for non-executable steps.

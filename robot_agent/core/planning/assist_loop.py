@@ -40,6 +40,7 @@ from .announcer import Announcer
 from .loop import ClosedLoop, _vr_list, reconcile_world
 from .mapper import ActionMapper, Unmappable
 from .records import RunLogger, StepRecord, VerifyResult, new_task_record
+from . import action_model
 from .verify import StepVerifier, symbolic_check, verdict
 
 _LOC_ACTIONS = {"MoveTo", "Place", "PutIn", "Open", "Close"}
@@ -497,7 +498,8 @@ class AssistLoop(ClosedLoop):
 
     def _check(self, steps, world, places, goals):
         """The SAGE plan, simulated as written (nothing is changed): [(step index, problem, critical)].
-        Critical problems go back to SAGE for an edit; the others are only mentioned alongside them."""
+        Critical problems go back to SAGE for an edit; the others are only mentioned alongside them.
+        The action rules are the shared action model's; this adds the goal / ENV findings and the wording."""
         probs = []
         P = lambda i, txt, crit=True: probs.append((i, txt, crit))
         need_open = {g["to"] for g in goals if g["type"] == "in"} | {g["object"] for g in goals if g["type"] == "open"}
@@ -505,63 +507,77 @@ class AssistLoop(ClosedLoop):
         src_of = {g["object"]: g.get("from") for g in goals}
         known = set(getattr(self._namemap, "SKILL_MAP", {})) | set(getattr(self._namemap, "NOOP_ACTIONS", set()))
         nice = lambda k: (k or "").replace("@", " in the ")
-        at, found, holding, opened, placed_ok = world.arrived, world.found, world.holding, set(world.opened), {}
+        ctx = dict(capabilities=action_model.ROBOT_CAPABILITIES, actions=known, openable=places.openable,
+                   containers=places.openable, object_places={o: f for o, f in src_of.items() if f})
+        w, placed_ok = world.copy(), {}
         for i, st in enumerate(steps):
             a, o = st.get("action"), st.get("object") or ""
             bad_place = not st.get("grounded", True) or o.startswith("@")
-            if a not in known:
+            vs, said, holding = {v.code: v for v in action_model.check(st, w, **ctx)}, set(), w.holding
+
+            def has(*codes):                             # did the model find one of these? (marks them worded)
+                hit = [c for c in codes if c in vs]
+                said.update(hit)
+                return bool(hit)
+            if has("unknown_action"):
                 P(i, f"step {i + 1} '{a} {o}': the robot has no action {a} (use MoveTo, Find, Pick, Place, PutIn, Open, Close)")
                 continue
             if a == "MoveTo":
                 if bad_place:
                     P(i, f"step {i + 1} 'MoveTo {o}': {o.lstrip('@')} is not a place the robot can go to; use one of the listed places")
-                else:
-                    if o == at:
-                        P(i, f"step {i + 1} 'MoveTo {o}': the robot is already there", False)
-                    at, found = o, None
+                    continue
+                if has("already_there"):
+                    P(i, f"step {i + 1} 'MoveTo {o}': the robot is already there", False)
             elif a in ("Open", "Close"):
-                if not places.openable(o):
+                if has("not_openable"):
                     P(i, f"step {i + 1} '{a} {o}': {nice(o)} cannot be opened or closed")
                     continue
                 if o not in (need_open if a == "Open" else need_close) and o not in src_of.values():
                     P(i, f"step {i + 1} '{a} {o}': no goal needs it; remove it")
-                if holding:
+                if has("hand_full"):
                     P(i, f"step {i + 1} '{a} {o}': the robot cannot {a.lower()} it while holding the {holding}; do it before the Pick")
-                if at != o:
+                if has("interact_without_find"):
                     P(i, f"step {i + 1} '{a} {o}': the robot must MoveTo {o} first")
-                (opened.add if a == "Open" else opened.discard)(o)
+                if has("already_open"):
+                    P(i, f"step {i + 1} 'Open {o}': {nice(o)} is already open; remove this step")
+                if has("close_not_opened"):
+                    P(i, f"step {i + 1} 'Close {o}': {nice(o)} is not open; remove this step")
             elif a == "Find":
-                if holding == o:
+                if has("find_held"):
                     P(i, f"step {i + 1} 'Find {o}': already done (the {o} is in the hand); delete this step")
-                if src_of.get(o) and at != src_of[o]:
+                if has("find_wrong_place"):
                     P(i, f"step {i + 1} 'Find {o}': the user said it is on {nice(src_of[o])}; MoveTo {src_of[o]} first")
-                found = o
             elif a == "Pick":
                 g_ = next((g for g in goals if g["object"] == o), None)
                 if g_ and placed_ok.get(o) == g_.get("to"):
                     P(i, f"step {i + 1} 'Pick {o}': the {o} was already placed on {g_['to']} by an earlier step; delete the steps that move it again")
-                if holding == o:
-                    P(i, f"step {i + 1} 'Pick {o}': already done by an earlier step (the {o} is in the hand); delete this step")
-                elif holding:
-                    P(i, f"step {i + 1} 'Pick {o}': the hand already holds the {holding}; Place it first")
-                elif found != o:
-                    P(i, f"step {i + 1} 'Pick {o}': needs 'Find {o}' just before it, at the same place")
-                holding, found = (holding or o), None
+                if has("already_holding", "no_find_before_pick", "pick_not_found"):
+                    if holding and holding == o:
+                        P(i, f"step {i + 1} 'Pick {o}': already done by an earlier step (the {o} is in the hand); delete this step")
+                    elif holding:
+                        P(i, f"step {i + 1} 'Pick {o}': the hand already holds the {holding}; Place it first")
+                    else:
+                        P(i, f"step {i + 1} 'Pick {o}': needs 'Find {o}' just before it, at the same place")
             elif a in ("Place", "PutIn"):
                 g = next((g for g in goals if g["object"] == holding), None)
-                if not holding:
+                if has("place_without_holding"):
                     P(i, f"step {i + 1} '{a} {o}': nothing is in the hand")
                 if bad_place:
+                    has("empty_object", "place_wrong_location")
                     P(i, f"step {i + 1} '{a} {o}': not a place" + (f"; the destination is {g['to']}" if g else ""))
                 elif g and g.get("to") and o != g["to"]:
+                    has("place_wrong_location")
                     P(i, f"step {i + 1} '{a} {o}': the {holding} must go to {g['to']}, not {o}")
-                elif at != o:
+                elif has("place_wrong_location"):
                     P(i, f"step {i + 1} '{a} {o}': the robot must MoveTo {o} first")
-                if a == "PutIn" and o not in opened:
+                if has("putin_closed_container"):
                     P(i, f"step {i + 1} 'PutIn {o}': {nice(o)} is closed; Open it before the Pick")
                 if holding:
                     placed_ok[holding] = o
-                holding = None
+            for code, v in vs.items():                   # any other rule of the model, in its own words
+                if code not in said:
+                    P(i, f"step {i + 1} '{a} {o}': {v.reason}", v.is_error)
+            action_model.apply(st, w, inplace=True)
         missing = self._missing(steps, world, goals)
         if missing:
             P(len(steps), "the plan does not achieve: " + "; ".join(missing))
@@ -573,27 +589,26 @@ class AssistLoop(ClosedLoop):
 
     def _sage_edit(self, planner, task, obs, ground, world, places, goals, goal_txt):
         """SAGE's own Editing, driven by the checker: every sub-goal block with a critical finding is re-done by
-        GRACEPlanner._refine (sub-goal-local repair) with that finding as feedback; a block whose sub-goal the
+        SAGEPlanner.edit_block (sub-goal-local repair) with that finding as feedback; a block whose sub-goal the
         earlier blocks already achieved is asked for no steps. Returns (plan, [edit notes]); the plan is
-        SAGE's ``_flatten`` of its blocks, as generate_plan returns it."""
+        SAGE's ``flatten`` of its blocks, as generate_plan returns it. Uses embodiplan's public API only."""
         inner = getattr(planner, "_p", planner)
-        blocks = getattr(inner, "_last_blocks", None)
-        if not blocks or not hasattr(inner, "_refine"):
+        blocks = getattr(inner, "last_blocks", None)
+        if not blocks or not hasattr(inner, "edit_block"):
             return None, []
-        from embodiplan.sage import _flatten
-        from embodiplan.verifier import SymbolicState, simulate
-        ex_block = inner._retrieve_block(task)[1] if hasattr(inner, "_retrieve_block") else ""
+        from embodiplan.sage import flatten
+        ex_block = inner.retrieve_examples(task)[1]
         notes = []
         for _round in range(self.cfg["edit_rounds"]):
             per_block, n_before, done_at = {}, 0, None
             for k in range(len(blocks)):
-                flat_k = ground(_flatten(blocks[:k + 1]))
-                if done_at is None and blocks[k].steps and k > 0 and self._reaches(ground(_flatten(blocks[:k])), world, goals):
+                flat_k = ground(flatten(blocks[:k + 1]))
+                if done_at is None and blocks[k].steps and k > 0 and self._reaches(ground(flatten(blocks[:k])), world, goals):
                     done_at = k
                 rng = range(n_before, len(flat_k))
                 per_block[k] = rng
                 n_before = len(flat_k)
-            flat = ground(_flatten(blocks))
+            flat = ground(flatten(blocks))
             probs = [p_ for p_ in self._check(flat, world, places, goals) if p_[2]]
             todo = {}
             for k in range(len(blocks)):
@@ -612,18 +627,18 @@ class AssistLoop(ClosedLoop):
                 break
             for k, items in sorted(todo.items()):
                 prev = [s_ for b in blocks[:k] for s_ in b.steps]
-                state = simulate(prev, initial_state=SymbolicState(), stop_on_error=False).final_state or SymbolicState()
+                state = action_model.simulate(prev, stop_on_error=False).final_state
                 fb = ("Checker findings (fix them; places must be exactly the listed ones):\n"
                       + "\n".join(f"- {t}" for t in items) + f"\nGoals of the whole task: {goal_txt}")
                 try:
-                    new_steps = inner._refine(blocks[k].name, task, blocks[k].steps, fb, state, obs, [], ex_block)[0]
+                    new_steps = inner.edit_block(blocks[k], fb, task=task, state=state, obs=obs, examples_block=ex_block)
                 except Exception as e:
                     notes.append(f"sub-goal {k + 1} edit failed: {e}"); continue
                 empty_ok = any('"steps": []' in t for t in items)
                 if new_steps or empty_ok:
                     blocks[k].steps = new_steps
                 notes.append(f"sub-goal {k + 1} '{blocks[k].name}': " + "; ".join(items))
-        return ground(_flatten(blocks)), notes
+        return ground(flatten(blocks)), notes
 
     def _missing(self, steps, world, goals):
         holding, opened, on = world.holding, set(world.opened), {}
@@ -712,23 +727,17 @@ class AssistLoop(ClosedLoop):
         return math.hypot(x - l["x"], y - l["y"])
 
     def _effect(self, st, world, memory, placed):
-        a, o = st["action"], st["object"]
-        if a == "MoveTo":
-            world.arrived = o
-            world.found = None                       # what was found is behind us
-        elif a == "Find":
-            world.found = o; memory.see(o, world.arrived, "found")
+        a, o, held = st["action"], st["object"], world.holding
+        action_model.apply(st, world, inplace=True)     # the symbolic effect is the shared action model's
+        if a == "Find":
+            memory.see(o, world.arrived, "found")
         elif a == "Pick":
-            world.holding, world.found, world.holding_since = o, None, time.time()
-            memory.see(o, "robot", "picked")
+            world.holding_since = time.time()
+            memory.see(world.holding, "robot", "picked")
         elif a in ("Place", "PutIn"):
-            if world.holding:
-                placed[world.holding] = o; memory.see(world.holding, o, "placed")
-            world.holding = world.holding_since = None; world.holding_pose = None
-        elif a == "Open":
-            world.opened.add(o)
-        elif a == "Close":
-            world.opened.discard(o)
+            if held:
+                placed[held] = o; memory.see(held, o, "placed")
+            world.holding_since = None; world.holding_pose = None
         try:
             current().save_world()
         except Exception:
@@ -934,7 +943,7 @@ class AssistLoop(ClosedLoop):
             yield ev("gate", round=0, problems=[p_[1] for p_ in probs], plan=[f"{x['action']} {x['object']}" for x in steps])
             edits = []
             if any(p_[2] for p_ in probs):
-                # SAGE's sub-goal-local Editing with the checker's findings (GRACEPlanner._refine per block)
+                # SAGE's sub-goal-local Editing with the checker's findings (SAGEPlanner.edit_block per block)
                 edited, edits = self._sage_edit(planner, restated, make_obs(), ground, world, places, goals, goal_txt)
                 if edited is not None:
                     steps = edited
@@ -1001,7 +1010,7 @@ class AssistLoop(ClosedLoop):
                 elif a in ("Open", "Close") and world.holding:
                     why = f"the robot cannot {a.lower()} {o} while holding the {world.holding}"
                 else:
-                    ok_pre, why_ = symbolic_check(st, world)
+                    ok_pre, why_ = symbolic_check(st, world, openable=places.openable)
                     why = "" if ok_pre else why_
                 if not why and a in ("Place", "PutIn") and world.holding:
                     # still in the hand? (dropped on the way: `place` would otherwise go and pick something up)
