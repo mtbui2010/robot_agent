@@ -94,7 +94,9 @@ that is not a subscription has no receive time and is reported unknown. Its mani
 
 One unit of `understand.LLMBudget` per core LLM call of a run: understand (and its repair /
 re-sample calls), the planner's `generate_plan` and each `replan`, each sub-goal edit of the plan
-gate, the gate's one refinement. The cap is `llm_budget` (run option) /
+gate, the gate's one refinement, and the search's per-object place ranking (`search_hooks`, the
+same `r.llm_budget`; once the budget is used the ranking is skipped and the prior alone orders the
+places, the next planner call then ends the run). The cap is `llm_budget` (run option) /
 `ROBOT_AGENT_LLM_BUDGET`, default **20** (was 40); 0 = no cap.
 
 Past the cap the run ends `failed` with code `budget_exceeded` (`FailureCode.BUDGET_EXCEEDED`,
