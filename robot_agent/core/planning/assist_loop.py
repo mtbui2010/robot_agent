@@ -1093,7 +1093,8 @@ class AssistLoop(ClosedLoop):
                    plan_text=plan_text, certified=r.certified, world=r.world.to_dict())
         if r.plan_only:
             yield self._finish(r, "planned", say=r.announcer.announce("plan_ready")); return True
-        if not r.steps:
+        if not r.steps and not (r.goals and len(self._untouched(r.goals, [])) == len(r.goals)
+                                and not (r.run.plan_meta or {}).get("error")):
             yield self._finish(r, "failed", msg="the planner produced no plan for the goals"); return True
         if not r.certified:
             # an uncertified plan never runs (the gate's findings are the reason)
@@ -1145,8 +1146,18 @@ class AssistLoop(ClosedLoop):
     def _blocking(self, r, steps) -> list:
         """The findings that keep a plan from running (the certified gate): the checker's critical
         ones on the plan as written, and steps the robot cannot bind."""
-        probs = [p_[1] for p_ in self._check(steps, r.world, r.places, r.goals) if p_[2]]
+        unt = self._untouched(r.goals, steps)
+        goals = [g for g in r.goals if g not in unt] if unt and len(unt) < len(r.goals) else r.goals
+        probs = [p_[1] for p_ in self._check(steps, r.world, r.places, goals) if p_[2]] if steps else []
         return list(dict.fromkeys(probs + self._hard_findings(r, steps)))
+
+    @staticmethod
+    def _untouched(goals, steps) -> list:
+        """'on' goals the plan never moves whose object's place is unknown: they may hold already
+        (the planner left them out); the run looks at the destination at the end instead (D1)."""
+        picked = {st.get("object") for st in steps if st.get("action") == "Pick"}
+        return [g for g in goals if g.get("type") == "on" and g.get("to") and not g.get("from")
+                and not g.get("from_any") and g.get("object") not in picked]
 
     def _hard_findings(self, r, steps, start: int = 0) -> list:
         """Steps (from index `start`) no belief can make runnable: an action the robot does not
@@ -1423,9 +1434,13 @@ class AssistLoop(ClosedLoop):
                 return False
 
     def _plan_ended(self, r):
-        """The plan ran out: _DONE when the goals hold, else a replan (_NEXT) or _STOP."""
+        """The plan ran out: _DONE when the goals hold, else look at goals the plan left out (they may
+        hold already), else a replan (_NEXT) or _STOP."""
         if self._goals_hold(r.goals, r.world, r.placed, r.completed, r.world_at_start.arrived):
             return _DONE
+        if self._look_at_untouched(r):
+            yield r.ev("status", msg="checking the goals the plan did not touch")
+            return _NEXT
         e_ = self._sage_replan(r, {"action": "Check", "object": "goals"},
                                "the plan ended but the goals are not reached: "
                                + "; ".join(self._missing(r.completed, r.world_at_start, r.goals)))
@@ -1434,6 +1449,22 @@ class AssistLoop(ClosedLoop):
                                                                  + r.goal_txt)); return _STOP
         yield e_
         return _NEXT
+
+    def _look_at_untouched(self, r) -> bool:
+        """Append a MoveTo + Find at the destination of every unmet goal the run never moved (once each);
+        a Find that sees the object there makes the goal hold by observation. True when steps were added."""
+        looked = r.__dict__.setdefault("looked_goals", set())
+        at, add = r.world.arrived, []
+        for g in self._untouched(r.goals, r.completed):
+            o, to = g["object"], g["to"]
+            if (o, to) in looked or r.placed.get(o) == to or r.world.holding == o or to not in r.places.env:
+                continue
+            looked.add((o, to))
+            if at != to:
+                add.append({"action": "MoveTo", "object": to, "grounded": True}); at = to
+            add.append({"action": "Find", "object": o, "verify_goal": to})
+        r.steps[r.i:r.i] = add
+        return bool(add)
 
     def _precondition(self, r, st) -> str:
         """Why the step cannot run in the belief ('' when it can)."""
@@ -1536,6 +1567,8 @@ class AssistLoop(ClosedLoop):
         a, o = st["action"], st["object"]
         rec.status = "success"; r.run.steps.append(rec)
         self._effect(st, r.world, r.memory, r.placed)
+        if st.get("verify_goal"):
+            r.placed[o] = st["verify_goal"]             # seen at its destination: the goal holds
         r.completed.append(st)
         yield r.ev("step_done", index=r.i, status="success", result=rec.result,
                    say=r.announcer.announce("step_success", **self._say(st, a, o)), world=r.world.to_dict())
@@ -1553,6 +1586,9 @@ class AssistLoop(ClosedLoop):
         yield r.ev("step_done", index=r.i, status="failed", result=rec.result, reason=reason,
                    say=r.announcer.announce("step_fail", **self._say(st, a, o), reason=reason),
                    world=r.world.to_dict())
+        if st.get("verify_goal"):
+            r.world.found = None; r.i += 1              # not there: the goal does not hold yet (replan at the end)
+            return _NEXT
         # ── stop at once: the recovery policy does not retry it (a skill bug, an e-stop), or the same
         # failure twice ──
         code = r.robot.failure_code(res, reason)
