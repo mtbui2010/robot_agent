@@ -233,13 +233,116 @@ def cancel_run():
     return request_cancel()
 
 
-async def _watch_client(websocket: WebSocket) -> None:
+# ------------------------------------------------------------------
+# Runs: one active run per robot (robot_agent.interact.run_manager)
+# ------------------------------------------------------------------
+class RunControlReq(BaseModel):
+    user_id: str = ''
+    role: Optional[str] = None      # owner | member | guest; missing -> owner
+
+
+class RunInjectReq(RunControlReq):
+    text: str
+
+
+def _runs():
+    from ..core.run_control import manager
+    return manager()
+
+
+def _result_or_raise(res) -> dict:
+    if not res.ok and res.action == 'refused':
+        status = {'not_found': 404, 'not_active': 409}.get(res.code, 403)
+        raise HTTPException(status_code=status, detail=res.reason)
+    return res.to_dict()
+
+
+@router.get('/runs')
+def list_runs():
+    mgr = _runs()
+    act = mgr.active()
+    return {'active': act.run_id if act is not None else None,
+            'runs': [r.to_dict() for r in mgr.list()]}
+
+
+@router.get('/runs/{run_id}')
+def get_run(run_id: str, events: bool = True):
+    run = _runs().get(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f'no run {run_id!r}')
+    return run.to_dict(events=events)
+
+
+def _control(run_id: str, action: str, body: Optional[RunControlReq]) -> dict:
+    body = body or RunControlReq()
+    fn = getattr(_runs(), action)
+    return _result_or_raise(fn(run_id, role=body.role, user_id=body.user_id))
+
+
+@router.post('/runs/{run_id}/cancel')
+def cancel_one_run(run_id: str, body: Optional[RunControlReq] = None):
+    """Cancel one run and stop the robot at once (ROS goals, listens). A lower
+    role than the run's starter is refused (403); 409 once it has ended."""
+    return _control(run_id, 'cancel', body)
+
+
+@router.post('/runs/{run_id}/pause')
+def pause_run(run_id: str, body: Optional[RunControlReq] = None):
+    """Pause one run; it holds at the next step boundary."""
+    return _control(run_id, 'pause', body)
+
+
+@router.post('/runs/{run_id}/resume')
+def resume_run(run_id: str, body: Optional[RunControlReq] = None):
+    return _control(run_id, 'resume', body)
+
+
+@router.post('/runs/{run_id}/inject')
+def inject_run(run_id: str, body: RunInjectReq):
+    """Something said / typed during the run, routed by the intent router."""
+    return _result_or_raise(_runs().inject(run_id, body.text, user_id=body.user_id,
+                                           role=body.role))
+
+
+class _Sender:
+    """Serialises sends on one socket (the event stream and run-manager
+    notices share it)."""
+
+    def __init__(self, websocket: WebSocket):
+        import asyncio
+        self.ws = websocket
+        self.lock = asyncio.Lock()
+
+    async def send(self, event: dict) -> None:
+        async with self.lock:
+            await self.ws.send_text(
+                json.dumps(event, ensure_ascii=False, allow_nan=False, default=_serialize_result))
+
+
+def _client_text(text: str):
+    """A mid-run message: ('cancel', None), ('say', utterance) or (None, None)."""
+    try:
+        msg = json.loads(text)
+    except Exception:
+        return None, None
+    if not isinstance(msg, dict):
+        return None, None
+    if msg.get('cancel'):
+        return 'cancel', None
+    said = msg.get('text') or msg.get('prompt')
+    return ('say', str(said)) if said else (None, None)
+
+
+async def _watch_client(websocket: WebSocket, run=None, user_id: str = '', role=None,
+                        sender: '_Sender | None' = None) -> None:
     """Cancel the run when the dashboard goes away mid-plan.
 
     Runs alongside the event stream: a reload, a closed tab or a dropped
     network connection leaves nobody watching the robot, which must not keep
     executing. The client may also cancel over this socket by sending
-    ``{"cancel": true}``.
+    ``{"cancel": true}``. ``{"text": "..."}`` during the run is an event into
+    it (stop / pause / answer / goal change, see the intent router); the
+    result comes back as a ``run_injected`` event.
     """
     from ..core.run_control import request_cancel
     try:
@@ -249,11 +352,13 @@ async def _watch_client(websocket: WebSocket) -> None:
                 break
             text = msg.get('text')
             if text:
-                try:
-                    if json.loads(text).get('cancel'):
-                        break
-                except Exception:
-                    pass
+                kind, said = _client_text(text)
+                if kind == 'cancel':
+                    break
+                if kind == 'say' and run is not None:
+                    res = _runs().inject(run.run_id, said, user_id=user_id, role=role)
+                    if sender is not None:
+                        await sender.send({'event': 'run_injected', 'text': said, **res.to_dict()})
     except Exception:
         pass          # socket already torn down — treat as a disconnect
     try:
@@ -262,10 +367,58 @@ async def _watch_client(websocket: WebSocket) -> None:
         pass
 
 
+async def _observe(websocket: WebSocket, sender: '_Sender', run, prompt: str,
+                   user_id: str, role) -> None:
+    """A second client while a run is active: it watches that run (every
+    event, with its run_id) and what it says goes in as an event, never as a
+    parallel run. Its going away does not cancel the run."""
+    import asyncio
+    loop = asyncio.get_running_loop()
+    q: asyncio.Queue = asyncio.Queue()
+    unsub = run.subscribe(lambda ev: loop.call_soon_threadsafe(q.put_nowait, ev))
+    try:
+        res = _runs().inject(run.run_id, prompt, user_id=user_id, role=role) if prompt else None
+        await sender.send({'event': 'run_attached', 'run_id': run.run_id, 'observer': True,
+                           'decision': 'busy', 'run': run.to_dict(),
+                           **({'injected': res.to_dict()} if res is not None else {})})
+
+        async def _forward():
+            while True:
+                ev = await q.get()
+                await sender.send(ev)
+                if ev.get('event') == 'run_state' and ev.get('state') in ('done', 'failed'):
+                    return
+
+        async def _receive():
+            while True:
+                msg = await websocket.receive()
+                if msg.get('type') == 'websocket.disconnect':
+                    return
+                kind, said = _client_text(msg.get('text') or '')
+                if kind == 'cancel':
+                    r = _runs().cancel(run.run_id, role=role, user_id=user_id)
+                    await sender.send({'event': 'run_injected', **r.to_dict()})
+                elif kind == 'say':
+                    r = _runs().inject(run.run_id, said, user_id=user_id, role=role)
+                    await sender.send({'event': 'run_injected', 'text': said, **r.to_dict()})
+
+        if not run.active:
+            return
+        tasks = [asyncio.create_task(_forward()), asyncio.create_task(_receive())]
+        try:
+            await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            for t in tasks:
+                t.cancel()
+    finally:
+        unsub()
+
+
 @router.websocket('/ws/agent')
 async def agent_ws(websocket: WebSocket):
     await websocket.accept()
     watcher = None
+    run, unsub, notices, outcome = None, None, None, {'ok': True, 'outcome': ''}
     try:
         data = await websocket.receive_json()
         prompt  = data.get('prompt', '')
@@ -280,11 +433,35 @@ async def agent_ws(websocket: WebSocket):
         log_all   = data.get('log_all', True)
         # planner options (SAGE: confirm_task, confirm_answers, find_min_conf, ...); unknown keys are ignored
         options   = data.get('options') if isinstance(data.get('options'), dict) else None
+        # who is asking (optional; a client without them acts as the owner, as before)
+        user_id   = str(data.get('user_id') or '')
+        role      = data.get('role')
+
+        import asyncio
+        sender = _Sender(websocket)
+        # One active run per robot: while one runs, this client observes it and
+        # its prompt becomes an event into that run.
+        start = _runs().start(goal=prompt, user_id=user_id, role=role)
+        if not start.started:
+            await _observe(websocket, sender, start.run, prompt, user_id, role)
+            return
+        run = start.run
+
+        # Run-manager notices (pause / resume, refusals, others' input) reach
+        # this client too, as they happen.
+        loop = asyncio.get_running_loop()
+        nq: asyncio.Queue = asyncio.Queue()
+        unsub = run.subscribe(lambda ev: ev.get('origin') == 'run_manager'
+                              and loop.call_soon_threadsafe(nq.put_nowait, ev))
+
+        async def _notices():
+            while True:
+                await sender.send(await nq.get())
+        notices = asyncio.create_task(_notices())
 
         # Watch for the client going away (or asking to cancel) while the plan
         # runs; the run itself clears the cancel flag as it starts.
-        import asyncio
-        watcher = asyncio.create_task(_watch_client(websocket))
+        watcher = asyncio.create_task(_watch_client(websocket, run, user_id, role, sender))
 
         ua = current().ua
         gen = (ua.run_direct(plan=prompt, log_data=log_data, lang=lang,
@@ -296,16 +473,22 @@ async def agent_ws(websocket: WebSocket):
             # Walk the whole event through _serialize_result so numpy scalars
             # and NaN/Inf are sanitized at a single point. `allow_nan=False`
             # crashes-fast on anything that still slipped through.
-            safe_event = _serialize_result(event)
-            await websocket.send_text(
-                json.dumps(safe_event, ensure_ascii=False, allow_nan=False, default=_serialize_result)
-            )
+            safe_event = run.publish(_serialize_result(event))   # + run_id, kept on the run
+            if safe_event.get('event') == 'error':
+                outcome.update(ok=False, outcome='error')
+            elif safe_event.get('event') == 'done':
+                outcome.update(ok=bool(safe_event.get('success', True)) or
+                               safe_event.get('status') == 'aborted',
+                               outcome=str(safe_event.get('status') or ''))
+            await sender.send(safe_event)
 
     except WebSocketDisconnect:
         pass
     except Exception as e:
+        outcome.update(ok=False, outcome='error')
         try:
-            await websocket.send_text(json.dumps({'event': 'error', 'msg': str(e)}))
+            await websocket.send_text(json.dumps({'event': 'error', 'msg': str(e),
+                                                  **({'run_id': run.run_id} if run else {})}))
         except Exception:
             pass
     finally:
@@ -313,3 +496,9 @@ async def agent_ws(websocket: WebSocket):
         # like a cancel.
         if watcher is not None:
             watcher.cancel()
+        if notices is not None:
+            notices.cancel()
+        if unsub is not None:
+            unsub()
+        if run is not None:
+            _runs().finish(run.run_id, ok=outcome['ok'], outcome=outcome['outcome'])

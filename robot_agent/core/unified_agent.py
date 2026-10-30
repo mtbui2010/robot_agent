@@ -1,6 +1,6 @@
 import asyncio, base64, threading, time
 
-from .run_control import begin_run, cancel_requested
+from .run_control import begin_run, cancel_requested, wait_if_paused
 from typing import AsyncIterator, Any
 
 # Direct-mode narration says a step's `inputs` only; these skills' `options` too when they have no
@@ -414,6 +414,7 @@ class UnifiedAgent:
                         emit({'event': 'stopped', 'msg': 'Previous step failed'})
                         break
 
+                    wait_if_paused()     # a paused run holds here, between two steps
                     if cancel_requested():
                         emit({'event': 'stopped', 'msg': 'Cancelled by user'})
                         break
@@ -585,6 +586,7 @@ class UnifiedAgent:
                         emit({'event': 'stopped', 'msg': 'Previous step failed'})
                         break
 
+                    wait_if_paused()     # a paused run holds here, between two steps
                     if cancel_requested():
                         emit({'event': 'stopped', 'msg': 'Cancelled by user', **_run_phrase('done_fail')})
                         break
