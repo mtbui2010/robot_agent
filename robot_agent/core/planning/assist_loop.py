@@ -8,7 +8,8 @@ or ``ROBOT_AGENT_PLANNER=sage``; ``'grace'`` is the plain ``ClosedLoop`` around 
 1. **Understand** (one LLM call, JSON): the task becomes goals ``{type: on|in|open|close, object, from, to}`` or
    a refusal (``unsafe`` / ``infeasible``). Places are grounded on the live ENV without the LLM; a place word
    naming several places, a place the user never said, or "me" without a place is a question for the user
-   (the robot's Ask skill, from its manifest); answers are read back ("I will … Is that right?").
+   (the robot's Ask skill, from its manifest); answers are read back ("I will … Is that right?"). A non-JSON
+   answer gets one repair call. An LLM that is down ends the run with a FailureCode and a spoken reason; every run has an LLM-call budget.
 2. **Plan**: SAGE ``generate_plan``; the checker (``_check``) simulates the plan as written and reports rule
    violations (wrong place, Pick without Find, Open with a full hand, goals not reached …); critical ones go back
    to SAGE as an edit request (``replan`` from the first bad step), up to ``edit_rounds`` times.
@@ -46,11 +47,13 @@ from .records import StepRecord, VerifyResult
 from . import action_model
 from .robot import run_skill
 from .verify import symbolic_check, verdict
+from .understand import LLMBadOutput, LLMBudget, LLMBudgetExceeded, LLMUnavailable, ask_json
 
 _LOC_ACTIONS = {"MoveTo", "Place", "PutIn", "Open", "Close"}
 # per-run overrides accepted from /ws/agent `options`
 ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify_rounds", "search_max",
-                "pick_retries", "ask_help", "arrive_tol", "find_min_conf", "find_verify", "reach_far", "reach_lateral"}
+                "pick_retries", "ask_help", "arrive_tol", "find_min_conf", "find_verify", "reach_far", "reach_lateral",
+                "understand_retries", "llm_budget"}
 _USER_WORDS = {"me", "user", "here", "you", "myself", "person"}
 # spoken yes / no (ko / vi / en) for read-backs
 _YES = re.compile(r"\b(yes|yeah|yep|ok|okay|right|correct|sure|go ahead|네|예|응|맞아|맞아요|좋아|có|đúng|vâng|ừ)\b")
@@ -307,6 +310,9 @@ class AssistLoop(ClosedLoop):
             "reach_far": float(overrides.get("reach_far", env("ROBOT_AGENT_REACH_FAR", str(geo.reach_far_m)))),
             "reach_lateral": float(overrides.get("reach_lateral", env("ROBOT_AGENT_REACH_LATERAL", str(geo.reach_m)))),
             "ask_help": overrides.get("ask_help", env("ROBOT_AGENT_ASK_HELP", "1") == "1"),
+            # understand: repair calls after a non-JSON answer; the run's cap on core LLM calls
+            "understand_retries": int(overrides.get("understand_retries", env("ROBOT_AGENT_UNDERSTAND_RETRIES", "1"))),
+            "llm_budget": int(overrides.get("llm_budget", env("ROBOT_AGENT_LLM_BUDGET", "40"))),
             "memory_path": Path(overrides.get("memory_path") or data_dir("object_memory", common, host_id())),  # observe.paths
             "generator": self.cfg["planner"],
             "planner": "sage",
@@ -326,7 +332,9 @@ class AssistLoop(ClosedLoop):
             self._llm_client = init_llm_client(cfg=self._llm_cfg)
         return self._llm_client
 
-    def _understand(self, task, places, memory, world, dialogue) -> dict:
+    def _understand(self, task, places, memory, world, dialogue, budget=None) -> dict:
+        """The understand call (understand.ask_json: one repair retry on a non-JSON answer). Raises
+        LLMUnavailable / LLMBudgetExceeded; a model that still answers no JSON gives no goals (``unparsed``)."""
         prompt = UNDERSTAND_PROMPT.format(
             abilities=self.robot.robot_description(),
             # no object memory here: a 7B model refused / asked about every object it did not list
@@ -340,13 +348,12 @@ class AssistLoop(ClosedLoop):
             if dialogue else "", task=task,
             # the user's own words: a translation loses names (식탁 'dining table' came out as 'table')
             original=(f"\n(the user's own words: {self.original})" if self.original and self.original != task else ""))
-        raw = self._llm().chat(prompt=prompt, format=UNDERSTAND_SCHEMA)
         try:
-            d = json.loads(raw)
-        except Exception:
-            m = re.search(r"\{.*\}", str(raw), re.S)
-            d = json.loads(m.group(0)) if m else {}
-        d.setdefault("status", "clear"); d.setdefault("goals", []); d.setdefault("question", "")
+            d = ask_json(self._llm(), prompt, UNDERSTAND_SCHEMA, budget=budget, retries=self.cfg["understand_retries"])
+        except LLMBadOutput:
+            d = {"unparsed": True}
+        d.setdefault("status", "clear"); d.setdefault("question", "")
+        d["goals"] = [g for g in d.get("goals") or [] if isinstance(g, dict)] if isinstance(d.get("goals"), list) else []
         for g in d["goals"]:
             g["object"] = _strip_article(words(g.get("object")))
             for k in ("from", "to"):
@@ -436,8 +443,8 @@ class AssistLoop(ClosedLoop):
     def _in_lang(self, text, lang) -> str:
         """`text` (English) in the user's language: the questions and read-backs are written in English."""
         name = self._LANGS.get((lang or "en")[:2])
-        if not name or not text:
-            return text
+        if not name or not text or getattr(self, "_llm_unreachable", False):
+            return text                              # (the model is down: no translation call to wait for)
         cache = self.__dict__.setdefault("_tr_cache", {})
         if (text, name) not in cache:
             try:
@@ -862,6 +869,7 @@ class AssistLoop(ClosedLoop):
         r.places = Places(dict(ENV), openable=r.robot.openable)
         r.verifier = self._verifier(r.node, r.places.env)
         r.memory = Memory(self.cfg["memory_path"])
+        r.llm_budget, self._llm_unreachable = LLMBudget(self.cfg["llm_budget"]), False
         self._mute(r)
         try:
             yield r.ev("task_start", say=r.announcer.announce("task_start"), task=task, run_id=r.run_id,
@@ -889,6 +897,18 @@ class AssistLoop(ClosedLoop):
         return r.ev("done", status=status, run_id=r.run_id, msg=msg,
                     say=self._in_lang(say, r.lang) if say else r.announcer.announce(kind), world=r.world.to_dict(), **kw)
 
+    def _llm_failed(self, r, e, what="language model") -> dict:
+        """The run's end when an LLM / planner call raised (understand.LLMUnavailable) or the run's LLM-call
+        budget is used: `done failed` with the FailureCode and a spoken reason, never a bare `error` event."""
+        if isinstance(e, LLMBudgetExceeded):
+            return self._finish(r, "failed", msg=str(e), code=FailureCode.UNKNOWN.value,
+                                say="I have to stop: I could not work this task out within my limit of tries.")
+        if not isinstance(e, LLMUnavailable):
+            e = LLMUnavailable(e, what)
+        self._llm_unreachable = self._llm_unreachable or e.unreachable
+        return self._finish(r, "failed", msg=e.message(what), code=e.code.value,
+                            say=r.announcer.announce("llm_down") if e.unreachable else None)
+
     def _cancelled(self, r) -> Optional[dict]:
         from ..run_control import cancel_requested
         return self._finish(r, "aborted", msg="Cancelled by user") if cancel_requested() else None
@@ -909,19 +929,11 @@ class AssistLoop(ClosedLoop):
     def _understand_round(self, r):
         """One understanding of the task: _DONE (goals settled), _NEXT (asked something) or _STOP."""
         yield r.ev("status", msg="Understanding the task...")
-        u = self._understand(r.task, r.places, r.memory, r.world, r.dialogue)
-        if r.pin_to:
-            # "no, the shelf in the restroom" after a read-back names the destination (a 7B model put
-            # it in `from`): pin it instead of trusting the model's slots
-            for g in u["goals"]:
-                if g.get("type") in ("on", "in"):
-                    if r.places.ground(g.get("from") or "", g.get("from") or "") == r.pin_to:
-                        g["from"] = ""
-                    g["to"] = r.pin_to
-        answers = [t for w_, t in r.dialogue if w_ == "user"]
-        r.goals, q = self._ground_goals(u["goals"], r.places, r.memory,
-                                        " ".join([r.task, self.original or ""] + answers),
-                                        latest=answers[-1] if answers else "")
+        try:
+            u = self._understand(r.task, r.places, r.memory, r.world, r.dialogue, budget=r.llm_budget)
+        except (LLMUnavailable, LLMBudgetExceeded) as e:
+            yield self._llm_failed(r, e); return _STOP
+        r.goals, q = self._ground_understood(r, u)
         yield r.ev("understand", status=u["status"], reason=u.get("reason"), goals=r.goals,
                    question=u.get("question") or q)
         if u["status"] == "infeasible" and r.dialogue and r.goals:
@@ -936,12 +948,27 @@ class AssistLoop(ClosedLoop):
         if u["status"] == "ambiguous" and u.get("question") and not r.goals:
             q = u["question"] if not q else f"{u['question']} {q}"
         if not r.goals and not q:
-            q = u.get("question") or "What should I do exactly?"
+            q = u.get("question") or ("Sorry, I did not understand. Could you say the task in other words?"
+                                      if u.get("unparsed") else "What should I do exactly?")
         if not q:
             out, q = yield from self._read_back(r)
             if out is not None:
                 return out
         return (yield from self._ask_clarify(r, q))
+
+    def _ground_understood(self, r, u):
+        """An understanding's goals grounded on ENV (with the read-back's pinned destination): (goals, question)."""
+        if r.pin_to:
+            # "no, the shelf in the restroom" after a read-back names the destination (a 7B model put
+            # it in `from`): pin it instead of trusting the model's slots
+            for g in u["goals"]:
+                if g.get("type") in ("on", "in"):
+                    if r.places.ground(g.get("from") or "", g.get("from") or "") == r.pin_to:
+                        g["from"] = ""
+                    g["to"] = r.pin_to
+        answers = [t for w_, t in r.dialogue if w_ == "user"]
+        return self._ground_goals(u["goals"], r.places, r.memory, " ".join([r.task, self.original or ""] + answers),
+                                  latest=answers[-1] if answers else "")
 
     def _read_back(self, r):
         """Read the goals back when the user answered something (a misheard answer is only caught
@@ -1015,6 +1042,8 @@ class AssistLoop(ClosedLoop):
         plan_text = "\n".join(f"{skill_map.get(x['action'], x['action'])}::{x['object']}" for x in r.steps)
         yield r.ev("plan", steps=r.steps, plan_meta=r.run.plan_meta, warnings=[], plan_text=plan_text,
                    world=r.world.to_dict())
+        if r.plan_error is not None and not r.steps:     # the planner is down: say so, not "no plan"
+            yield self._llm_failed(r, r.plan_error, "planner"); return True
         if r.plan_only:
             yield self._finish(r, "planned", say=r.announcer.announce("plan_ready")); return True
         if not r.steps:
@@ -1023,11 +1052,12 @@ class AssistLoop(ClosedLoop):
 
     def _generate_and_certify(self, r):
         """SAGE's plan, checked as written; critical findings go back to SAGE's sub-goal editing."""
-        t_plan = time.time()
+        t_plan, r.plan_error = time.time(), None
         try:
+            r.llm_budget.take(what="plan")
             raw, meta = r.planner.generate_plan(r.restated, self._obs(r), [])
-        except Exception as e:
-            raw, meta = [], {"error": str(e)}
+        except Exception as e:                       # kept: the run ends with it (_plan_phase), not "no plan"
+            raw, meta, r.plan_error = [], {"error": str(e)}, e
         r.steps = self._ground_all(r, raw)
         probs = self._check(r.steps, r.world, r.places, r.goals)
         yield r.ev("gate", round=0, problems=[p_[1] for p_ in probs], plan=[f"{x['action']} {x['object']}" for x in r.steps])
@@ -1054,10 +1084,16 @@ class AssistLoop(ClosedLoop):
         ers = (f"E: {failed.get('action')} {failed.get('object')} failed. R: {reason}. "
                f"S: robot at {world.arrived}, holding {world.holding or 'nothing'}; goals: {r.goal_txt}")
         try:
+            r.llm_budget.take(what="replan")
             suffix, _m = r.planner.replan(r.restated, r.completed, failed, ers, self._obs(r), [])
             suffix = self._ground_all(r, suffix)
         except Exception as e:
             suffix = []; ers += f"; replan error: {e}"
+            r.replan_error = e
+        if getattr(r, "replan_error", None) is not None:
+            # the planner is down: the old rest of the plan is not run either (the caller ends the run with it)
+            r.run.replans.append({"at_index": r.i, "failed": failed, "reason": ers, "suffix_len": 0, "problems": []})
+            return None
         probs = [p_[1] for p_ in self._check(r.completed + suffix, r.world_at_start, r.places, r.goals) if p_[2]]
         r.run.replans.append({"at_index": r.i, "failed": failed, "reason": ers, "suffix_len": len(suffix),
                               "problems": probs})
@@ -1066,11 +1102,17 @@ class AssistLoop(ClosedLoop):
                     plan=[f"{x['action']} {x['object']}" for x in suffix],
                     say=r.announcer.announce("replan"), world=world.to_dict())
 
+    def _no_replan(self, r, msg) -> dict:
+        """The end of a run that needed a new plan and got none: the planner's error when it failed, else `msg`."""
+        if getattr(r, "replan_error", None) is not None:
+            return self._llm_failed(r, r.replan_error, "planner")
+        return self._finish(r, "failed", msg=msg)
+
     def _replan_or_fail(self, r, failed, reason, fail_msg):
         """SAGE replan, else end the run with `fail_msg`: _NEXT or _STOP."""
         e_ = self._sage_replan(r, failed, reason)
         if e_ is None:
-            yield self._finish(r, "failed", msg=fail_msg); return _STOP
+            yield self._no_replan(r, fail_msg); return _STOP
         yield e_
         return _NEXT
 
@@ -1079,7 +1121,7 @@ class AssistLoop(ClosedLoop):
         from ..run_control import wait_if_paused
         r.placed = {}
         r.pick_tries, r.move_tries, r.helped, r.seen_fail, r.seen_at, r.find_fails = {}, {}, set(), {}, {}, {}
-        r.completed, r.replans, r.i = [], 0, 0
+        r.completed, r.replans, r.i, r.replan_error = [], 0, 0, None
         r.world_at_start = r.world.copy()
         while True:
             if r.i >= len(r.steps):
@@ -1103,7 +1145,7 @@ class AssistLoop(ClosedLoop):
                                "the plan ended but the goals are not reached: "
                                + "; ".join(self._missing(r.completed, r.world_at_start, r.goals)))
         if e_ is None or r.i >= len(r.steps):
-            yield self._finish(r, "failed", msg="plan finished but the goals do not hold: " + r.goal_txt); return _STOP
+            yield self._no_replan(r, "plan finished but the goals do not hold: " + r.goal_txt); return _STOP
         yield e_
         return _NEXT
 
@@ -1137,7 +1179,7 @@ class AssistLoop(ClosedLoop):
         r.seen_fail[sig] = r.seen_fail.get(sig, 0) + 1
         e_ = self._sage_replan(r, st, f"precondition: {why}") if r.seen_fail[sig] <= 1 else None
         if e_ is None:
-            yield self._finish(r, "failed", msg=f"{a} {o}: {why}"); return _STOP
+            yield self._no_replan(r, f"{a} {o}: {why}"); return _STOP
         yield e_
         return _NEXT
 

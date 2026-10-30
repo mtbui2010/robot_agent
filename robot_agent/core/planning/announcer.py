@@ -63,6 +63,7 @@ PHRASES: dict[str, dict[str, str]] = {
         'done_fail':    'Nhiệm vụ thất bại',
         'plan_ready':   'Đã tạo kế hoạch',
         'unsupported':  'Hành động không được hỗ trợ',
+        'llm_down':     'Tôi không kết nối được với mô hình ngôn ngữ, nên phải dừng nhiệm vụ này',
     },
     'en': {
         'task_start':   'Starting the task',
@@ -74,6 +75,7 @@ PHRASES: dict[str, dict[str, str]] = {
         'done_fail':    'Task failed',
         'plan_ready':   'Plan ready',
         'unsupported':  'Unsupported action',
+        'llm_down':     "I can't reach my language model right now, so I have to stop this task",
     },
 }
 

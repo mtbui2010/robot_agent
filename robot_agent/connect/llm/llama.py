@@ -7,6 +7,9 @@ DEFAULT_URL          = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 # as accurate as 32b and ~3x faster; one resident model also stops Ollama reloading between roles.
 DEFAULT_TEXT_MODEL   = os.environ.get("OLLAMA_TEXT_MODEL", "qwen3-vl:8b-instruct")
 DEFAULT_VISION_MODEL = os.environ.get("OLLAMA_VISION_MODEL", "qwen3-vl:8b-instruct")
+# seconds before a call gives up (raises): a dead / hung server ends the run with a clear message instead of
+# blocking it forever
+DEFAULT_TIMEOUT_S    = float(os.environ.get("OLLAMA_TIMEOUT_S", "180"))
 
 
 class LLamaClient(LLMobj):
@@ -17,7 +20,7 @@ class LLamaClient(LLMobj):
       2. ``OLLAMA_URL`` environment variable  (default: http://localhost:11434)
     """
 
-    def init(self, url=None, text_model=None, vision_model=None, model=None, num_ctx=None, **kwargs):
+    def init(self, url=None, text_model=None, vision_model=None, model=None, num_ctx=None, timeout=None, **kwargs):
         from ollama import Client
         self.url          = url          or DEFAULT_URL
         # `model` is the Connections-panel field: one model for both, unless
@@ -28,7 +31,8 @@ class LLamaClient(LLMobj):
         # own default context (262k for qwen3-vl — 94 GB, spread over GPUs),
         # and a request with a different num_ctx reloads the model.
         self.options      = {'num_ctx': int(num_ctx)} if num_ctx else None
-        self.chatclient   = Client(host=self.url).chat
+        self.timeout      = float(timeout or DEFAULT_TIMEOUT_S)
+        self.chatclient   = Client(host=self.url, timeout=self.timeout).chat
         print(f"LLaMA client → {self.url}")
         print(self.chat(prompt="hello"))
 

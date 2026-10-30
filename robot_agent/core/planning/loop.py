@@ -482,7 +482,11 @@ class ClosedLoop:
         yield r.ev("status", msg="Generating task plan...")
         r.planner = self._make_planner()
         self._hook_progress(r.planner)
-        steps, meta = r.planner.generate_plan(r.task, obs, visible)
+        try:
+            steps, meta = r.planner.generate_plan(r.task, obs, visible)
+        except Exception as e:
+            yield self._planner_failed(r, e)
+            return True
         r.steps = list(steps)
         r.run.plan_meta = meta or {}
         warnings = r.mapper.screen(r.steps)
@@ -502,6 +506,16 @@ class ClosedLoop:
                        say=r.announcer.announce("plan_ready"), world=r.world.to_dict())
             return True
         return False
+
+    @staticmethod
+    def _planner_failed(r: "RunContext", e: Exception) -> dict:
+        """The planner (its LLM) raised: `done failed` with a FailureCode and a spoken reason, not an `error`."""
+        from .understand import LLMUnavailable
+        u = LLMUnavailable(e, "plan")
+        r.run.status = "failed"
+        r.run.ended_at = time.time()
+        return r.ev("done", status="failed", run_id=r.run_id, code=u.code.value, msg=u.message("planner"),
+                    say=r.announcer.announce("llm_down" if u.unreachable else "done_fail"), world=r.world.to_dict())
 
     def _aborted(self, r: "RunContext", rec: Optional[StepRecord] = None) -> dict:
         """End the run on a cancel — no verify, no replan."""
