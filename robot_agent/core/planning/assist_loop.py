@@ -58,6 +58,7 @@ from . import action_model, episode_memory, goal_change
 from . import search as search_belief
 from .search_hooks import SearchHooks
 from . import goals as goal_kinds
+from . import goal_filter
 from . import reconcile as sensed
 from .robot import run_skill
 from .verify import symbolic_check, verdict
@@ -75,7 +76,7 @@ ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify
                 "goal_check", "health_wait_s", "understand_retries", "understand_samples", "llm_budget",
                 "goal_readback", "understand_temperature", "understand_seed", "understand_sample_temperature",
                 "yes_no_reasks", "search", "search_rank", "search_half_life_s", "vlm_verify", "sensor_health",
-                "reconcile"}
+                "reconcile", "search_habit_weight", "edit_reserve"}
 _USER_WORDS = {"me", "user", "here", "you", "myself", "person"}
 
 
@@ -315,6 +316,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
             "pick_retries": int(overrides.get("pick_retries", 1)),
             # planner repairs (SubgoalRepair) of the first plan driven by the checker's findings
             "edit_rounds": int(overrides.get("edit_rounds", env("ROBOT_AGENT_EDIT_ROUNDS", "3"))),
+            # LLM calls the gate's edits leave for the rest of the run (subgoal_repair.edit_reserve)
+            "edit_reserve": int(overrides.get("edit_reserve", env("ROBOT_AGENT_EDIT_RESERVE", "6"))),
             "silence_retries": int(overrides.get("silence_retries", env("ROBOT_AGENT_SILENCE_RETRIES", "1"))),
             "confirm_answers": overrides.get("confirm_answers", env("ROBOT_AGENT_CONFIRM_ANSWERS", "1") == "1"),
             "confirm_task": overrides.get("confirm_task", env("ROBOT_AGENT_CONFIRM_TASK", "0") == "1"),
@@ -1035,7 +1038,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
             yield self._llm_failed(r, e); return _STOP
         r.goals, q = self._ground_understood(r, u)
         yield r.ev("understand", status=u["status"], reason=u.get("reason"), goals=r.goals,
-                   question=u.get("question") or q)
+                   question=u.get("question") or q, **({"filtered": r.filtered} if r.filtered else {}))
         if u["status"] == "infeasible" and r.dialogue and r.goals:
             u["status"] = "clear"                # the user already answered: a 7B model called a plain
                                                  # move "infeasible" after "no, the shelf in the restroom"
@@ -1084,8 +1087,12 @@ class AssistLoop(SearchHooks, ClosedLoop):
                         g["from"] = ""
                     g["to"] = r.pin_to
         answers = [t for w_, t in r.dialogue if w_ == "user"]
-        return self._ground_goals(u["goals"], r.places, r.memory, " ".join([r.task, self.original or ""] + answers),
-                                  latest=answers[-1] if answers else "")
+        words_ = " ".join([r.task, self.original or ""] + answers)
+        raw, r.filtered = goal_filter.before_grounding(u["goals"], r.task)        # goals not asked for (goal_filter.py)
+        goals, q = self._ground_goals(raw, r.places, r.memory, words_, latest=answers[-1] if answers else "")
+        goals, more = goal_filter.after_grounding(goals, " ".join([r.task] + answers), r.places)
+        r.filtered += more
+        return goals, q
 
     def _issues(self, r, goals) -> list:
         """understand.find_issues of `goals` against everything the person said (task, own words, answers)."""

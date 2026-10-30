@@ -15,6 +15,24 @@ be misheard. An answer heard through the robot's microphone (`source='robot'`) c
 
 ## Understanding fixes (SAGE-v2 P0.7: FROM_ME, ASR2, ASR1, UND_T0)
 
+### Goals the words do not ask for (`core/planning/goal_filter.py`)
+
+The understand call runs at temperature 0, so a misreading comes back on every call and a re-sample does
+not hide it. Three are corrected from the person's own words, without an LLM call, on every understanding
+(`AssistLoop._ground_understood`); the `understand` event lists them as `filtered`:
+
+* a stated location is the source, not a goal: "The spoon is in the kitchen drawer. Bring it to the sofa."
+  gave `in spoon -> drawer` next to `on spoon -> sofa` and the question "Where should the spoon go in the
+  end?". When the words say "<object> is in / on <place>" and the object has another destination, the goal
+  to that place is dropped and the other goal takes it as `from`;
+* a negated object is not a goal: a move goal for an object named only inside "don't ...", "except ...",
+  "not ...", "without ..." (the English task) is dropped before grounding ("but don't touch the mug" asked
+  "Where should I put the mug?");
+* a `go` goal to the destination of a move goal is the same trip.
+
+Nothing is dropped when it would leave no goal. Tests: `tests/test_v2_t2fix_goal_filter.py`, scenarios
+TF03 / TF04 (`scenarios/tests/test_t1_v2_t2fix.py`).
+
 ### The speaker is a destination, never a source (FROM_ME)
 
 The understand model sometimes writes `from: "me"` for "bring me the cup". Before this fix the grounding then asked
