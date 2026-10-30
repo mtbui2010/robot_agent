@@ -167,6 +167,16 @@ def reconcile_world(node, world, threshold=0.8):
     return world
 
 
+def _manager_run_id() -> Optional[str]:
+    """The run_id of the RunManager run the calling thread acts for, or None."""
+    try:
+        from ..run_control import current_run
+        run = current_run()
+        return run.run_id if run is not None and run.active else None
+    except Exception:
+        return None
+
+
 # step outcomes of the phase methods (generators return one of these)
 _NEXT, _FAIL, _STOP, _DONE = "next", "fail", "stop", "done"
 
@@ -183,7 +193,10 @@ class RunContext:
         self.node = getattr(loop.dm, "_ros_node", None)
         self.muted = False
         now = time.time()
-        self.run_id = time.strftime("%Y%m%d-%H%M%S", time.localtime(now)) + f"-{int(now * 1000) % 1000:03d}"
+        # one id per run: the RunManager run this executive acts for (events, RunLogger file and RunRecord
+        # agree, GET /runs/<id> finds it); a run started outside the RunManager gets a time-based one
+        self.run_id = _manager_run_id() or (time.strftime("%Y%m%d-%H%M%S", time.localtime(now))
+                                            + f"-{int(now * 1000) % 1000:03d}")
         self.run = new_task_record(self.run_id, task, lang=lang, planner=planner_name, started_at=now)
         self.logger = RunLogger(self.run, loop.cfg["log_dir"] / f"{self.run_id}.jsonl")
         self.planner = None
