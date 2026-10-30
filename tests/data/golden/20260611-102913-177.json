@@ -1,0 +1,46 @@
+{
+ "task": "pick cylinder in blue bin",
+ "plans": [
+  {
+   "trace": [
+    {
+     "step": "move bin",
+     "ok": true,
+     "why": "",
+     "call": "UNMAPPABLE: no skill for action 'move' on object 'bin' (not in SUPPORTED_ACTIONS)"
+    },
+    {
+     "step": "find cylinder",
+     "ok": true,
+     "why": "",
+     "call": "UNMAPPABLE: no skill for action 'find' on object 'cylinder' (not in SUPPORTED_ACTIONS)"
+    },
+    {
+     "step": "pick cylinder",
+     "ok": true,
+     "why": "",
+     "call": "UNMAPPABLE: no skill for action 'pick' on object 'cylinder' (not in SUPPORTED_ACTIONS)"
+    },
+    {
+     "step": "move desk",
+     "ok": true,
+     "why": "",
+     "call": "UNMAPPABLE: no skill for action 'move' on object 'desk' (not in SUPPORTED_ACTIONS)"
+    },
+    {
+     "step": "place me",
+     "ok": true,
+     "why": "",
+     "call": "UNMAPPABLE: no skill for action 'place' on object 'me' (not in SUPPORTED_ACTIONS)"
+    }
+   ],
+   "end": {
+    "arrived": "table@living room",
+    "found": "cup",
+    "holding": "coffee",
+    "opened": [],
+    "on": []
+   }
+  }
+ ]
+}

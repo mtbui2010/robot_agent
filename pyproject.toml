@@ -21,7 +21,7 @@ dependencies = [
     # The action rules (plan checker, step guard, symbolic verify, world effects)
     # are embodiplan.action_model's; it is a local path package, not on PyPI:
     #   pip install -e ../embodiplan
-    "embodiplan>=0.2,<0.3",
+    "embodiplan>=0.2.1,<0.3",
 ]
 
 # ROS 2 (rclpy, cv_bridge, sensor_msgs, std_msgs, rosinterfaces) is NOT
@@ -56,7 +56,10 @@ voice = [
 # The GRACE closed-loop planner. Kept out of the core deps so the generic
 # runtime never hard-depends on a planner.
 #   pip install -e ../embodiplan && pip install -e ".[grace]"
-grace = ["embodiplan>=0.2,<0.3"]
+grace = ["embodiplan>=0.2.1,<0.3"]
+
+# `make test` (pytest from the source tree; no ROS, no LLM server).
+test = ["pytest>=7"]
 
 # Everything except `grace` (embodiplan is a local path package, not on PyPI).
 all = [
@@ -78,3 +81,7 @@ all = [
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["robot_agent*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

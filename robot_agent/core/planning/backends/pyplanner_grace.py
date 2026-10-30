@@ -1,10 +1,10 @@
 # robot_agent/robot_agent/core/planning/backends/pyplanner_grace.py
-"""GRACE planner backend — adapts pyplanner's GRACEPlanner to the Planner
+"""GRACE planner backend — adapts embodiplan's GRACEPlanner to the Planner
 interface.
 
-``pyplanner`` is an OPTIONAL dependency: it is imported lazily so this module
-imports cleanly even when pyplanner is absent. The first time a GraceBackend is
-constructed without pyplanner installed, a clear RuntimeError is raised.
+``embodiplan`` is an OPTIONAL dependency: it is imported lazily so this module
+imports cleanly even when embodiplan is absent. The first time a GraceBackend is
+constructed without embodiplan installed, a clear RuntimeError is raised.
 
 GRACE already returns steps in the canonical PlanStep shape
 (``{"action", "object", "target"?, "reason"?}``), so generate_plan / replan
@@ -18,8 +18,8 @@ import dataclasses
 from typing import Any
 
 
-# Kwargs that pyplanner.grace() / GRACEPlanner.__init__ actually accept.
-# (verified against pyplanner/__init__.py::grace and pyplanner/grace.py::GRACEPlanner)
+# Kwargs that embodiplan's SAGEPlanner (alias GRACEPlanner, registry name "GRACE")
+# accepts; see embodiplan/sage.py::SAGEPlanner.__init__.
 _GRACE_KWARGS = (
     "host",
     "model",
@@ -36,7 +36,7 @@ _GRACE_KWARGS = (
 
 
 def _metrics_to_dict(metrics: Any) -> dict:
-    """Best-effort coercion of a pyplanner PlanMetrics into a plain dict.
+    """Best-effort coercion of an embodiplan PlanMetrics into a plain dict.
 
     PlanMetrics is a dataclass and also exposes a ``to_dict()`` helper; prefer
     that, then fall back to dataclasses.asdict, then a getattr sweep.
@@ -79,7 +79,7 @@ def _metrics_to_dict(metrics: Any) -> dict:
 
 
 class GraceBackend:
-    """Planner backend backed by pyplanner's GRACEPlanner."""
+    """Planner backend backed by embodiplan's GRACEPlanner."""
 
     def __init__(
         self,
@@ -99,7 +99,7 @@ class GraceBackend:
                 "pip install -e embodiplan to use the GRACE planner"
             ) from e
 
-        # Assemble the candidate kwargs, then keep only those pyplanner accepts.
+        # Assemble the candidate kwargs, then keep only those embodiplan accepts.
         candidate: dict[str, Any] = {
             "host": host,
             "model": model,
@@ -116,7 +116,7 @@ class GraceBackend:
             if k in _GRACE_KWARGS and v is not None
         }
 
-        # pyplanner.get("GRACE", ...) routes through the registry to GRACEPlanner.
+        # embodiplan.get("GRACE", ...) routes through the registry to GRACEPlanner.
         self._p = embodiplan.get("GRACE", **selected)
 
     # ── Planner interface ────────────────────────────────────────────

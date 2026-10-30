@@ -5,10 +5,10 @@ Each backend conforms to the ``Planner`` interface declared in
 ``robot_agent.core.planning.base`` while wrapping a concrete planning
 implementation:
 
-    GraceBackend      — pyplanner's GRACE planner (optional dependency)
+    GraceBackend      — embodiplan's GRACE planner (optional dependency)
     LlmDirectBackend  — the legacy direct-LLM planning flow
 
-Importing this package never imports ``pyplanner``; the optional dependency
+Importing this package never imports ``embodiplan``; the optional dependency
 is loaded lazily inside ``pyplanner_grace`` only.
 """
 

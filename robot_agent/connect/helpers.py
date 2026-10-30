@@ -13,6 +13,8 @@ from datetime import datetime
 
 import numpy as np
 
+from ..safe_parse import parse_number
+
 
 # ---------------------------------------------------------------------------
 # Timing
@@ -115,7 +117,7 @@ def evaluate(v: str, recursive=True):
         return [evaluate(el) for el in v.split(',') if el.strip()]
 
     try:
-        val = ast.literal_eval(v)   # safer than eval()
+        val = ast.literal_eval(v)   # literals only, never code
     except (ValueError, SyntaxError):
         return v
 
@@ -149,7 +151,7 @@ def parse_keys_values(optional_args={}):
 
 
 def findNumdersInString(sentence):
-    return [eval(el) for el in re.findall(r'\d+', sentence)]
+    return [int(el) for el in re.findall(r'\d+', sentence)]
 
 
 def try_parse(f, s):
@@ -161,7 +163,7 @@ def try_parse(f, s):
 
 
 is_not_number = lambda s: not any(map(lambda f: try_parse(f, s), [int, float]))
-str2num = lambda s: s if is_not_number(s) else eval(s)
+str2num = lambda s: s if is_not_number(s) else parse_number(s)
 
 
 # ---------------------------------------------------------------------------

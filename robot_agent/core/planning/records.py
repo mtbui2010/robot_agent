@@ -3,7 +3,7 @@
 Single source of truth for tracking (live status), verification (held results),
 and logging (serialized to JSONL). Plain dataclasses, JSON-serializable.
 
-NO pyplanner import. Timestamps are passed in by the caller — this module never
+NO embodiplan import. Timestamps are passed in by the caller — this module never
 calls ``time.time()`` at import time or implicitly (libs forbid ``Date.now``-style
 nondeterminism). See docs/TRACKING_VERIFY_VOICE.md §1–§2.
 """
@@ -14,15 +14,13 @@ import dataclasses
 import json
 import math
 import os
+import sys
 from dataclasses import asdict, dataclass, field, is_dataclass
 from pathlib import Path
 from typing import Any, Optional, Union
 
-# numpy is optional — guard the import so this module is stdlib-only at runtime.
-try:  # pragma: no cover - environment dependent
-    import numpy as _np
-except Exception:  # pragma: no cover
-    _np = None
+# numpy is optional and never imported here: a numpy value can only exist once
+# numpy is loaded, so it is looked up in sys.modules at call time.
 
 
 # --------------------------------------------------------------------------- #
@@ -97,6 +95,7 @@ def _to_jsonable(obj: Any) -> Any:
         return obj if math.isfinite(obj) else None
 
     # numpy scalars / arrays (best-effort, only if numpy present).
+    _np = sys.modules.get('numpy')
     if _np is not None:  # pragma: no branch
         if isinstance(obj, _np.generic):
             return _to_jsonable(obj.item())
@@ -143,7 +142,7 @@ class RunLogger:
     """Append-only JSONL logger for a single run.
 
     ``path`` is typically ``<kcare data>/task_runs/<run_id>.jsonl`` — never inside
-    ``pyplanner/``. Each streamed event is one line; ``snapshot()`` writes the full
+    ``embodiplan/``. Each streamed event is one line; ``snapshot()`` writes the full
     ``TaskRecord`` as the final line so the file replays exactly what the UI saw.
     """
 

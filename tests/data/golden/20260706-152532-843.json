@@ -1,0 +1,146 @@
+{
+ "task": "go to table, pick phone and place on drawer",
+ "plans": [
+  {
+   "trace": [
+    {
+     "step": "MoveTo Kitchen",
+     "ok": true,
+     "why": "",
+     "call": "move::kitchen"
+    },
+    {
+     "step": "Open Drawer@kitchen",
+     "ok": true,
+     "why": "",
+     "call": "open_drawer::drawer@kitchen"
+    },
+    {
+     "step": "Find Phone",
+     "ok": true,
+     "why": "",
+     "call": "find::phone"
+    },
+    {
+     "step": "Pick Phone",
+     "ok": false,
+     "why": "Pick requires empty gripper, holding 'coffee'",
+     "call": "pick::phone"
+    },
+    {
+     "step": "Close Drawer@kitchen",
+     "ok": true,
+     "why": "",
+     "call": "close_drawer::drawer@kitchen"
+    },
+    {
+     "step": "MoveTo Table@living room",
+     "ok": true,
+     "why": "",
+     "call": "move::table@living_room"
+    },
+    {
+     "step": "Place Drawer@kitchen",
+     "ok": true,
+     "why": "",
+     "call": "place::drawer@kitchen"
+    },
+    {
+     "step": "MoveTo Drawer@Kitchen",
+     "ok": true,
+     "why": "",
+     "call": "move::drawer@kitchen"
+    },
+    {
+     "step": "Open Drawer@Kitchen",
+     "ok": true,
+     "why": "",
+     "call": "open_drawer::drawer@kitchen"
+    },
+    {
+     "step": "MoveTo Table",
+     "ok": true,
+     "why": "",
+     "call": "move::table@living room"
+    },
+    {
+     "step": "Find Phone",
+     "ok": true,
+     "why": "",
+     "call": "find::phone"
+    },
+    {
+     "step": "Pick Phone",
+     "ok": true,
+     "why": "",
+     "call": "pick::phone"
+    },
+    {
+     "step": "MoveTo Drawer@Kitchen",
+     "ok": true,
+     "why": "",
+     "call": "move::drawer@kitchen"
+    },
+    {
+     "step": "Place Drawer@Kitchen",
+     "ok": true,
+     "why": "",
+     "call": "place::drawer@kitchen"
+    },
+    {
+     "step": "MoveTo table@living room",
+     "ok": true,
+     "why": "",
+     "call": "move::table@living_room"
+    },
+    {
+     "step": "MoveTo Drawer@Kitchen",
+     "ok": true,
+     "why": "",
+     "call": "move::drawer@kitchen"
+    },
+    {
+     "step": "Find Phone",
+     "ok": true,
+     "why": "",
+     "call": "find::phone"
+    },
+    {
+     "step": "Pick Phone",
+     "ok": true,
+     "why": "",
+     "call": "pick::phone"
+    },
+    {
+     "step": "Close Drawer@Kitchen",
+     "ok": true,
+     "why": "",
+     "call": "close_drawer::drawer@kitchen"
+    },
+    {
+     "step": "MoveTo table@living room",
+     "ok": true,
+     "why": "",
+     "call": "move::table@living_room"
+    },
+    {
+     "step": "Place table@living room",
+     "ok": true,
+     "why": "",
+     "call": "place::table@living_room"
+    }
+   ],
+   "end": {
+    "arrived": "table@living room",
+    "found": null,
+    "holding": null,
+    "opened": [
+     "drawer@kitchen",
+     "inputs=\"drawer@kitchen\",stay_here=True",
+     "remote"
+    ],
+    "on": []
+   }
+  }
+ ]
+}

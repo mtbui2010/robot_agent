@@ -1,4 +1,4 @@
-import importlib, logging, requests, threading, traceback
+import importlib, logging, threading, traceback
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from typing import Any, Literal
@@ -206,9 +206,6 @@ class SkillRegistry:
             return {'isdone': False, 'msg': f'{name}: {e}'}
         if said_name:
             said['skill'] = (said_name, skill.name)
-        logger.warning('[spoken-debug] execute %s (%s) params=%s said=%s', skill.name, skill.type,  # temporary
-                       {k: (v if isinstance(v, (str, int, float, bool)) and len(str(v)) < 80 else type(v).__name__)
-                        for k, v in params.items() if k != 'node'}, said)
         with _spoken_scope(said):
             return self._run_code(skill, name, params, node, log_fn)
 
@@ -243,6 +240,7 @@ class SkillRegistry:
         else:
             try:
                 method = (skill.method or 'POST').upper()
+                import requests            # lazy: only HTTP skills need it
                 resp = requests.request(
                     method=method,
                     url=skill.url,

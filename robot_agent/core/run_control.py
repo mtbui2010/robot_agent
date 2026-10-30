@@ -24,11 +24,7 @@ Stop pressed for a run still finishing. It now never clears the cancel of an
 active run: a new run starts with its own, clear flag.
 """
 
-import logging
 import threading
-import traceback
-
-_dbg = logging.getLogger('robot_agent.spoken_debug')     # [spoken-debug] temporary
 
 _CANCEL = threading.Event()
 _LOCK = threading.Lock()
@@ -118,7 +114,6 @@ def begin_run(node=None) -> None:
     process flag and the node's cancel are cleared, except while the active run
     is being cancelled: a skill command or a second entry must not undo
     someone's Stop."""
-    _dbg.warning('[spoken-debug] begin_run (cancel flag cleared)')
     with _LOCK:
         run = None
         try:
@@ -150,8 +145,6 @@ def request_cancel(node=None) -> dict:
     cancel, and which raised while doing so. Never raises: a Stop button that
     fails with a 500 is worse than a partial stop.
     """
-    _dbg.warning('[spoken-debug] request_cancel from:\n%s',
-                 ''.join(traceback.format_stack(limit=8)[:-1]))
     with _LOCK:
         _CANCEL.set()
         result = {'ok': True, 'cancelled': [], 'errors': {}}

@@ -2,16 +2,16 @@
 """Planner registry -- construct a :class:`~.base.Planner` backend by name.
 
 Backends are imported lazily inside :func:`get_planner` so that importing the
-planning package never pulls in ``pyplanner`` (or any other heavy backend
+planning package never pulls in ``embodiplan`` (or any other heavy backend
 dependency) unless a planner is actually requested. This keeps the executor
 side import-clean per the SHARED CONTRACT.
 
 Known backends:
 
 * ``"grace"``      -> ``.backends.pyplanner_grace.GraceBackend``
-                      (wraps pyplanner's GRACE planner).
+                      (wraps embodiplan's GRACE planner).
 * ``"llm_direct"`` -> ``.backends.llm_direct.LlmDirectBackend``
-                      (single-shot LLM planner, no pyplanner).
+                      (single-shot LLM planner, no embodiplan).
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ def get_planner(name: str, **cfg) -> Planner:
     key = (name or "").strip().lower()
 
     if key == "grace":
-        # Lazy import: only here do we touch pyplanner-backed code.
+        # Lazy import: only here do we touch embodiplan-backed code.
         from .backends.pyplanner_grace import GraceBackend
 
         return GraceBackend(**cfg)
