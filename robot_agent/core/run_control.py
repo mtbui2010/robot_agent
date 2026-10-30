@@ -147,6 +147,23 @@ def call_cancellable(fn, *args, poll: float = 0.01, **kwargs):
     return box['value']
 
 
+# ── the robot's questions (state in robot_agent.interact.dialog) ─────────────
+def ask_person(question: str, io, silence_retries: int = 0, again: str | None = None):
+    """Ask the person ``question`` through ``io`` (the robot's Ask skill) with
+    the current run waiting on it, so a typed / injected answer from any client
+    answers it. Returns ``(Answer, times asked)``; ``Answer.source`` is
+    'robot' (heard), 'typed' (injected) or '' (no answer / stopped)."""
+    from ..interact import dialog
+    kw = {'again': again} if again else {}
+    return dialog.ask_heard(current_run(), question, io, silence_retries=silence_retries, **kw)
+
+
+def yes_no(text):
+    """(True | False | None, correction text) of a spoken confirmation."""
+    from ..interact.dialog import yes_no as _yn
+    return _yn(text)
+
+
 def current_run():
     """The run the calling thread acts for (bound by :func:`begin_run`, else
     the active run), or None."""

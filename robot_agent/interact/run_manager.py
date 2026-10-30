@@ -275,6 +275,13 @@ class Run:
             self._answered.set()
             return True
 
+    def poll_answer(self, timeout: float = 0.0) -> Optional[str]:
+        """The ANSWER delivered to the question set with :meth:`set_awaiting`,
+        waiting up to ``timeout``; None while there is none (or on cancel)."""
+        if self._answered.wait(timeout) and not self._cancel.is_set():
+            return self._answer
+        return None
+
     # ---- non-interruptible skills ------------------------------------
     @property
     def critical(self) -> Optional[str]:

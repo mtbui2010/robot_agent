@@ -52,9 +52,6 @@ _LOC_ACTIONS = {"MoveTo", "Place", "PutIn", "Open", "Close"}
 ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify_rounds", "search_max",
                 "pick_retries", "ask_help", "arrive_tol", "find_min_conf", "find_verify", "reach_far", "reach_lateral"}
 _USER_WORDS = {"me", "user", "here", "you", "myself", "person"}
-# spoken yes / no (ko / vi / en) for read-backs
-_YES = re.compile(r"\b(yes|yeah|yep|ok|okay|right|correct|sure|go ahead|네|예|응|맞아|맞아요|좋아|có|đúng|vâng|ừ)\b")
-_NO = re.compile(r"\b(no|nope|not|wrong|아니|아니요|아뇨|không|sai)\b")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -259,6 +256,8 @@ Task: {task}{original}
 class AssistLoop(ClosedLoop):
     """See the module docstring."""
 
+    _answer_source = "robot"          # where the last answer came from (interact.dialog: robot | typed | '')
+
     def __init__(self, agent, emit=None, **overrides) -> None:
         overrides = dict(overrides)
         self.original = overrides.pop("original", None)
@@ -439,7 +438,16 @@ class AssistLoop(ClosedLoop):
         return cache[(text, name)]
 
     def _ask(self, question, node, log_fn, lang) -> str:
-        """Ask the user through the robot's Ask skill (manifest). '' when there is no answer / no channel."""
+        """Ask the user (``interact.dialog`` via run_control: the run waits on the question, so an answer
+        typed / sent by any client answers it; the robot's Ask skill does the I/O). '' when there is no
+        answer / no channel. Where the answer came from: ``self._answer_source`` (robot | typed | '')."""
+        from ..run_control import ask_person
+        ans, _n = ask_person(question, lambda q: self._ask_io(q, node, log_fn, lang))
+        self._answer_source = ans.source
+        return ans.text
+
+    def _ask_io(self, question, node, log_fn, lang) -> str:
+        """The robot's Ask skill (manifest): say the question, listen. '' when there is no answer / no channel."""
         spec = self.robot.ask_spec()
         if spec is None:
             return ""
@@ -455,27 +463,17 @@ class AssistLoop(ClosedLoop):
 
     def _ask_heard(self, question, node, log_fn, lang):
         """Ask; on silence ask again (`silence_retries`). Returns (answer, n_asked)."""
-        n = 0
-        for k in range(1 + self.cfg["silence_retries"]):
-            n += 1
-            ans = self._ask(question if k == 0 else f"Sorry, I didn't hear you. {question}", node, log_fn, lang)
-            if ans:
-                return ans, n
-        return "", n
+        from ..run_control import ask_person
+        ans, n = ask_person(question, lambda q: self._ask_io(q, node, log_fn, lang),
+                            silence_retries=self.cfg["silence_retries"])
+        self._answer_source = ans.source
+        return ans.text, n
 
     @staticmethod
     def yes_no(text):
-        """(True | False | None, correction text) from a spoken yes / no answer."""
-        t = (text or "").strip()
-        if not t:
-            return None, ""
-        low = t.lower()
-        if _NO.search(low):
-            rest = _NO.sub(" ", low, count=1).strip(" ,.!?")
-            return False, rest
-        if _YES.search(low):
-            return True, ""
-        return False, t                              # anything else: a correction ("the restroom one")
+        """(True | False | None, correction text) from a spoken yes / no answer (``interact.dialog``)."""
+        from ..run_control import yes_no
+        return yes_no(text)
 
     @staticmethod
     def summary(goals):
@@ -893,6 +891,7 @@ class AssistLoop(ClosedLoop):
     def _understand_phase(self, r):
         """Goals from the task and the user's answers. True when the run ended."""
         r.dialogue, r.asked, r.confirms, r.pin_to, r.goals = [], 0, 0, None, []
+        r.heard = 0                      # answers heard through the robot's I/O (a typed one cannot be misheard)
         while True:
             out = yield from self._understand_round(r)
             if out is _STOP:
@@ -943,7 +942,7 @@ class AssistLoop(ClosedLoop):
         """Read the goals back when the user answered something (a misheard answer is only caught
         here) or always (`confirm_task`, a voice user whose command itself may be misheard).
         Returns (outcome or None, the question to ask next)."""
-        if not ((r.dialogue and self.cfg["confirm_answers"]) or self.cfg["confirm_task"]):
+        if not ((r.dialogue and r.heard and self.cfg["confirm_answers"]) or self.cfg["confirm_task"]):
             return _DONE, None
         if r.confirms >= 2:
             yield self._finish(r, "failed", msg="the user did not confirm the task"); return _STOP, None
@@ -951,6 +950,7 @@ class AssistLoop(ClosedLoop):
         cq = f"{self.summary(r.goals)} Is that right?"
         yield r.ev("clarify", question=cq, round=r.confirms, kind="confirm")
         ans, _n = self._ask_heard(cq, r.node, self._log_fn(-1), r.lang)
+        r.heard += self._answer_source == "robot"
         stop = self._cancelled(r)
         if stop:
             yield stop; return _STOP, None
@@ -976,6 +976,7 @@ class AssistLoop(ClosedLoop):
         r.asked += 1
         yield r.ev("clarify", question=q, round=r.asked)
         ans, _n = self._ask_heard(q, r.node, self._log_fn(-1), r.lang)
+        r.heard += self._answer_source == "robot"
         stop = self._cancelled(r)
         if stop:
             yield stop; return _STOP
