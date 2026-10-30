@@ -34,7 +34,7 @@ skills:
     pre: ["found(?inputs)", "hand_empty"]   # world-model predicates; ?x = param x; "not P" negates
     hold: []
     effects: ["holding(?inputs)", "not hand_empty"]
-    verify: [{kind: symbolic}, {kind: sensor, skill: grasp_succeed}]   # symbolic | sensor | vlm (prompt)
+    verify: [{kind: symbolic}, {kind: sensor, skill: grasp_succeed}]   # symbolic | sensor (expect) | vlm (prompt)
     interruptible: false       # holding / pulling: finish or release safely before stopping
     errors: [grasp_failed, unreachable]     # FailureCode values this skill may return
     version: "1.0"
@@ -48,6 +48,26 @@ contract does not know are kept in `extra`, so a robot can carry its own notes.
 
 Lookups: `skill_for("Pick")`, `skill("pick")`, `actions`, `has("base")`,
 `hands`, `arms`, `geometry_obj()`.
+
+`verify` entries, run by the core after a skill **reported success** (never the
+preconditions again; those are the pre-step guard's and the plan gate's):
+
+- `symbolic`: the action model's effects are applied and the skill's `effects`
+  predicates must hold.
+- `sensor` (`skill`, optional `expect`, default true): the core runs that skill.
+  A result carrying `pose` checks the base against the target's ENV `loc`
+  within `geometry.arrive_tol_m`; otherwise its `isdone` must equal `expect`
+  (a release such as Place declares `expect: false`: the gripper must be
+  empty). A sensor that raises gives an UNKNOWN layer.
+- `vlm` (`prompt`): the robot's `vlm_hook`, when VLM verify is on.
+
+A skill that declares no sensor gets an UNKNOWN layer (`VerifyResult.unknown`),
+visible in `step_verify`, not counted as verified, and not a failure.
+
+The core also finds its helper skills here: the sensor that verifies `Pick` is
+its "is something in the hand" check (a drop on the way, a failed pick that
+holds something), the sensor that verifies `MoveTo` (else the `Observe` skill)
+its base-pose reader, the `Ask` skill its question channel.
 
 Unset geometry falls back to the values the core used to hard-code:
 `arrive_tol_m` 0.3, `reach_m` 0.78, `reach_far_m` 1.0.
@@ -69,8 +89,21 @@ Unset geometry falls back to the values the core used to hard-code:
 
    When there is a manifest, its skill for an action wins over `SKILL_MAP`, and
    geometry and language come from it. `observe`, `reconcile_world`, `health`,
-   `vlm_hook`, `apply_skill_effect`, `PHRASES` and `RECOVERY_OVERRIDES` are
-   taken from the namemap when it defines them.
+   `vlm_hook`, `apply_skill_effect`, `to_loc` / `to_obj`, `PHRASES` and
+   `RECOVERY_OVERRIDES` are taken from the namemap when it defines them.
+
+An adapter may also define (read by `core/planning/robot.py` `RobotView`):
+
+| Member | Used for | Default |
+|---|---|---|
+| `is_openable(key, entry)` | what an ENV place opens (plan checker, step guard) | the ENV entry's `openable` flag |
+| `quiet_skills` | skills whose steps are not narrated (they speak themselves) | `reply`, `ask`, `announce`, `wait` |
+| `i18n.phrases` | `{kind: {lang: text}}` narration (announcer kinds, `verb.<Action>`), `robot_description` (task-understanding prompt), `verify_failed.<Action>` | English / Vietnamese in the core |
+| `recovery_overrides` | per-code recovery rules | the table below |
+
+The robot's capabilities (`hands`, `find_reaches`, default one hand and
+`find_reaches: false`) go to the action model and to SAGE
+(`SAGEPlanner(capabilities=...)` through `GraceBackend`).
 
 `bind()` returns `(skill, params)`, returns `None` for a no-op step, and raises
 `Unbindable` when the robot cannot do the step.
@@ -138,11 +171,18 @@ Warnings:
 
 A robot's own test can call `assert_manifest_matches(pkg_dir)`.
 
-## Status
+## How the core uses it (roadmap steps 4 and 5)
 
-The contract is additive: it adds code and changes no existing behaviour.
-`assist_loop` / `ClosedLoop` still import `grace_namemap` directly and keep
-their own `_SOFTWARE_ERR` regex. The regex is identical to
-`contract.SOFTWARE_ERR`, and a test fails if the two drift apart. Moving the
-loops onto `load_adapter`, `SkillResult` and `RecoveryPolicy` is the next step
-(roadmap steps 4 and 5).
+- `ClosedLoop` / `AssistLoop` get the robot from `load_adapter(robot_pkg)`
+  (`self.robot`, a `RobotView`); skills come from `bind(step)` and
+  `manifest.skill_for(action)`. No skill, object, threshold or language is
+  named in `core/`, `interact/` or `contract/` (`make lint-core`, blocking).
+- Every skill call goes through `core/planning/robot.run_skill`, the one place
+  a return value becomes a `SkillResult` (`from_legacy(strict=True)`).
+- A failed step's code is the skill's (`SkillResult.code`), else
+  `classify_legacy_failure` of the failing verify layer. The policy
+  (`policy_for(adapter)`) decides: a code with `retry_allowed=False` (estop,
+  cancelled, software) stops the run; `mark_searched` decides whether a failed
+  Find counts the place as searched (absent: yes; could not look / out of
+  reach: no). The per-action recoveries (look + grasp again, move again, ask
+  the person) and the replan wording are unchanged.

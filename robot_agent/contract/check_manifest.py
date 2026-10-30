@@ -2,8 +2,8 @@
 
     python -m robot_agent.contract.check_manifest <pkg_dir> [--manifest PATH] [--strict]
 
-``<pkg_dir>`` is the robot package directory (``kcare_robot/kcare_robot``),
-its repo root (``kcare_robot``) or an importable package name. Nothing of the
+``<pkg_dir>`` is the robot package directory (``my_robot/my_robot``),
+its repo root (``my_robot``) or an importable package name. Nothing of the
 robot is imported and no ROS is needed: the skill registry is read the way
 ``SkillRegistry`` builds it (``configs/skills_config.py`` ``SKILL_CONFIGS`` +
 the saved ``skills.json``), and skill signatures are read from source.

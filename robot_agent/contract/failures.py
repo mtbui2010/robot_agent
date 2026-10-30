@@ -2,12 +2,11 @@
 
 Skills that still return ``{'isdone': False, 'msg': '...'}`` carry their reason
 only as English text. Until each skill returns a :class:`SkillResult` with a
-code, the core reads the code off that text here, and nowhere else
-(``assist_loop._SOFTWARE_ERR`` is the same pattern as :data:`SOFTWARE_ERR`
-below and should import it from here once that file is migrated).
+code, the core reads the code off that text here, and nowhere else (the
+planning loops go through ``SkillResult.from_legacy`` / this function).
 
 The patterns are drawn from what the planner skills (move / find / pick /
-place / open_drawer / grasp_succeed / switchbot) and the core's own verify
+place / open_drawer / the gripper check / switchbot) and the core's own verify
 details actually say. Order matters: the first rule that matches wins, so the
 more specific / more severe causes come first (a skill bug that mentions
 "not found" is still a bug).
@@ -20,7 +19,6 @@ import re
 from .types import FailureCode
 
 # a bug in a skill, not the world: retrying / replanning cannot help
-# (identical to robot_agent.core.planning.assist_loop._SOFTWARE_ERR)
 SOFTWARE_ERR = re.compile(r"unexpected keyword argument|missing \d+ required|is not defined|has no attribute|"
                           r"TypeError|NameError|AttributeError|ImportError|SyntaxError")
 
