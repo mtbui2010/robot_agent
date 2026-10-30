@@ -6,6 +6,12 @@ manifest format, the event schema). See `docs/contract.md`.
 ## Unreleased
 
 ### Contract
+- Optional adapter members `pose(node) -> {x, y, yaw?, ts? | age_s?}` and `container_states(node) ->
+  {key: bool | None}`, read by the SAGE-v2 reconcile (`core/planning/reconcile.py`, docs/guard.md).
+  `RobotView.reconcile(..., places=, arrive_tol=, report=)`. `WorldState.provenance` (`mark`,
+  `mark_edited`, `provenance_of`, `provenance_view`); `to_dict()` gains a `provenance` key (others
+  unchanged); `PUT /agent/world` marks the edited fields `operator`. AssistLoop option `reconcile`
+  (`ROBOT_AGENT_RECONCILE`, default 1).
 - `FailureCode.BUDGET_EXCEEDED` (`budget_exceeded`): the run used its LLM-call budget (recovery STOP,
   not retried). Appended after `unknown`.
 - Manifest `verify: [{kind: vlm, prompt}]` is now run (`core/planning/verify_vlm.py`) through the

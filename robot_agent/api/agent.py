@@ -78,7 +78,10 @@ def set_world(req: WorldStateReq):
     # Only apply fields the client actually sent (partial edit) so omitted
     # fields keep their current value.
     st = current()
-    st.world.update_from_dict(req.model_dump(exclude_unset=True))
+    edit = req.model_dump(exclude_unset=True)
+    st.world.update_from_dict(edit)
+    # an operator edit is a belief the robot re-checks (provenance `operator`; docs/guard.md)
+    st.world.mark_edited(edit.keys(), 'operator')
     st.save_world()   # operator corrections survive a restart
     return st.world.to_dict()
 

@@ -83,6 +83,6 @@ logs both (`observe.llm`).
 Tests: `tests/test_v2_dialog_*.py`. Scenarios: `scenarios/tests/test_t1_v2_understand_dialog.py`
 (FROM_ME, FROM_ME2, FROM_ME2ko, ASR2, ASR2noise, ASR2b, ASR2c, ASR2d, ASR1, ASR1b, ASR1c, UND_T0, UND_T0b).
 
-Known gap: when a read-back correction replaces a place the task named ("Put the apple on the dining table"
-then "on the kitchen counter"), the goal read-back (`goal_readback`) still finds the dining table in the task
-and asks about it. ASR2c runs with `goal_readback` off for that reason.
+A read-back correction that names a new destination ("Put the apple on the dining table", then "on the
+kitchen counter") replaces the destination it read back: the goal read-back (`goal_readback`) no longer counts
+the task's mention of that place (`understand.without_places`). ASR2c and GR06 run with `goal_readback` on.

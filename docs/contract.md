@@ -9,7 +9,7 @@ robot crosses a single boundary, the contract in `robot_agent/contract/`:
 | `SkillResult` | What a skill returns: `ok`, `code`, `msg`, `device`, `data` (evidence) |
 | `SkillSpec` / `VerifySpec` | One skill as the manifest declares it |
 | `Manifest` | The robot's `configs/manifest.yaml`: skills, capabilities, geometry, language |
-| `RobotAdapter` | Protocol: `manifest`, `geometry`, `i18n`, `bind(step)`, `observe()`, `reconcile(world)`, `health()` |
+| `RobotAdapter` | Protocol: `manifest`, `geometry`, `i18n`, `bind(step)`, `observe()`, `reconcile(world)`, `health()`; optional `pose()`, `container_states()` ([guard.md](guard.md)) |
 | `RecoveryPolicy` | What to do after a failure, keyed by `FailureCode` |
 
 The package is plain stdlib (plus pyyaml to read the manifest). Importing it

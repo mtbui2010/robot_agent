@@ -16,6 +16,7 @@ Core design:
 - [planners.md](planners.md): planner interface, optional capabilities (sub-goal repair), plug-ins by `module:Class` / entry point
 - [memory.md](memory.md): the planner's retrieval memory: the manifest seed pool, which runs are recorded, cleaning
 - [verify.md](verify.md): step verification layers, the manifest's VLM verify, sensor health, the LLM-call budget
+- [guard.md](guard.md): precondition layers (gate, per-step guard, skill), reconcile with the sensors, provenance
 - [search.md](search.md): search with a belief: location prior, one LLM ranking per object, searched places as a hard constraint
 - [observe.md](observe.md): RunRecord, metrics line, replay CLI, `ROBOT_AGENT_DATA_DIR`, `/ws/agent` event schema
 - [action_model_divergence.md](action_model_divergence.md): the one action model and where the old copies differed

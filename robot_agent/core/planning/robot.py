@@ -184,14 +184,18 @@ class RobotView:
         except Exception as e:
             return {"ok": None, "error": str(e)}
 
-    def reconcile(self, world: Any, node: Any = None, sense=None) -> dict:
+    def reconcile(self, world: Any, node: Any = None, sense=None, places: Optional[dict] = None,
+                  arrive_tol: Optional[float] = None, report: Optional[dict] = None) -> dict:
         """Bring the belief ``world`` in line with the robot (run start, after a crash, on resume).
 
         The adapter's ``reconcile(world, node)`` goes first (it owns its sensors: pose, gripper ...);
         then the core checks what a declared sensor can check and the adapter left standing: a
         believed-held object is dropped from the belief when the holding sensor, run through
         ``sense(skill) -> SkillResult``, reads an empty hand (a sensor that cannot be read changes
-        nothing). Returns ``{belief: [before, after]}`` of what changed."""
+        nothing). With ``places`` (the ENV; SAGE-v2's AssistLoop) the sensors are reconciled last
+        (``reconcile.reconcile_sensors``: ``arrived`` from a fresh pose within ``arrive_tol`` of a
+        place, else unknown; ``opened`` from the adapter's ``container_states``), with provenance;
+        what they read goes into ``report``. Returns ``{belief: [before, after]}`` of what changed."""
         before = _belief(world)
         try:
             fn = getattr(self.adapter, "reconcile", None)
@@ -213,6 +217,14 @@ class RobotView:
                 for k in ("holding_since", "holding_pose"):
                     if hasattr(world, k):
                         setattr(world, k, None)
+            if held is not None and callable(getattr(world, "mark", None)):
+                world.mark("holding", "sensor", detail=skill)
+        if places is not None:
+            from .reconcile import reconcile_sensors
+            tol = self.geometry.arrive_tol_m if arrive_tol is None else arrive_tol
+            got = reconcile_sensors(world, self, node, sense, places, tol)
+            if report is not None:
+                report.update(got)
         after = _belief(world)
         return {k: [before[k], after[k]] for k in before if before[k] != after[k]}
 

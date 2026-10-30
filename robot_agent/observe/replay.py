@@ -53,7 +53,7 @@ DIRECT_EVENTS = ('plan', 'step_start', 'step_done', 'stopped', 'done', 'error')
 PLAN_EVENTS = ('understand', 'clarify', 'gate', 'plan')
 # fields that change from run to run by design (clocks, ids, timings, tracebacks)
 VOLATILE = {'t', 'run_id', 'plan_sec', 'holding_since', 'latency_ms', 'trace', 'say_audio', 'origin',
-            'log_dir', 'found_pose_stale', 'started_at', 'ended_at'}
+            'log_dir', 'found_pose_stale', 'started_at', 'ended_at', 'ts', 'age_s'}
 
 
 def _canon(o: Any) -> str:

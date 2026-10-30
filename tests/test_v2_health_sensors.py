@@ -82,7 +82,9 @@ def _loop(make_assist, env, health, **kw):
 
 
 def test_stale_camera_waits_then_finds(make_assist, env):
-    seq = iter([{"frame_age_s": 0.1, "pose_age_s": 0.1}, {"frame_age_s": 5.0, "pose_age_s": 0.1, "ok": False}])
+    # read 1: the run-start reconcile's pose age (an adapter without pose()), 2: the MoveTo, 3: the Find (stale)
+    seq = iter([{"frame_age_s": 0.1, "pose_age_s": 0.1}, {"frame_age_s": 0.1, "pose_age_s": 0.1},
+                {"frame_age_s": 5.0, "pose_age_s": 0.1, "ok": False}])
     health = lambda node=None: next(seq, {"frame_age_s": 0.1, "pose_age_s": 0.1, "ok": True})   # noqa: E731
     robot, loop = _loop(make_assist, env, health)
     evs = run_task(loop, "Bring the apple from the desk to the dining table.")

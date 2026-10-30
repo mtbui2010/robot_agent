@@ -34,7 +34,8 @@ def test_simple_task_succeeds(make_assist, env, tmp_path):
     assert [(s, o) for s, o, ok, _ in robot.trace] == [("move", DS), ("find", "apple"), ("pick", "apple"),
                                                        ("move", DT), ("place", DT), ("find", "apple")]
     assert [e["ok"] for e in evs if e["event"] == "goal_check"] == [True]
-    assert kinds(evs)[:4] == ["task_start", "status", "understand", "status"]
+    # the run-start reconcile reads the base pose: the robot is at the entrance, not unknown (docs/guard.md)
+    assert kinds(evs)[:5] == ["task_start", "reconcile", "status", "understand", "status"]
     gate = next(e for e in evs if e["event"] == "gate")
     assert gate["problems"] == []
     # the understand prompt lists the ENV places and asks for JSON

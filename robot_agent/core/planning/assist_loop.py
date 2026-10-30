@@ -58,13 +58,15 @@ from . import action_model, episode_memory, goal_change
 from . import search as search_belief
 from .search_hooks import SearchHooks
 from . import goals as goal_kinds
+from . import reconcile as sensed
 from .robot import run_skill
 from .verify import symbolic_check, verdict
 from .verify_vlm import refuted
 from .budget import DEFAULT_LLM_BUDGET, budget_end
 from .sensor_health import arrival_check, find_precheck
 from .understand import (LLMBadOutput, LLMBudget, LLMBudgetExceeded, LLMUnavailable, ask_json, consensus,
-                         describe, find_issues, issue_question, misheard_question, sampling, typed_refusal)
+                         describe, find_issues, issue_question, misheard_question, sampling, typed_refusal,
+                         without_places)
 
 _LOC_ACTIONS = {"MoveTo", "Place", "PutIn", "Open", "Close"}
 # per-run overrides accepted from /ws/agent `options`
@@ -72,7 +74,8 @@ ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify
                 "pick_retries", "ask_help", "arrive_tol", "find_min_conf", "find_verify", "reach_far", "reach_lateral",
                 "goal_check", "health_wait_s", "understand_retries", "understand_samples", "llm_budget",
                 "goal_readback", "understand_temperature", "understand_seed", "understand_sample_temperature",
-                "yes_no_reasks", "search", "search_rank", "search_half_life_s", "vlm_verify", "sensor_health"}
+                "yes_no_reasks", "search", "search_rank", "search_half_life_s", "vlm_verify", "sensor_health",
+                "reconcile"}
 _USER_WORDS = {"me", "user", "here", "you", "myself", "person"}
 
 
@@ -353,6 +356,9 @@ class AssistLoop(SearchHooks, ClosedLoop):
             # search with a belief (search.py, docs/search.md): prior from the object memory, one LLM ranking
             # per object, searched places never again
             "search": search_belief.SearchConfig.from_env(overrides),
+            # the belief against the sensors at the start / on resume and a non-sensor `arrived` against a fresh
+            # pose before a step at a place, with provenance (reconcile.py, docs/guard.md); 0: the adapter only
+            "reconcile": str(overrides.get("reconcile", env("ROBOT_AGENT_RECONCILE", "1"))) not in ("0", "False", "false"),
             "generator": self.cfg["planner"],
             "planner": "sage",
         })
@@ -1086,7 +1092,9 @@ class AssistLoop(SearchHooks, ClosedLoop):
         if not self.cfg["goal_readback"]:
             return []
         answers = [t for w_, t in r.dialogue if w_ == "user"]
-        return find_issues(goals, " ".join([r.task, self.original or ""] + answers), r.places,
+        # a place the person replaced in a read-back correction no longer counts as asked for (docs/dialog.md)
+        said = without_places(" ".join([r.task, self.original or ""]), r.places, getattr(r, "replaced", ()))
+        return find_issues(goals, " ".join([said] + answers), r.places,
                            english=r.task, user_words=_USER_WORDS)   # objects: the task's own words only
 
     def _goal_readback(self, r):
@@ -1155,7 +1163,9 @@ class AssistLoop(SearchHooks, ClosedLoop):
         r.memory.remember_answer(r.task, cq, ans)
         k = r.places.ground(rest, rest)
         if k and not re.search(r"\b(from|take|pick)\b", rest):
-            r.pin_to = k
+            r.pin_to = k                 # the destination it read back is replaced (the coverage check drops it)
+            r.replaced = set(getattr(r, "replaced", ())) | {g["to"] for g in r.goals
+                                                            if g.get("type") in ("on", "in") and g.get("to") not in (None, "", k)}
         return _NEXT, None
 
     def _ask_yes_no(self, r, q):
@@ -1194,6 +1204,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
     def _obs(self, r) -> str:
         txt = ("Places the robot can go to (use exactly these):\n" + "\n".join(f"- {k}" for k in r.places.keys)
                + "\nGoals: " + r.goal_txt + "\nRobot state: " + r.world.as_text())
+        if r.world.arrived is None and r.world.provenance_of("arrived").get("source") == sensed.UNKNOWN:
+            txt += "\nRobot position: unknown (no fresh base pose): go to a place before acting there"
         if r.searched:
             txt += "\nAlready looked (object not there): " + ", ".join(r.searched)
         return txt + self._search_obs(r)
@@ -1719,9 +1731,50 @@ class AssistLoop(SearchHooks, ClosedLoop):
         ok_pre, why_ = symbolic_check(st, world, openable=r.places.openable, capabilities=r.robot.model_capabilities())
         return "" if ok_pre else why_
 
+    def _sense(self, r):
+        return lambda skill: run_skill(self.sr, skill, {}, r.node, raise_errors=True)
+
+    def _reconcile(self, r, when):
+        """The adapter's reconcile, then the sensors with provenance (cfg reconcile; reconcile.py): the
+        ``reconcile`` event when the belief changed."""
+        if not self.cfg["reconcile"]:
+            return super()._reconcile(r, when)
+        from robot_agent.skill_configs import ENV
+        r.reconciled = {}
+        changed = r.robot.reconcile(r.world, r.node, sense=self._sense(r), places=dict(ENV),
+                                    arrive_tol=self.cfg["arrive_tol"], report=r.reconciled)
+        if not changed:
+            return None
+        self._save_world()
+        return r.ev("reconcile", when=when, changed=changed, sensors=r.reconciled,
+                    provenance=r.world.provenance_view(), world=r.world.to_dict())
+
+    @staticmethod
+    def _save_world():
+        try:
+            current().save_world()
+        except Exception:
+            pass
+
+    def _guard_arrived(self, r, st):
+        """A non-sensor `arrived` (operator / belief) that a fresh pose contradicts is stale: fixed, the
+        ``recover kind=reconcile`` event (None when nothing changed)."""
+        if not self.cfg["reconcile"]:
+            return None
+        fix = sensed.guard_arrived(r.world, r.robot, r.node, self._sense(r), r.places.env, self.cfg["arrive_tol"], st)
+        if fix is None:
+            return None
+        self._save_world()
+        return r.ev("recover", at_index=r.i, kind="reconcile", was=fix["old"], now=fix["new"],
+                    msg=f"the robot is at {fix['new'] or 'no known place'}, not at {fix['old']} "
+                        f"({fix['source']} belief; pose {fix['detail']})")
+
     def _guard(self, r, st):
         """Preconditions before the robot moves (violations go to the planner): None (go on), _NEXT, _STOP."""
         a, o, world = st["action"], st["object"], r.world
+        fixed = self._guard_arrived(r, st)
+        if fixed is not None:
+            yield fixed
         why = self._precondition(r, st)
         if why and a == "Pick" and world.holding and not self._holding(r.node, default=True):
             # the belief holds something, the hand is empty (a stale belief): fix it and look again
@@ -1824,6 +1877,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
         rec.status = "success"; r.run.steps.append(rec)
         self._search_effect(r, st)                       # before the effect: where the robot did it
         self._effect(st, r.world, r.memory, r.placed)
+        if a == "MoveTo":
+            sensed.confirm_arrival(r.world, rec.verifies)    # measured at its target: sensor provenance
         if st.get("verify_goal"):
             r.placed[o] = st["verify_goal"]             # seen at its destination: the goal holds
         r.completed.append(st)

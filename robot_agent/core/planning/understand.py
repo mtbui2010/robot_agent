@@ -202,6 +202,19 @@ def place_mentions(text: str, places) -> list:
     return sorted(out)
 
 
+def without_places(text: str, places, keys) -> str:
+    """*text* with its mentions of the places *keys* cut out (a mention naming only those): a place the person
+    replaced in a read-back correction ('on the dining table' -> 'on the kitchen counter') is no longer asked for."""
+    keys = set(keys or ())
+    if not keys:
+        return text
+    t = _norm(text)
+    for s, e, _p, ks, _src in reversed(place_mentions(t, places)):
+        if ks and ks <= keys:
+            t = t[:s] + " " + t[e:]
+    return t
+
+
 def _active(text: str) -> str:
     """*text* without the parts that are not requests: conditions ('if the drawer is open'), negations ('don't
     touch the mug') and what a self-correction takes back ('on the stool... no wait, on the sofa')."""
