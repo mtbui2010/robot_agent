@@ -1,0 +1,46 @@
+# A manifest in the shared-brief format (KAAIR-like). Used by tests/test_contract_manifest.py.
+robot: kaair
+version: "1.0"
+language: ko
+capabilities: {base: true, arms: 1, hands: [right], lift: true, head: true, drawer: true}
+geometry: {arrive_tol_m: 0.3, reach_m: 0.78}
+skills:
+  - name: move
+    action: MoveTo
+    params: {type: object, properties: {inputs: {type: string}}, required: [inputs]}
+    pre: []
+    hold: []
+    effects: ["arrived(?inputs)"]
+    verify: [{kind: symbolic}]
+    interruptible: true
+    errors: [unreachable, blocked, timeout]
+    version: "1.0"
+  - name: find
+    action: Find
+    params: {type: object, properties: {inputs: {type: string}, min_conf: {type: number}}, required: [inputs]}
+    effects: ["found(?inputs)"]
+    verify: [symbolic]
+    errors: [absent, perception_unavailable]
+  - name: pick
+    action: Pick
+    params: {type: object, properties: {inputs: {type: string}, type: {type: string}}}
+    pre: ["found(?inputs)", "hand_empty()"]
+    hold: ["not estop()"]
+    effects: ["holding(?inputs)"]
+    verify: [{kind: symbolic}, {kind: sensor, skill: grasp_succeed}]
+    interruptible: false
+    errors: [grasp_failed, unreachable, PERCEPTION_UNAVAILABLE]
+  - name: place
+    action: Place
+    params: {type: object, properties: {inputs: {type: string}}, required: [inputs]}
+    pre: ["holding(?x)"]
+    effects: ["on(?x, ?inputs)", "hand_empty()"]
+    verify: [{kind: symbolic}, {kind: vlm, prompt: "Is the object on the {inputs}?"}]
+    interruptible: false
+    errors: [dropped, grasp_failed, blocked]
+    description: places the held object   # not a contract key: kept in extra
+  - name: open_drawer
+    action: Open
+    errors: [unreachable, grasp_failed]
+  - name: close_drawer
+    action: Close
