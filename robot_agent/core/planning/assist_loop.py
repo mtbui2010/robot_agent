@@ -819,7 +819,7 @@ class AssistLoop(ClosedLoop):
             from ..unified_agent import _make_log_fn
             return _make_log_fn(self._emit, i, allow_say=False)
 
-        from ..run_control import cancel_requested
+        from ..run_control import cancel_requested, wait_if_paused
 
         def finish(status, msg="", **kw):
             run.status = status; run.ended_at = time.time()
@@ -997,6 +997,7 @@ class AssistLoop(ClosedLoop):
                         yield finish("failed", msg="plan finished but the goals do not hold: " + goal_txt); return
                     yield e_
                     continue
+                wait_if_paused()             # a paused run holds here, between two steps
                 if cancel_requested():
                     yield finish("aborted", msg="Cancelled by user"); return
                 st = steps[i]

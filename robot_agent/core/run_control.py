@@ -12,10 +12,16 @@ this module is what ties them together:
   3. the plan loop — it checks :func:`cancel_requested` between steps and ends
      the run with status ``aborted``.
 
-The flag is process-global, not per-run: one robot per process (see
-``robot_agent.state``), and Stop means "stop the robot", including skills
-started from the CLI or a second client. It is cleared by :func:`begin_run` at
-every execution entry point, so a cancel never leaks into the next run.
+Since the run manager (``robot_agent.interact.run_manager``) the flag is per
+run. These functions keep their names and meaning for every caller (plan loops,
+skills, the dashboard), and act on the *current run*: the run the calling
+thread was bound to by :func:`begin_run`, else the robot's active run. With no
+run at all (a skill started from the CLI) the old process-global flag is used,
+so Stop still means "stop the robot".
+
+:func:`begin_run` used to clear the flag at every entry, which also wiped a
+Stop pressed for a run still finishing. It now never clears the cancel of an
+active run: a new run starts with its own, clear flag.
 """
 
 import logging
@@ -36,9 +42,61 @@ _END_DIALOG = threading.Event()
 _DIALOG = {'active': 0}
 
 
+def _manager():
+    from ..interact.run_manager import get_manager
+    mgr = get_manager()
+    if not getattr(mgr, '_run_control_hooked', False):
+        mgr.on_cancel.append(_on_run_cancel)
+        mgr._run_control_hooked = True
+    return mgr
+
+
+def manager():
+    """The process RunManager, with the robot stop hooked into its cancel."""
+    return _manager()
+
+
+def _on_run_cancel(run) -> None:
+    """A run was cancelled through the manager (a spoken "stop", POST
+    /runs/{id}/cancel): stop the robot now, not only at the next step."""
+    with _LOCK:
+        _stop_robot()
+
+
+def current_run():
+    """The run the calling thread acts for (bound by :func:`begin_run`, else
+    the active run), or None."""
+    try:
+        return _manager().current()
+    except Exception:
+        return None
+
+
 def cancel_requested() -> bool:
-    """True between a :func:`request_cancel` and the next :func:`begin_run`."""
+    """True once the current run was asked to stop; with no run, between a
+    :func:`request_cancel` and the next :func:`begin_run`."""
+    run = current_run()
+    if run is not None:
+        return run.cancel_requested
     return _CANCEL.is_set()
+
+
+def wait_if_paused(timeout: float | None = None) -> bool:
+    """Cooperative pause point between two steps: blocks while the current run
+    is paused. True to carry on, False when the run was cancelled meanwhile.
+    No run -> returns True at once."""
+    run = current_run()
+    if run is None:
+        return not _CANCEL.is_set()
+    return run.wait_if_paused(timeout)
+
+
+def check_cancel() -> None:
+    """Raise ``RunCancelled`` when :func:`cancel_requested`."""
+    if cancel_requested():
+        from ..interact.run_manager import RunCancelled
+        run = current_run()
+        raise RunCancelled(run.run_id if run is not None else '')
 
 
 def _node(node=None):
@@ -53,9 +111,28 @@ def _node(node=None):
 
 
 def begin_run(node=None) -> None:
-    """Clear the flag before a new execution (plan, skill, direct agent send)."""
+    """A new execution starts (plan, skill, direct agent send).
+
+    The calling thread is bound to the robot's active run when that run has
+    not begun yet (the API started it and this is its executive). The stale
+    process flag and the node's cancel are cleared, except while the active run
+    is being cancelled: a skill command or a second entry must not undo
+    someone's Stop."""
     _dbg.warning('[spoken-debug] begin_run (cancel flag cleared)')
     with _LOCK:
+        run = None
+        try:
+            mgr = _manager()
+            run = mgr.active()
+            if run is not None and not run.begun:
+                run.begun = True
+                mgr.bind_thread(run)
+            elif mgr.thread_run() is not None and not mgr.thread_run().active:
+                mgr.bind_thread(None)      # this thread's old run is over
+        except Exception:
+            run = None
+        if run is not None and run.cancel_requested:
+            return
         _CANCEL.clear()
         _END_DIALOG.clear()
         n = _node(node)
@@ -78,20 +155,38 @@ def request_cancel(node=None) -> dict:
     with _LOCK:
         _CANCEL.set()
         result = {'ok': True, 'cancelled': [], 'errors': {}}
-        n = _node(node)
-        if n is not None:
-            try:
-                result.update(n.cancel_all())
-            except Exception as e:
-                result['errors']['node'] = str(e)
-        # Release any HRI skill blocked on the dashboard microphone, which would
-        # otherwise sit in listen_dashboard() until its timeout.
+        # The active run ends too (no role check: this is the Stop button and
+        # the "client went away" path).
         try:
-            from ..utils import cancel_pending_listens
-            result['listens_released'] = cancel_pending_listens()
+            run = _manager().active()
+            if run is not None:
+                _manager().cancel(run.run_id, role='owner', hooks=False)
+                result['run_id'] = run.run_id
         except Exception as e:
-            result['errors']['listen'] = str(e)
+            result['errors']['run'] = str(e)
+        out = _stop_robot(node)
+        result['errors'].update(out.pop('errors'))
+        result.update(out)
         return result
+
+
+def _stop_robot(node=None) -> dict:
+    """Cancel the ROS work in flight and release blocked listens."""
+    result = {'errors': {}}
+    n = _node(node)
+    if n is not None:
+        try:
+            result.update(n.cancel_all())
+        except Exception as e:
+            result['errors']['node'] = str(e)
+    # Release any HRI skill blocked on the dashboard microphone, which would
+    # otherwise sit in listen_dashboard() until its timeout.
+    try:
+        from ..utils import cancel_pending_listens
+        result['listens_released'] = cancel_pending_listens()
+    except Exception as e:
+        result['errors']['listen'] = str(e)
+    return result
 
 
 def dialog_begin() -> None:

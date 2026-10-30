@@ -392,7 +392,7 @@ class ClosedLoop:
             i = 0
             replans = 0
 
-            from ..run_control import cancel_requested
+            from ..run_control import cancel_requested, wait_if_paused
 
             def _abort():
                 """End the run on a cancel — no verify, no replan."""
@@ -402,6 +402,7 @@ class ClosedLoop:
                           msg="Cancelled by user", world=world.to_dict())
 
             while i < len(steps):
+                wait_if_paused()         # a paused run holds here, between two steps
                 if cancel_requested():
                     yield _abort()
                     return
