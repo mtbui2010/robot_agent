@@ -205,6 +205,7 @@ class RunContext:
         self.completed: list = []
         self.i = 0
         self.replans = 0
+        self.fail_msg = ""          # why a failed run failed (the done event's msg)
         # the failure that decided the run (FailureCode, device, evidence): on the `done` event
         self.failure: dict = {}
 
@@ -568,7 +569,54 @@ class ClosedLoop:
             yield r.ev("done", status="planned", run_id=r.run_id,
                        say=r.announcer.announce("plan_ready"), world=r.world.to_dict())
             return True
-        return False
+        return (yield from self._cl_certify(r))
+
+    def _unbindable(self, r: "RunContext", steps: list) -> list:
+        """[(index, why)] of the steps this robot cannot run (no skill / cannot be bound), the
+        plan simulated as written so a Pick binds to the Find before it."""
+        out, w = [], r.world.copy()
+        for i, st in enumerate(steps):
+            try:
+                r.mapper.to_skill(st, w)
+            except Unmappable as e:
+                out.append((i, f"step {i + 1} '{st.get('action', '')} {st.get('object', '')}': {e}"))
+            except Exception:
+                pass                            # an adapter error is the step's own, at run time
+            try:
+                r.mapper.apply_effect(st, w)
+            except Exception:
+                pass
+        return out
+
+    def _cl_certify(self, r: "RunContext"):
+        """No motion for a plan with steps the robot cannot run: the planner is asked once for a
+        plan without them, else the run fails before the first step. True when the run ended."""
+        bad = self._unbindable(r, r.steps)
+        if not bad:
+            return False
+        reason = ("the plan has steps this robot cannot do: " + "; ".join(t for _i, t in bad)
+                  + ". It can: " + ", ".join(sorted(r.robot.plan_actions)))
+        yield r.ev("gate", round=0, problems=[t for _i, t in bad])
+        if r.replans < self.cfg["max_replans"]:
+            r.replans += 1
+            try:
+                new, _m = r.planner.replan(r.task, [], r.steps[bad[0][0]], reason, r.obs, r.visible)
+                new = list(new or [])
+            except Exception as e:
+                new = []
+                reason += f"; replan failed: {e}"
+            r.run.replans.append({"at_index": 0, "failed": r.steps[bad[0][0]], "reason": reason,
+                                  "suffix_len": len(new)})
+            if new and not self._unbindable(r, new):
+                r.steps = new
+                yield r.ev("replan", at_index=0, reason=reason, plan=[f"{x.get('action')} {x.get('object')}" for x in new],
+                           say=r.announcer.announce("replan"), world=r.world.to_dict())
+                return False
+        r.run.status, r.run.ended_at = "failed", time.time()
+        msg = "I can't do this task: " + "; ".join(t for _i, t in bad)
+        say = r.robot.text("cannot_do", r.lang) if r.robot.has_text("cannot_do") else r.announcer.announce("done_fail")
+        yield r.ev("done", status="failed", run_id=r.run_id, msg=msg, say=say, world=r.world.to_dict())
+        return True
 
     @staticmethod
     def _planner_failed(r: "RunContext", e: Exception) -> dict:
@@ -672,9 +720,7 @@ class ClosedLoop:
         yield r.ev("step_done", index=r.i, status="failed",
                    say=r.announcer.announce("step_fail", **self._say(step, action, obj), reason=reason),
                    reason=reason, world=r.world.to_dict())
-        ok_to_replan, r.steps, r.i, r.replans = self._maybe_replan(
-            r.planner, r.task, r.completed, step, reason, r.obs, r.visible, r.run, r.replans, r.announcer)
-        if not ok_to_replan:
+        if not self._cl_replan(r, step, reason):
             return _FAIL
         for e2 in self._drain_replan_event(reason, r.announcer, r.i, r.world):
             yield e2
@@ -714,18 +760,23 @@ class ClosedLoop:
             # e-stop / cancelled / a skill bug: a replan cannot help (recovery policy)
             yield r.ev("recover", at_index=r.i, kind="stop", code=code.value,
                        msg=f"{rec.skill} failed ({code.value}), not retried: {reason}")
+            r.fail_msg = f"{action} {obj}: {rec.skill} failed ({code.value}), not retried: {reason}"
             return _FAIL
         # fresh observation before replanning
         r.obs, r.visible = r.robot.observe(r.node)
-        ok_to_replan, r.steps, r.i, r.replans = self._maybe_replan(
-            r.planner, r.task, r.completed, step, reason, r.obs, r.visible, r.run, r.replans, r.announcer)
-        if not ok_to_replan:
+        if not self._cl_replan(r, step, reason):
             return _FAIL
         yield r.ev("replan", at_index=r.i, reason=reason,
                    say=r.announcer.announce("replan"), world=r.world.to_dict())
         return _NEXT
 
     def _cl_finish(self, r: "RunContext"):
+        # success only when every planned step ran: a plan cut short (an empty replan after a
+        # failure) or no plan at all is a failure with its reason, never a success
+        if r.run.status != "failed" and (not r.completed or r.i < len(r.steps)):
+            r.run.status = "failed"
+            r.fail_msg = r.fail_msg or ("the planner produced no plan" if not r.steps
+                                        else "the plan stopped before its last step")
         if r.run.status != "failed":
             r.run.status = "success"
         r.run.ended_at = time.time()
@@ -733,8 +784,25 @@ class ClosedLoop:
         if r.run.status == "success":
             self._record_episode(r.planner, r.task, r.completed)
         kind = "done_success" if r.run.status == "success" else "done_fail"
+        extra = r.failure_fields() if r.run.status == "failed" else {}
+        if r.run.status == "failed" and r.fail_msg:
+            extra["msg"] = r.fail_msg                  # why the plan stopped (no plan, cut short, ...)
         yield r.ev("done", status=r.run.status, run_id=r.run_id, say=r.announcer.announce(kind),
-                   world=r.world.to_dict(), **(r.failure_fields() if r.run.status == "failed" else {}))
+                   world=r.world.to_dict(), **extra)
+
+    def _cl_replan(self, r: "RunContext", step: dict, reason: str) -> bool:
+        """Replan after a failed / unbindable step. False (with ``r.fail_msg``) when the budget is
+        used or the planner has no steps to offer: the plan was cut short, the task not done."""
+        action, obj = step.get("action", ""), step.get("object", "")
+        ok, r.steps, r.i, r.replans = self._maybe_replan(
+            r.planner, r.task, r.completed, step, reason, r.obs, r.visible, r.run, r.replans, r.announcer)
+        if not ok:
+            r.fail_msg = f"{action} {obj} failed: {reason} (replan budget used)"
+            return False
+        if r.i >= len(r.steps):
+            r.fail_msg = f"{action} {obj} failed: {reason}; the planner has no new plan"
+            return False
+        return True
 
     @staticmethod
     def _record_episode(planner, task: str, completed: list) -> None:

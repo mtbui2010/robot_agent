@@ -23,13 +23,22 @@ CORE_TEXT = {
     "verify_unknown": "unknown: {skill} declares no sensor that checks it",
     "sensor_unknown": "unknown: the {sensor} check could not run ({why})",
     "robot_description": "The robot can: {abilities}.",
+    # a goal kind needs an action the robot has no skill for (the robot's i18n `cannot_do` wins)
+    "cannot_do": "I can't do that: I have no {missing} skill.",
+    # what a delivering robot says when it arrives (deliver goals)
+    "delivery": "I have a delivery for you. Please take it.",
 }
+
+# manifest actions that are not plan steps: sensors (Observe / Verify), the dialog (Ask, the core's
+# own) and queries to another model (Query)
+NOT_PLAN_STEPS = {"Observe", "Verify", "Ask", "Query"}
 
 # abstract action -> how the task-understanding prompt describes it (robots override the
 # whole sentence with the i18n key "robot_description")
 _ABILITY = {"MoveTo": "move to a place", "Find": "find an object", "Pick": "pick it up",
             "Place": "place it on a surface", "Open": "open / close a container",
-            "PutIn": "put an object in an open container"}
+            "PutIn": "put an object in an open container", "Say": "say something to someone",
+            "WaitForUnload": "carry an item to someone, who takes it"}
 
 
 class RobotView:
@@ -69,10 +78,10 @@ class RobotView:
 
     @property
     def plan_actions(self) -> set:
-        """Actions a plan may use: the robot's skills in the action model's vocabulary, plus
-        its no-ops (sensor / dialog skills such as Verify / Ask are not plan steps)."""
-        vocab = set(action_model.ROBOT_ACTIONS)
-        return ({a for a in self.skill_map if a in vocab} & self.supported_actions) | self.noop_actions
+        """Actions a plan may use: the robot's skills (the action model's vocabulary, and the
+        robot's own actions such as Say / Dock: no symbolic rule, the model passes them), plus its
+        no-ops. Sensor / dialog / query skills (``NOT_PLAN_STEPS``) are not plan steps."""
+        return ({a for a in self.skill_map if a not in NOT_PLAN_STEPS} & self.supported_actions) | self.noop_actions
 
     def spec(self, action: str) -> Optional[SkillSpec]:
         return self.manifest.skill_for(action) if action else None
@@ -232,7 +241,7 @@ class RobotView:
         """How the task-understanding prompt describes the robot."""
         if self.has_text("robot_description"):
             return self.text("robot_description")
-        acts = [a for a in ("MoveTo", "Find", "Pick", "Place", "Open", "PutIn") if a in self.plan_actions]
+        acts = [a for a in _ABILITY if a in self.plan_actions]
         return CORE_TEXT["robot_description"].format(abilities=", ".join(_ABILITY[a] for a in acts) or "nothing")
 
     def __repr__(self) -> str:
@@ -293,4 +302,5 @@ def current_robot() -> Optional[RobotView]:
     return robot_for(pkg)
 
 
-__all__ = ["RobotView", "run_skill", "robot_for", "current_robot", "CORE_TEXT", "Unbindable", "VerifySpec"]
+__all__ = ["RobotView", "run_skill", "robot_for", "current_robot", "CORE_TEXT", "NOT_PLAN_STEPS", "Unbindable",
+           "VerifySpec"]

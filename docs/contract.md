@@ -186,3 +186,33 @@ A robot's own test can call `assert_manifest_matches(pkg_dir)`.
   Find counts the place as searched (absent: yes; could not look / out of
   reach: no). The per-action recoveries (look + grasp again, move again, ask
   the person) and the replan wording are unchanged.
+
+## Goals, capabilities and the certified gate
+
+`AssistLoop` turns a task into typed goals (`core/planning/goals.py`). Each goal
+kind needs abstract actions from the manifest; a robot is offered (understand
+prompt, JSON enum) the manipulation kinds plus the kinds it has the actions for:
+
+| kind | needs | planned by |
+|---|---|---|
+| `on` / `in` | Pick + Place / PutIn (or Place) | SAGE |
+| `open` / `close` | Open / Close | SAGE |
+| `go` | MoveTo | compiled (no LLM) |
+| `say` | Say (+ MoveTo when it is said at a place) | compiled |
+| `deliver` | MoveTo + WaitForUnload (a person takes the item) | compiled |
+
+- A goal whose actions the manifest lacks is **refused before planning or
+  motion**, with the robot's `cannot_do` phrase (core default: "I can't do
+  that: I have no {missing} skill."). Two destinations for one object is a
+  question to the person (goal validator); open + close of one container keep
+  the last.
+- Plan steps may use the robot's own actions (Say, Dock, WaitForUnload ...):
+  `RobotView.plan_actions` is every bound skill's action except the sensor /
+  dialog / query ones (`NOT_PLAN_STEPS`: Observe, Verify, Ask, Query).
+- **Certified gate**: a plan runs only when it has no critical finding (action
+  model + goals) and every step binds (simulated as written). After SAGE's
+  edits a failing plan gets one fresh plan and is certified again; a replan
+  suffix is certified too (unknown action / place, unbindable step). An
+  uncertified plan never runs: the run fails before any motion with the
+  findings. `ClosedLoop` binds its plan the same way before the first motion
+  (one replan, else failed) and succeeds only when every planned step ran.

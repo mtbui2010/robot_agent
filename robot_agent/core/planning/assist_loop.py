@@ -53,6 +53,7 @@ from robot_agent.state import current, host_id
 from .loop import _DONE, _NEXT, _STOP, ClosedLoop, _vr_list, reconcile_world
 from .records import StepRecord, VerifyResult
 from . import action_model, goal_change
+from . import goals as goal_kinds
 from .robot import run_skill
 from .verify import symbolic_check, verdict
 from .understand import (LLMBadOutput, LLMBudget, LLMBudgetExceeded, LLMUnavailable, ask_json, consensus,
@@ -267,7 +268,7 @@ Return JSON:
 - question: when ambiguous, one short question to the user; else "".
 - goals: one per object to move / container to open, in order:
   {{"type": "on", "object": <object>, "from": <place it is on now, or "">, "to": <place to put it, or "me" when the user
-  wants it given to them>}}; "in" = put into a drawer (to = the drawer); "open" / "close": object = the drawer, from/to "".
+  wants it given to them>}}; "in" = put into a drawer (to = the drawer); "open" / "close": object = the drawer, from/to "".{goal_kinds}
   Object names: lower case, as the user said them ("tennis ball", "red cup").
 
 Task: {task}{original}
@@ -355,6 +356,7 @@ class AssistLoop(ClosedLoop):
         LLMUnavailable / LLMBudgetExceeded; a model that still answers no JSON gives no goals (``unparsed``)."""
         prompt = UNDERSTAND_PROMPT.format(
             abilities=self.robot.robot_description(),
+            goal_kinds=goal_kinds.prompt_lines(goal_kinds.kinds_for(self.robot.plan_actions)),
             # no object memory here: a 7B model refused / asked about every object it did not list
             # (the memory grounds `from` after this call instead)
             places=places.describe(), answers=memory.answers_text(),
@@ -368,17 +370,72 @@ class AssistLoop(ClosedLoop):
             original=(f"\n(the user's own words: {self.original})" if self.original and self.original != task else ""))
         from ..run_control import call_cancellable, is_cancel
         try:                                     # every call (repairs too) cancellable: a stop does not wait
-            d = ask_json(self._llm(), prompt, UNDERSTAND_SCHEMA, budget=budget, retries=self.cfg["understand_retries"],
+            d = ask_json(self._llm(), prompt, self._understand_schema(), budget=budget, retries=self.cfg["understand_retries"],
                          call=call_cancellable, passthrough=is_cancel)
         except LLMBadOutput:
             d = {"unparsed": True}
         d.setdefault("status", "clear"); d.setdefault("question", "")
         d["goals"] = [g for g in d.get("goals") or [] if isinstance(g, dict)] if isinstance(d.get("goals"), list) else []
         for g in d["goals"]:
-            g["object"] = _strip_article(words(g.get("object")))
+            # a sentence to say stays as said; object names are normalised
+            g["object"] = (str(g.get("object") or "").strip() if g.get("type") == "say"
+                           else _strip_article(words(g.get("object"))))
             for k in ("from", "to"):
                 g[k] = (g.get(k) or "").strip()
         return d
+
+    def _understand_schema(self) -> dict:
+        """UNDERSTAND_SCHEMA with the goal kinds this robot may be given (``goals.kinds_for``)."""
+        schema = json.loads(json.dumps(UNDERSTAND_SCHEMA))
+        schema["properties"]["goals"]["items"]["properties"]["type"]["enum"] = \
+            goal_kinds.kinds_for(self.robot.plan_actions)
+        return schema
+
+    def _cannot_do(self, goals) -> Optional[str]:
+        """Why the robot cannot do these goals (an action a goal kind needs is not in its manifest),
+        or None. Checked before any planning or motion."""
+        acts = self.robot.plan_actions
+        missing = list(dict.fromkeys(a for g in goals for a in goal_kinds.missing_actions(g, acts)))
+        return ", ".join(missing) if missing else None
+
+    @staticmethod
+    def _ground_container(g, places, task):
+        """Ground an open / close goal's container on ENV: (goal, question|None)."""
+        k = places.ground(g["object"], task) or places.ground(g.get("to") or "", task)
+        if not k:
+            drawers = [p for p in places.keys if places.openable(p)]
+            k = drawers[0] if len(drawers) == 1 else None
+        g["object"] = k or g["object"]; g["to"] = k or ""
+        return g, (None if k else f"Which drawer should I {g['type']}?")
+
+    @staticmethod
+    def _ground_template(g, places, task, latest=""):
+        """Ground a go / say / deliver goal on ENV: (goal, question|None). A say goal's `to` may be a
+        person instead of a place (``person``)."""
+        g["from"] = ""
+        v, t = g.get("to") or "", g["type"]
+        if t == "say":
+            if not g.get("object"):
+                return g, "What should I say?"
+            k = places.ground(v, task) if v else None
+            if v and not k:
+                g["person"], g["to"] = v, ""
+            elif k:
+                g["to"] = k
+            return g, None
+        if not v:
+            return g, "Where should I go?" if t == "go" else "Where should I take it?"
+        c = places.candidates(v, task)
+        if len(c) > 1 and latest and len(places.candidates(v, latest)) == 1:
+            c = places.candidates(v, latest)
+        if len(c) == 1 and c[0].startswith("@") and len(places.in_room(c[0][1:])) == 1:
+            c = places.in_room(c[0][1:])
+        if len(c) == 1 and c[0] in places.env:
+            g["to"] = c[0]
+            return g, None
+        opts = places.in_room(c[0][1:]) if len(c) == 1 else c
+        nice = [k.replace("@", " in the ") for k in (opts or places.keys[:4])]
+        return g, f"Which place do you mean: {' or '.join(nice)}?"
 
     def _ground_goals(self, goals, places, memory, task, latest=""):
         """Ground every goal's places on ENV. Returns (goals, question|None). `latest`: the user's last answer,
@@ -387,15 +444,11 @@ class AssistLoop(ClosedLoop):
         for g in goals:
             g = dict(g)
             t = g.get("type")
-            if t in ("open", "close"):
-                k = places.ground(g["object"], task) or places.ground(g.get("to") or "", task)
-                if not k:
-                    drawers = [p for p in places.keys if places.openable(p)]
-                    k = drawers[0] if len(drawers) == 1 else None
-                if not k:
-                    questions.append(f"Which drawer should I {t}?")
-                g["object"] = k or g["object"]; g["to"] = k or ""
-                out.append(g); continue
+            if t in goal_kinds.TEMPLATE_KINDS or t in ("open", "close"):
+                g, q_ = (self._ground_template(g, places, task, latest) if t in goal_kinds.TEMPLATE_KINDS
+                         else self._ground_container(g, places, task))
+                out.append(g); questions += [q_] if q_ else []
+                continue
             for slot in ("to", "from"):
                 v = g.get(slot) or ""
                 if not v:
@@ -524,6 +577,8 @@ class AssistLoop(ClosedLoop):
                            + f" on the {nice(g['to'])}")
             elif t == "in":
                 out.append(f"put the {g['object']} in the {nice(g['to'])}")
+            elif t in goal_kinds.TEMPLATE_KINDS:
+                out.append(goal_kinds.summary(g))
             else:
                 out.append(f"{t} the {nice(g['object'])}")
         return "I will " + ", then ".join(out) + "."
@@ -541,6 +596,8 @@ class AssistLoop(ClosedLoop):
                 c = [k for k in c if k in goal_places] or c[:1]
             st["object"] = c[0] if c else words(o)
             st["grounded"] = bool(c)
+        elif a not in action_model.ROBOT_ACTIONS:
+            st["object"] = o                          # the robot's own action (Say ...): its text as is
         else:
             st["object"] = _strip_article(words(o))
             # the plan's 'cup' for the goal's 'red cup'
@@ -742,6 +799,8 @@ class AssistLoop(ClosedLoop):
                 out.append(f"Open {g['object']}")
             elif t == "close" and g["object"] in opened:
                 out.append(f"Close {g['object']}")
+            elif t in goal_kinds.TEMPLATE_KINDS and not goal_kinds.reached(g, steps, world.arrived):
+                out.append(goal_kinds.summary(g))
         return out
 
     @staticmethod
@@ -767,11 +826,17 @@ class AssistLoop(ClosedLoop):
                 return False
             if t == "close" and g["object"] in opened:
                 return False
+            if t in goal_kinds.TEMPLATE_KINDS and not goal_kinds.reached(g, steps, world.arrived):
+                return False
         return bool(goals) or bool(steps)
 
-    def _goals_hold(self, goals, world, placed) -> bool:
+    def _goals_hold(self, goals, world, placed, done=(), at=None) -> bool:
+        """Every goal holds in the belief: objects placed, containers open / closed, and the go / say /
+        deliver goals reached by the steps `done` from `at` (the run's start)."""
         for g in goals:
             t = g["type"]
+            if t in goal_kinds.TEMPLATE_KINDS and not goal_kinds.reached(g, list(done), at):
+                return False
             if t in ("on", "in") and (placed.get(g["object"]) != g["to"] or world.holding == g["object"]):
                 return False
             if t == "open" and g["object"] not in world.opened:
@@ -994,6 +1059,16 @@ class AssistLoop(ClosedLoop):
             msg = u.get("reason") or "I can't do that."
             yield self._finish(r, "refused", msg=msg, say=f"I can't do that: {msg}")
             return _STOP
+        missing = self._cannot_do(r.goals)
+        if missing:
+            # a goal needs an action this robot has no skill for: refuse before planning or moving
+            yield self._finish(r, "refused", say=r.robot.text("cannot_do", "en", missing=missing),
+                               msg=f"this robot has no {missing} skill, needed for: "
+                                   + "; ".join(goal_kinds.describe(g) for g in r.goals))
+            return _STOP
+        r.goals, conflict = goal_kinds.conflicts(r.goals)          # the goal validator
+        if conflict:
+            q = conflict if not q else f"{conflict} {q}"
         # the grounding decides about places; the model's "ambiguous" counts only when it found nothing
         # to do (after "no, the shelf in the restroom" a 7B model kept asking which shelf)
         if u["status"] == "ambiguous" and u.get("question") and not r.goals:
@@ -1134,8 +1209,7 @@ class AssistLoop(ClosedLoop):
     @staticmethod
     def _goal_text(goals) -> str:
         """The goals as the planner reads them: 'on apple from desk to dining table; ...'."""
-        return "; ".join(f"{g['type']} {g['object']}" + (f" from {g['from']}" if g.get('from') else "")
-                         + (f" to {g['to']}" if g.get('to') else "") for g in goals)
+        return "; ".join(goal_kinds.describe(g) for g in goals)
 
     def _ground_all(self, r, seq) -> list:
         return [self._ground_step(x, r.places, r.goals, r.task) for x in seq]
@@ -1145,30 +1219,43 @@ class AssistLoop(ClosedLoop):
         yield r.ev("status", msg="Generating task plan...")
         r.restated = r.task + ("" if not r.dialogue else " (" + "; ".join(t for w_, t in r.dialogue if w_ == "user") + ")")
         r.goal_txt = self._goal_text(r.goals)
-        r.searched, r.seen_far = [], []
+        r.searched, r.seen_far, r.uncertified = [], [], []
         r.planner = self._make_planner()
         self._hook_progress(r.planner)
         yield from self._generate_and_certify(r)
         skill_map = r.robot.skill_map
         plan_text = "\n".join(f"{skill_map.get(x['action'], x['action'])}::{x['object']}" for x in r.steps)
-        yield r.ev("plan", steps=r.steps, plan_meta=r.run.plan_meta, warnings=[], plan_text=plan_text,
-                   world=r.world.to_dict())
+        yield r.ev("plan", steps=r.steps, plan_meta=r.run.plan_meta, warnings=list(r.gate_findings),
+                   plan_text=plan_text, certified=r.certified, world=r.world.to_dict())
         if r.plan_error is not None and not r.steps:     # the planner is down: say so, not "no plan"
             yield self._llm_failed(r, r.plan_error, "planner"); return True
         if r.plan_only:
             yield self._finish(r, "planned", say=r.announcer.announce("plan_ready")); return True
-        if not r.steps:
+        if not r.steps and not (r.goals and len(self._untouched(r.goals, [])) == len(r.goals)
+                                and not (r.run.plan_meta or {}).get("error")):
             yield self._finish(r, "failed", msg="the planner produced no plan for the goals"); return True
+        if not r.certified:
+            # an uncertified plan never runs (the gate's findings are the reason)
+            yield self._finish(r, "failed", msg="I could not make a plan that passes my checks: "
+                                                + "; ".join(r.gate_findings[:3]))
+            return True
         return False
 
     def _generate_and_certify(self, r):
         """SAGE's plan, checked as written; critical findings go back to SAGE's sub-goal editing."""
         t_plan, r.plan_error = time.time(), None
         from ..run_control import call_cancellable, is_cancel
+        r.compiled = goal_kinds.is_template(r.goals)
         try:
-            r.llm_budget.take(what="plan")
-            raw, meta = call_cancellable(r.planner.generate_plan, r.restated, self._obs(r), [])
-        except Exception as e:                       # kept: the run ends with it (_plan_phase), not "no plan"
+            if r.compiled:
+                # go / say / deliver goals: a fixed sequence of the robot's own actions, no LLM
+                raw, meta = goal_kinds.compile_steps(
+                    r.goals, r.world.arrived, r.robot.text("delivery", r.lang),
+                    can_say="Say" in r.robot.plan_actions), {"method": "compiled"}
+            else:
+                r.llm_budget.take(what="plan")
+                raw, meta = call_cancellable(r.planner.generate_plan, r.restated, self._obs(r), [])
+        except Exception as e:
             if is_cancel(e):
                 raise
             raw, meta, r.plan_error = [], {"error": str(e)}, e
@@ -1176,7 +1263,7 @@ class AssistLoop(ClosedLoop):
         probs = self._check(r.steps, r.world, r.places, r.goals)
         yield r.ev("gate", round=0, problems=[p_[1] for p_ in probs], plan=[f"{x['action']} {x['object']}" for x in r.steps])
         edits = []
-        if any(p_[2] for p_ in probs):
+        if any(p_[2] for p_ in probs) and not r.compiled:
             # SAGE's sub-goal-local Editing with the checker's findings (SAGEPlanner.edit_block per block)
             edited, edits = self._sage_edit(r.planner, r.restated, self._obs(r), lambda s: self._ground_all(r, s),
                                             r.world, r.places, r.goals, r.goal_txt)
@@ -1185,31 +1272,95 @@ class AssistLoop(ClosedLoop):
             probs = self._check(r.steps, r.world, r.places, r.goals)
             yield r.ev("gate", round=1, edits=edits, problems=[p_[1] for p_ in probs],
                        plan=[f"{x['action']} {x['object']}" for x in r.steps])
+        blocking = self._blocking(r, r.steps)
+        if blocking and r.steps and not r.compiled:
+            # still critical after SAGE's edits: one fresh plan with the findings, certified again
+            r.steps = self._refine_plan(r, blocking)
+            blocking = self._blocking(r, r.steps)
+            yield r.ev("gate", round=2, problems=blocking, plan=[f"{x['action']} {x['object']}" for x in r.steps])
+        r.certified, r.gate_findings = not blocking, blocking
         r.run.plan_meta = dict(meta or {}, plan_sec=round(time.time() - t_plan, 2), llm_plan=self._ground_all(r, raw),
-                               edits=edits)
+                               edits=edits, certified=r.certified, gate_findings=blocking)
+
+    def _blocking(self, r, steps) -> list:
+        """The findings that keep a plan from running (the certified gate): the checker's critical
+        ones on the plan as written, and steps the robot cannot bind."""
+        unt = self._untouched(r.goals, steps)
+        goals = [g for g in r.goals if g not in unt] if unt and len(unt) < len(r.goals) else r.goals
+        probs = [p_[1] for p_ in self._check(steps, r.world, r.places, goals) if p_[2]] if steps else []
+        return list(dict.fromkeys(probs + self._hard_findings(r, steps)))
+
+    @staticmethod
+    def _untouched(goals, steps) -> list:
+        """'on' goals the plan never moves whose object's place is unknown: they may hold already
+        (the planner left them out); the run looks at the destination at the end instead (D1)."""
+        picked = {st.get("object") for st in steps if st.get("action") == "Pick"}
+        return [g for g in goals if g.get("type") == "on" and g.get("to") and not g.get("from")
+                and not g.get("from_any") and g.get("object") not in picked]
+
+    def _hard_findings(self, r, steps, start: int = 0) -> list:
+        """Steps (from index `start`) no belief can make runnable: an action the robot does not
+        have, a place not in the ENV, a step its adapter cannot bind (simulated as written)."""
+        out, w = [], r.world.copy()
+        for i, st in enumerate(steps):
+            a, o = st.get("action", ""), st.get("object") or ""
+            if i >= start:
+                if a not in r.robot.plan_actions:
+                    out.append(f"step {i + 1} '{a} {o}': the robot has no action {a}")
+                elif a in _LOC_ACTIONS and (not st.get("grounded", True) or o.startswith("@")):
+                    out.append(f"step {i + 1} '{a} {o}': {o.lstrip('@')} is not a place the robot can go to")
+                else:
+                    try:
+                        self.robot.bind(dict(st), w)
+                    except Unbindable as e:
+                        out.append(f"step {i + 1} '{a} {o}': {e}")
+                    except Exception:
+                        pass                          # an adapter error is the step's own, at run time
+            action_model.apply(st, w, inplace=True)
+        return out
+
+    def _refine_plan(self, r, findings) -> list:
+        """A fresh SAGE plan told why the last one was rejected (the gate refines at most once)."""
+        obs = self._obs(r) + "\nA checker rejected the previous plan:\n" + "\n".join(f"- {t}" for t in findings)
+        from ..run_control import call_cancellable, is_cancel
+        try:
+            raw, _m = call_cancellable(r.planner.generate_plan, r.restated, obs, [])
+        except Exception as e:
+            if is_cancel(e):
+                raise
+            raw = []
+        return self._ground_all(r, raw or [])
 
     # ── 3. execute: guard each step; new plans only from SAGE ─────────────
     def _sage_replan(self, r, failed, reason) -> Optional[dict]:
-        """SAGE suffix repair from step r.i. Returns the event to yield, or None when out of budget."""
-        if r.replans >= self.cfg["max_replans"]:
+        """SAGE suffix repair from step r.i. Returns the event to yield, or None when out of budget or
+        the new suffix fails the gate (``r.uncertified``: why)."""
+        r.uncertified = []
+        if r.replans >= self.cfg["max_replans"] or getattr(r, "compiled", False):
+            # a compiled plan has no planner to repair it: the failure ends the run
             return None
         r.replans += 1
         world = r.world
         ers = (f"E: {failed.get('action')} {failed.get('object')} failed. R: {reason}. "
                f"S: robot at {world.arrived}, holding {world.holding or 'nothing'}; goals: {r.goal_txt}")
-        from ..run_control import call_cancellable, is_cancel
-        try:
-            r.llm_budget.take(what="replan")
-            suffix, _m = call_cancellable(r.planner.replan, r.restated, r.completed, failed, ers, self._obs(r), [])
-            suffix = self._ground_all(r, suffix)
-        except Exception as e:
-            if is_cancel(e):
-                raise
-            suffix = []; ers += f"; replan error: {e}"
-            r.replan_error = e
-        if getattr(r, "replan_error", None) is not None:
+        r.replan_error = None
+        suffix, ers = self._replan_suffix(r, failed, ers)
+        bad = self._hard_findings(r, suffix) if r.replan_error is None else []
+        if bad and r.replans < self.cfg["max_replans"]:
+            r.replans += 1                            # one refinement with the gate's findings
+            suffix, ers = self._replan_suffix(r, failed, ers + "; the new plan was rejected: " + "; ".join(bad))
+            bad = self._hard_findings(r, suffix) if r.replan_error is None else []
+        if r.replan_error is not None:
             # the planner is down: the old rest of the plan is not run either (the caller ends the run with it)
             r.run.replans.append({"at_index": r.i, "failed": failed, "reason": ers, "suffix_len": 0, "problems": []})
+            r.steps = r.steps[:r.i]
+            return None
+        if bad:
+            # an uncertified suffix never runs: the future of the plan is dropped
+            r.uncertified = bad
+            r.run.replans.append({"at_index": r.i, "failed": failed, "reason": ers, "suffix_len": len(suffix),
+                                  "problems": bad, "certified": False})
+            r.steps = r.steps[:r.i]
             return None
         probs = [p_[1] for p_ in self._check(r.completed + suffix, r.world_at_start, r.places, r.goals) if p_[2]]
         r.run.replans.append({"at_index": r.i, "failed": failed, "reason": ers, "suffix_len": len(suffix),
@@ -1219,17 +1370,37 @@ class AssistLoop(ClosedLoop):
                     plan=[f"{x['action']} {x['object']}" for x in suffix],
                     say=r.announcer.announce("replan"), world=world.to_dict())
 
-    def _no_replan(self, r, msg) -> dict:
-        """The end of a run that needed a new plan and got none: the planner's error when it failed, else `msg`."""
+    def _replan_suffix(self, r, failed, ers):
+        """SAGE's suffix for the failure `ers`, grounded: (suffix, ers + any planner error)."""
+        from ..run_control import call_cancellable, is_cancel
+        try:
+            r.llm_budget.take(what="replan")
+            suffix, _m = call_cancellable(r.planner.replan, r.restated, r.completed, failed, ers, self._obs(r), [])
+            return self._ground_all(r, suffix or []), ers
+        except Exception as e:
+            if is_cancel(e):
+                raise
+            r.replan_error = e                       # kept: the run ends with it (_no_replan_end)
+            return [], ers + f"; replan error: {e}"
+
+    @staticmethod
+    def _no_replan(r, fail_msg) -> str:
+        """Why there is no new plan: its suffix failed the gate, else `fail_msg`."""
+        bad = getattr(r, "uncertified", None)
+        return f"the new plan did not pass my checks: {'; '.join(bad[:3])}" if bad else fail_msg
+
+    def _no_replan_end(self, r, fail_msg) -> dict:
+        """The `done` of a run that needed a new plan and got none: the planner's error when it failed (it is
+        down: said as such, with its FailureCode), else ``_no_replan``'s reason."""
         if getattr(r, "replan_error", None) is not None:
             return self._llm_failed(r, r.replan_error, "planner")
-        return self._finish(r, "failed", msg=msg)
+        return self._finish(r, "failed", msg=self._no_replan(r, fail_msg))
 
     def _replan_or_fail(self, r, failed, reason, fail_msg):
         """SAGE replan, else end the run with `fail_msg`: _NEXT or _STOP."""
         e_ = self._sage_replan(r, failed, reason)
         if e_ is None:
-            yield self._no_replan(r, fail_msg); return _STOP
+            yield self._no_replan_end(r, fail_msg); return _STOP
         yield e_
         return _NEXT
 
@@ -1255,7 +1426,7 @@ class AssistLoop(ClosedLoop):
         _NEXT when the goals changed; None when the change could not be applied (the person is told)."""
         intent, text = e.get("intent") or "modify", str(e.get("text") or "")
         ch = goal_change.read(text, intent, r.goals, r.places, r.world.holding,
-                              reached=lambda g: self._goals_hold([g], r.world, r.placed))
+                              reached=lambda g: self._goals_hold([g], r.world, r.placed, r.completed, r.world_at_start.arrived))
         ch = ch if ch is not None and not ch.empty else self._llm_goal_change(r, text)
         if ch is None or ch.empty:
             yield r.ev("goal_change", applied=False, intent=intent, text=text, goals=r.goals,
@@ -1358,7 +1529,7 @@ class AssistLoop(ClosedLoop):
             for g in old:
                 if g.get("object") == held:
                     g["from"] = here
-        achieved = [g for g in old if self._goals_hold([g], r.world, r.placed)]
+        achieved = [g for g in old if self._goals_hold([g], r.world, r.placed, r.completed, r.world_at_start.arrived)]
         frame = suspend_task(r.task, old, achieved, r.world.to_dict(), reason=f"new task first: {text}")
         r.saved_goals = getattr(r, "saved_goals", []) + [old]          # the stack is the run's; this a fallback
         r.suspended += 1
@@ -1381,7 +1552,7 @@ class AssistLoop(ClosedLoop):
             yield fixed
         r.goals = [dict(g) for g in old]
         yield r.ev("task_resumed", goals=r.goals, say=self._in_lang("Now back to my task. " + self.summary(r.goals), r.lang))
-        if self._goals_hold(r.goals, r.world, r.placed):
+        if self._goals_hold(r.goals, r.world, r.placed, r.completed, r.world_at_start.arrived):
             return _DONE
         return (yield from self._repair_goals(r, "resumed the task the new one interrupted"))
 
@@ -1389,7 +1560,7 @@ class AssistLoop(ClosedLoop):
         """The goals changed: SAGE suffix repair from here. _NEXT or _STOP."""
         r.goal_txt = self._goal_text(r.goals)
         r.run.obs = "goals: " + json.dumps(r.goals, ensure_ascii=False)
-        if self._goals_hold(r.goals, r.world, r.placed):
+        if self._goals_hold(r.goals, r.world, r.placed, r.completed, r.world_at_start.arrived):
             r.steps = r.steps[:r.i]
             return _NEXT
         return (yield from self._replan_or_fail(r, {"action": "Change", "object": "goals"},
@@ -1433,27 +1604,47 @@ class AssistLoop(ClosedLoop):
             yield r.ev("recover", at_index=r.i, kind="refind", msg=f"resumed after a pause: looking for the {o} again")
 
     def _plan_ended(self, r):
-        """The plan ran out: _DONE when the goals hold (in the belief, then looked at), else a replan
-        (_NEXT) or _STOP."""
+        """The plan ran out: _DONE when the goals hold (in the belief, then looked at), else look at goals
+        the plan left out (they may hold already), else a replan (_NEXT) or _STOP."""
         unmet = []
-        if self._goals_hold(r.goals, r.world, r.placed):
+        if self._goals_hold(r.goals, r.world, r.placed, r.completed, r.world_at_start.arrived):
             unmet = yield from self._observe_goals(r)
             if unmet is None:
                 return _STOP                                     # cancelled while looking
             if not unmet:
                 return _DONE
+        elif self._look_at_untouched(r):
+            yield r.ev("status", msg="checking the goals the plan did not touch")
+            return _NEXT
         why = ("; ".join(u["evidence"]["observed"] for u in unmet) if unmet else
                "; ".join(self._missing(r.completed, r.world_at_start, r.goals)))
         e_ = self._sage_replan(r, {"action": "Check", "object": "goals"},
                                "the plan ended but the goals are not reached: " + why)
         if e_ is None or r.i >= len(r.steps):
             if getattr(r, "replan_error", None) is not None:    # the planner died: say that, not "goals do not hold"
-                yield self._no_replan(r, ""); return _STOP
+                yield self._no_replan_end(r, ""); return _STOP
             fail = dict(unmet[0]) if unmet else {}
-            msg = f"the goals do not hold: {why}" if unmet else "plan finished but the goals do not hold: " + r.goal_txt
+            msg = (f"the goals do not hold: {why}" if unmet else
+                   self._no_replan(r, "plan finished but the goals do not hold: " + r.goal_txt))
             yield self._finish(r, "failed", msg=msg, say=(why if unmet else None), **fail); return _STOP
         yield e_
         return _NEXT
+
+    def _look_at_untouched(self, r) -> bool:
+        """Append a MoveTo + Find at the destination of every unmet goal the run never moved (once each);
+        a Find that sees the object there makes the goal hold by observation. True when steps were added."""
+        looked = r.__dict__.setdefault("looked_goals", set())
+        at, add = r.world.arrived, []
+        for g in self._untouched(r.goals, r.completed):
+            o, to = g["object"], g["to"]
+            if (o, to) in looked or r.placed.get(o) == to or r.world.holding == o or to not in r.places.env:
+                continue
+            looked.add((o, to))
+            if at != to:
+                add.append({"action": "MoveTo", "object": to, "grounded": True}); at = to
+            add.append({"action": "Find", "object": o, "verify_goal": to})
+        r.steps[r.i:r.i] = add
+        return bool(add)
 
     def _observe_goals(self, r):
         """Done only by observation: each on / in goal is looked at (cfg goal_check). Returns the goals seen
@@ -1554,7 +1745,7 @@ class AssistLoop(ClosedLoop):
         r.seen_fail[sig] = r.seen_fail.get(sig, 0) + 1
         e_ = self._sage_replan(r, st, f"precondition: {why}") if r.seen_fail[sig] <= 1 else None
         if e_ is None:
-            yield self._no_replan(r, f"{a} {o}: {why}"); return _STOP
+            yield self._no_replan_end(r, f"{a} {o}: {why}"); return _STOP
         yield e_
         return _NEXT
 
@@ -1625,6 +1816,8 @@ class AssistLoop(ClosedLoop):
         a, o = st["action"], st["object"]
         rec.status = "success"; r.run.steps.append(rec)
         self._effect(st, r.world, r.memory, r.placed)
+        if st.get("verify_goal"):
+            r.placed[o] = st["verify_goal"]             # seen at its destination: the goal holds
         r.completed.append(st)
         yield r.ev("step_done", index=r.i, status="success", result=rec.result,
                    say=r.announcer.announce("step_success", **self._say(st, a, o)), world=r.world.to_dict())
@@ -1632,7 +1825,7 @@ class AssistLoop(ClosedLoop):
         for f in r.failures:
             if f["sig"] == (a, o):
                 f["recovered"] = True                    # the step that failed before has now succeeded
-        if r.i < len(r.steps) and self._goals_hold(r.goals, r.world, r.placed):
+        if r.i < len(r.steps) and self._goals_hold(r.goals, r.world, r.placed, r.completed, r.world_at_start.arrived):
             # the user's goals are met: end the task here rather than run what is left of the plan (the
             # goals are then looked at, _plan_ended)
             yield r.ev("status", msg=f"goals reached; {len(r.steps) - r.i} remaining plan steps not run")
@@ -1646,6 +1839,9 @@ class AssistLoop(ClosedLoop):
         yield r.ev("step_done", index=r.i, status="failed", result=rec.result, reason=reason,
                    say=r.announcer.announce("step_fail", **self._say(st, a, o), reason=reason),
                    world=r.world.to_dict())
+        if st.get("verify_goal"):
+            r.world.found = None; r.i += 1              # not there: the goal does not hold yet (replan at the end)
+            return _NEXT
         # ── stop at once: the recovery policy does not retry it (a skill bug, an e-stop), or the same
         # failure twice ──
         code = r.robot.failure_code(res, reason)
@@ -1829,8 +2025,9 @@ class AssistLoop(ClosedLoop):
 
     # ── 4. done only when the goals hold ──────────────────────────────────
     def _final_check(self, r) -> dict:
-        if self._goals_hold(r.goals, r.world, r.placed):
-            self._record_episode(r.planner, r.restated, r.completed)
+        if self._goals_hold(r.goals, r.world, r.placed, r.completed, r.world_at_start.arrived):
+            if not getattr(r, "compiled", False):            # SAGE's memory learns its own plans only
+                self._record_episode(r.planner, r.restated, r.completed)
             return self._finish(r, "success")
         return self._finish(r, "failed", msg="plan finished but the goals do not hold: "
                             + json.dumps(r.goals, ensure_ascii=False))
