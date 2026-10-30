@@ -11,14 +11,14 @@
     },
     {
      "step": "find phone",
-     "ok": true,
-     "why": "",
+     "ok": false,
+     "why": "'phone' is already in the hand",
      "call": "UNMAPPABLE: no skill for action 'find' on object 'phone' (not in SUPPORTED_ACTIONS)"
     },
     {
      "step": "pick phone",
-     "ok": true,
-     "why": "",
+     "ok": false,
+     "why": "cannot Pick while already holding 'phone'",
      "call": "UNMAPPABLE: no skill for action 'pick' on object 'phone' (not in SUPPORTED_ACTIONS)"
     },
     {
@@ -35,20 +35,20 @@
     },
     {
      "step": "place drawer",
-     "ok": true,
-     "why": "",
+     "ok": false,
+     "why": "Place requires MoveTo 'drawer' first (currently at 'table@living room')",
      "call": "UNMAPPABLE: no skill for action 'place' on object 'drawer' (not in SUPPORTED_ACTIONS)"
     },
     {
      "step": "place table",
-     "ok": true,
-     "why": "",
+     "ok": false,
+     "why": "Place requires MoveTo 'table' first (currently at 'table@living room')",
      "call": "UNMAPPABLE: no skill for action 'place' on object 'table' (not in SUPPORTED_ACTIONS)"
     }
    ],
    "end": {
     "arrived": "table@living room",
-    "found": null,
+    "found": "drawer",
     "holding": "phone",
     "opened": [
      "drawer@kitchen",

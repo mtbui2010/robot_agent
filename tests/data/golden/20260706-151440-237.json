@@ -11,8 +11,8 @@
     },
     {
      "step": "Open Drawer",
-     "ok": true,
-     "why": "",
+     "ok": false,
+     "why": "Open requires a preceding Find of (or MoveTo) 'Drawer'",
      "call": "open_drawer::drawer"
     },
     {
@@ -24,7 +24,7 @@
     {
      "step": "Pick Apple",
      "ok": false,
-     "why": "Pick requires empty gripper, holding 'coffee'",
+     "why": "cannot Pick while already holding 'coffee'",
      "call": "pick::apple"
     },
     {
@@ -35,8 +35,8 @@
     },
     {
      "step": "Place DiningTable",
-     "ok": true,
-     "why": "",
+     "ok": false,
+     "why": "Place requires MoveTo 'DiningTable' first (currently at 'LivingRoom')",
      "call": "place::dining table"
     },
     {
@@ -53,14 +53,14 @@
     },
     {
      "step": "Pick Apple",
-     "ok": true,
-     "why": "",
+     "ok": false,
+     "why": "cannot Pick while already holding 'coffee'",
      "call": "pick::apple"
     },
     {
      "step": "Close Drawer",
-     "ok": true,
-     "why": "",
+     "ok": false,
+     "why": "Close requires a preceding Find of (or MoveTo) 'Drawer'",
      "call": "close_drawer::drawer"
     },
     {

@@ -13,31 +13,53 @@ def W(**kw):
     return w
 
 
+# Verdicts follow the single action model (embodiplan.action_model 1.0, robot capabilities: one hand, Find
+# only looks); see docs/action_model_divergence.md for the decided rule of each case.
 @pytest.mark.parametrize("step, world, ok, why", [
     ({"action": "MoveTo", "object": "kitchen"}, {}, True, ""),
     ({"action": "Find", "object": "cup"}, {}, True, ""),
-    ({"action": "Find", "object": ""}, {}, False, "Find requires an object"),
-    ({"action": "Pick", "object": "cup"}, {}, False, "Pick requires a found object"),
+    ({"action": "Find", "object": ""}, {}, False, "Find requires a target object"),
+    ({"action": "Pick", "object": "cup"}, {}, False, "Pick requires a preceding Find of the target object"),
     ({"action": "Pick", "object": "cup"}, {"found": "cup", "holding": "mug"}, False,
-     "Pick requires empty gripper, holding 'mug'"),
+     "cannot Pick while already holding 'mug'"),
     ({"action": "Pick", "object": "cup"}, {"found": "cup"}, True, ""),
+    # Pick needs the last Find to be that object (C09)
+    ({"action": "Pick", "object": "cup"}, {"found": "mug"}, False, "Pick 'cup' but the last Find was 'mug'"),
     ({"action": "Place", "object": "table"}, {}, False, "Place requires holding an object"),
-    ({"action": "Place", "object": "table"}, {"holding": "cup"}, True, ""),
-    ({"action": "PutIn", "object": "drawer"}, {"holding": "cup"}, False, "PutIn requires 'drawer' to be open"),
-    ({"action": "PutIn", "object": "drawer"}, {"holding": "cup", "opened": ["drawer"]}, True, ""),
-    ({"action": "PutIn", "object": "x", "target": "drawer"}, {"holding": "cup", "opened": ["drawer"]}, True, ""),
-    ({"action": "PutIn", "object": "drawer"}, {"opened": ["drawer"]}, False, "PutIn requires holding an object"),
-    ({"action": "Open", "object": "drawer"}, {"opened": ["drawer"]}, False, "'drawer' is already open"),
-    ({"action": "Open", "object": "drawer"}, {}, True, ""),
-    ({"action": "Close", "object": "drawer"}, {}, False, "'drawer' is not open"),
-    ({"action": "Close", "object": "drawer"}, {"opened": ["drawer"]}, True, ""),
-    ({"action": "TurnOn", "object": "light"}, {"on": ["light"]}, False, "'light' is already on"),
-    ({"action": "TurnOff", "object": "light"}, {}, False, "'light' is not on"),
-    ({"action": "Wash", "object": "cup"}, {}, False, "Wash requires 'cup' to be held or found"),
+    ({"action": "Place", "object": "table"}, {"arrived": "table", "holding": "cup"}, True, ""),
+    # Place / PutIn need the robot at the receptacle (C13, C19)
+    ({"action": "Place", "object": "table"}, {"holding": "cup"}, False,
+     "Place requires MoveTo 'table' first (currently at 'None')"),
+    ({"action": "PutIn", "object": "drawer"}, {"arrived": "drawer", "holding": "cup"}, False,
+     "PutIn requires container 'drawer' to be Open"),
+    ({"action": "PutIn", "object": "drawer"}, {"arrived": "drawer", "holding": "cup", "opened": ["drawer"]}, True, ""),
+    ({"action": "PutIn", "object": "drawer"}, {"holding": "cup", "opened": ["drawer"]}, False,
+     "PutIn requires MoveTo 'drawer' first (currently at 'None')"),
+    # PutIn names the container in `object` (`target` is not read); a non-container needs no Open (C18)
+    ({"action": "PutIn", "object": "x", "target": "drawer"}, {"arrived": "x", "holding": "cup"}, True, ""),
+    ({"action": "PutIn", "object": "drawer"}, {"arrived": "drawer", "opened": ["drawer"]}, False,
+     "PutIn requires holding an object"),
+    ({"action": "Open", "object": "drawer"}, {"arrived": "drawer", "opened": ["drawer"]}, False,
+     "Open 'drawer' but it is already Open"),
+    ({"action": "Open", "object": "drawer"}, {"arrived": "drawer"}, True, ""),
+    # Open / Close need the robot at the target; Find only looks (C22, C23)
+    ({"action": "Open", "object": "drawer"}, {}, False, "Open requires a preceding Find of (or MoveTo) 'drawer'"),
+    ({"action": "Open", "object": "drawer"}, {"found": "drawer"}, False,
+     "Open requires a preceding Find of (or MoveTo) 'drawer'"),
+    # Open / Close with a full hand on a one-hand robot (C21, C26)
+    ({"action": "Open", "object": "drawer"}, {"arrived": "drawer", "holding": "cup"}, False,
+     "cannot Open 'drawer' while holding 'cup' (one hand)"),
+    ({"action": "Close", "object": "drawer"}, {"arrived": "drawer"}, False, "Close 'drawer' but it is not Open"),
+    ({"action": "Close", "object": "drawer"}, {"arrived": "drawer", "opened": ["drawer"]}, True, ""),
+    ({"action": "TurnOn", "object": "light"}, {"arrived": "light", "on": ["light"]}, False,
+     "TurnOn 'light' but it is already On"),
+    ({"action": "TurnOff", "object": "light"}, {"arrived": "light"}, False, "TurnOff 'light' but it is not On"),
+    ({"action": "Wash", "object": "cup"}, {}, False, "Wash requires a preceding Find of (or MoveTo) 'cup'"),
     ({"action": "Wash", "object": "cup"}, {"holding": "cup"}, True, ""),
-    ({"action": "Serve", "object": "cup"}, {}, False, "Serve requires holding an object"),
+    # Serve with an empty hand is only a warning (C31)
+    ({"action": "Serve", "object": "cup"}, {}, True, ""),
     ({"action": "Wait", "object": ""}, {}, True, ""),
-    ({"action": "Teleport", "object": "moon"}, {}, True, ""),          # unknown: not blocked
+    ({"action": "Teleport", "object": "moon"}, {}, True, ""),          # unknown: left to the robot's vocabulary (C32)
 ])
 def test_symbolic_check(step, world, ok, why):
     w = W(**world)

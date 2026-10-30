@@ -17,14 +17,14 @@
     },
     {
      "step": "pick blue bin",
-     "ok": true,
-     "why": "",
+     "ok": false,
+     "why": "cannot Pick while already holding 'coffee'",
      "call": "UNMAPPABLE: no skill for action 'pick' on object 'blue bin' (not in SUPPORTED_ACTIONS)"
     }
    ],
    "end": {
     "arrived": "table@living room",
-    "found": "cup",
+    "found": "blue bin",
     "holding": "coffee",
     "opened": [],
     "on": []

@@ -18,7 +18,7 @@
     {
      "step": "Pick Phone",
      "ok": false,
-     "why": "Pick requires empty gripper, holding 'coffee'",
+     "why": "cannot Pick while already holding 'coffee'",
      "call": "pick::phone"
     }
    ],

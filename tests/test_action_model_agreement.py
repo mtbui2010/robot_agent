@@ -281,5 +281,5 @@ def test_no_private_embodiplan_access():
 
 
 def test_embodiplan_pin():
-    assert '"embodiplan>=0.2,<0.3"' in (ROOT / "pyproject.toml").read_text()
+    assert re.search(r'"embodiplan>=0\.2(\.\d+)?,<0\.3"', (ROOT / "pyproject.toml").read_text())
     assert ram.ACTION_MODEL_VERSION == am.ACTION_MODEL_VERSION

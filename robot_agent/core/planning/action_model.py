@@ -9,24 +9,49 @@ from here. See ``docs/action_model_divergence.md``.
 
 from __future__ import annotations
 
-try:
-    from embodiplan import action_model as _am
-except ImportError as e:  # pragma: no cover - depends on install
-    raise ImportError(
-        "robot_agent needs embodiplan>=0.2,<0.3 with embodiplan.action_model "
-        "(pip install -e ../embodiplan)"
-    ) from e
+import functools
 
-ACTION_MODEL_VERSION = _am.ACTION_MODEL_VERSION
-Capabilities = _am.Capabilities
-Violation = _am.Violation
-check = _am.check
-apply = _am.apply
-simulate = _am.simulate
+# embodiplan is imported on first use, not at import time: importing the package loads
+# all its planners (and `requests`), and `import robot_agent.core.planning` stays light.
 
-# The body this core drives today: one hand, and Find only looks (a found place still
-# needs a MoveTo). Per-robot values move to the manifest with the RobotAdapter (step 4).
-ROBOT_CAPABILITIES = Capabilities(hands=1, find_reaches=False)
+
+@functools.lru_cache(maxsize=None)
+def _model():
+    try:
+        from embodiplan import action_model as am
+    except ImportError as e:  # pragma: no cover - depends on install
+        raise ImportError(
+            "robot_agent needs embodiplan>=0.2.1,<0.3 with embodiplan.action_model "
+            "(pip install -e ../embodiplan)"
+        ) from e
+    return am
+
+
+def check(step, world, **kw):
+    """embodiplan.action_model.check."""
+    return _model().check(step, world, **kw)
+
+
+def apply(step, world, **kw):
+    """embodiplan.action_model.apply."""
+    return _model().apply(step, world, **kw)
+
+
+def simulate(plan, world=None, **kw):
+    """embodiplan.action_model.simulate."""
+    return _model().simulate(plan, world, **kw)
+
+
+def __getattr__(name):
+    # ACTION_MODEL_VERSION, Capabilities, Violation, and ROBOT_CAPABILITIES: the body this
+    # core drives today, one hand and Find only looks (a found place still needs a MoveTo).
+    # Per-robot values move to the manifest with the RobotAdapter (step 4).
+    if name == "ROBOT_CAPABILITIES":
+        return _model().Capabilities(hands=1, find_reaches=False)
+    if name in ("ACTION_MODEL_VERSION", "Capabilities", "Violation"):
+        return getattr(_model(), name)
+    raise AttributeError(name)
+
 
 # Codes that need robot context the caller may not have (vocabulary, ENV, goals):
 # reported only where that context is passed (the plan checker), not by symbolic_check.
