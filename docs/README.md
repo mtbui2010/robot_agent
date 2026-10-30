@@ -5,6 +5,7 @@ One topic per file, named after the module or feature it covers.
 
 - `run_manager.md`: run ids, one active run per robot, cancel / pause / inject, intent router
 - `observe.md`: RunRecord, metrics line, replay CLI, `ROBOT_AGENT_DATA_DIR`, `/ws/agent` event schema
+- `planners.md`: the planner interface, optional capabilities, loading a planner by `module:Class` / entry point
 
 The planning-layer specs written so far still live in the kcare_robot repo and
 are to be moved here:
