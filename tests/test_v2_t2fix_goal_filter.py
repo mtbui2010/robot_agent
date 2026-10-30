@@ -79,3 +79,25 @@ def test_goal_filter_off(make_assist, env):
     evs = run_task(make_assist(robot, FakeLLM(und, default=und), ScriptedPlanner([]), goal_filter=False),
                    "Put the apple on the dining table, but don't touch the mug.")
     assert robot.asked and "mug" in robot.asked[0]
+
+
+CT = "counter@kitchen"
+
+
+def test_a_source_made_a_goal_is_dropped(places):
+    """M03 / H09 / V09: 'take the spoon out of the drawer' read as a goal 'in spoon -> drawer'."""
+    goals = [G("on", "spoon", DR, DT), G("in", "spoon", "", DR), G("close", DR, "", DR)]
+    out, notes = F.after_grounding(
+        goals, "Take the spoon out of the kitchen drawer, put it on the dining table, then close the drawer.", places)
+    assert out == [G("on", "spoon", DR, DT), G("close", DR, "", DR)] and notes
+    out, _n = F.after_grounding([G("in", "spoon", "", DR), G("on", "spoon", DR, CT)],
+                                "Move the plate to the counter, open the kitchen drawer, take out the spoon and put it "
+                                "on the counter.", places)
+    assert out == [G("on", "spoon", DR, CT)]
+
+
+def test_put_back_keeps_both_for_the_validator(places):
+    goals = [G("on", "spoon", DR, DT), G("in", "spoon", "", DR)]
+    out, _n = F.after_grounding(goals, "Take the spoon out of the drawer, put it on the dining table, then put it "
+                                       "back in the drawer.", places)
+    assert out == goals

@@ -24,7 +24,10 @@ not hide it. Three are corrected from the person's own words, without an LLM cal
 * a stated location is the source, not a goal: "The spoon is in the kitchen drawer. Bring it to the sofa."
   gave `in spoon -> drawer` next to `on spoon -> sofa` and the question "Where should the spoon go in the
   end?". When the words say "<object> is in / on <place>" and the object has another destination, the goal
-  to that place is dropped and the other goal takes it as `from`;
+  to that place is dropped and the other goal takes it as `from`. The same for a goal into the place
+  another goal takes the object from, when the words never name it as a destination ("take the spoon out
+  of the drawer, put it on the counter, and close the drawer": M03, H09, V09); "... then put it back in
+  the drawer" keeps both for the validator;
 * a negated object is not a goal: a move goal for an object named only inside "don't ...", "except ...",
   "not ...", "without ..." (the English task) is dropped before grounding ("but don't touch the mug" asked
   "Where should I put the mug?");

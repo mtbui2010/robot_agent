@@ -45,9 +45,25 @@ def _stated_at(obj: str, text: str, places) -> set:
     return out
 
 
+_DEST = re.compile(r"\b(?:in|into|inside|on|onto|to)\s+(?:the\s+|my\s+|your\s+)?(?:[a-z']+\s+){0,2}$")
+
+
+def _named_as_destination(key: str, text: str, places) -> bool:
+    """Do the words put something in / on ``key`` ("put it back in the drawer"), not only take from it
+    ("out of the drawer") or name it ("close the drawer")?"""
+    t = _norm(text)
+    for s, _e, _p, keys, is_src in place_mentions(t, places):
+        before = t[max(0, s - 30):s]
+        if key in keys and not is_src and _DEST.search(before) and not re.search(_STATED + r"(?:the\s+)?\S*\s*$", before):
+            return True
+    return False
+
+
 def stated_sources(goals: list, text: str, places) -> tuple:
-    """(goals, notes): a move goal to where the words say the object already is, while the object has
-    another destination, becomes that destination goal's source."""
+    """(goals, notes): a move goal to where the object is, while the object has another destination,
+    becomes that destination goal's source. "Where it is": the words say so ("the spoon is in the
+    drawer"), or another goal takes it from there and the words never name the place as a destination
+    ("take the spoon out of the drawer, put it on the counter, and close the drawer")."""
     goals, notes = [dict(g) for g in goals], []
     for g in list(goals):
         o, k = g.get("object"), g.get("to")
@@ -55,7 +71,8 @@ def stated_sources(goals: list, text: str, places) -> tuple:
             continue
         others = [h for h in goals if h is not g and h.get("type") in _MOVES and h.get("object") == o
                   and h.get("to") and h.get("to") != k]
-        if others and k in _stated_at(o, text, places):
+        taken = any(h.get("from") == k for h in others) and not _named_as_destination(k, text, places)
+        if others and (taken or k in _stated_at(o, text, places)):
             goals.remove(g)
             for h in others:
                 if not h.get("from"):
