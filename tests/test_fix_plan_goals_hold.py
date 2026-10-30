@@ -40,7 +40,8 @@ def test_all_goals_already_true_with_an_empty_plan(make_assist, env):
     llm = FakeLLM(default=understood(("on", "banana", "", "dining table")))
     evs = run_task(make_assist(robot, llm, ScriptedPlanner([])), "Put the banana on the dining table.")
     assert done(evs)["status"] == "success"
-    assert [(s, o) for s, o, _ok, _m in robot.trace] == [("move", DT), ("find", "banana")]
+    trace = [(s, o) for s, o, _ok, _m in robot.trace]
+    assert trace[:2] == [("move", DT), ("find", "banana")] and ("pick", "banana") not in trace
 
 
 def test_empty_plan_for_a_known_source_still_fails(make_assist, env):

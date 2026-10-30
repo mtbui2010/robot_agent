@@ -22,8 +22,13 @@ or ``ROBOT_AGENT_PLANNER=sage``; ``'grace'`` is the plain ``ClosedLoop`` around 
    recovery policy does not retry (a skill bug, an e-stop: ``contract.recovery`` by FailureCode), a dropped object
    or the same failure twice stops the run and says why. The robot comes in only through its RobotAdapter
    (``RobotView``): skill names, sensors, geometry, what opens, its phrases.
-4. **Done** only when every goal holds in the belief state; the object memory (``object_memory.<host>.json``)
-   is updated on every Find / Pick / Place.
+   The policy's own actions run first: WAIT_HEALTH (``adapter.health()``, then the same step again in place),
+   HEALTH_CHECK, STOP once a rule's retries are used up. The belief is reconciled through the adapter at the
+   start and after a pause (``RobotView.reconcile``).
+4. **Done** only when every goal holds in the belief state *and* is seen to hold: each on / in goal is looked
+   at (MoveTo back + Find at its destination, ``goal_check``); one seen not to hold goes back to SAGE, else the
+   run fails with its FailureCode. A failed run's ``done`` carries ``code`` / ``device`` / ``evidence``. The
+   object memory (``object_memory.<host>.json``) is updated on every Find / Pick / Place.
 """
 
 from __future__ import annotations
@@ -39,7 +44,7 @@ from pathlib import Path
 from typing import Iterator, Optional
 
 from robot_agent.observe.paths import data_dir
-from robot_agent.contract import FailureCode, Unbindable
+from robot_agent.contract import FailureCode, Recovery, Unbindable, classify_legacy_failure
 from robot_agent.state import current, host_id
 from .loop import _DONE, _NEXT, _STOP, ClosedLoop, _vr_list, reconcile_world
 from .records import StepRecord, VerifyResult
@@ -51,7 +56,8 @@ from .verify import symbolic_check, verdict
 _LOC_ACTIONS = {"MoveTo", "Place", "PutIn", "Open", "Close"}
 # per-run overrides accepted from /ws/agent `options`
 ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify_rounds", "search_max",
-                "pick_retries", "ask_help", "arrive_tol", "find_min_conf", "find_verify", "reach_far", "reach_lateral"}
+                "pick_retries", "ask_help", "arrive_tol", "find_min_conf", "find_verify", "reach_far", "reach_lateral",
+                "goal_check", "health_wait_s"}
 _USER_WORDS = {"me", "user", "here", "you", "myself", "person"}
 
 
@@ -296,6 +302,11 @@ class AssistLoop(ClosedLoop):
             "reach_far": float(overrides.get("reach_far", env("ROBOT_AGENT_REACH_FAR", str(geo.reach_far_m)))),
             "reach_lateral": float(overrides.get("reach_lateral", env("ROBOT_AGENT_REACH_LATERAL", str(geo.reach_m)))),
             "ask_help": overrides.get("ask_help", env("ROBOT_AGENT_ASK_HELP", "1") == "1"),
+            # done: every on / in goal is looked at (Find at its destination, going back there when the robot
+            # is elsewhere); "belief" trusts the belief as before
+            "goal_check": overrides.get("goal_check", env("ROBOT_AGENT_GOAL_CHECK", "observe")),
+            # recovery policy WAIT_HEALTH (camera / detector gave no image): seconds to wait for health
+            "health_wait_s": float(overrides.get("health_wait_s", env("ROBOT_AGENT_HEALTH_WAIT_S", "0.5"))),
             "memory_path": Path(overrides.get("memory_path") or data_dir("object_memory", common, host_id())),  # observe.paths
             "generator": self.cfg["planner"],
             "planner": "sage",
@@ -914,7 +925,7 @@ class AssistLoop(ClosedLoop):
     # ── main: the phases of one run ───────────────────────────────────────
     def run_blocking(self, task: str, lang: str = "en", plan_only: bool = False) -> Iterator[dict]:
         r = self._open_run(task, lang, plan_only, "sage+assist")
-        reconcile_world(r.node, r.world)
+        fixed = self._reconcile(r, "start")              # adapter.reconcile + the declared sensors
         from robot_agent.skill_configs import ENV
         r.places = Places(dict(ENV), openable=r.robot.openable)
         r.verifier = self._verifier(r.node, r.places.env)
@@ -923,13 +934,15 @@ class AssistLoop(ClosedLoop):
         try:
             yield r.ev("task_start", say=r.announcer.announce("task_start"), task=task, run_id=r.run_id,
                        world=r.world.to_dict())
+            if fixed is not None:
+                yield fixed
             if (yield from self._understand_phase(r)):            # 1. understand + clarify
                 return
             if (yield from self._plan_phase(r)):                  # 2. SAGE plans, the checker certifies
                 return
             if (yield from self._execute_phase(r)):               # 3. guard each step, recover, replan
                 return
-            yield self._final_check(r)                            # 4. done only when the goals hold
+            yield self._final_check(r)                            # 4. done only when the goals are seen to hold
         except Exception as e:
             from ..run_control import is_cancel
             # a stop during an LLM / planner call (run_control.call_cancellable) ends the run at once
@@ -938,15 +951,37 @@ class AssistLoop(ClosedLoop):
             self._close_run(r)
 
     def _finish(self, r, status, msg="", **kw) -> dict:
-        """The run's `done` event; a failure / refusal tells the user why (in their language)."""
+        """The run's `done` event; a failure / refusal tells the user why (in their language). A failure
+        carries the deciding FailureCode, device and evidence (``code=`` / ``device=`` / ``evidence=``, else
+        the run's first failure not recovered since, else the code of `msg`)."""
         r.run.status = status; r.run.ended_at = time.time()
         kind = "done_success" if status == "success" else "done_fail"
+        if status == "failed":
+            kw = {**self._deciding_failure(r, msg, kw), **kw}
         say = kw.pop("say", None)
         if say is None and status in ("failed", "refused") and msg and not msg.startswith(("internal error", "plan finished")):
             # tell the user why (dropped it, can't find it, ...), without the skill's error text
             say = re.split(r": [\'\"{]|: Exception| \(replan| \(searched", msg)[0].strip()
         return r.ev("done", status=status, run_id=r.run_id, msg=msg,
                     say=self._in_lang(say, r.lang) if say else r.announcer.announce(kind), world=r.world.to_dict(), **kw)
+
+    @staticmethod
+    def _deciding_failure(r, msg, kw) -> dict:
+        """code / device / evidence of a failed run (pops them from `kw`)."""
+        out = {k: kw.pop(k) for k in ("code", "device", "evidence") if kw.get(k) is not None}
+        if "code" not in out:
+            open_ = [f for f in getattr(r, "failures", []) if not f.get("recovered")]
+            out = {**(open_[0] if open_ else {}), **out}
+            out.pop("sig", None); out.pop("recovered", None)
+        out["code"] = getattr(out.get("code"), "value", out.get("code")) or classify_legacy_failure(msg).value
+        r.run.failure = dict(out)                                    # the TaskRecord keeps it too
+        return out
+
+    def _note_failure(self, r, st, code, device=None, reason="", **evidence) -> None:
+        """A failed step, kept until the same step succeeds (then it was recovered)."""
+        r.failures.append({"sig": (st.get("action"), st.get("object")), "code": getattr(code, "value", code),
+                           "device": device, "evidence": dict(step=f"{st.get('action')} {st.get('object')}",
+                                                              reason=str(reason)[:300], **evidence)})
 
     def _cancelled(self, r) -> Optional[dict]:
         from ..run_control import cancel_requested
@@ -1387,12 +1422,15 @@ class AssistLoop(ClosedLoop):
     def _resume_suspended(self, r):
         """The interrupting task is done: take the suspended one back (task stack), observe again
         (reconcile), and repair the plan from here. _NEXT, _DONE (nothing left to do) or _STOP."""
-        from ..run_control import resume_task
+        from ..run_control import mark_resumed, resume_task
         frame = resume_task()
         old = frame.goals if frame is not None else r.saved_goals[-1]
         r.saved_goals = r.saved_goals[:-1]
         r.suspended -= 1
-        reconcile_world(r.node, r.world)
+        fixed = self._reconcile(r, "resume_task")       # observe again (RunManager on_resume fired)
+        mark_resumed()
+        if fixed is not None:
+            yield fixed
         r.goals = [dict(g) for g in old]
         yield r.ev("task_resumed", goals=r.goals, say=self._in_lang("Now back to my task. " + self.summary(r.goals), r.lang))
         if self._goals_hold(r.goals, r.world, r.placed, r.completed, r.world_at_start.arrived):
@@ -1412,14 +1450,17 @@ class AssistLoop(ClosedLoop):
 
     def _execute_phase(self, r):
         """Run the plan step by step. True when the run ended."""
-        from ..run_control import wait_if_paused
         r.placed = {}
         r.pick_tries, r.move_tries, r.helped, r.seen_fail, r.seen_at, r.find_fails = {}, {}, set(), {}, {}, {}
         r.completed, r.replans, r.i = [], 0, 0
+        r.code_tries, r.doubted, r.failures, r.goal_checks, r.health = {}, set(), [], [], None
         r.world_at_start = r.world.copy()
         r.suspended = 0                      # tasks this run put on the task stack (a NEW one went first)
         while True:
-            wait_if_paused()                 # a paused run holds here, between two steps
+            # a paused run holds here, between two steps; after a resume (RunManager on_resume) the belief
+            # is reconciled and a Pick on a Find made before the pause looks again first
+            if (yield from self._pause_point(r)):
+                yield from self._refind_after_pause(r)
             stop = self._cancelled(r)
             if stop:
                 yield stop; return True
@@ -1433,20 +1474,38 @@ class AssistLoop(ClosedLoop):
             if out is _DONE:
                 return False
 
+    def _refind_after_pause(self, r):
+        """After a pause the found object may have moved: forget where it was seen and look again before
+        the Pick that would act on it."""
+        st = r.steps[r.i] if r.i < len(r.steps) else {}
+        if r.world.found and st.get("action") == "Pick":
+            o = st.get("object") or r.world.found
+            r.world.found = None; r.world.found_pose = None
+            r.steps[r.i:r.i] = [{"action": "Find", "object": o}]
+            yield r.ev("recover", at_index=r.i, kind="refind", msg=f"resumed after a pause: looking for the {o} again")
+
     def _plan_ended(self, r):
-        """The plan ran out: _DONE when the goals hold, else look at goals the plan left out (they may
-        hold already), else a replan (_NEXT) or _STOP."""
+        """The plan ran out: _DONE when the goals hold (in the belief, then looked at), else look at goals
+        the plan left out (they may hold already), else a replan (_NEXT) or _STOP."""
+        unmet = []
         if self._goals_hold(r.goals, r.world, r.placed, r.completed, r.world_at_start.arrived):
-            return _DONE
-        if self._look_at_untouched(r):
+            unmet = yield from self._observe_goals(r)
+            if unmet is None:
+                return _STOP                                     # cancelled while looking
+            if not unmet:
+                return _DONE
+        elif self._look_at_untouched(r):
             yield r.ev("status", msg="checking the goals the plan did not touch")
             return _NEXT
+        why = ("; ".join(u["evidence"]["observed"] for u in unmet) if unmet else
+               "; ".join(self._missing(r.completed, r.world_at_start, r.goals)))
         e_ = self._sage_replan(r, {"action": "Check", "object": "goals"},
-                               "the plan ended but the goals are not reached: "
-                               + "; ".join(self._missing(r.completed, r.world_at_start, r.goals)))
+                               "the plan ended but the goals are not reached: " + why)
         if e_ is None or r.i >= len(r.steps):
-            yield self._finish(r, "failed", msg=self._no_replan(r, "plan finished but the goals do not hold: "
-                                                                 + r.goal_txt)); return _STOP
+            fail = dict(unmet[0]) if unmet else {}
+            msg = (f"the goals do not hold: {why}" if unmet else
+                   self._no_replan(r, "plan finished but the goals do not hold: " + r.goal_txt))
+            yield self._finish(r, "failed", msg=msg, say=(why if unmet else None), **fail); return _STOP
         yield e_
         return _NEXT
 
@@ -1466,6 +1525,68 @@ class AssistLoop(ClosedLoop):
         r.steps[r.i:r.i] = add
         return bool(add)
 
+    def _observe_goals(self, r):
+        """Done only by observation: each on / in goal is looked at (cfg goal_check). Returns the goals seen
+        NOT to hold as failures [{code, device, evidence}] (their belief is withdrawn), None when cancelled.
+        A goal that cannot be looked at (inside a closed drawer, no Find skill) stays on the belief, as
+        `unknown` in r.goal_checks."""
+        if self.cfg["goal_check"] != "observe":
+            return []
+        last = r.completed[-1] if r.completed else {}
+        unmet, last_placed = [], (last.get("object") if last.get("action") in ("Place", "PutIn") else None)
+        yield r.ev("status", msg="Checking the goals...")
+        for g in sorted(r.goals, key=lambda g: g.get("to") != r.world.arrived):   # where the robot stands first
+            ok, ev_, device = self._observe_goal(r, g)
+            stop = self._cancelled(r)
+            if stop:
+                yield stop; return None
+            r.goal_checks.append({"goal": f"{g['type']} {g['object']} {g.get('to', '')}".strip(),
+                                  "ok": ok, "evidence": ev_})
+            yield r.ev("goal_check", goal=g, ok=ok, evidence=ev_, world=r.world.to_dict())
+            if ok is False:
+                r.placed.pop(g["object"], None); r.memory.see(g["object"], None, "not at its goal place")
+                code = FailureCode.DROPPED if g.get("to") == last_placed else FailureCode.ABSENT
+                unmet.append({"code": code.value, "device": device,
+                              "evidence": {"goal": r.goal_checks[-1]["goal"], "observed": ev_}})
+        return unmet
+
+    def _observe_goal(self, r, g):
+        """Look at one goal: (True | False | None = cannot tell, evidence text, device)."""
+        if g.get("type") not in ("on", "in"):
+            return None, f"{g.get('type')} {g.get('object')}: no sensor declared for it (belief)", None
+        o, place = g["object"], g.get("to") or ""
+        nice = place.replace("@", " in the ")
+        if r.places.openable(place) and place not in r.world.opened:
+            return None, f"the {o} is inside the closed {nice}: not visible (belief)", None
+        if r.world.arrived != place:
+            res, _sk = self._look(r, {"action": "MoveTo", "object": place})
+            if res is None or not res.ok:
+                return None, f"could not go back to the {nice} to look ({res.msg if res else 'no MoveTo skill'})", _sk
+        res, skill = self._look(r, {"action": "Find", "object": o})
+        if res is None:
+            return None, f"no Find skill to look for the {o}", None
+        if res.ok:
+            r.memory.see(o, place, "seen at its goal place")
+            return True, f"the {o} is seen on the {nice}", skill
+        code = r.robot.failure_code(res, res.msg)
+        if code is FailureCode.ABSENT:
+            return False, f"the {o} is not on the {nice} (looked after the task: {res.msg or 'not found'})", skill
+        return None, f"could not look for the {o} ({code.value}: {res.msg})", skill
+
+    def _look(self, r, st):
+        """Run a MoveTo / Find of the goal check (its effect applied on success): (SkillResult | None, skill)."""
+        try:
+            mapped = self._bind(dict(st), r.world)
+        except Unbindable:
+            mapped = None
+        if not mapped:
+            return None, None
+        skill, params = mapped
+        res = run_skill(self.sr, skill, params, r.node, log_fn=self._log_fn(r.i))
+        if res.ok:
+            action_model.apply(st, r.world, inplace=True)
+        return res, skill
+
     def _precondition(self, r, st) -> str:
         """Why the step cannot run in the belief ('' when it can)."""
         a, o, world = st["action"], st["object"], r.world
@@ -1480,6 +1601,11 @@ class AssistLoop(ClosedLoop):
         """Preconditions before the robot moves (violations go to SAGE): None (go on), _NEXT, _STOP."""
         a, o, world = st["action"], st["object"], r.world
         why = self._precondition(r, st)
+        if why and a == "Pick" and world.holding and not self._holding(r.node, default=True):
+            # the belief holds something, the hand is empty (a stale belief): fix it and look again
+            yield r.ev("recover", at_index=r.i, kind="reconcile", msg=f"the {world.holding} is not in the gripper")
+            world.holding = world.holding_since = None
+            why = self._precondition(r, st)
         if not why and a in ("Place", "PutIn") and world.holding:
             # still in the hand? (dropped on the way: `place` would otherwise go and pick something up)
             if not self._holding(r.node, default=True):
@@ -1488,7 +1614,9 @@ class AssistLoop(ClosedLoop):
                 world.holding = world.holding_since = None
                 yield r.ev("recover", at_index=r.i, kind="dropped", msg=f"{lost} is no longer in the gripper")
                 yield self._finish(r, "failed", msg=f"I dropped the {lost} on the way to {o.replace('@', ' in the ')}. "
-                                                    f"Please pick it up; I can't pick things up from the floor.")
+                                                    f"Please pick it up; I can't pick things up from the floor.",
+                                   code=FailureCode.DROPPED, device=self.robot.holding_sensor(),
+                                   evidence={"step": f"{a} {o}", "observed": f"{lost} is no longer in the gripper"})
                 return _STOP
         if not why:
             return None
@@ -1573,10 +1701,14 @@ class AssistLoop(ClosedLoop):
         yield r.ev("step_done", index=r.i, status="success", result=rec.result,
                    say=r.announcer.announce("step_success", **self._say(st, a, o)), world=r.world.to_dict())
         r.i += 1
+        for f in r.failures:
+            if f["sig"] == (a, o):
+                f["recovered"] = True                    # the step that failed before has now succeeded
         if r.i < len(r.steps) and self._goals_hold(r.goals, r.world, r.placed, r.completed, r.world_at_start.arrived):
-            # the user's goals are met: end the task here rather than run what is left of the plan
+            # the user's goals are met: end the task here rather than run what is left of the plan (the
+            # goals are then looked at, _plan_ended)
             yield r.ev("status", msg=f"goals reached; {len(r.steps) - r.i} remaining plan steps not run")
-            return _DONE
+            del r.steps[r.i:]
         return _NEXT
 
     def _step_failed(self, r, st, skill, rec, res, reason):
@@ -1593,9 +1725,15 @@ class AssistLoop(ClosedLoop):
         # failure twice ──
         code = r.robot.failure_code(res, reason)
         rule = r.robot.policy.rule_for(code)
+        device = res.device or skill
+        self._note_failure(r, st, code, device, reason)
         if not rule.retry_allowed:
             what = "internal error in" if code is FailureCode.SOFTWARE else f"{code.value} in"
-            yield self._finish(r, "failed", msg=f"{what} the {skill} skill (not retried): {reason}"); return _STOP
+            yield self._finish(r, "failed", msg=f"{what} the {skill} skill (not retried): {reason}", code=code,
+                               device=device, evidence=r.failures[-1]["evidence"]); return _STOP
+        out = yield from self._apply_policy(r, st, skill, code, rule, reason, device)
+        if out is not None:
+            return out
         sig = (a, o, r.world.arrived, re.sub(r"[-\d.]+", "#", str(reason))[:160])
         r.seen_fail[sig] = r.seen_fail.get(sig, 0) + 1
         if r.seen_fail[sig] > 2:
@@ -1610,11 +1748,61 @@ class AssistLoop(ClosedLoop):
         return (yield from self._replan_or_fail(r, st, f"{reason}{extra}",
                                                 f"{a} {o} failed: {reason} (replan budget used)"))
 
+    def _apply_policy(self, r, st, skill, code, rule, reason, device):
+        """The recovery policy's own actions (contract.recovery, by FailureCode) before the per-action
+        recovery: STOP once the rule's retries are used up, WAIT_HEALTH (wait for the robot's health, then
+        the same step again in place), HEALTH_CHECK (an unhealthy robot stops the run). None: go on."""
+        key = (code, st.get("action"), st.get("object"))
+        r.code_tries[key] = n = r.code_tries.get(key, 0) + 1
+        todo = rule.next_after(n)
+        ev_ = r.failures[-1]["evidence"]
+        if todo is Recovery.STOP:
+            if r.health is not None:
+                ev_["health"] = r.health                  # what the robot said the last time it was asked
+            yield self._finish(r, "failed", code=code, device=device, evidence=ev_,
+                               msg=f"{st['action']} {st['object']} failed {n} times ({code.value}): {reason}")
+            return _STOP
+        if todo not in (Recovery.WAIT_HEALTH, Recovery.HEALTH_CHECK):
+            return None
+        wait_s = self.cfg["health_wait_s"] if todo is Recovery.WAIT_HEALTH else 0.0
+        r.health = health = yield from self._wait_health(r, wait_s)
+        ev_["health"] = health
+        if health.get("ok") is False:
+            yield self._finish(r, "failed", code=code, device=device, evidence=ev_,
+                               msg=f"the robot is not healthy after {skill} failed ({code.value}): "
+                                   f"{health.get('error') or health}")
+            return _STOP
+        if todo is Recovery.HEALTH_CHECK:
+            return None
+        if st.get("action") == "Find":
+            r.world.found = None
+        yield r.ev("recover", at_index=r.i, kind="wait_health", code=code.value,
+                   msg=f"{skill} could not run ({code.value}); waited for the robot, trying again")
+        return _NEXT                                      # the same step again, in place (r.i unchanged)
+
+    def _wait_health(self, r, wait_s):
+        """The adapter's health(), polled up to `wait_s` until it reads ok (a cancel ends the wait)."""
+        from ..run_control import cancel_requested
+        t_end = time.time() + max(0.0, wait_s)
+        while True:
+            h = r.robot.health(r.node)
+            if h.get("ok") is True or time.time() >= t_end or cancel_requested():
+                yield r.ev("health", health=h)
+                return h
+            time.sleep(min(0.1, max(0.0, t_end - time.time())))
+
     def _recover_find(self, r, st, reason, rule):
         """Not seen here: mark the place searched (absence only, the policy says), search on through
         SAGE, ask the person where it is after search_max. Returns (outcome or None, replan hint)."""
         o, world = st["object"], r.world
         world.found = None
+        here, code = world.arrived, r.failures[-1]["code"] if r.failures else ""
+        if rule.mark_searched and here and here in world.opened and r.places.openable(here) and here not in r.doubted:
+            # not seen inside a container believed open: the belief may be stale (closed meanwhile); doubt it
+            # once instead of counting the place as searched (the repair opens it and looks again)
+            r.doubted.add(here); world.opened.discard(here)
+            return None, (f"; precondition: {here} is not open (it was believed open, but the {o} is not visible "
+                          f"inside): Open {here}, then Find the {o} again")
         # absent: the place counts as searched; could not look / out of reach: it does not (policy)
         if world.arrived and world.arrived not in r.searched and rule.mark_searched:
             r.searched.append(world.arrived)
@@ -1635,6 +1823,12 @@ class AssistLoop(ClosedLoop):
         if r.find_fails[o] > self.cfg["search_max"] + 1:
             yield self._finish(r, "failed", msg=f"could not find the {o} (looked at {', '.join(r.searched)})")
             return _STOP, ""
+        near = f" (it was seen near {r.seen_far[-1]})" if r.seen_far else ""
+        if code == FailureCode.UNREACHABLE.value:
+            return None, f"; it is out of reach from {here}{near}"
+        if not rule.mark_searched:
+            # could not look: no evidence that it is not here (the replan reason is worded by code)
+            return None, f"; the {o} could not be checked at {here} ({code}): it may still be there{near}"
         return None, (f"; it is not at {world.arrived}. Choose where to look next among the places not yet "
                       f"searched" + (f" (it was seen near {r.seen_far[-1]})" if r.seen_far else ""))
 
