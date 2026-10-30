@@ -334,6 +334,11 @@ class RunManager:
         # Called with the run after a successful cancel, outside the locks:
         # run_control hooks the robot stop in (cancel ROS goals, release listens).
         self.on_cancel: list[Callable[[Run], None]] = []
+        # Called with the run right after it is created (before its first
+        # event) and after it has finished (after its last one), outside the
+        # locks; robot_agent.observe opens / closes the run's RunRecord here.
+        self.on_start: list[Callable[[Run], None]] = []
+        self.on_finish: list[Callable[[Run], None]] = []
 
     # ---- lifecycle ---------------------------------------------------
     def start(self, goal: str = '', robot_id: str = DEFAULT_ROBOT, user_id: str = '',
@@ -349,8 +354,17 @@ class RunManager:
             self._active[robot_id] = run
             self._runs[run.run_id] = run
             self._trim()
+        self._call_hooks(self.on_start, run)
         run.publish({'event': 'run_state', 'state': run.state.value, 'origin': 'run_manager'})
         return StartDecision(run, True, 'started')
+
+    @staticmethod
+    def _call_hooks(hooks, run: Run) -> None:
+        for fn in list(hooks):
+            try:
+                fn(run)
+            except Exception:
+                pass
 
     def finish(self, run_id: str, ok: bool = True, outcome: str = '') -> Optional[Run]:
         """End a run: ``done`` (also after a cancel; outcome 'aborted') or
@@ -371,6 +385,7 @@ class RunManager:
                 del self._active[run.robot_id]
         run.publish({'event': 'run_state', 'state': run.state.value, 'outcome': run.outcome,
                      'origin': 'run_manager'})
+        self._call_hooks(self.on_finish, run)
         return run
 
     def _trim(self) -> None:

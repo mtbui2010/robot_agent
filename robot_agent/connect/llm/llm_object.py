@@ -72,7 +72,10 @@ class LLMobj(ABC):
         timer = Timer()
         msgs = self.make_msgs(tag=self.current_tag, **kwargs)
         timer.pin_time('make_msgs')
-        ret = self.send_msgs(msgs=msgs, **kwargs)
+        # recorded on the current run (robot_agent.observe), or served by a replay
+        from ...observe.llm import client_call
+        ret = client_call(self, 'chat', kwargs, lambda: self.send_msgs(msgs=msgs, **kwargs),
+                          messages=lambda: list(msgs))
         timer.pin_time('get_return')
         self.write_history(tag=kwargs['tag'] if 'tag' in kwargs else 'untagged')
         print(f'[{self.current_model}/{self.current_tag}]: {timer.pin_times_str}')
@@ -128,6 +131,11 @@ class LLMobj(ABC):
         for the same prompt is read back from the on-disk cache instead of
         hitting the model.
         """
+        from ...observe.llm import client_call
+        return client_call(self, 'chat_guide', dict(kwargs, prompt=prompt, guide=guide),
+                           lambda: self._chat_guide(prompt, guide, reuse=reuse, **kwargs))
+
+    def _chat_guide(self, prompt, guide, reuse=False, **kwargs):
         words_to_remove = ['', '.', ',', 'the', 'a']
         prompt = ' '.join(el for el in prompt.lower().split(' ') if el not in words_to_remove)
         filepath = os.path.join(cache_dir(), prompt.replace(' ', '_').replace('/', '_'))

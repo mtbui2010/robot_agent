@@ -23,6 +23,13 @@ from .base import Planner
 _AVAILABLE = ("grace", "llm_direct")
 
 
+def _observed(planner):
+    """The planner behind a transparent proxy that records its generate_plan /
+    replan calls on the current run (robot_agent.observe.record)."""
+    from ...observe.record import recording_planner
+    return recording_planner(planner)
+
+
 def get_planner(name: str, **cfg) -> Planner:
     """Return a planner backend instance for ``name``.
 
@@ -46,12 +53,12 @@ def get_planner(name: str, **cfg) -> Planner:
         # Lazy import: only here do we touch embodiplan-backed code.
         from .backends.pyplanner_grace import GraceBackend
 
-        return GraceBackend(**cfg)
+        return _observed(GraceBackend(**cfg))
 
     if key == "llm_direct":
         from .backends.llm_direct import LlmDirectBackend
 
-        return LlmDirectBackend(**cfg)
+        return _observed(LlmDirectBackend(**cfg))
 
     available = ", ".join(_AVAILABLE)
     raise ValueError(

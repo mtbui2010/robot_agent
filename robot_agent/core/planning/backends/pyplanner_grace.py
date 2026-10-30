@@ -78,6 +78,41 @@ def _metrics_to_dict(metrics: Any) -> dict:
     return out
 
 
+def _observe_llm(embodiplan) -> None:
+    """Route embodiplan's LLM calls through ``robot_agent.observe.llm.call``:
+    recorded on the current run (prompt messages, model, seed, temperature,
+    latency), served from the record during a replay.
+
+    embodiplan has no public way to inject a client: every planner builds its
+    own public ``embodiplan.LLMBackend`` and calls ``LLMBackend.chat(messages,
+    temperature)``. That public method is wrapped once, at the class, here (the
+    only module that imports embodiplan). Calls outside a recorded run or a
+    replay go straight through, unchanged.
+    """
+    backend = getattr(embodiplan, "LLMBackend", None)
+    chat = getattr(backend, "chat", None)
+    if chat is None or getattr(chat, "_robot_agent_observed", False):
+        return
+
+    def observed_chat(self, messages, temperature=None):
+        from robot_agent.observe.llm import call
+        temp = temperature if temperature is not None else getattr(self, "temperature", None)
+        return call(
+            "embodiplan",
+            lambda: chat(self, messages, temperature),
+            {"messages": messages, "temperature": temp},
+            model=getattr(self, "model", None),
+            backend=getattr(self, "provider", None),
+            temperature=temp,
+            seed=getattr(self, "seed", None),
+            as_tuple=True,
+        )
+
+    observed_chat._robot_agent_observed = True
+    observed_chat.__wrapped__ = chat
+    backend.chat = observed_chat
+
+
 class GraceBackend:
     """Planner backend backed by embodiplan's GRACEPlanner."""
 
@@ -98,6 +133,7 @@ class GraceBackend:
             raise RuntimeError(
                 "pip install -e embodiplan to use the GRACE planner"
             ) from e
+        _observe_llm(embodiplan)
 
         # Assemble the candidate kwargs, then keep only those embodiplan accepts.
         candidate: dict[str, Any] = {

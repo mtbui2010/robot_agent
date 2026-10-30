@@ -43,6 +43,10 @@ def _manager():
     mgr = get_manager()
     if not getattr(mgr, '_run_control_hooked', False):
         mgr.on_cancel.append(_on_run_cancel)
+        # every run gets a RunRecord (robot_agent.observe.record)
+        from ..observe.record import on_run_start, on_run_finish
+        mgr.on_start.append(on_run_start)
+        mgr.on_finish.append(on_run_finish)
         mgr._run_control_hooked = True
     return mgr
 

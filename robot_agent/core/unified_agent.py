@@ -362,11 +362,16 @@ class UnifiedAgent:
                     if _planner == 'sage' or (_planner is None and _os.environ.get('ROBOT_AGENT_PLANNER') == 'sage'):
                         from .planning.assist_loop import AssistLoop as _Loop, ASSIST_OPTIONS
                         _kw = {'original': prompt, **{k: v for k, v in (options or {}).items() if k in ASSIST_OPTIONS}}
-                    for _ev in _Loop(self, emit=emit, **_kw).run_blocking(prompt_en, lang, plan_only=plan_only):
+                    _lp = _Loop(self, emit=emit, **_kw)
+                    from ..observe.record import note_loop
+                    note_loop(_lp, prompt_en, lang, plan_only, kwargs=_kw)   # RunRecord context (replay)
+                    for _ev in _lp.run_blocking(prompt_en, lang, plan_only=plan_only):
                         emit(_ev)
                     return
 
                 emit({'event': 'status', 'msg': 'Generating task plan...'})
+                from ..observe.record import note_direct
+                note_direct(prompt_en, lang, kind='open')                  # RunRecord context
                 from ..connect.llm import init_llm_client
                 llm = init_llm_client(cfg=self.effective_llm_cfg())
 
@@ -555,6 +560,8 @@ class UnifiedAgent:
             try:
                 begin_run()          # drop a cancel left over from a past run
                 emit({'event': 'start', 'prompt':plan})
+                from ..observe.record import note_direct
+                note_direct(plan, lang)                                    # RunRecord context (replay)
                 _ds_dir = _begin_dataset(log_data, log_mode)
                 if _ds_dir:
                     emit({'event': 'log_dir', 'log_dir': _ds_dir})

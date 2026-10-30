@@ -179,6 +179,12 @@ class SkillRegistry:
     # ------------------------------------------------------------------
     def execute(self, name: str, params: dict, node: Any = None,
                 log_fn=None) -> dict:
+        # recorded on the current run's RunRecord (robot_agent.observe)
+        from ..observe.record import observed_skill
+        return observed_skill(name, params, lambda: self._execute(name, params, node, log_fn))
+
+    def _execute(self, name: str, params: dict, node: Any = None,
+                 log_fn=None) -> dict:
         from ..spoken import SpokenError, split_params, split_skill
         try:
             said_name, name = split_skill(name)     # '이동->move' runs move
