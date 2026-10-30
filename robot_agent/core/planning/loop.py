@@ -33,7 +33,7 @@ from typing import Iterator, Optional
 from robot_agent.observe.paths import data_dir
 from robot_agent.contract import FailureCode, classify_legacy_failure
 from robot_agent.state import current, host_id
-from . import episode_memory
+from . import episode_memory, robot_prompt
 from .announcer import Announcer
 from .base import WorldState
 from .mapper import ActionMapper, Unmappable
@@ -342,6 +342,8 @@ class ClosedLoop:
                 capabilities=self.robot.capabilities(),
                 # the robot's curated seed pool (manifest planner.seed_memory), None = none
                 seed_memory=self.robot.seed_memory(),
+                # its plan actions + description in SAGE's prompts (ROBOT_AGENT_SAGE_ROBOT_PROMPT=0: off)
+                **robot_prompt.sage_prompt_kwargs(self.robot),
             )
         if name == "llm_direct":
             return get_planner(
@@ -360,6 +362,7 @@ class ClosedLoop:
             "robot_pkg": self.robot_pkg,
             "capabilities": self.robot.capabilities(),
             "actions": sorted(self.robot.plan_actions),
+            "robot_description": robot_prompt.sage_prompt_kwargs(self.robot).get("robot_description"),
         }
 
     # ── helpers ──────────────────────────────────────────────────────────

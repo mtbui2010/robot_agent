@@ -181,6 +181,13 @@ class Manifest:
         return out
 
     @property
+    def description(self) -> Optional[str]:
+        """The optional top-level ``description:`` (a sentence about the robot's body, used by
+        the planner prompts instead of the one made from ``capabilities``), None when absent."""
+        d = self.extra.get("description")
+        return d.strip() if isinstance(d, str) and d.strip() else None
+
+    @property
     def skill_names(self) -> list:
         return [s.name for s in self.skills]
 

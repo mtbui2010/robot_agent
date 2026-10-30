@@ -49,6 +49,11 @@ _GRACE_KWARGS = (
     "capabilities",
     # evaluation: never retrieve the query task itself (embodiplan >= 0.2.3)
     "leave_one_out",
+    # the robot's plan actions and body from its manifest (core/planning/robot_prompt.py):
+    # they replace SAGE's household action list / robot line (embodiplan >= 0.2.4; older
+    # versions take **kwargs and ignore them)
+    "actions",
+    "robot_description",
 )
 
 

@@ -24,6 +24,8 @@ from robot_agent.spoken import SpokenError, split_skill, split_value
 class LlmDirectBackend:
     """Planner backend that wraps the existing direct-LLM planning behaviour."""
 
+    uses_guide = True       # plans with the dashboard's Planner Guide (docs/planner_guide.md)
+
     def __init__(self, llm_cfg: dict, robot_pkg: str) -> None:
         self._llm_cfg = llm_cfg or {}
         self._robot_pkg = robot_pkg
@@ -37,8 +39,9 @@ class LlmDirectBackend:
 
         # Active versioned guide (UI-editable), else the robot's guide modules —
         # exactly as UnifiedAgent.run resolves it.
-        from robot_agent.core.guide_manager import resolve_guide
-        guide, fmt = resolve_guide(self._robot_pkg)
+        from robot_agent.core.guide_manager import guide_command, resolve_guide
+        with guide_command(task):               # {EXAMPLES}: the examples similar to this task
+            guide, fmt = resolve_guide(self._robot_pkg)
         try:
             if fmt is not None:
                 plan_raw = llm.chat(prompt=task, guide=guide, format=fmt)
