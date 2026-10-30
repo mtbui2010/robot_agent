@@ -49,6 +49,9 @@ contract does not know are kept in `extra`, so a robot can carry its own notes.
 Lookups: `skill_for("Pick")`, `skill("pick")`, `actions`, `has("base")`,
 `hands`, `arms`, `geometry_obj()`.
 
+Optional planner data: `planner: {seed_memory: ../planner/seed_memory.jsonl}` (paths
+relative to the manifest; `Manifest.seed_memory`). See `memory.md`.
+
 `verify` entries, run by the core after a skill **reported success** (never the
 preconditions again; those are the pre-step guard's and the plan gate's):
 

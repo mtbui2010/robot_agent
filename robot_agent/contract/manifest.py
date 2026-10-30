@@ -7,6 +7,7 @@ Format (``<pkg>/configs/manifest.yaml``)::
     language: en
     capabilities: {base: true, arms: 1, hands: [right], lift: true, head: true, drawer: true}
     geometry: {arrive_tol_m: 0.3, reach_m: 0.78}
+    planner: {seed_memory: ../planner/seed_memory.jsonl}   # optional, paths relative to this file
     skills:
       - name: move
         action: MoveTo
@@ -34,7 +35,9 @@ from typing import Optional
 
 from .types import VERIFY_KINDS, FailureCode, Geometry, SkillSpec, VerifySpec
 
-_TOP_KEYS = {"robot", "version", "language", "capabilities", "geometry", "skills"}
+_TOP_KEYS = {"robot", "version", "language", "capabilities", "geometry", "planner", "skills"}
+# keys of the optional `planner:` section (planner data the robot ships)
+PLANNER_KEYS = {"seed_memory"}
 _SKILL_KEYS = {"name", "action", "params", "pre", "hold", "effects", "verify", "interruptible", "errors", "version"}
 _ACTION_RE = re.compile(r"[A-Z][A-Za-z0-9]*$")
 # at(?obj) / holding(none) / not opened(?c) / !free(table) / hand_empty() / hand_empty / not found(*)
@@ -66,6 +69,8 @@ class Manifest:
     language: str = "en"
     geometry: dict = field(default_factory=dict)
     skills: list = field(default_factory=list)        # list[SkillSpec]
+    # optional planner data: {seed_memory: <path to a JSONL seed pool, relative to the manifest>}
+    planner: dict = field(default_factory=dict)
     extra: dict = field(default_factory=dict)
     source: Optional[str] = None                      # file it was read from
 
@@ -114,6 +119,8 @@ class Manifest:
                 elif (k in _GEOM_NUMERIC or k.endswith("_m")) and not _is_number(v):
                     errs.append(f"geometry.{k}: must be a number (metres), got {v!r}")
 
+        planner = _planner(d.get("planner"), errs)
+
         raw_skills = d.get("skills")
         if raw_skills is None:
             raw_skills = []
@@ -133,13 +140,15 @@ class Manifest:
         if errs:
             raise ManifestError(errs, source)
         return cls(robot=robot.strip(), version=version, capabilities=dict(caps), language=language.strip(),
-                   geometry=dict(geom), skills=skills,
+                   geometry=dict(geom), skills=skills, planner=planner,
                    extra={k: v for k, v in d.items() if k not in _TOP_KEYS}, source=source)
 
     def to_dict(self) -> dict:
         d = {"robot": self.robot, "version": self.version, "language": self.language,
              "capabilities": dict(self.capabilities), "geometry": dict(self.geometry),
              "skills": [s.to_dict() for s in self.skills]}
+        if self.planner:
+            d["planner"] = dict(self.planner)
         d.update(self.extra)
         return d
 
@@ -210,6 +219,24 @@ class Manifest:
     def geometry_obj(self) -> Geometry:
         return Geometry.from_dict(self.geometry)
 
+    # ── planner data ─────────────────────────────────────────────────────
+    def planner_path(self, key: str) -> Optional[Path]:
+        """``planner.<key>`` as a path: relative paths are relative to the manifest
+        file (the working directory for a manifest not read from a file). None when
+        the robot declares none."""
+        v = (self.planner or {}).get(key)
+        if not v:
+            return None
+        p = Path(str(v)).expanduser()
+        if not p.is_absolute() and self.source:
+            p = (Path(self.source).resolve().parent / p).resolve()
+        return p
+
+    @property
+    def seed_memory(self) -> Optional[Path]:
+        """The robot's curated seed pool for the planner's retrieval memory (None = none)."""
+        return self.planner_path("seed_memory")
+
 
 def load_manifest(path_or_pkg) -> Manifest:
     """A manifest from a file, a package directory (``<dir>/configs/manifest.yaml``)
@@ -247,6 +274,18 @@ def _version(v, where, errs) -> str:
         return str(v)
     errs.append(f"{where}: must be a string such as \"1.0\", got {v!r}")
     return "1.0"
+
+
+def _planner(v, errs) -> dict:
+    if v is None:
+        return {}
+    if not isinstance(v, dict):
+        errs.append(f"planner: must be a mapping, got {type(v).__name__}")
+        return {}
+    sm = v.get("seed_memory")
+    if sm is not None and (not isinstance(sm, str) or not sm.strip()):
+        errs.append("planner.seed_memory: must be a file path (relative to the manifest)")
+    return dict(v)
 
 
 def _check_caps(caps: dict, errs: list) -> None:
