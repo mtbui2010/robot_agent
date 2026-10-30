@@ -205,6 +205,24 @@ class RunContext:
         self.completed: list = []
         self.i = 0
         self.replans = 0
+        # the failure that decided the run (FailureCode, device, evidence): on the `done` event
+        self.failure: dict = {}
+
+    def failed_with(self, code, device: Optional[str] = None, evidence=None, step: Optional[dict] = None) -> None:
+        """Remember the deciding failure (the last one wins: it is the one the run ends on)."""
+        c = getattr(code, "value", code)
+        self.failure = {k: v for k, v in (("code", c), ("device", device), ("evidence", evidence),
+                                          ("failed_step", step)) if v not in (None, "", [], {})}
+        self.run.failure = dict(self.failure)
+
+    def failure_fields(self) -> dict:
+        """The `done` fields of a failed run: code / device / evidence and a msg saying why."""
+        f = dict(self.failure)
+        st = f.get("failed_step") or {}
+        if f.get("code"):
+            f.setdefault("msg", f"{st.get('action', '')} {st.get('object', '')} failed ({f['code']}): "
+                                f"{f.get('evidence') or ''}".strip())
+        return f
 
     def ev(self, event: str, say: Optional[str] = None, **fields) -> dict:
         """An event to stream, logged to the run's JSONL."""
@@ -659,6 +677,7 @@ class ClosedLoop:
                    say=r.announcer.announce("step_fail", **self._say(step, action, obj), reason=reason),
                    world=r.world.to_dict())
         code = r.robot.failure_code(res, reason)
+        r.failed_with(code, res.device or rec.skill, reason, {"action": action, "object": obj})
         if r.robot.stops_now(code):
             # e-stop / cancelled / a skill bug: a replan cannot help (recovery policy)
             yield r.ev("recover", at_index=r.i, kind="stop", code=code.value,
@@ -683,7 +702,7 @@ class ClosedLoop:
             self._record_episode(r.planner, r.task, r.completed)
         kind = "done_success" if r.run.status == "success" else "done_fail"
         yield r.ev("done", status=r.run.status, run_id=r.run_id, say=r.announcer.announce(kind),
-                   world=r.world.to_dict())
+                   world=r.world.to_dict(), **(r.failure_fields() if r.run.status == "failed" else {}))
 
     @staticmethod
     def _record_episode(planner, task: str, completed: list) -> None:

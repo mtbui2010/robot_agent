@@ -146,7 +146,7 @@ class RunRecord(RunLogger):
         elif kind == 'event':
             ev = payload.get('event') or {}
             keep['event'] = {k: ev.get(k) for k in ('event', 'status', 'success', 'verifies', 'index',
-                                                    'run_id', 'outcome', 'state') if k in ev}
+                                                    'run_id', 'outcome', 'state', 'code', 'device') if k in ev}
             if ev.get('event') == 'step_done' and isinstance(ev.get('result'), dict):
                 r = ev['result']      # the step's verdict and failure code (metrics' failure_codes)
                 keep['event']['result'] = {k: r.get(k) for k in ('isdone', 'ok', 'code') if k in r}
@@ -335,6 +335,9 @@ def metrics_of(rows: list[dict]) -> dict:
         'skill_calls': len(skills),
         'replans': sum(1 for e in events if e.get('event') == 'replan'),
         'failure_codes': dict(codes),
+        # the deciding failure of a failed run (the loop's done event)
+        'failure_code': done.get('code') if status not in ('success', '') else None,
+        'failure_device': done.get('device') if status not in ('success', '') else None,
         'success': success,
         # success that a check confirmed: every verified step's last check passed
         'verified_success': bool(success and last_verify and all(last_verify.values())),

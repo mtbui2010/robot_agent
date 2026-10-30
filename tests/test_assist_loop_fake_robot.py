@@ -30,8 +30,10 @@ def test_simple_task_succeeds(make_assist, env, tmp_path):
     d = done(evs)
     assert d["status"] == "success", d
     assert robot.obj["apple"] == DT and robot.holding is None
+    # done only by observation (D7): the placed apple is looked at on the dining table
     assert [(s, o) for s, o, ok, _ in robot.trace] == [("move", DS), ("find", "apple"), ("pick", "apple"),
-                                                       ("move", DT), ("place", DT)]
+                                                       ("move", DT), ("place", DT), ("find", "apple")]
+    assert [e["ok"] for e in evs if e["event"] == "goal_check"] == [True]
     assert kinds(evs)[:4] == ["task_start", "status", "understand", "status"]
     gate = next(e for e in evs if e["event"] == "gate")
     assert gate["problems"] == []
