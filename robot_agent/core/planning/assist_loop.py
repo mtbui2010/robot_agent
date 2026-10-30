@@ -9,7 +9,10 @@ or ``ROBOT_AGENT_PLANNER=sage``; ``'grace'`` is the plain ``ClosedLoop`` around 
    a refusal (``unsafe`` / ``infeasible``). Places are grounded on the live ENV without the LLM; a place word
    naming several places, a place the user never said, or "me" without a place is a question for the user
    (the robot's Ask skill, from its manifest); answers are read back ("I will … Is that right?"). A non-JSON
-   answer gets one repair call. An LLM that is down ends the run with a FailureCode and a spoken reason; every run has an LLM-call budget.
+   answer gets one repair call; the goals are then checked against the person's words (``understand.find_issues``:
+   a place / object / open-close they named and no goal uses, a destination they never said): on an issue the
+   understanding is sampled again and an agreed issue-free reading is taken, else the person is asked. An LLM
+   that is down ends the run with a FailureCode and a spoken reason; every run has an LLM-call budget.
 2. **Plan**: SAGE ``generate_plan``; the checker (``_check``) simulates the plan as written and reports rule
    violations (wrong place, Pick without Find, Open with a full hand, goals not reached …); critical ones go back
    to SAGE as an edit request (``replan`` from the first bad step), up to ``edit_rounds`` times.
@@ -47,13 +50,14 @@ from .records import StepRecord, VerifyResult
 from . import action_model
 from .robot import run_skill
 from .verify import symbolic_check, verdict
-from .understand import LLMBadOutput, LLMBudget, LLMBudgetExceeded, LLMUnavailable, ask_json
+from .understand import (LLMBadOutput, LLMBudget, LLMBudgetExceeded, LLMUnavailable, ask_json, consensus,
+                         describe, find_issues, issue_question)
 
 _LOC_ACTIONS = {"MoveTo", "Place", "PutIn", "Open", "Close"}
 # per-run overrides accepted from /ws/agent `options`
 ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify_rounds", "search_max",
                 "pick_retries", "ask_help", "arrive_tol", "find_min_conf", "find_verify", "reach_far", "reach_lateral",
-                "understand_retries", "llm_budget"}
+                "understand_retries", "understand_samples", "llm_budget", "goal_check"}
 _USER_WORDS = {"me", "user", "here", "you", "myself", "person"}
 # spoken yes / no (ko / vi / en) for read-backs
 _YES = re.compile(r"\b(yes|yeah|yep|ok|okay|right|correct|sure|go ahead|네|예|응|맞아|맞아요|좋아|có|đúng|vâng|ừ)\b")
@@ -310,9 +314,12 @@ class AssistLoop(ClosedLoop):
             "reach_far": float(overrides.get("reach_far", env("ROBOT_AGENT_REACH_FAR", str(geo.reach_far_m)))),
             "reach_lateral": float(overrides.get("reach_lateral", env("ROBOT_AGENT_REACH_LATERAL", str(geo.reach_m)))),
             "ask_help": overrides.get("ask_help", env("ROBOT_AGENT_ASK_HELP", "1") == "1"),
-            # understand: repair calls after a non-JSON answer; the run's cap on core LLM calls
+            # understand: repair calls after a non-JSON answer; re-samples when the goals do not match the
+            # person's words (CLARA-style consistency, understand.coverage); the run's cap on core LLM calls
             "understand_retries": int(overrides.get("understand_retries", env("ROBOT_AGENT_UNDERSTAND_RETRIES", "1"))),
+            "understand_samples": int(overrides.get("understand_samples", env("ROBOT_AGENT_UNDERSTAND_SAMPLES", "2"))),
             "llm_budget": int(overrides.get("llm_budget", env("ROBOT_AGENT_LLM_BUDGET", "40"))),
+            "goal_check": overrides.get("goal_check", env("ROBOT_AGENT_GOAL_CHECK", "1") == "1"),
             "memory_path": Path(overrides.get("memory_path") or data_dir("object_memory", common, host_id())),  # observe.paths
             "generator": self.cfg["planner"],
             "planner": "sage",
@@ -951,6 +958,10 @@ class AssistLoop(ClosedLoop):
             q = u.get("question") or ("Sorry, I did not understand. Could you say the task in other words?"
                                       if u.get("unparsed") else "What should I do exactly?")
         if not q:
+            q = yield from self._goal_check(r)
+            if q is _STOP:
+                return _STOP
+        if not q:
             out, q = yield from self._read_back(r)
             if out is not None:
                 return out
@@ -970,16 +981,65 @@ class AssistLoop(ClosedLoop):
         return self._ground_goals(u["goals"], r.places, r.memory, " ".join([r.task, self.original or ""] + answers),
                                   latest=answers[-1] if answers else "")
 
+    def _issues(self, r, goals) -> list:
+        """understand.find_issues of `goals` against everything the person said (task, own words, answers)."""
+        if not self.cfg["goal_check"]:
+            return []
+        answers = [t for w_, t in r.dialogue if w_ == "user"]
+        return find_issues(goals, " ".join([r.task, self.original or ""] + answers), r.places,
+                           english=r.task, user_words=_USER_WORDS)   # objects: the task's own words only
+
+    def _goal_check(self, r):
+        """The goals read back against the person's words before planning: a model that dropped or changed a
+        goal must not plan (and end in a success against its own goals). On an issue the understanding is
+        sampled `understand_samples` more times: an issue-free goal set the samples agree on is taken
+        (CLARA-style consistency). Else the person is asked an open question the first time (returned), and
+        later the read-back names the doubt (r.unsure). _STOP when an LLM call failed."""
+        issues = self._issues(r, r.goals)
+        r.unsure = [describe(i) for i in issues]
+        if issues and not getattr(r, "sampled", False) and self.cfg["understand_samples"] > 0:
+            r.sampled = True
+            agreed = yield from self._resample(r, r.unsure)
+            if agreed is _STOP:
+                return _STOP
+            if agreed is not None:
+                r.goals, r.unsure = agreed, []
+                return None
+        if not issues or getattr(r, "issue_asked", False):
+            return None
+        r.issue_asked = True
+        return issue_question(issues, r.places) or None
+
+    def _resample(self, r, issues):
+        """`understand_samples` more understandings: the issue-free goal set they agree on, None, or _STOP."""
+        samples = []
+        for _k in range(self.cfg["understand_samples"]):
+            try:
+                u = self._understand(r.task, r.places, r.memory, r.world, r.dialogue, budget=r.llm_budget)
+            except LLMBudgetExceeded:
+                break
+            except LLMUnavailable as e:
+                yield self._llm_failed(r, e); return _STOP
+            g, q = self._ground_understood(r, u)
+            if u["status"] not in ("unsafe", "infeasible") and not q:
+                samples.append((g, [describe(i) for i in self._issues(r, g)]))
+        agreed = consensus(samples, need=min(2, len(samples)) or 1)
+        yield r.ev("understand_check", issues=issues, samples=[{"goals": g, "issues": i} for g, i in samples],
+                   agreed=agreed is not None)
+        return agreed
+
     def _read_back(self, r):
         """Read the goals back when the user answered something (a misheard answer is only caught
         here) or always (`confirm_task`, a voice user whose command itself may be misheard).
         Returns (outcome or None, the question to ask next)."""
-        if not ((r.dialogue and self.cfg["confirm_answers"]) or self.cfg["confirm_task"]):
+        unsure = getattr(r, "unsure", None)
+        if not ((r.dialogue and self.cfg["confirm_answers"]) or self.cfg["confirm_task"] or unsure):
             return _DONE, None
         if r.confirms >= 2:
             yield self._finish(r, "failed", msg="the user did not confirm the task"); return _STOP, None
         r.confirms += 1
-        cq = f"{self.summary(r.goals)} Is that right?"
+        cq = (f"I am not sure I understood ({'; '.join(unsure)}). " if unsure else "") + \
+            f"{self.summary(r.goals)} Is that right?"
         yield r.ev("clarify", question=cq, round=r.confirms, kind="confirm")
         ans, _n = self._ask_heard(cq, r.node, self._log_fn(-1), r.lang)
         stop = self._cancelled(r)
