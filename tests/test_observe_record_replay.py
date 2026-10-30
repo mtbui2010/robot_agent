@@ -57,7 +57,9 @@ def _ambiguous_with_replan(make_assist, env):
     house = dict(HOUSE, mug=CT)                          # not on the desk: a find miss, then a replan
     robot = FakeRobot(env, house, answers=["the dining table"])
     llm = FakeLLM(understood(("on", "mug", "desk", "table")),
-                  understood(("on", "mug", "desk", "dining table")))
+                  understood(("on", "mug", "desk", "dining table")),
+                  # the search belief ranks the places once after the miss on the desk (search.py)
+                  (r"Rank the places where the mug", {"places": [CT]}))
     planner = ScriptedPlanner(
         steps(f"MoveTo {DS}", "Find mug", "Pick mug", f"MoveTo {DT}", f"Place {DT}"),
         replans=[steps(f"MoveTo {CT}", "Find mug", "Pick mug", f"MoveTo {DT}", f"Place {DT}")])
@@ -82,7 +84,8 @@ def test_record_has_every_part_of_the_run(make_assist, env, data):
     assert all(e.get("run_id") for e in evs)
     # LLM calls: the understanding prompt and its JSON answer, with model and latency
     llm = [r for r in rows if r["kind"] == "llm"]
-    assert len(llm) == 2 and llm[0]["source"] == "robot_agent"
+    assert len(llm) == 3 and llm[0]["source"] == "robot_agent"
+    assert "Rank the places where the mug" in llm[2]["request"]["prompt"]       # the search ranking
     assert "- dining table@kitchen" in llm[0]["request"]["prompt"]
     assert json.loads(llm[0]["response"])["goals"][0]["to"] == "table"
     assert llm[0]["model"] == "scripted" or llm[0]["backend"] == "FakeLLM"
@@ -108,7 +111,7 @@ def test_record_has_every_part_of_the_run(make_assist, env, data):
     assert len(m) == 1
     m = m[0]
     assert m["run_id"] == run_id and m["status"] == "success" and m["success"] is True
-    assert m["llm_calls"] == 2 and m["planner_calls"] == 2 and m["replans"] == 1
+    assert m["llm_calls"] == 3 and m["planner_calls"] == 2 and m["replans"] == 1
     assert m["failure_codes"] == {"absent": 1}
     assert m["verified_success"] is True
     # one id per run (D26): the loop takes the RunManager's run_id, so there is no second task_runs id
