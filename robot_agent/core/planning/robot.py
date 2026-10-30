@@ -86,6 +86,11 @@ class RobotView:
     def spec(self, action: str) -> Optional[SkillSpec]:
         return self.manifest.skill_for(action) if action else None
 
+    def interruptible(self, skill: str) -> bool:
+        """May a stop cut ``skill`` mid-way? Its manifest ``interruptible`` (default True)."""
+        s = next((x for x in self.manifest.skills if x.name == skill), None)
+        return True if s is None else bool(s.interruptible)
+
     def bind(self, step: dict, world: Any = None) -> Optional[tuple]:
         """``(skill, params)`` for a plan step, None for a no-op; raises Unbindable."""
         return self.adapter.bind(step, world)
@@ -212,13 +217,17 @@ class RobotView:
 
 
 def run_skill(sr, skill: str, params: dict, node: Any = None, log_fn=None, strict: bool = True,
-              raise_errors: bool = False) -> SkillResult:
+              raise_errors: bool = False, interruptible: bool = True) -> SkillResult:
     """Run one skill and normalise what it returns (the ONE place): an exception is a failure
     whose code is read off its text (``raise_errors``: it propagates, e.g. a sensor that could
     not be read), a legacy ``{'isdone', 'msg'}`` dict goes through ``SkillResult.from_legacy``
-    (``strict``: no verdict = failure, the planner's rule)."""
+    (``strict``: no verdict = failure, the planner's rule). ``interruptible`` False (the
+    manifest's): a stop meanwhile waits for the skill to end (``run_control.uninterruptible``)."""
+    from ..run_control import uninterruptible
     try:
-        raw = sr.execute(skill, params, node, log_fn=log_fn) if log_fn is not None else sr.execute(skill, params, node)
+        with uninterruptible(skill, interruptible):
+            raw = (sr.execute(skill, params, node, log_fn=log_fn) if log_fn is not None
+                   else sr.execute(skill, params, node))
     except Exception as e:
         if raise_errors:
             raise
