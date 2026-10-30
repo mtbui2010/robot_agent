@@ -50,7 +50,8 @@ class ChatGptClient(LLMobj):
     def send_msgs(self, msgs, **kwargs):
         self.current_model = self.vision_model if self._has_images(msgs) else self.text_model
         model = kwargs.get("model", self.current_model)
-        return self._client(model=model, messages=msgs).choices[0].message.content
+        extra = {k: kwargs[k] for k in ('temperature', 'seed') if kwargs.get(k) is not None}
+        return self._client(model=model, messages=msgs, **extra).choices[0].message.content
 
 
 if __name__ == "__main__":

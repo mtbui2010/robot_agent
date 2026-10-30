@@ -1,5 +1,5 @@
 import os, cv2
-from .llm_object import LLMobj
+from .llm_object import LLMobj, sampling_options
 from ..helpers import Timer, crop_image
 
 DEFAULT_URL          = os.environ.get("OLLAMA_URL", "http://localhost:11434")
@@ -56,7 +56,7 @@ class LLamaClient(LLMobj):
         self.current_model = self.vision_model if self.image_contained(msgs=msgs) else self.text_model
         model = kwargs.get('model', self.current_model)
         return self.chatclient(model=model, messages=msgs, format=kwargs.get('format', None),
-                               options=self.options).message.content
+                               options=sampling_options(self.options, kwargs)).message.content
         
 
 if __name__=='__main__':

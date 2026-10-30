@@ -488,6 +488,8 @@ def _chat_openai(sess, s: dict, body: dict, timeout: float) -> str:
     req = {'model': s['model'], 'messages': out}
     if 'temperature' in opts:
         req['temperature'] = float(opts['temperature'])
+    if 'seed' in opts:
+        req['seed'] = int(opts['seed'])
     if opts.get('num_predict'):
         req['max_completion_tokens'] = int(opts['num_predict'])
     if body.get('format'):
@@ -623,7 +625,7 @@ def pool_llm(pool: VlmPool):
     """An LLMobj (``chat`` / ``chat_guide`` / history) whose requests go through the pool."""
     import cv2
     from .helpers import crop_image
-    from .llm.llm_object import LLMobj
+    from .llm.llm_object import LLMobj, sampling_options
 
     class PoolLLM(LLMobj):
         def init(self, **_):
@@ -645,6 +647,9 @@ def pool_llm(pool: VlmPool):
             body = {'messages': msgs, 'stream': False}
             if kwargs.get('format') is not None:
                 body['format'] = kwargs['format']
+            opts = sampling_options(None, kwargs)
+            if opts:
+                body['options'] = opts
             out = self.pool.chat(body)
             used = self.pool.last_used
             self.current_model = self.pool.servers[used].get('model') if used is not None else None

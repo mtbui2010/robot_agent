@@ -27,6 +27,8 @@ CORE_TEXT = {
     "cannot_do": "I can't do that: I have no {missing} skill.",
     # what a delivering robot says when it arrives (deliver goals)
     "delivery": "I have a delivery for you. Please take it.",
+    # an unclear answer to a yes / no question ("yet", noise) is asked again with this (interact.dialog)
+    "yes_or_no": "Sorry, I didn't catch that. Please answer yes or no.",
 }
 
 # manifest actions that are not plan steps: sensors (Observe / Verify), the dialog (Ask, the core's
