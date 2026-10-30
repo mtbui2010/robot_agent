@@ -6,6 +6,18 @@ manifest format, the event schema). See `docs/contract.md`.
 ## Unreleased
 
 ### Contract
+- `FailureCode.BUDGET_EXCEEDED` (`budget_exceeded`): the run used its LLM-call budget (recovery STOP,
+  not retried). Appended after `unknown`.
+- Manifest `verify: [{kind: vlm, prompt}]` is now run (`core/planning/verify_vlm.py`) through the
+  adapter's optional `vlm_ask(prompt, step=, node=)`; `capabilities.vlm_verify: false` keeps it off
+  (`ROBOT_AGENT_VLM_VERIFY` / the `vlm_verify` option win). `NamemapAdapter.vlm_ask` passes through to
+  the namemap's.
+- `RobotAdapter.health()` keys the core reads: `frame_age_s`, `fps`, `depth`, `pose_age_s`, `ok`;
+  limits in manifest `geometry`: `frame_max_age_s`, `min_fps`, `need_depth`, `pose_max_age_s`,
+  `vlm_min_conf` (`core/planning/sensor_health.py`, `ROBOT_AGENT_SENSOR_HEALTH`). docs/verify.md.
+- `ROBOT_AGENT_LLM_BUDGET` default 20 (was 40); plan edits and the gate's refinement count too; the
+  edit rounds stop when the findings do not decrease. i18n key `llm_budget`.
+- `connect.ros.node.NodeAgent.rev_time` / `rev_period`: receive time and smoothed gap of a subscription.
 - `VerifySpec.expect` (manifest `verify: [{kind: sensor, skill: ..., expect: false}]`):
   what the sensor's `isdone` must be; default true. Unknown before; old manifests
   load unchanged.
