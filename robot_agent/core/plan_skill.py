@@ -340,7 +340,7 @@ def run_plan_skill(registry, skill, params: dict, node=None, log_fn=None) -> dic
                 origin[k] = f'step {i} {text}'
             last = ret
             if ok and ret.get('stop'):
-                # A step asked to end the plan here (kcare check_fall::False): not a failure, the rest is skipped.
+                # A step asked to end the plan here (e.g. check_fall::False): not a failure, the rest is skipped.
                 log(f'{skill.name} {i}/{len(steps)}: plan stopped by {text}'
                     + (f' — {ret.get("stop_reason")}' if ret.get('stop_reason') else ''))
                 return {**ret, 'isdone': True, 'stopped_at': i, 'plan_steps': report}
