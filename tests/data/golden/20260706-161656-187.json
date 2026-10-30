@@ -1,0 +1,38 @@
+{
+ "task": "pick phone on table",
+ "plans": [
+  {
+   "trace": [
+    {
+     "step": "MoveTo table@living room",
+     "ok": true,
+     "why": "",
+     "call": "move::table@living_room"
+    },
+    {
+     "step": "Find Phone",
+     "ok": true,
+     "why": "",
+     "call": "find::phone"
+    },
+    {
+     "step": "Pick Phone",
+     "ok": false,
+     "why": "Pick requires empty gripper, holding 'coffee'",
+     "call": "pick::phone"
+    }
+   ],
+   "end": {
+    "arrived": "table@living room",
+    "found": "Phone",
+    "holding": "coffee",
+    "opened": [
+     "drawer@kitchen",
+     "inputs=\"drawer@kitchen\",stay_here=True",
+     "remote"
+    ],
+    "on": []
+   }
+  }
+ ]
+}

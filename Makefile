@@ -57,7 +57,7 @@ EXTRAS ?= all
 # The GRACE/SAGE planner checkout installed by `make install-dev`.
 EMBODIPLAN_DIR ?= $(abspath $(ROOT)/../embodiplan)
 
-.PHONY: install install-dev robot test clean help _require-py _require-import
+.PHONY: install install-dev robot test test-smoke lint-core clean help _require-py _require-import
 
 help:
 	@echo "robot_agent -- generic robot runtime (FastAPI + skills + connect layer)"
@@ -75,7 +75,9 @@ help:
 	@echo "  make robot NAME=<pkg> FROM=<src> RESET_SITES=1 PORT=8005"
 	@echo "                                        (a fork keeps the source's devices by default)"
 	@echo ""
-	@echo "  make test                             Import smoke check"
+	@echo "  make test                             Unit + golden tests (pytest, no ROS / LLM / network)"
+	@echo "  make test-smoke                       Import smoke check of the installed package"
+	@echo "  make lint-core                        Count robot-specific names in robot_agent/core"
 	@echo "  make clean                            Remove __pycache__ and *.egg-info"
 	@echo ""
 	@echo "Target python : $(ENV_PY)"
@@ -194,7 +196,35 @@ robot: _require-import
 
 # ── Checks ───────────────────────────────────────────────────────────────────
 
-test: _require-import
+# pytest from the source tree (tests/conftest.py puts this checkout first on
+# sys.path), so it needs no install: just an interpreter with pytest.
+test:
+	@if [ -z "$(ENV_PY)" ] || [ ! -x "$(ENV_PY)" ]; then echo "[robot_agent] no usable python found"; exit 1; fi
+	@if ! $(ENV_PY) -c "import pytest" >/dev/null 2>&1; then \
+		echo "[robot_agent] pytest is not installed in $(ENV_PY)"; \
+		echo "               pip install pytest (or .[test]), or make test PYTHON=<python with pytest>"; \
+		exit 1; \
+	fi
+	@cd $(ROOT) && $(ENV_PY) -m pytest $(ARGS)
+
+# Robot-specific names that must leave the core (CLAUDE.md rule 1). Report only
+# for now; LINT_STRICT=1 makes it fail, which becomes the default once the
+# RobotAdapter stream lands.
+LINT_CORE_PATTERNS ?= grasp_succeed mobile_pose kcare kaair MOBILE_HEIGHT
+LINT_STRICT ?= 0
+lint-core:
+	@total=0; \
+	echo "[robot_agent] robot-specific names in robot_agent/core:"; \
+	for p in $(LINT_CORE_PATTERNS); do \
+		n=$$(grep -rIio --include='*.py' "$$p" $(ROOT)/robot_agent/core | wc -l); \
+		files=$$(grep -rIil --include='*.py' "$$p" $(ROOT)/robot_agent/core | sed 's|$(ROOT)/||' | tr '\n' ' '); \
+		printf '  %-14s %4d  %s\n' "$$p" "$$n" "$$files"; \
+		total=$$((total + n)); \
+	done; \
+	echo "  total          $$total"; \
+	if [ "$(LINT_STRICT)" = "1" ] && [ "$$total" -gt 0 ]; then exit 1; fi
+
+test-smoke: _require-import
 	@$(ENV_PY) -c "\
 import importlib, sys; \
 mods = ['robot_agent.connect', 'robot_agent.connect.serde', 'robot_agent.connect.helpers', \

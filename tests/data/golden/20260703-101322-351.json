@@ -1,0 +1,38 @@
+{
+ "task": "go to table, pick phone and place on drawer",
+ "plans": [
+  {
+   "trace": [
+    {
+     "step": "move table",
+     "ok": true,
+     "why": "",
+     "call": "UNMAPPABLE: no skill for action 'move' on object 'table' (not in SUPPORTED_ACTIONS)"
+    },
+    {
+     "step": "pick phone",
+     "ok": true,
+     "why": "",
+     "call": "UNMAPPABLE: no skill for action 'pick' on object 'phone' (not in SUPPORTED_ACTIONS)"
+    },
+    {
+     "step": "place drawer",
+     "ok": true,
+     "why": "",
+     "call": "UNMAPPABLE: no skill for action 'place' on object 'drawer' (not in SUPPORTED_ACTIONS)"
+    }
+   ],
+   "end": {
+    "arrived": "table@living room",
+    "found": null,
+    "holding": "coffee",
+    "opened": [
+     "drawer@kitchen",
+     "inputs=\"drawer@kitchen\",stay_here=True",
+     "remote"
+    ],
+    "on": []
+   }
+  }
+ ]
+}

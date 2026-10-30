@@ -1,0 +1,15 @@
+{
+ "task": "pick object in blue bin",
+ "plans": [
+  {
+   "trace": [],
+   "end": {
+    "arrived": "table@living room",
+    "found": "cup",
+    "holding": "coffee",
+    "opened": [],
+    "on": []
+   }
+  }
+ ]
+}

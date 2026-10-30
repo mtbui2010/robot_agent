@@ -1,0 +1,92 @@
+{
+ "task": "bring me the apple",
+ "plans": [
+  {
+   "trace": [
+    {
+     "step": "MoveTo Kitchen",
+     "ok": true,
+     "why": "",
+     "call": "move::kitchen"
+    },
+    {
+     "step": "Open Drawer",
+     "ok": true,
+     "why": "",
+     "call": "open_drawer::drawer"
+    },
+    {
+     "step": "Find Apple",
+     "ok": true,
+     "why": "",
+     "call": "find::apple"
+    },
+    {
+     "step": "Pick Apple",
+     "ok": false,
+     "why": "Pick requires empty gripper, holding 'coffee'",
+     "call": "pick::apple"
+    },
+    {
+     "step": "MoveTo LivingRoom",
+     "ok": true,
+     "why": "",
+     "call": "move::living room"
+    },
+    {
+     "step": "Place DiningTable",
+     "ok": true,
+     "why": "",
+     "call": "place::dining table"
+    },
+    {
+     "step": "MoveTo Kitchen",
+     "ok": true,
+     "why": "",
+     "call": "move::kitchen"
+    },
+    {
+     "step": "Find Apple",
+     "ok": true,
+     "why": "",
+     "call": "find::apple"
+    },
+    {
+     "step": "Pick Apple",
+     "ok": true,
+     "why": "",
+     "call": "pick::apple"
+    },
+    {
+     "step": "Close Drawer",
+     "ok": true,
+     "why": "",
+     "call": "close_drawer::drawer"
+    },
+    {
+     "step": "MoveTo LivingRoom",
+     "ok": true,
+     "why": "",
+     "call": "move::living room"
+    },
+    {
+     "step": "Place LivingRoom",
+     "ok": true,
+     "why": "",
+     "call": "place::living room"
+    }
+   ],
+   "end": {
+    "arrived": "LivingRoom",
+    "found": null,
+    "holding": null,
+    "opened": [
+     "drawer@kitchen",
+     "inputs=\"drawer@kitchen\",stay_here=True",
+     "remote"
+    ],
+    "on": []
+   }
+  }
+ ]
+}

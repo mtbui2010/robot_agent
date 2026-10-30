@@ -1,0 +1,245 @@
+{
+ "sofa@living room": {
+  "default_mode": "left",
+  "height": 0.44,
+  "placepose": {
+   "dx": 0,
+   "dy": 0
+  },
+  "loc": {
+   "x": -0.36,
+   "y": 2.98,
+   "rz": -180.0
+  },
+  "dforward": -0.2,
+  "dshift": 0.2,
+  "aliases": [
+   "소파",
+   "ghế sofa"
+  ]
+ },
+ "side table@living room": {
+  "default_mode": "left",
+  "height": 0.615,
+  "placepose": {
+   "dx": 0,
+   "dy": 0
+  },
+  "loc": {
+   "x": -0.53,
+   "y": 1.85,
+   "rz": -180.0
+  },
+  "dforward": -0.2,
+  "dshift": 0.2,
+  "aliases": [
+   "사이드 테이블",
+   "소파 옆 테이블",
+   "bàn phụ"
+  ]
+ },
+ "desk@study room": {
+  "default_mode": "left",
+  "height": 0.72,
+  "placepose": {
+   "dx": 0,
+   "dy": 0
+  },
+  "loc": {
+   "x": 3.1,
+   "y": 2.5,
+   "rz": -180.0
+  },
+  "dforward": -0.2,
+  "dshift": 0.2,
+  "aliases": [
+   "책상",
+   "bàn làm việc"
+  ]
+ },
+ "drawer@kitchen": {
+  "default_mode": "left",
+  "height": 0.583,
+  "placepose": {
+   "dx": 0,
+   "dy": 0
+  },
+  "loc": {
+   "x": -0.755,
+   "y": -0.209,
+   "rz": -178.1
+  },
+  "dforward": -0.2,
+  "dshift": 0.2,
+  "handle": "gray handle",
+  "handle_height": 0.436,
+  "aliases": [
+   "drawer@living room",
+   "부엌 서랍",
+   "ngăn kéo bếp"
+  ]
+ },
+ "counter@kitchen": {
+  "default_mode": "left",
+  "height": 0.9,
+  "placepose": {
+   "dx": 0,
+   "dy": 0
+  },
+  "loc": {
+   "x": -0.8,
+   "y": -2.76,
+   "rz": -90.0
+  },
+  "dforward": -0.2,
+  "dshift": 0.2,
+  "aliases": [
+   "조리대",
+   "bàn bếp"
+  ]
+ },
+ "shelf@kitchen": {
+  "default_mode": "left",
+  "height": 0.512,
+  "placepose": {
+   "dx": 0,
+   "dy": 0
+  },
+  "loc": {
+   "x": 0.42,
+   "y": -2.91,
+   "rz": -90.0
+  },
+  "dforward": -0.2,
+  "dshift": 0.2,
+  "aliases": [
+   "부엌 선반",
+   "kệ bếp"
+  ]
+ },
+ "dining table@kitchen": {
+  "default_mode": "left",
+  "height": 0.745,
+  "placepose": {
+   "dx": 0,
+   "dy": 0
+  },
+  "loc": {
+   "x": -0.065,
+   "y": -2.2,
+   "rz": 0.0
+  },
+  "dforward": -0.2,
+  "dshift": 0.2,
+  "aliases": [
+   "식탁",
+   "bàn ăn"
+  ]
+ },
+ "washer@laundry room": {
+  "default_mode": "left",
+  "height": 0.86,
+  "placepose": {
+   "dx": 0,
+   "dy": 0
+  },
+  "loc": {
+   "x": -1.79,
+   "y": -3.0,
+   "rz": -180.0
+  },
+  "dforward": -0.2,
+  "dshift": 0.2,
+  "aliases": [
+   "세탁기",
+   "máy giặt"
+  ]
+ },
+ "chest@bedroom": {
+  "default_mode": "left",
+  "height": 0.728,
+  "placepose": {
+   "dx": 0,
+   "dy": 0
+  },
+  "loc": {
+   "x": -3.47,
+   "y": 0.1,
+   "rz": -180.0
+  },
+  "dforward": -0.2,
+  "dshift": 0.2,
+  "handle": "gold knob",
+  "handle_height": 0.6,
+  "aliases": [
+   "서랍장",
+   "tủ ngăn kéo"
+  ]
+ },
+ "stool@bedroom": {
+  "default_mode": "left",
+  "height": 0.445,
+  "placepose": {
+   "dx": 0,
+   "dy": 0
+  },
+  "loc": {
+   "x": -3.5,
+   "y": 0.95,
+   "rz": -180.0
+  },
+  "dforward": -0.2,
+  "dshift": 0.2,
+  "aliases": [
+   "스툴",
+   "ghế đẩu"
+  ]
+ },
+ "shelf@restroom": {
+  "default_mode": "left",
+  "height": 0.952,
+  "placepose": {
+   "dx": 0,
+   "dy": 0
+  },
+  "loc": {
+   "x": 3.53,
+   "y": -1.5,
+   "rz": -180.0
+  },
+  "dforward": -0.2,
+  "dshift": 0.2,
+  "aliases": [
+   "화장실 선반",
+   "kệ nhà tắm"
+  ]
+ },
+ "shoe area@living room": {
+  "default_mode": "front",
+  "height": 0.0,
+  "loc": {
+   "x": 0.0,
+   "y": 0.3,
+   "rz": 90.0
+  },
+  "source": "map",
+  "aliases": [
+   "shoe area",
+   "신발 놓는 곳"
+  ]
+ },
+ "entrance": {
+  "default_mode": "front",
+  "height": 0.0,
+  "loc": {
+   "x": 0.25,
+   "y": 2.1,
+   "rz": 90.0
+  },
+  "source": "map",
+  "aliases": [
+   "현관",
+   "lối vào"
+  ]
+ }
+}

@@ -1,0 +1,34 @@
+{
+ "task": "pick object in blue bin",
+ "plans": [
+  {
+   "trace": [
+    {
+     "step": "moveb_left shelf",
+     "ok": true,
+     "why": "",
+     "call": "UNMAPPABLE: no skill for action 'moveb_left' on object 'shelf' (not in SUPPORTED_ACTIONS)"
+    },
+    {
+     "step": "find blue bin",
+     "ok": true,
+     "why": "",
+     "call": "UNMAPPABLE: no skill for action 'find' on object 'blue bin' (not in SUPPORTED_ACTIONS)"
+    },
+    {
+     "step": "pick blue bin",
+     "ok": true,
+     "why": "",
+     "call": "UNMAPPABLE: no skill for action 'pick' on object 'blue bin' (not in SUPPORTED_ACTIONS)"
+    }
+   ],
+   "end": {
+    "arrived": "table@living room",
+    "found": "cup",
+    "holding": "coffee",
+    "opened": [],
+    "on": []
+   }
+  }
+ ]
+}

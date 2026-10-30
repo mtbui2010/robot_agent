@@ -54,6 +54,9 @@ voice = [
 #   pip install -e ../embodiplan && pip install -e ".[grace]"
 grace = ["embodiplan>=0.2,<0.3"]
 
+# `make test` (pytest from the source tree; no ROS, no LLM server).
+test = ["pytest>=7"]
+
 # Everything except `grace` (embodiplan is a local path package, not on PyPI).
 all = [
     "pyzmq",
@@ -74,3 +77,7 @@ all = [
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["robot_agent*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
