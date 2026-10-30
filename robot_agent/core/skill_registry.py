@@ -1,4 +1,4 @@
-import importlib, logging, requests, threading, traceback
+import importlib, logging, threading, traceback
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from typing import Any, Literal
@@ -240,6 +240,7 @@ class SkillRegistry:
         else:
             try:
                 method = (skill.method or 'POST').upper()
+                import requests            # lazy: only HTTP skills need it
                 resp = requests.request(
                     method=method,
                     url=skill.url,
