@@ -5,9 +5,12 @@ These rules apply to every change. Design docs live in `docs/` (see `docs/README
 
 1. **No robot knowledge in the core.** No skill names, object names, geometry
    thresholds, default language or hardware schema in `robot_agent/`. They come
-   from the `RobotAdapter` / `manifest.yaml`. `make lint-core` counts the
-   offenders (`grasp_succeed|mobile_pose|kcare|kaair|MOBILE_HEIGHT`); it is
-   report-only now and becomes blocking when the adapter lands.
+   from the `RobotAdapter` / `manifest.yaml` (`contract.load_adapter`, wrapped
+   by `core/planning/robot.py` `RobotView`): skills via `bind()` /
+   `skill_for(action)`, sensors via the manifest's `VerifySpec`s, thresholds via
+   `geometry`, phrases via `i18n`. `make lint-core` fails on
+   `grasp_succeed|mobile_pose|kcare|kaair|MOBILE_HEIGHT` in core / interact /
+   contract (comments included).
 2. **One-way dependencies:** `contract` <- `model` <- `plan` / `execute` <-
    `interact` <- `api`. No cross-module imports of `_private` names. Never read
    `dm._ros_node` or other private attributes from outside their module.

@@ -77,7 +77,7 @@ help:
 	@echo ""
 	@echo "  make test                             Unit + golden tests (pytest, no ROS / LLM / network)"
 	@echo "  make test-smoke                       Import smoke check of the installed package"
-	@echo "  make lint-core                        Count robot-specific names in robot_agent/core"
+	@echo "  make lint-core                        Fail on robot-specific names in core/interact/contract"
 	@echo "  make clean                            Remove __pycache__ and *.egg-info"
 	@echo ""
 	@echo "Target python : $(ENV_PY)"
@@ -207,17 +207,18 @@ test:
 	fi
 	@cd $(ROOT) && $(ENV_PY) -m pytest $(ARGS)
 
-# Robot-specific names that must leave the core (CLAUDE.md rule 1). Report only
-# for now; LINT_STRICT=1 makes it fail, which becomes the default once the
-# RobotAdapter stream lands.
+# Robot-specific names that must stay out of the core (CLAUDE.md rule 1): the
+# planning loops reach the robot only through its RobotAdapter. Blocking by
+# default; LINT_STRICT=0 only reports.
 LINT_CORE_PATTERNS ?= grasp_succeed mobile_pose kcare kaair MOBILE_HEIGHT
-LINT_STRICT ?= 0
+LINT_CORE_DIRS ?= core interact contract
+LINT_STRICT ?= 1
 lint-core:
-	@total=0; \
-	echo "[robot_agent] robot-specific names in robot_agent/core:"; \
+	@total=0; dirs="$(addprefix $(ROOT)/robot_agent/,$(LINT_CORE_DIRS))"; \
+	echo "[robot_agent] robot-specific names in robot_agent/{$(LINT_CORE_DIRS)}:"; \
 	for p in $(LINT_CORE_PATTERNS); do \
-		n=$$(grep -rIio --include='*.py' "$$p" $(ROOT)/robot_agent/core | wc -l); \
-		files=$$(grep -rIil --include='*.py' "$$p" $(ROOT)/robot_agent/core | sed 's|$(ROOT)/||' | tr '\n' ' '); \
+		n=$$(grep -rIio --include='*.py' "$$p" $$dirs | wc -l); \
+		files=$$(grep -rIil --include='*.py' "$$p" $$dirs | sed 's|$(ROOT)/||' | tr '\n' ' '); \
 		printf '  %-14s %4d  %s\n' "$$p" "$$n" "$$files"; \
 		total=$$((total + n)); \
 	done; \

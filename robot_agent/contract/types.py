@@ -156,12 +156,22 @@ VERIFY_KINDS = ("symbolic", "sensor", "vlm")
 
 @dataclass
 class VerifySpec:
-    """One post-check of a skill: ``symbolic`` (world model, always cheap),
-    ``sensor`` (another skill of the robot, e.g. ``grasp_succeed``) or ``vlm``
-    (a yes/no question on a camera frame)."""
+    """One post-check of a skill: ``symbolic`` (the declared effects hold in the
+    world model, always cheap), ``sensor`` (another skill of the robot that
+    reads the outcome) or ``vlm`` (a yes/no question on a camera frame).
+
+    A sensor whose result carries ``pose`` checks the base against the target's
+    ENV ``loc`` (``Geometry.arrive_tol_m``); any other sensor passes when its
+    ``isdone`` equals ``expect`` (default True: "the hand holds it"; a release
+    declares ``expect: false``)."""
     kind: str
     skill: Optional[str] = None
     prompt: Optional[str] = None
+    expect: Optional[bool] = None
+
+    @property
+    def expected(self) -> bool:
+        return True if self.expect is None else bool(self.expect)
 
     def to_dict(self) -> dict:
         d = {"kind": self.kind}
@@ -169,6 +179,8 @@ class VerifySpec:
             d["skill"] = self.skill
         if self.prompt is not None:
             d["prompt"] = self.prompt
+        if self.expect is not None:
+            d["expect"] = self.expect
         return d
 
 

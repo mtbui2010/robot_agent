@@ -43,12 +43,12 @@ def simulate(plan, world=None, **kw):
 
 
 def __getattr__(name):
-    # ACTION_MODEL_VERSION, Capabilities, Violation, and ROBOT_CAPABILITIES: the body this
-    # core drives today, one hand and Find only looks (a found place still needs a MoveTo).
-    # Per-robot values move to the manifest with the RobotAdapter (step 4).
+    # ACTION_MODEL_VERSION, Capabilities, Violation, ROBOT_ACTIONS (the model's vocabulary), and
+    # ROBOT_CAPABILITIES: the core's default body, one hand and Find only looks (a found place
+    # still needs a MoveTo). The loops use the robot's own (``RobotView.model_capabilities``).
     if name == "ROBOT_CAPABILITIES":
         return _model().Capabilities(hands=1, find_reaches=False)
-    if name in ("ACTION_MODEL_VERSION", "Capabilities", "Violation"):
+    if name in ("ACTION_MODEL_VERSION", "Capabilities", "Violation", "ROBOT_ACTIONS"):
         return getattr(_model(), name)
     raise AttributeError(name)
 
@@ -58,4 +58,4 @@ def __getattr__(name):
 CONTEXT_CODES = {"unknown_action", "not_openable", "find_wrong_place"}
 
 __all__ = ["ACTION_MODEL_VERSION", "Capabilities", "Violation", "check", "apply", "simulate",
-           "ROBOT_CAPABILITIES", "CONTEXT_CODES"]
+           "ROBOT_CAPABILITIES", "ROBOT_ACTIONS", "CONTEXT_CODES"]

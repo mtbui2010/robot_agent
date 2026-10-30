@@ -96,7 +96,7 @@ def test_to_jsonable():
     out = _to_jsonable(obj)
     assert out == {"s": [1, 2, 3], "t": [1, 2], "nan": None, "inf": None, "np": 0.5, "arr": [0, 1, 2],
                    "b": "�", "vr": {"layer": "isdone", "ok": True, "detail": "ok", "confidence": None,
-                                         "latency_ms": 0.0}, "5": None}
+                                         "latency_ms": 0.0, "unknown": False}, "5": None}
     json.dumps(out)
 
 

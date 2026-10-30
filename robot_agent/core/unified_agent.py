@@ -89,21 +89,26 @@ def _emit_world(emit, node, skill=None, params=None, result=None) -> None:
         pass
 
 
-def _kcare_data_root():
-    """Client-side data root for captured datasets: ``~/.kcare_robot`` (on
-    Windows ``~/Documents/.kcare_robot``)."""
+def _client_data_root():
+    """Client-side data root for captured datasets: ``~/.<robot_pkg>`` (on
+    Windows ``~/Documents/.<robot_pkg>``), named after the running robot."""
     import sys
     from pathlib import Path
+    try:
+        from ..state import current
+        name = '.' + current().robot_pkg
+    except Exception:
+        name = '.robot_agent'
     home = Path.home()
     if sys.platform.startswith('win'):
-        return home / 'Documents' / '.kcare_robot'
-    return home / '.kcare_robot'
+        return home / 'Documents' / name
+    return home / name
 
 
 def _begin_dataset(enabled, mode: str = 'backend') -> str | None:
     """Start per-run vision capture when `log_data` is on. Best-effort.
 
-    ``mode='backend'`` opens a capture dir under ~/.kcare_robot (thread-local,
+    ``mode='backend'`` opens a capture dir under ~/.<robot_pkg> (thread-local,
     read by recognition) and returns its path. ``mode='frontend'`` instead turns
     on dataset streaming, so the vision inputs/outputs travel over the agent
     WebSocket and the dashboard stores them — the backend writes nothing.
@@ -120,7 +125,7 @@ def _begin_dataset(enabled, mode: str = 'backend') -> str | None:
     try:
         import time
         from ..skills import set_dataset_dir
-        d = _kcare_data_root() / 'vision_logs' / time.strftime('%Y%m%d-%H%M%S')
+        d = _client_data_root() / 'vision_logs' / time.strftime('%Y%m%d-%H%M%S')
         d.mkdir(parents=True, exist_ok=True)
         set_dataset_dir(str(d))
         return str(d)
@@ -192,15 +197,15 @@ def _make_log_fn(emit, step_index: int, allow_say: bool = True):
         # A skill can report progress mid-step with log_data({'say': '...'}) —
         # forwarded as the event's `say` so the dashboard speaks it.
         say = raw.get('say')
-        # HRI skills (kcare hri.reply / hri.ask) drive the browser directly:
+        # HRI skills (hri.reply / hri.ask) drive the browser directly:
         # `speak` is voiced unconditionally — it is the skill's output, not
         # narration — and `listen` asks the dashboard to capture one phrase and
         # POST it to /agent/listen/{id}.
         speak = raw.get('speak')
         listen = raw.get('listen')
-        alarm = raw.get('alarm')            # kcare call_119 (simulated): the browser plays the siren, in order
-        qa_state = raw.get('qa_state')      # kcare qa running / over: the dashboard's "End Q&A" button
-        choose = raw.get('choose')          # kcare ask did not understand: its options as buttons (utils.choose_open)
+        alarm = raw.get('alarm')            # an emergency-call skill (simulated): the browser plays the siren, in order
+        qa_state = raw.get('qa_state')      # a qa skill running / over: the dashboard's "End Q&A" button
+        choose = raw.get('choose')          # an ask skill did not understand: its options as buttons (utils.choose_open)
         data = {k: v for k, v in raw.items()
                 if k not in ('log_image', 'log_image_reset', 'dataset', 'say', 'speak', 'speak_lang', 'speak_id',
                              'speak_rate', 'listen', 'alarm', 'qa_state', 'choose', 'choose_close')}
@@ -437,7 +442,7 @@ class UnifiedAgent:
                     _pa = task_group[0][1] if task_group and len(task_group[0]) > 1 else None
                     _emit_world(emit, node, skill=_sk, params=_pa, result=ret)   # refresh Robot State
                     if isinstance(ret, dict) and ret.get('isdone', True) and ret.get('stop'):
-                        # A step ended the plan here (kcare check_fall::False): a success, the rest is
+                        # A step ended the plan here (e.g. check_fall::False): a success, the rest is
                         # skipped, and nothing more is said — the step has said what it had to.
                         stopped_by = f"{_sk}: {ret.get('stop_reason')}" if ret.get('stop_reason') else _sk
                         emit({'event': 'stopped', 'msg': f'plan stopped by {stopped_by}'})
@@ -613,7 +618,7 @@ class UnifiedAgent:
                     _pa = task_group[0][1] if task_group and len(task_group[0]) > 1 else None
                     _emit_world(emit, node, skill=_sk, params=_pa, result=ret)   # refresh Robot State
                     if isinstance(ret, dict) and ret.get('isdone', True) and ret.get('stop'):
-                        # A step ended the plan here (kcare check_fall::False): a success, the rest is
+                        # A step ended the plan here (e.g. check_fall::False): a success, the rest is
                         # skipped, and nothing more is said — the step has said what it had to.
                         stopped_by = f"{_sk}: {ret.get('stop_reason')}" if ret.get('stop_reason') else _sk
                         emit({'event': 'stopped', 'msg': f'plan stopped by {stopped_by}'})

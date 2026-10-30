@@ -29,7 +29,7 @@ import threading
 _CANCEL = threading.Event()
 _LOCK = threading.Lock()
 
-# "End Q&A" (dashboard button, POST /agent/qa/end): ends a running kcare `qa`
+# "End Q&A" (dashboard button, POST /agent/qa/end): ends a running `qa` skill
 # conversation the way a stop word does — qa says goodbye and returns success,
 # and the plan carries on. Unlike Cancel, nothing else is touched. Only a skill
 # that called dialog_begin() can be ended (ask / reply need their answer; the
@@ -187,7 +187,7 @@ def _stop_robot(node=None) -> dict:
 
 
 def dialog_begin() -> None:
-    """A conversation that "End Q&A" may end has started (kcare qa)."""
+    """A conversation that "End Q&A" may end has started (a qa skill)."""
     with _LOCK:
         _END_DIALOG.clear()
         _DIALOG['active'] += 1

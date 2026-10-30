@@ -2,9 +2,9 @@
 
 Format (``<pkg>/configs/manifest.yaml``)::
 
-    robot: kaair
+    robot: my_robot
     version: "1.0"
-    language: ko
+    language: en
     capabilities: {base: true, arms: 1, hands: [right], lift: true, head: true, drawer: true}
     geometry: {arrive_tol_m: 0.3, reach_m: 0.78}
     skills:
@@ -332,18 +332,21 @@ def _verify(v, where, errs) -> list:
         if isinstance(x, str):            # shorthand: verify: [symbolic]
             x = {"kind": x}
         if not isinstance(x, dict):
-            errs.append(f"{w}: must be a mapping such as {{kind: sensor, skill: grasp_succeed}}")
+            errs.append(f"{w}: must be a mapping such as {{kind: sensor, skill: <a skill that checks>}}")
             continue
         kind = x.get("kind")
         if kind not in VERIFY_KINDS:
             errs.append(f"{w}.kind: {kind!r} is not one of {', '.join(VERIFY_KINDS)}")
             continue
-        unknown = set(x) - {"kind", "skill", "prompt"}
+        unknown = set(x) - {"kind", "skill", "prompt", "expect"}
         if unknown:
-            errs.append(f"{w}: unknown key(s) {', '.join(sorted(unknown))} (allowed: kind, skill, prompt)")
-        skill, prompt = x.get("skill"), x.get("prompt")
+            errs.append(f"{w}: unknown key(s) {', '.join(sorted(unknown))} (allowed: kind, skill, prompt, expect)")
+        skill, prompt, expect = x.get("skill"), x.get("prompt"), x.get("expect")
+        if expect is not None and not isinstance(expect, bool):
+            errs.append(f"{w}.expect: must be true / false (what the sensor's isdone must be)")
+            continue
         if kind == "sensor" and (not isinstance(skill, str) or not skill.strip()):
-            errs.append(f"{w}.skill: a sensor verify names the robot skill that checks, e.g. grasp_succeed")
+            errs.append(f"{w}.skill: a sensor verify names the robot skill that checks the outcome")
             continue
         if skill is not None and not isinstance(skill, str):
             errs.append(f"{w}.skill: must be a skill name")
@@ -351,7 +354,7 @@ def _verify(v, where, errs) -> list:
         if prompt is not None and not isinstance(prompt, str):
             errs.append(f"{w}.prompt: must be a string")
             continue
-        out.append(VerifySpec(kind=kind, skill=skill.strip() if skill else None, prompt=prompt))
+        out.append(VerifySpec(kind=kind, skill=skill.strip() if skill else None, prompt=prompt, expect=expect))
     return out
 
 

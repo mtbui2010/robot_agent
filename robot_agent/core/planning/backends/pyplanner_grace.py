@@ -32,6 +32,9 @@ _GRACE_KWARGS = (
     "max_refines",
     "use_chroma",
     "chroma_path",
+    # the robot's body (manifest capabilities: hands, find_reaches): SAGE's symbolic gate
+    # then plans e.g. the MoveTo to a drawer before its Open
+    "capabilities",
 )
 
 

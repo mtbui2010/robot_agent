@@ -28,11 +28,12 @@ from typing import Any, Optional, Union
 # --------------------------------------------------------------------------- #
 @dataclass
 class VerifyResult:
-    layer: str                              # 'isdone' | 'symbolic' | 'vlm'
+    layer: str                              # 'isdone' | 'symbolic' | 'sensor' | 'localization' | 'vlm' ...
     ok: bool
     detail: str = ''                        # reason / message
     confidence: Optional[float] = None      # vlm only
     latency_ms: float = 0.0
+    unknown: bool = False                   # nothing could check it (no sensor declared / it failed): ok, not verified
 
 
 @dataclass
@@ -40,7 +41,7 @@ class StepRecord:
     index: int
     action: str                             # GRACE action (MoveTo, Pick, …)
     object: str                             # CamelCase target
-    skill: Optional[str]                    # mapped kcare skill (None for no-op)
+    skill: Optional[str]                    # mapped robot skill (None for no-op)
     params: dict = field(default_factory=dict)
     status: str = 'pending'                 # pending|running|success|failed|skipped
     attempt: int = 1                        # increments across replans
@@ -52,8 +53,9 @@ class StepRecord:
 
     @property
     def verified(self) -> bool:
-        """True iff at least one layer ran and every run layer passed."""
-        return bool(self.verifies) and all(v.ok for v in self.verifies)
+        """True iff at least one layer ran and every run layer passed (an
+        UNKNOWN layer is not a pass)."""
+        return bool(self.verifies) and all(v.ok and not v.unknown for v in self.verifies)
 
 
 @dataclass
@@ -141,7 +143,7 @@ def _dumps(payload: dict) -> str:
 class RunLogger:
     """Append-only JSONL logger for a single run.
 
-    ``path`` is typically ``<kcare data>/task_runs/<run_id>.jsonl`` — never inside
+    ``path`` is typically ``<robot data>/task_runs/<run_id>.jsonl`` — never inside
     ``embodiplan/``. Each streamed event is one line; ``snapshot()`` writes the full
     ``TaskRecord`` as the final line so the file replays exactly what the UI saw.
     """

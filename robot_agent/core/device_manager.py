@@ -326,7 +326,7 @@ class DeviceManager:
 
             elif conn_type == 'switchbot':
                 # A SwitchBot Bot (BLE button pusher). Config only — the robot's
-                # skill does the BLE (kcare skills/switchbot.py): {mac, loc,
+                # skill does the BLE (the robot's skills/switchbot.py): {mac, loc,
                 # default}. Status polling must not scan BLE every 10 s per
                 # browser, so "connected" means "configured".
                 import re as _re
@@ -409,7 +409,7 @@ class DeviceManager:
         """`{type, name, config}` of connection `cid` as saved in
         connections.json, connected or not. At startup `load_saved` connects
         them one by one and an unreachable host holds the rest up (~20 s on
-        kcare): a skill run meanwhile found no 'vlm' and fell back to another
+        the first robot): a skill run meanwhile found no 'vlm' and fell back to another
         model."""
         item = keyed(self._store.base or [], _conn_key).get(cid)
         return dict(item) if isinstance(item, dict) else None

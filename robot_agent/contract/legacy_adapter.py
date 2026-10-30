@@ -4,7 +4,7 @@ The shim for step 4 of the roadmap: robots keep their namemap (``SKILL_MAP``,
 ``to_loc`` / ``to_obj``, ``build_params``, ``observe``, ``vlm_hook`` ...), the
 core talks to a :class:`RobotAdapter`. Binding follows what the loops do today
 (``ActionMapper.to_skill`` + ``ClosedLoop._build_params``), so wrapping changes
-nothing for KAAIR.
+nothing for an existing robot.
 
 :func:`load_adapter` is the one entry point: ``<pkg>.configs.adapter`` when a
 robot ships one, else manifest.yaml + this shim.
@@ -130,7 +130,7 @@ class NamemapAdapter:
             if callable(fn):
                 fn(node, world)
             else:
-                # the core's generic ENV + mobile_pose reconcile (lazy: needs the runtime)
+                # the core's generic ENV + base-pose reconcile (lazy: needs the runtime)
                 from robot_agent.core.planning.loop import reconcile_world
                 reconcile_world(node, world)
         except Exception:
@@ -148,6 +148,16 @@ class NamemapAdapter:
         return {"ok": None, "note": "the robot reports no health (namemap has no health())"}
 
     # ── pass-throughs the loops use today ───────────────────────────────
+    def to_loc(self, name: str) -> str:
+        """The robot's name for a place (namemap ``to_loc``; else unchanged)."""
+        fn = getattr(self.namemap, "to_loc", None)
+        return fn(name) if callable(fn) else name
+
+    def to_obj(self, name: str) -> str:
+        """The robot's name for an object (namemap ``to_obj``; else unchanged)."""
+        fn = getattr(self.namemap, "to_obj", None)
+        return fn(name) if callable(fn) else name
+
     def vlm_hook(self, step: dict, node: Any = None):
         fn = getattr(self.namemap, "vlm_hook", None)
         if not callable(fn):
