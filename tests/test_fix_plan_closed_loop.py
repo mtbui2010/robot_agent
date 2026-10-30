@@ -56,3 +56,31 @@ def test_a_full_run_is_still_success(closed):
     evs = run_task(loop, "bring the apple")
     assert done(evs)["status"] == "success"
     assert bot.holding == "apple"
+
+
+# ── D21 ──
+def test_unbindable_step_refused_before_any_motion(closed):
+    planner = ScriptedPlanner(steps("MoveTo DiningTable", "Find apple", "Pick apple", "TurnOn lamp"))
+    loop, bot = closed(planner)
+    evs = run_task(loop, "turn on the lamp")
+    d = done(evs)
+    assert d["status"] == "failed" and "TurnOn" in d["msg"]
+    assert _motions(bot) == [], "drove off before reaching the step it cannot do"
+    assert [c[0] for c in planner.calls] == ["generate_plan", "replan"], "asked the planner once for a plan without it"
+    assert any(e["event"] == "gate" for e in evs)
+
+
+def test_unbindable_plan_refined_once_then_runs(closed):
+    good = steps("Find apple", "Pick apple")
+    planner = ScriptedPlanner(steps("Find apple", "TurnOn apple"), replans=[good])
+    loop, bot = closed(planner, start=DT)
+    evs = run_task(loop, "pick up the apple")
+    assert done(evs)["status"] == "success" and bot.holding == "apple"
+    assert [t[0] for t in bot.trace if t[0] != "grasp_succeed"][:2] == ["find", "pick"]
+
+
+def test_refined_plan_still_unbindable_fails(closed):
+    planner = ScriptedPlanner(steps("TurnOn lamp"), replans=[steps("TurnOff lamp")])
+    loop, bot = closed(planner)
+    d = done(run_task(loop, "turn on the lamp"))
+    assert d["status"] == "failed" and bot.trace == []

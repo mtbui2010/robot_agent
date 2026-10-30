@@ -502,7 +502,54 @@ class ClosedLoop:
             yield r.ev("done", status="planned", run_id=r.run_id,
                        say=r.announcer.announce("plan_ready"), world=r.world.to_dict())
             return True
-        return False
+        return (yield from self._cl_certify(r))
+
+    def _unbindable(self, r: "RunContext", steps: list) -> list:
+        """[(index, why)] of the steps this robot cannot run (no skill / cannot be bound), the
+        plan simulated as written so a Pick binds to the Find before it."""
+        out, w = [], r.world.copy()
+        for i, st in enumerate(steps):
+            try:
+                r.mapper.to_skill(st, w)
+            except Unmappable as e:
+                out.append((i, f"step {i + 1} '{st.get('action', '')} {st.get('object', '')}': {e}"))
+            except Exception:
+                pass                            # an adapter error is the step's own, at run time
+            try:
+                r.mapper.apply_effect(st, w)
+            except Exception:
+                pass
+        return out
+
+    def _cl_certify(self, r: "RunContext"):
+        """No motion for a plan with steps the robot cannot run: the planner is asked once for a
+        plan without them, else the run fails before the first step. True when the run ended."""
+        bad = self._unbindable(r, r.steps)
+        if not bad:
+            return False
+        reason = ("the plan has steps this robot cannot do: " + "; ".join(t for _i, t in bad)
+                  + ". It can: " + ", ".join(sorted(r.robot.plan_actions)))
+        yield r.ev("gate", round=0, problems=[t for _i, t in bad])
+        if r.replans < self.cfg["max_replans"]:
+            r.replans += 1
+            try:
+                new, _m = r.planner.replan(r.task, [], r.steps[bad[0][0]], reason, r.obs, r.visible)
+                new = list(new or [])
+            except Exception as e:
+                new = []
+                reason += f"; replan failed: {e}"
+            r.run.replans.append({"at_index": 0, "failed": r.steps[bad[0][0]], "reason": reason,
+                                  "suffix_len": len(new)})
+            if new and not self._unbindable(r, new):
+                r.steps = new
+                yield r.ev("replan", at_index=0, reason=reason, plan=[f"{x.get('action')} {x.get('object')}" for x in new],
+                           say=r.announcer.announce("replan"), world=r.world.to_dict())
+                return False
+        r.run.status, r.run.ended_at = "failed", time.time()
+        msg = "I can't do this task: " + "; ".join(t for _i, t in bad)
+        say = r.robot.text("cannot_do", r.lang) if r.robot.has_text("cannot_do") else r.announcer.announce("done_fail")
+        yield r.ev("done", status="failed", run_id=r.run_id, msg=msg, say=say, world=r.world.to_dict())
+        return True
 
     def _aborted(self, r: "RunContext", rec: Optional[StepRecord] = None) -> dict:
         """End the run on a cancel — no verify, no replan."""
