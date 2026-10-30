@@ -30,7 +30,7 @@ not hide it. Three are corrected from the person's own words, without an LLM cal
   "Where should I put the mug?");
 * a `go` goal to the destination of a move goal is the same trip.
 
-Nothing is dropped when it would leave no goal. Tests: `tests/test_v2_t2fix_goal_filter.py`, scenarios
+Nothing is dropped when it would leave no goal. `ROBOT_AGENT_GOAL_FILTER=0` (option `goal_filter`): off. Tests: `tests/test_v2_t2fix_goal_filter.py`, scenarios
 TF03 / TF04 (`scenarios/tests/test_t1_v2_t2fix.py`).
 
 ### The speaker is a destination, never a source (FROM_ME)

@@ -76,7 +76,8 @@ ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify
                 "goal_check", "health_wait_s", "understand_retries", "understand_samples", "llm_budget",
                 "goal_readback", "understand_temperature", "understand_seed", "understand_sample_temperature",
                 "yes_no_reasks", "search", "search_rank", "search_half_life_s", "vlm_verify", "sensor_health",
-                "reconcile", "search_habit_weight", "edit_reserve", "plan_tidy"}
+                "reconcile", "search_habit_weight", "edit_reserve", "plan_tidy",
+                "goal_filter"}
 _USER_WORDS = {"me", "user", "here", "you", "myself", "person"}
 
 
@@ -320,6 +321,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
             "edit_reserve": int(overrides.get("edit_reserve", env("ROBOT_AGENT_EDIT_RESERVE", "6"))),
             # steps the action model proves do nothing are removed before the gate (plan_tidy.py)
             "plan_tidy": str(overrides.get("plan_tidy", env("ROBOT_AGENT_PLAN_TIDY", "1"))) not in ("0", "False", "false"),
+            # understood goals the words do not ask for are dropped (goal_filter.py)
+            "goal_filter": str(overrides.get("goal_filter", env("ROBOT_AGENT_GOAL_FILTER", "1"))) not in ("0", "False", "false"),
             "silence_retries": int(overrides.get("silence_retries", env("ROBOT_AGENT_SILENCE_RETRIES", "1"))),
             "confirm_answers": overrides.get("confirm_answers", env("ROBOT_AGENT_CONFIRM_ANSWERS", "1") == "1"),
             "confirm_task": overrides.get("confirm_task", env("ROBOT_AGENT_CONFIRM_TASK", "0") == "1"),
@@ -1090,9 +1093,10 @@ class AssistLoop(SearchHooks, ClosedLoop):
                     g["to"] = r.pin_to
         answers = [t for w_, t in r.dialogue if w_ == "user"]
         words_ = " ".join([r.task, self.original or ""] + answers)
-        raw, r.filtered = goal_filter.before_grounding(u["goals"], r.task)        # goals not asked for (goal_filter.py)
+        on = self.cfg["goal_filter"]                                        # goals not asked for (goal_filter.py)
+        raw, r.filtered = goal_filter.before_grounding(u["goals"], r.task) if on else (u["goals"], [])
         goals, q = self._ground_goals(raw, r.places, r.memory, words_, latest=answers[-1] if answers else "")
-        goals, more = goal_filter.after_grounding(goals, " ".join([r.task] + answers), r.places)
+        goals, more = goal_filter.after_grounding(goals, " ".join([r.task] + answers), r.places) if on else (goals, [])
         r.filtered += more
         return goals, q
 

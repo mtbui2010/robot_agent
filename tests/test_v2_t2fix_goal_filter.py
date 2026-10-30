@@ -70,3 +70,12 @@ def test_h07_runs_without_a_question(make_assist, env):
                    "Put the apple on the dining table, but don't touch the mug.")
     assert done(evs)["status"] == "success", done(evs)
     assert not robot.asked and not any(s == "pick" and o == "mug" for s, o, *_ in robot.trace)
+
+
+def test_goal_filter_off(make_assist, env):
+    und = {"status": "clear", "reason": "", "question": "",
+           "goals": [G("on", "apple", "", "dining table"), G("on", "mug", "", "")]}
+    robot = FakeRobot(env, {"apple": DS, "mug": DS}, reply_rules=[{"if": "", "then": ""}])
+    evs = run_task(make_assist(robot, FakeLLM(und, default=und), ScriptedPlanner([]), goal_filter=False),
+                   "Put the apple on the dining table, but don't touch the mug.")
+    assert robot.asked and "mug" in robot.asked[0]
