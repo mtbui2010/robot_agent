@@ -24,6 +24,8 @@ Stop pressed for a run still finishing. It now never clears the cancel of an
 active run: a new run starts with its own, clear flag.
 """
 
+import contextlib
+import os
 import threading
 
 _CANCEL = threading.Event()
@@ -58,9 +60,56 @@ def manager():
 
 def _on_run_cancel(run) -> None:
     """A run was cancelled through the manager (a spoken "stop", POST
-    /runs/{id}/cancel): stop the robot now, not only at the next step."""
+    /runs/{id}/cancel): stop the robot now, not only at the next step; inside a
+    non-interruptible skill (Pick mid-grasp, a drawer pull) after it ends, see
+    :func:`uninterruptible`. The run itself is cancelled at once either way."""
+    held = run.defer_stop() if run is not None else None
+    if held is not None:
+        token, skill = held
+        max_s = uninterruptible_max_s()
+        run.publish({'event': 'run_stop_deferred', 'skill': skill, 'max_s': max_s, 'origin': 'run_control',
+                     'msg': f'stopping when {skill} has finished (it must not be cut)'})
+        t = threading.Timer(max_s, _deferred_stop_due, (run, token))
+        t.daemon = True
+        t.start()
+        return
     with _LOCK:
         _stop_robot()
+
+
+def uninterruptible_max_s() -> float:
+    """How long a stop waits for a non-interruptible skill before it cuts it anyway."""
+    try:
+        return float(os.environ.get('ROBOT_AGENT_UNINTERRUPTIBLE_MAX_S', '30'))
+    except ValueError:
+        return 30.0
+
+
+def _deferred_stop_due(run, token) -> None:
+    if run.take_deferred_stop(token):
+        with _LOCK:
+            _stop_robot()
+
+
+@contextlib.contextmanager
+def uninterruptible(skill: str, interruptible: bool = False):
+    """Run a skill the manifest marks ``interruptible: false`` inside this: a
+    stop of the run that arrives meanwhile does not cancel the robot's goals
+    until the skill has finished (at most :func:`uninterruptible_max_s`), so a
+    grasp or a drawer pull is not cut half-way. The run is cancelled at once and
+    the executive stops at the step boundary. ``interruptible`` True (or no run)
+    is a no-op. The hardware e-stop never goes through here."""
+    run = current_run() if not interruptible else None
+    if run is None:
+        yield
+        return
+    token = run.begin_critical(skill)
+    try:
+        yield
+    finally:
+        if run.end_critical(token):
+            with _LOCK:
+                _stop_robot()
 
 
 def is_cancel(exc: BaseException) -> bool:

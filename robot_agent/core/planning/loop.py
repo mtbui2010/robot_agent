@@ -553,7 +553,8 @@ class ClosedLoop:
                          params=params, status="running", started_at=started)
         yield r.ev("step_start", index=r.i, action=action, object=obj, skill=skill_name,
                    say=r.announcer.announce("step_start", **self._say(step, action, obj)))
-        res = run_skill(self.sr, skill_name, params, r.node, log_fn=self._log_fn(r.i))
+        res = run_skill(self.sr, skill_name, params, r.node, log_fn=self._log_fn(r.i),
+                        interruptible=r.robot.interruptible(skill_name))
         rec.result = res.to_legacy()
         # A cancelled skill fails like any other, but replanning around
         # it would start the robot moving again — stop instead.

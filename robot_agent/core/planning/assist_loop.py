@@ -1165,11 +1165,15 @@ class AssistLoop(ClosedLoop):
                          status="running", started_at=started)
         yield r.ev("step_start", index=r.i, action=a, object=o, skill=skill,
                    say=r.announcer.announce("step_start", **self._say(st, a, o)))
-        res = run_skill(self.sr, skill, params, r.node, log_fn=self._log_fn(r.i))
+        # manifest interruptible: false (a grasp, a drawer pull): a stop meanwhile waits for it to end
+        res = run_skill(self.sr, skill, params, r.node, log_fn=self._log_fn(r.i),
+                        interruptible=r.robot.interruptible(skill))
         rec.result = res.to_legacy()
         stop = self._cancelled(r)
         if stop:
             rec.status = "aborted"; r.run.steps.append(rec)
+            if res.ok:
+                self._effect(st, r.world, r.memory, r.placed)   # it finished: the belief keeps what it did
             yield stop; return _STOP
         vres = self._post_check(r, st, skill, res, params, rec)
         rec.verifies = vres

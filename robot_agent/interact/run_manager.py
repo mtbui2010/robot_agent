@@ -171,6 +171,11 @@ class Run:
         self._question: Optional[str] = None
         self._answer: Optional[str] = None
         self._answered = threading.Event()
+        # A skill that must not be cut (manifest interruptible: false) is running:
+        # (token, skill); a stop meanwhile is deferred until it ends.
+        self._critical: Optional[tuple] = None
+        self._critical_seq = 0
+        self._stop_deferred = False
 
     # ---- state -------------------------------------------------------
     @property
@@ -268,6 +273,48 @@ class Run:
             self._answer = text
             self._question = None
             self._answered.set()
+            return True
+
+    # ---- non-interruptible skills ------------------------------------
+    @property
+    def critical(self) -> Optional[str]:
+        """The non-interruptible skill running now, or None."""
+        c = self._critical
+        return c[1] if c else None
+
+    def begin_critical(self, what: str) -> int:
+        """A skill that must not be cut starts. Returns its token."""
+        with self._lock:
+            self._critical_seq += 1
+            self._critical = (self._critical_seq, what)
+            self._stop_deferred = False
+            return self._critical_seq
+
+    def defer_stop(self) -> Optional[tuple]:
+        """Called by the cancel hook: inside a non-interruptible skill the robot
+        stop waits; returns (token, skill) then, else None (stop now)."""
+        with self._lock:
+            if self._critical is None:
+                return None
+            self._stop_deferred = True
+            return self._critical
+
+    def end_critical(self, token: int) -> bool:
+        """The skill ended. True when a stop was deferred meanwhile (the caller
+        stops the robot now)."""
+        with self._lock:
+            if self._critical is None or self._critical[0] != token:
+                return False
+            due, self._critical, self._stop_deferred = self._stop_deferred, None, False
+            return due
+
+    def take_deferred_stop(self, token: int) -> bool:
+        """The wait for the skill ran out: True when its deferred stop is still
+        due (the caller stops the robot; :meth:`end_critical` then returns False)."""
+        with self._lock:
+            if self._critical is None or self._critical[0] != token or not self._stop_deferred:
+                return False
+            self._stop_deferred = False
             return True
 
     # ---- pending goal changes -----------------------------------------
