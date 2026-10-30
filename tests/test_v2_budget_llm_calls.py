@@ -77,7 +77,8 @@ class Wandering(ScriptedPlanner):
 def test_bad_plans_forever_stop_at_the_cap_with_the_code_and_phrase(make_assist, env):
     robot = FakeRobot(env, {"apple": "nowhere"})
     llm, planner = FakeLLM(default=ANYWHERE), Wandering(env)
-    loop = make_assist(robot, llm, planner, max_replans=1000, search_max=1000, ask_help=False)
+    # search off: the search belief would end the run 'absent' once every place is searched
+    loop = make_assist(robot, llm, planner, max_replans=1000, search_max=1000, ask_help=False, search=False)
     d = done(run_task(loop, "Put the apple on the dining table.", max_events=5000))
     assert d["status"] == "failed" and d["code"] == "budget_exceeded" and d["device"] == "llm"
     assert d["say"] == CORE_TEXT["llm_budget"]
@@ -87,9 +88,22 @@ def test_bad_plans_forever_stop_at_the_cap_with_the_code_and_phrase(make_assist,
 def test_a_small_budget_caps_it_earlier(make_assist, env):
     robot = FakeRobot(env, {"apple": "nowhere"})
     llm, planner = FakeLLM(default=ANYWHERE), Wandering(env)
-    loop = make_assist(robot, llm, planner, max_replans=1000, search_max=1000, ask_help=False, llm_budget=5)
+    loop = make_assist(robot, llm, planner, max_replans=1000, search_max=1000, ask_help=False, llm_budget=5,
+                       search=False)
     d = done(run_task(loop, "Put the apple on the dining table."))
     assert d["code"] == "budget_exceeded" and len(llm.calls) + len(planner.calls) == 5
+
+
+def test_search_ranking_counts_against_the_same_budget(make_assist, env):
+    """With the search on, its per-object ranking call is one more LLM call of the run: a budget of 3
+    (understand, ranking, plan) leaves no replan, so the run ends at the cap."""
+    robot = FakeRobot(env, {"apple": "nowhere"})
+    llm, planner = FakeLLM(default=ANYWHERE), Wandering(env)
+    loop = make_assist(robot, llm, planner, ask_help=False, llm_budget=3)
+    d = done(run_task(loop, "Put the apple on the dining table."))
+    n = len(llm.calls) + len(planner.calls)
+    assert len(llm.calls) >= 2 and n <= 3
+    assert d["status"] == "failed" and d["code"] == "budget_exceeded" and d["evidence"]["llm_calls"] == n
 
 
 # ── the gate's sub-goal edits ──
