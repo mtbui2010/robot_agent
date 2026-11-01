@@ -117,6 +117,8 @@ def _write_pkg(root: Path, name: str, files: dict) -> None:
         p = root / name / rel
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(text)
+    import importlib
+    importlib.invalidate_caches()       # a package written in the same second as the last listing
 
 
 @pytest.fixture
