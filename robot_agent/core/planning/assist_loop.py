@@ -145,7 +145,11 @@ class Places:
         # 'dining table', 'kitchen counter', 'shelf in the restroom'
         room = next((r for r in self.rooms() if r in w), "")
         rest = (w.replace(room, " ") if room else w).replace(" in the ", " ").replace(" in ", " ").replace(" at ", " ")
-        rest = " ".join(t for t in rest.split() if t not in ("the", "of", "on", "kitchen's"))
+        # a whole answer ("It is on the kitchen counter.") grounded to the room: the filler words and the full
+        # stop kept 'counter' from matching (sim 2026-10-23)
+        rest = re.sub(r"[.,!?;:]", " ", rest)
+        rest = " ".join(t for t in rest.split() if t not in ("the", "of", "on", "kitchen's", "it", "is", "it's",
+                                                             "its", "there", "a", "an"))
         hits = [k for k in self.keys if rest and (self.head(k) == rest or rest in self.head(k)
                                                      or self.head(k) in rest.split())]
         if not hits and rest:                         # 'table' -> 'dining table', 'test table'
@@ -1943,7 +1947,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
             return out
         sig = (a, o, r.world.arrived, re.sub(r"[-\d.]+", "#", str(reason))[:160])
         r.seen_fail[sig] = r.seen_fail.get(sig, 0) + 1
-        if r.seen_fail[sig] > 2:
+        # Find has its own budget (search_max misses -> ask where -> stop); this stop kept it from the question (sim 2026-10-23)
+        if r.seen_fail[sig] > 2 and a != "Find":
             yield self._finish(r, "failed", msg=f"{a} {o} failed again the same way: {reason}"); return _STOP
         # ── skill-level retry in place / ask the person (not planning) ──
         no = refuted(rec.verifies)                     # the VLM / its Find said it did not happen: replan
