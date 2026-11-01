@@ -1,14 +1,10 @@
 # robot_agent/robot_agent/core/planning/backends/llm_direct.py
-"""Direct-LLM planner backend — wraps the legacy open-loop planning flow
-(``UnifiedAgent.run``) behind the Planner interface so it is selectable as a
-drop-in alternative to GRACE.
+"""Direct-LLM planner backend: one LLM call turns the command into a ``skill::input`` program.
 
-This reproduces exactly what unified_agent.py does today:
-    1. init_llm_client(cfg=llm_cfg)
-    2. try the structured guide (guide_struct + llm.chat(prompt, guide, format)),
-       falling back to the freeform guide (guide + llm.chat_guide)
-    3. reconstruct via robot_agent.core.guide_manager.reconstruct_plan
-    4. parse the ``action::inputs && …`` plan string into PlanStep dicts.
+The prompt is built by code each time it plans (``core/planning/direct_prompt.py``,
+docs/direct_prompt.md): the robot and its skills from the manifest, the ENV places, the robot's
+``planner.notes`` and the examples most similar to the command. The open-loop direct path of
+``UnifiedAgent.run`` asks through the same :func:`direct_prompt.plan_answer`.
 
 LLM imports are kept lazy (inside methods) so this module imports cleanly in
 environments without the provider SDKs installed.
@@ -16,50 +12,36 @@ environments without the provider SDKs installed.
 
 from __future__ import annotations
 
-import importlib
-from typing import Any
+from typing import Any, Optional
 from robot_agent.spoken import SpokenError, split_skill, split_value
 
 
 class LlmDirectBackend:
-    """Planner backend that wraps the existing direct-LLM planning behaviour."""
+    """Planner backend: the direct planner (dashboard choice ``direct``)."""
 
-    uses_guide = True       # plans with the dashboard's Planner Guide (docs/planner_guide.md)
+    uses_direct_prompt = True       # plans with core/planning/direct_prompt.py (docs/direct_prompt.md)
 
-    def __init__(self, llm_cfg: dict, robot_pkg: str) -> None:
+    def __init__(self, llm_cfg: dict, robot_pkg: str, live_path: Optional[str] = None) -> None:
         self._llm_cfg = llm_cfg or {}
         self._robot_pkg = robot_pkg
+        self._live_path = live_path          # None: the runtime's planner memory
+        self._view = None
 
-    # ── core: produce the raw `action::inputs && …` plan string ───────
+    def _robot(self):
+        if self._view is None:
+            from robot_agent.core.planning.robot import RobotView
+            self._view = RobotView.load(self._robot_pkg)
+        return self._view
+
+    # ── core: the raw `skill::inputs` program text ─────────────────────
     def _plan_string(self, task: str) -> str:
         # Lazy import — the LLM backends pull in optional SDKs.
         from robot_agent.connect.llm import init_llm_client
+        from robot_agent.core.planning.direct_prompt import plan_answer
 
         llm = init_llm_client(cfg=self._llm_cfg)
-
-        # Active versioned guide (UI-editable), else the robot's guide modules —
-        # exactly as UnifiedAgent.run resolves it.
-        from robot_agent.core.guide_manager import guide_command, resolve_guide
-        with guide_command(task):               # {EXAMPLES}: the examples similar to this task
-            guide, fmt = resolve_guide(self._robot_pkg)
-        try:
-            if fmt is not None:
-                plan_raw = llm.chat(prompt=task, guide=guide, format=fmt)
-            else:
-                plan_raw = llm.chat_guide(prompt=task, guide=guide, reuse=False)
-        except Exception:
-            plan_raw = llm.chat_guide(prompt=task, guide=guide, reuse=False)
-
-        from robot_agent.core.guide_manager import reconstruct_plan
-        from robot_agent.safe_parse import parse_plan_answer
-
-        try:
-            plan_dict = parse_plan_answer(plan_raw)
-            plan = reconstruct_plan(plan_dict)
-        except Exception:
-            plan = str(plan_raw)
-
-        return plan if isinstance(plan, str) else str(plan)
+        kw = {} if self._live_path is None else {"live_path": self._live_path}
+        return plan_answer(llm, self._robot(), task, **kw)
 
     # ── parse `action::inputs && …` → list[PlanStep] ──────────────────
     @staticmethod
@@ -119,8 +101,8 @@ class LlmDirectBackend:
         obs: str,
         visible_objects: list[str],
     ) -> tuple[list[dict], dict]:
-        # obs / visible_objects are unused: the legacy flow plans purely from the
-        # NL task + the robot's guide. They are accepted to satisfy the interface.
+        # obs / visible_objects are unused: the direct planner plans from the command and the
+        # robot's prompt (manifest, places, examples). They are accepted to satisfy the interface.
         plan = self._plan_string(task)
         steps = self._parse_steps(plan)
         return steps, {"raw": plan}

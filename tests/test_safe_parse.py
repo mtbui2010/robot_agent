@@ -2,7 +2,7 @@
 
 import pytest
 
-from robot_agent.safe_parse import parse_kwargs, parse_literal, parse_number, parse_plan_answer
+from robot_agent.safe_parse import parse_kwargs, parse_literal, parse_number
 
 
 # ── parse_kwargs: the `skill::args` argument list (plan_skill.parse_inputs, utils.refine_inputs) ──
@@ -43,33 +43,6 @@ def test_parse_kwargs_formats(args, expected):
 def test_parse_kwargs_rejects_code(args):
     with pytest.raises(ValueError):
         parse_kwargs(args)
-
-
-# ── parse_plan_answer: an LLM planning answer (unified_agent.run, llm_direct) ──
-def test_plan_answer_json_and_python_repr():
-    js = '{"action_types": ["move"], "target_objects": ["cup"], "destination_locations": [null]}'
-    assert parse_plan_answer(js) == {"action_types": ["move"], "target_objects": ["cup"],
-                                     "destination_locations": [None]}
-    rp = "{'target_objects': ['blue bin'], 'target_locations': ['None'], 'destination_locations': ['me']}"
-    assert parse_plan_answer(rp)["destination_locations"] == ["me"]
-    assert parse_plan_answer({"a": 1}) == {"a": 1}
-
-
-@pytest.mark.parametrize("raw", [
-    "move::kitchen\nfind::cup",            # a plain plan: the caller keeps the text
-    "__import__('os').getcwd()",
-    "",
-])
-def test_plan_answer_rejects_non_literals(raw):
-    with pytest.raises(ValueError):
-        parse_plan_answer(raw)
-
-
-def test_plan_answer_with_reconstruct_plan():
-    from robot_agent.core.guide_manager import reconstruct_plan
-    d = parse_plan_answer("{'action_types': ['move', 'pick'], 'target_objects': ['kitchen', 'cup'], "
-                          "'destination_locations': [None, 'me@table']}")
-    assert reconstruct_plan(d) == "move::kitchen\npick::cup>>table"
 
 
 # ── literals / numbers ──

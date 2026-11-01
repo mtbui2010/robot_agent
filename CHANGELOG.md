@@ -5,6 +5,23 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+### Direct planner prompt (docs/direct_prompt.md) — Planner Guide removed
+- The direct planner (`llm_direct`, dashboard `direct`, and the open-loop path of `UnifiedAgent.run`) builds
+  its prompt by code each time it plans (`core/planning/direct_prompt.py`): `describe_robot`, the skill
+  lines, the dashboard's plan skills, the ENV places, manifest `planner.notes`, the k most similar
+  examples (seed pool + verified live memory), fixed answer rules, the command. Both callers ask through
+  `direct_prompt.plan_answer` (`llm.chat(prompt=...)`, recorded / replayed as `chat`).
+- Manifest: optional `planner.notes` (list of non-empty strings, <= 300 characters each).
+- New `GET /planner/prompt?command=&planner=&k=&leave_one_out=` -> `{prompt, examples, planner, uses_prompt}`.
+- Env: `ROBOT_AGENT_DIRECT_EXAMPLES` (default 3), `ROBOT_AGENT_DIRECT_LOO`; the old names
+  `ROBOT_AGENT_GUIDE_EXAMPLES` / `ROBOT_AGENT_GUIDE_LOO` are still read when the new ones are unset.
+- Removed: `core/guide_manager.py` (`GuideManager`, `resolve_guide`, `render_guide`, `preview_guide`,
+  `reconstruct_plan`, `GUIDE_USERS`, `planner_uses_guide`), `api/guides.py` (`GET/POST /guides`,
+  `GET/PUT/DELETE /guides/{name}`, `POST /guides/{name}/activate|rename`, `POST /guides/preview`),
+  `AgentState.guides`, the structured (`format`) branch of the direct planner and the
+  `LOCATIONS_HERE` / `PLAN_SKILLS_HERE` / `{ROBOT}` / `{ACTIONS}` / `{EXAMPLES}` placeholders. A plug-in
+  says `uses_direct_prompt = True` (was `uses_guide`). An old `common/guides.json` is never read.
+
 ### Contract
 - Optional adapter members `pose(node) -> {x, y, yaw?, ts? | age_s?}` and `container_states(node) ->
   {key: bool | None}`, read by the SAGE-v2 reconcile (`core/planning/reconcile.py`, docs/guard.md).
@@ -14,7 +31,7 @@ manifest format, the event schema). See `docs/contract.md`.
   (`ROBOT_AGENT_RECONCILE`, default 1).
 - Manifest: optional top-level `description` (`Manifest.description`) and skill-level
   `description` (string, no check_manifest warning): the robot's / skill's text in the planner
-  prompts (core/planning/robot_prompt.py, docs/planner_guide.md). Old manifests load unchanged.
+  prompts (core/planning/robot_prompt.py, docs/direct_prompt.md). Old manifests load unchanged.
 
 - `FailureCode.BUDGET_EXCEEDED` (`budget_exceeded`): the run used its LLM-call budget (recovery STOP,
   not retried). Appended after `unknown`.
@@ -39,15 +56,15 @@ manifest format, the event schema). See `docs/contract.md`.
 - Adapter extras read by the core (optional): `is_openable(key, entry)`, `quiet_skills`,
   `i18n.phrases` keys `verb.<Action>`, `robot_description`, `verify_failed.<Action>`.
 
-### Planner prompts (docs/planner_guide.md)
+### Planner prompts (docs/direct_prompt.md)
 - SAGE (`grace` / `sage`) gets the robot's plan actions and description from the manifest
   (embodiplan >= 0.2.4 `SAGEPlanner(actions, robot_description)`); `ROBOT_AGENT_SAGE_ROBOT_PROMPT=0`
   restores embodiplan's household prompts. Plug-in planners get `robot_description` too.
-- Planner Guide placeholders `{ROBOT}`, `{ACTIONS}`, `{EXAMPLES}` (seed pool + verified live memory,
+- (removed again, see above) Planner Guide placeholders `{ROBOT}`, `{ACTIONS}`, `{EXAMPLES}` (seed pool + verified live memory,
   top `ROBOT_AGENT_GUIDE_EXAMPLES` (3), leave-one-out with `ROBOT_AGENT_GUIDE_LOO=1`); a guide
   without them is sent unchanged. New seed versions (`guide_v2`) are added once, inactive, to an
   existing guides.json (`seeded` list).
-- `GET /guides?planner=` adds `used_by`, `active_planner`, `active_planner_uses_guide` and per-version
+- (removed again) `GET /guides?planner=` adds `used_by`, `active_planner`, `active_planner_uses_guide` and per-version
   `placeholders`; `POST /guides/preview` renders a guide for a command.
 
 ### Interaction (run manager, dialog)

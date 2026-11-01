@@ -67,7 +67,7 @@ GraceBackend (`backends/pyplanner_grace.py`) implements all three on embodiplan'
 
 A planner name is (`registry.resolve_planner`):
 
-1. a built-in name: `grace` (embodiplan SAGE / GRACE), `llm_direct` (one LLM call);
+1. a built-in name: `grace` (embodiplan SAGE / GRACE), `llm_direct` (one LLM call, its prompt built from the robot: [direct_prompt.md](direct_prompt.md));
 2. `package.module:Class`: any importable class or factory; nothing to register;
 3. the name of an entry point in the group `robot_agent.planners`.
 
@@ -78,8 +78,9 @@ set that it accepts (all of them when it takes `**kwargs`; `None` values are lef
 `host`, `model` (the LLM config), `live_path` (a per-machine data path for memory), `llm_cfg`,
 `robot_pkg`, `capabilities` (the manifest capabilities, with the core's defaults), `actions` (the
 robot's plan actions), `robot_description` (the robot's body in one sentence, from the manifest;
-see [planner_guide.md](planner_guide.md)). A planner that plans with the dashboard's Planner Guide
-says so with a class attribute `uses_guide = True` (`GET /guides` then reports it as a guide user).
+see [direct_prompt.md](direct_prompt.md)). A planner that plans with the direct planner's prompt
+(`core/planning/direct_prompt.py`) says so with a class attribute `uses_direct_prompt = True`
+(`GET /planner/prompt?planner=` then reports `uses_prompt: true` for it).
 
 ## Writing a planner in its own repo
 

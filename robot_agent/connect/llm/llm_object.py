@@ -135,9 +135,9 @@ class LLMobj(ABC):
     def chat_guide(self, prompt, guide, reuse=False, **kwargs):
         """Freeform planning call: substitute *prompt* into *guide* and chat.
 
-        *guide* is the active planner guide (see
-        :mod:`robot_agent.core.guide_manager`) — its ``COMMAND_HERE`` marker is
-        replaced by the normalised prompt. With ``reuse=True`` a previous answer
+        *guide* is a prompt template whose ``COMMAND_HERE`` marker is replaced by the
+        normalised prompt (kept for callers of the client API; the direct planner sends its
+        whole prompt with :meth:`chat`, core/planning/direct_prompt.py). With ``reuse=True`` a previous answer
         for the same prompt is read back from the on-disk cache instead of
         hitting the model.
         """

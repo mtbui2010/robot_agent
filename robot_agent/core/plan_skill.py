@@ -381,7 +381,7 @@ def _trace_carried(plan, i, n, name, own, merged, origin, log):
 
 
 def describe_plan_skills(registry) -> str:
-    """One line per plan skill, for a planner guide (PLAN_SKILLS_HERE)."""
+    """One line per plan skill, for the direct planner's prompt (core/planning/direct_prompt.py)."""
     lines = []
     for s in registry._skills.values():
         if s.type != 'plan':

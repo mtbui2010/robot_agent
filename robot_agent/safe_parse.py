@@ -11,11 +11,10 @@ Stdlib only; safe to import from any layer.
 from __future__ import annotations
 
 import ast
-import json
 import operator
 from typing import Any
 
-__all__ = ["parse_literal", "parse_kwargs", "parse_number", "parse_plan_answer"]
+__all__ = ["parse_literal", "parse_kwargs", "parse_number"]
 
 _BINOPS = {
     ast.Add: operator.add,
@@ -63,20 +62,6 @@ def parse_literal(text: str) -> Any:
     except SyntaxError as e:
         raise ValueError(f"cannot parse {str(text)[:80]!r}: {e.msg}") from e
     return _literal(tree.body)
-
-
-def parse_plan_answer(raw: Any) -> Any:
-    """An LLM's planning answer as data: JSON first, then a Python literal
-    (``str(dict)`` uses ``'`` and ``True``/``None``). Raises ``ValueError`` when
-    it is neither, so the caller can keep the raw text."""
-    if isinstance(raw, (dict, list)):
-        return raw
-    s = str(raw)
-    try:
-        return json.loads(s)
-    except (ValueError, TypeError):
-        pass
-    return parse_literal(s)
 
 
 def parse_kwargs(args: str) -> dict:

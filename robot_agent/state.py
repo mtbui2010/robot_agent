@@ -19,11 +19,12 @@ Config layout (see runtime._resolve_layout)
 A robot's configs are split into:
 
   * ``common_dir``   — shared across all deployment sites AND all machines
-    using this configs folder: skills.json, buttons.json, guides.json (saved
+    using this configs folder: skills.json, buttons.json (saved
     as merges, see core/shared_json.py), plus per-machine files named after
     :func:`host_id`: ``active_location.<host>``, ``world_state.<host>.json``,
     ``task_runs/<host>/``, ``hosts/<host>.json`` (presence.py). Owned by
-    SkillRegistry + ButtonManager + GuideManager.
+    SkillRegistry + ButtonManager. (An old ``guides.json`` there is
+    never read: the direct planner's prompt is built from the robot, docs/direct_prompt.md.)
   * ``locations_dir/<location>`` — per-site config: connections.json (device
     endpoints), skill_configs_override.json (global config), .env (API keys).
     Owned by DeviceManager + ConfigManager. The active site can be switched at
@@ -44,7 +45,6 @@ from .core.skill_registry import SkillRegistry
 from .core.unified_agent import UnifiedAgent
 from .core.config_manager import ConfigManager
 from .core.button_manager import ButtonManager
-from .core.guide_manager import GuideManager
 from .core.planning.base import WorldState
 
 DEFAULT_LOCATION = 'default'
@@ -129,9 +129,6 @@ class AgentState:
         self.sr = SkillRegistry(data_dir=self.common_dir)
         self.cm = ConfigManager(data_dir=self.location_dir, robot_pkg=robot_pkg)
         self.bm = ButtonManager(data_dir=self.common_dir)
-        # Versioned planner guides (common_dir/guides.json); seeded from the
-        # robot's guide modules on first run.
-        self.guides = GuideManager(data_dir=self.common_dir, robot_pkg=robot_pkg)
         self.ua = UnifiedAgent(skill_registry=self.sr, device_manager=self.dm)
         # Symbolic world state that PERSISTS across plan runs (holding / arrived /
         # opened / on). The closed-loop driver reads & mutates this same object,

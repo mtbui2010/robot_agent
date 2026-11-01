@@ -193,7 +193,7 @@ otherwise healthy — failures don't disappear into stderr.
 | **Streaming** | `WS /ws/camera/{id}` · `WS /ws/agent` |
 | **Agent / LLM** | `POST /agent/llm-config` · `POST /agent/api-key` · `GET /agent/api-keys` |
 | **World state** | `GET /agent/world` · `PUT /agent/world` (partial edit of the persistent robot belief) |
-| **Planner guides** | `GET /guides` · `GET /guides/{name}` · `POST /guides` · `PUT /guides/{name}` · `DELETE /guides/{name}` · `POST /guides/{name}/activate` (versioned LLM guide) |
+| **Planner prompt** | `GET /planner/prompt?command=&planner=` (read-only: the direct planner's prompt for a command, built from the robot; docs/direct_prompt.md) |
 | **Site files** | `GET /config/locations/{name}/files/{path}` — images / JSON under the site folder (map layers); `{name}` = `_active` for the active site; `connections.json`, overrides and dot-files are refused |
 | **Quick buttons** | `GET /buttons` · `POST /buttons` · `PUT /buttons/{id}` · `DELETE /buttons/{id}` · `POST /buttons/reorder` · `POST /buttons/bulk` |
 | **Diagnostics** | `GET /diagnostics` · `GET /diagnostics/boot` |

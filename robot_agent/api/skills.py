@@ -149,7 +149,7 @@ def _update_skill(sr, name: str, body: SkillUpdate):
     new_name = (body.name or '').strip()
     if new_name and new_name != name:
         # Rename a plan skill; plan skills that call it are updated to the new
-        # name. Shortcut buttons and guides are free text and keep the old one.
+        # name. Shortcut buttons are free text and keep the old one.
         from ..core.plan_skill import plan_rename
         error, updates = plan_rename(sr, name, new_name)
         if error:

@@ -31,7 +31,7 @@ Full rule text and reasons: [docs/rules.md](docs/rules.md). Docs index: [docs/RE
 - [docs/dialog.md](docs/dialog.md): dialog, yes/no answers, typed refusals, understand sampling
 - [docs/planners.md](docs/planners.md): planner interface, plug-ins by module:Class / entry point
 - [docs/memory.md](docs/memory.md): planner memory (seed pool, recording, cleaning)
-- [docs/planner_guide.md](docs/planner_guide.md): Planner Guide (direct planner only), placeholders, prompts from the manifest
+- [docs/direct_prompt.md](docs/direct_prompt.md): the direct planner's prompt, built from the manifest, places, memory
 - [docs/verify.md](docs/verify.md): verification layers, VLM verify, sensor health, LLM-call budget
 - [docs/search.md](docs/search.md): object search with a belief
 - [docs/guard.md](docs/guard.md): precondition layers, reconcile with sensors, provenance

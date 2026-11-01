@@ -18,7 +18,7 @@ the run's events. `RunManager.on_finish` closes it. `run_control.manager()` inst
 | `context` | loop kind (`assist` / `closed` / `direct` / `open`), task, lang, the loop's resolved config, the LLM config without secrets, ENV, world, object memory |
 | `event` | every event published on the run (agent events and run-manager notices). Strings over 4 KB are replaced by `{_omitted, len, sha1}`. `say_audio` is dropped |
 | `user` | `run_input` / `run_refused`, with `user_id` and role |
-| `llm` | `source` (`robot_agent` / `embodiplan`), `request` (prompt, format, guide, or messages), `response`, `model`, `backend`, `seed`, `temperature`, `latency_ms`, `error`, `messages` |
+| `llm` | `source` (`robot_agent` / `embodiplan`), `request` (prompt, format, or messages; `guide` for `chat_guide` calls), `response`, `model`, `backend`, `seed`, `temperature`, `latency_ms`, `error`, `messages` |
 | `planner` | `generate_plan` / `replan` at the robot_agent boundary: inputs, steps, meta |
 | `skill` | skill, params, raw return, `result` (`SkillResult`: ok, code, msg), latency, depth (plan skills nest), the world before it |
 | `step` | a finished step: index, status, `world_before`, `world_after` |

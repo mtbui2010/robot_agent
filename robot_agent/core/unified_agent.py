@@ -388,32 +388,13 @@ class UnifiedAgent:
                 llm = init_llm_client(cfg=self.effective_llm_cfg())
 
                 from ..state import current
-                _pkg = current().robot_pkg
-                # Active versioned guide (UI-editable), else the robot's guide
-                # modules. `format` None → freeform; a JSON schema → structured.
-                from .guide_manager import resolve_guide
-                from .guide_manager import guide_command
-                with guide_command(prompt_en):      # {EXAMPLES}: the examples similar to this command
-                    _guide, _fmt = resolve_guide(_pkg)
-                try:
-                    if _fmt is not None:
-                        plan_raw = llm.chat(prompt=prompt_en, guide=_guide, format=_fmt)
-                    else:
-                        plan_raw = llm.chat_guide(prompt=prompt_en, guide=_guide, reuse=False)
-                except Exception:
-                    # Structured call failed (e.g. backend without JSON-schema
-                    # output) — retry freeform with the same guide text.
-                    plan_raw = llm.chat_guide(prompt=prompt_en, guide=_guide, reuse=False)
+                from .planning.direct_prompt import plan_answer
+                from .planning.robot import RobotView
+                # the direct planner's prompt, built from the robot (docs/direct_prompt.md); the
+                # llm_direct backend asks the same way
+                plan = plan_answer(llm, RobotView.load(current().robot_pkg), prompt_en)
 
-                emit({'event': 'plan_raw', 'plan': str(plan_raw)})
-
-                from .guide_manager import reconstruct_plan
-                from ..safe_parse import parse_plan_answer
-                try:
-                    plan_dict = parse_plan_answer(plan_raw)
-                    plan = reconstruct_plan(plan_dict)
-                except Exception:
-                    plan = str(plan_raw)
+                emit({'event': 'plan_raw', 'plan': plan})
 
                 emit({'event': 'plan', 'plan': plan})
 

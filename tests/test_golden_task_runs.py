@@ -1,7 +1,8 @@
 """Golden tests from recorded runs (tests/data/task_runs, a subset of kcare's 69
 ``configs/common/task_runs``). They replay what can be replayed without a robot:
 
-* the recorded LLM answer through ``LlmDirectBackend`` (plan string + PlanSteps),
+* the recorded LLM answer through ``LlmDirectBackend`` (plan string + PlanSteps; the prompt is
+  built from the robot now, the answers are what the old guides got),
 * ``ActionMapper.screen`` against the recorded warnings,
 * a symbolic replay of the recorded plan (``symbolic_check`` + ``to_skill`` +
   ``apply_effect`` from the recorded start world) against tests/data/golden/.
@@ -63,22 +64,23 @@ LLM_DIRECT = [p for p in RUNS if any((pl.get("plan_meta") or {}).get("raw") for 
 def test_llm_direct_replays_recorded_answer(path, monkeypatch):
     """The recorded answer fed back as the LLM's text gives the recorded plan and steps.
 
-    Covers the parse that used to be ``eval(str(plan_raw))``: a dict-shaped answer
-    without ``action_types`` stays the dict's text; a plain plan stays as written.
+    Covers the parse that used to be ``eval(str(plan_raw))``: a dict-shaped answer stays
+    the answer's text (never evaluated); a plain plan stays as written. The prompt is the
+    one the direct planner builds from the robot (core/planning/direct_prompt.py).
     """
     import robot_agent.connect.llm as llm_pkg
-    import robot_agent.core.guide_manager as gm
     from fakes import FakeLLM
     from robot_agent.core.planning.backends.llm_direct import LlmDirectBackend
 
     plan = next(pl for pl in _plans(path) if (pl.get("plan_meta") or {}).get("raw"))
     raw = plan["plan_meta"]["raw"]
-    monkeypatch.setattr(gm, "resolve_guide", lambda pkg: ("GUIDE {prompt}", None))
-    monkeypatch.setattr(llm_pkg, "init_llm_client", lambda cfg=None: FakeLLM(default=raw))
-    backend = LlmDirectBackend(llm_cfg={}, robot_pkg="fakebot")
+    llm = FakeLLM(default=raw)
+    monkeypatch.setattr(llm_pkg, "init_llm_client", lambda cfg=None: llm)
+    backend = LlmDirectBackend(llm_cfg={}, robot_pkg="fakebot", live_path="")
     got_steps, meta = backend.generate_plan("task", "", [])
     assert meta == {"raw": raw}
     assert got_steps == plan["steps"]
+    assert len(llm.calls) == 1 and llm.calls[0][0].endswith("Command: task\nProgram:\n")
 
 
 def _replay(path, mapper):

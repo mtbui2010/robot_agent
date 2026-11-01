@@ -8,6 +8,7 @@ Format (``<pkg>/configs/manifest.yaml``)::
     capabilities: {base: true, arms: 1, hands: [right], lift: true, head: true, drawer: true}
     geometry: {arrive_tol_m: 0.3, reach_m: 0.78}
     planner: {seed_memory: ../planner/seed_memory.jsonl}   # optional, paths relative to this file
+    #        notes: ["short line for the direct planner's prompt", ...]   # optional
     skills:
       - name: move
         action: MoveTo
@@ -37,7 +38,9 @@ from .types import VERIFY_KINDS, FailureCode, Geometry, SkillSpec, VerifySpec
 
 _TOP_KEYS = {"robot", "version", "language", "capabilities", "geometry", "planner", "skills"}
 # keys of the optional `planner:` section (planner data the robot ships)
-PLANNER_KEYS = {"seed_memory"}
+PLANNER_KEYS = {"seed_memory", "notes"}
+# planner.notes: short lines for the direct planner's prompt (docs/direct_prompt.md)
+NOTE_MAX_CHARS = 300
 _SKILL_KEYS = {"name", "action", "params", "pre", "hold", "effects", "verify", "interruptible", "errors", "version"}
 _ACTION_RE = re.compile(r"[A-Z][A-Za-z0-9]*$")
 # at(?obj) / holding(none) / not opened(?c) / !free(table) / hand_empty() / hand_empty / not found(*)
@@ -292,6 +295,16 @@ def _planner(v, errs) -> dict:
     sm = v.get("seed_memory")
     if sm is not None and (not isinstance(sm, str) or not sm.strip()):
         errs.append("planner.seed_memory: must be a file path (relative to the manifest)")
+    notes = v.get("notes")
+    if notes is not None:
+        if not isinstance(notes, list):
+            errs.append(f"planner.notes: must be a list of strings, got {type(notes).__name__}")
+        else:
+            for i, n in enumerate(notes):
+                if not isinstance(n, str) or not n.strip():
+                    errs.append(f"planner.notes[{i}]: must be a non-empty string")
+                elif len(n) > NOTE_MAX_CHARS:
+                    errs.append(f"planner.notes[{i}]: longer than {NOTE_MAX_CHARS} characters")
     return dict(v)
 
 

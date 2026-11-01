@@ -1,8 +1,8 @@
-"""Example plans similar to a command, for a planner guide's ``{EXAMPLES}`` (docs/planner_guide.md).
+"""Example plans similar to a command, for the direct planner's prompt (docs/direct_prompt.md).
 
 The pool is the robot's seed pool (manifest ``planner.seed_memory``) plus the verified episodes
 of the planner's live memory (``verified: true`` records, robot_agent's episode recording);
-ranking is embodiplan's ``MemoryRetriever`` (the one SAGE retrieves with), so the guide path
+ranking is embodiplan's ``MemoryRetriever`` (the one SAGE retrieves with), so the direct planner
 and SAGE see the same examples. embodiplan is imported here only (rule 3); without it the
 pool is ranked by word overlap.
 """
@@ -100,5 +100,5 @@ def similar_examples(command: str, seed_path: Optional[str] = None, live_path: O
     try:
         return rank(command, read_pool(seed_path, live_path, verified_only), k, leave_one_out)
     except Exception as e:                      # a broken memory file never stops planning
-        log.warning("guide examples: %s", e)
+        log.warning("direct prompt examples: %s", e)
         return []

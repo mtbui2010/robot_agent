@@ -1,13 +1,13 @@
 """The robot as a planner prompt describes it: its body and its plan actions, from the manifest.
 
-One generator for every planner (docs/planner_guide.md):
+One generator for every planner (docs/direct_prompt.md):
 
 * SAGE (``backends/pyplanner_grace.py``) gets :func:`action_lines` (``style="action"``:
   ``"MoveTo <place>: move to a place"``) and :func:`describe_robot` as embodiplan's
   ``SAGEPlanner(actions=..., robot_description=...)``;
-* the planner guide of the direct path (``core/guide_manager.py``) fills its ``{ROBOT}`` /
-  ``{ACTIONS}`` placeholders with :func:`describe_robot` and ``style="skill"`` lines
-  (``"- move::<inputs> (MoveTo): move to a place"``), the ``action::inputs`` words it plans in.
+* the direct planner's prompt (``core/planning/direct_prompt.py``) holds :func:`describe_robot`
+  and ``style="skill"`` lines (``"- move::<inputs> (MoveTo): move to a place"``), the
+  ``skill::inputs`` words it plans in.
 
 Nothing here names a robot: the words come from the manifest (``robot``, ``description``,
 ``capabilities``, the skills' ``action`` / ``params`` / ``description``).

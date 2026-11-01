@@ -78,7 +78,7 @@ def create_app(robot_pkg: str,
     from .api.buttons import router as buttons_router
     from .api.diagnostics import router as diagnostics_router
     from .api.locations import router as locations_router
-    from .api.guides import router as guides_router
+    from .api.planner import router as planner_router
     from .api.map import router as map_router
     from .api.events import router as events_router
 
@@ -129,7 +129,7 @@ def create_app(robot_pkg: str,
     app.include_router(camera_router,      prefix='')
     app.include_router(diagnostics_router, prefix='')
     app.include_router(locations_router,   prefix='')
-    app.include_router(guides_router,      prefix='')
+    app.include_router(planner_router,     prefix='')
     app.include_router(map_router,         prefix='')
     app.include_router(events_router,      prefix='')
 

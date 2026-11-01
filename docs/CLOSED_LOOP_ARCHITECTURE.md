@@ -104,9 +104,10 @@ optional (only `GraceBackend` ever imports it, lazily).
   filters kwargs to those `pyplanner.get("GRACE", …)` accepts, coerces the
   returned `PlanMetrics` to a plain dict, and exposes an optional
   `record_episode`.
-- **`backends/llm_direct.py`** — `LlmDirectBackend` reproduces the legacy
-  open-loop planning flow (`init_llm_client` → structured/freeform guide →
-  `recontruct_plan` → parse `action::inputs && …` into PlanStep dicts) behind
+- **`backends/llm_direct.py`** — `LlmDirectBackend`: one LLM call with the
+  prompt built from the robot (`core/planning/direct_prompt.py`, the same one the
+  open-loop path of `UnifiedAgent.run` sends; [direct_prompt.md](direct_prompt.md)),
+  then the `skill::inputs && …` answer parsed into PlanStep dicts, behind
   the same Protocol. `obs`/`visible_objects` are accepted but unused. It has no
   true suffix replan: `replan` re-runs a full `generate_plan` with the failure
   context appended to the task. LLM-client imports are lazy.
