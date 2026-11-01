@@ -7,9 +7,8 @@ import pytest
 from robot_agent.contract import FailureCode, Manifest, ManifestError, load_manifest
 
 FIXTURE = Path(__file__).parent / "fixtures" / "contract" / "manifest_kaair.yaml"
-# written by the kcare stream; checked when it is on disk
+# the kcare checkout next to this repo; checked when it is on disk
 KCARE_MANIFESTS = [
-    Path("/home/trung/trung_workdir/arch_wt/kcare_robot-hygiene-manifest/kcare_robot/configs/manifest.yaml"),
     Path(__file__).resolve().parents[2] / "kcare_robot" / "kcare_robot" / "configs" / "manifest.yaml",
 ]
 
@@ -137,7 +136,7 @@ def test_load_manifest_from_dir_and_file(tmp_path):
         load_manifest(tmp_path / "empty")
 
 
-@pytest.mark.parametrize("path", KCARE_MANIFESTS, ids=["hygiene-manifest-worktree", "sibling-kcare_robot"])
+@pytest.mark.parametrize("path", KCARE_MANIFESTS, ids=["sibling-kcare_robot"])
 def test_kcare_manifest_if_present(path):
     if not path.is_file():
         pytest.skip(f"{path} not written yet")

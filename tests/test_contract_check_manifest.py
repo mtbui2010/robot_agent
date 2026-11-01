@@ -7,8 +7,7 @@ import pytest
 
 from robot_agent.contract import check_manifest as cm
 
-KCARE_PKGS = [Path("/home/trung/trung_workdir/arch_wt/kcare_robot-hygiene-manifest"),
-              Path(__file__).resolve().parents[2] / "kcare_robot"]
+KCARE_PKGS = [Path(__file__).resolve().parents[2] / "kcare_robot"]
 
 SKILLS_CONFIG = """_PKG = 'toybot.skills'
 
@@ -112,7 +111,7 @@ def test_cli_exit_codes(tmp_path, capsys):
         cm.assert_manifest_matches(pkg, strict=True)
 
 
-@pytest.mark.parametrize("root", KCARE_PKGS, ids=["hygiene-manifest-worktree", "sibling-kcare_robot"])
+@pytest.mark.parametrize("root", KCARE_PKGS, ids=["sibling-kcare_robot"])
 def test_kcare_manifest_matches_its_skills(root):
     try:
         pkg = cm.resolve_pkg_dir(root)
