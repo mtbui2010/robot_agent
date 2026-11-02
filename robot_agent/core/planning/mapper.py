@@ -36,7 +36,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from . import action_model
+from . import action_model, concrete
 from .base import WorldState
 
 # GRACE param fields that name a location (vs. an object) for param building.
@@ -66,9 +66,10 @@ class ActionMapper:
         the skill table, and the action category sets.
     """
 
-    def __init__(self, namemap) -> None:
+    def __init__(self, namemap, registry=None) -> None:
         self.namemap = namemap
         self._adapter = namemap if callable(getattr(namemap, "bind", None)) else None
+        self._registry = registry           # skill registry: a concrete step's plan skills / aliases
 
     # ── helpers ──────────────────────────────────────────────────────────
     def _get(self, legacy: str, name: str, default):
@@ -94,6 +95,19 @@ class ActionMapper:
     def _object(step: dict) -> str:
         return (step.get("object") or "").strip()
 
+    def _concrete(self, step: dict) -> tuple[str, dict]:
+        """A step that names its skill call (the direct planner's): that call, checked against the
+        robot's skills (RobotView.knows_skill, else the namemap's / manifest's + the registry)."""
+        knows = getattr(self.namemap, "knows_skill", None)
+        if not callable(knows):
+            man = getattr(self.namemap, "manifest", None)
+            names = set(self._skill_map().values()) | {s.name for s in getattr(man, "skills", ()) or ()}
+            knows = lambda n: concrete.knows(n, names, self._registry)        # noqa: E731
+        try:
+            return concrete.bind(step, knows)
+        except concrete.Unbindable as e:
+            raise Unmappable(str(e)) from e
+
     # ── core API ─────────────────────────────────────────────────────────
     def to_skill(
         self, step: dict, world: WorldState
@@ -115,6 +129,8 @@ class ActionMapper:
             If ``action`` is not in ``SUPPORTED_ACTIONS`` or has no
             ``SKILL_MAP`` entry (``ACTION_MAPPER_SPEC.md`` sections 2 & 6).
         """
+        if concrete.is_concrete(step):
+            return self._concrete(step)
         action = self._action(step)
         if not action:
             raise Unmappable("step has no action")
@@ -189,7 +205,7 @@ class ActionMapper:
         warnings: list[str] = []
         for i, step in enumerate(steps):
             action = self._action(step)
-            if action in supported or action in noop:
+            if action in supported or action in noop or concrete.skill_only(step):
                 continue
             warnings.append(
                 f"step {i + 1}: unsupported action {action!r} on object "

@@ -79,8 +79,26 @@ def test_llm_direct_replays_recorded_answer(path, monkeypatch):
     backend = LlmDirectBackend(llm_cfg={}, robot_pkg="fakebot", live_path="")
     got_steps, meta = backend.generate_plan("task", "", [])
     assert meta == {"raw": raw}
-    assert got_steps == plan["steps"]
+    # the recorded steps (action = the skill name) in the richer shape of 2026-11-02: the abstract
+    # action of the skill, the call itself (skill + params) and the recorded object / reason
+    assert got_steps == [_richer(st) for st in plan["steps"]]
+    assert [s["skill"] for s in got_steps] == [st["action"] for st in plan["steps"]]
+    assert [(s["object"], s["reason"]) for s in got_steps] == [(st["object"], st["reason"]) for st in plan["steps"]]
     assert len(llm.calls) == 1 and llm.calls[0][0].endswith("Command: task\nProgram:\n")
+
+
+# fakebot's manifest skill -> its plan action (the reverse of its skill map)
+FAKEBOT_ACTIONS = {"move": "MoveTo", "find": "Find", "pick": "Pick", "place": "Place",
+                   "open_drawer": "Open", "close_drawer": "Close"}
+
+
+def _richer(st):
+    """A recorded llm_direct step as LlmDirectBackend parses it now (docs/direct_prompt.md)."""
+    action = FAKEBOT_ACTIONS.get(st["action"], "")
+    if action == "Place" and "drawer" in st["object"]:     # fakebot opens drawers; its PutIn is `place` too
+        action = "PutIn"
+    return {"action": action, "object": st["object"], "reason": st["reason"],
+            "skill": st["action"], "params": {"inputs": st["object"]}}
 
 
 def _replay(path, mapper):

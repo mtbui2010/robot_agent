@@ -54,7 +54,7 @@ from robot_agent.contract import FailureCode, Recovery, Unbindable, classify_leg
 from robot_agent.state import current, host_id
 from .loop import _DONE, _NEXT, _STOP, ClosedLoop, _vr_list, reconcile_world
 from .records import StepRecord, VerifyResult
-from . import action_model, episode_memory, goal_change
+from . import action_model, concrete, episode_memory, goal_change
 from . import search as search_belief
 from .search_hooks import SearchHooks
 from . import goals as goal_kinds
@@ -678,6 +678,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
 
     def _check_step(self, i, st, w, goals, c, placed_ok, P) -> bool:
         """The findings of step i in the simulated world `w`, worded for the planner. False: skip its effect."""
+        if concrete.skill_only(st):
+            return True                              # a skill call with no plan action: no rule, no effect
         a, o = st.get("action"), st.get("object") or ""
         vs, said = {v.code: v for v in action_model.check(st, w, **c["ctx"])}, set()
 
@@ -1246,7 +1248,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
         self._hook_progress(r.planner)
         yield from self._generate_and_certify(r)
         skill_map = r.robot.skill_map
-        plan_text = "\n".join(f"{skill_map.get(x['action'], x['action'])}::{x['object']}" for x in r.steps)
+        plan_text = "\n".join(f"{x.get('skill') or skill_map.get(x['action'], x['action'])}::{x['object']}" for x in r.steps)
         yield r.ev("plan", steps=r.steps, plan_meta=r.run.plan_meta, warnings=list(r.gate_findings),
                    plan_text=plan_text, certified=r.certified, world=r.world.to_dict())
         if isinstance(r.plan_error, LLMBudgetExceeded) or (r.plan_error is not None and not r.steps):
@@ -1342,7 +1344,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
         for i, st in enumerate(steps):
             a, o = st.get("action", ""), st.get("object") or ""
             if i >= start:
-                if a not in r.robot.plan_actions:
+                if a not in r.robot.plan_actions and not concrete.skill_only(st):
                     out.append(f"step {i + 1} '{a} {o}': the robot has no action {a}")
                 elif a in _LOC_ACTIONS and (not st.get("grounded", True) or o.startswith("@")):
                     out.append(f"step {i + 1} '{a} {o}': {o.lstrip('@')} is not a place the robot can go to")

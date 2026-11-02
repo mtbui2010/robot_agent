@@ -274,6 +274,7 @@ class ClosedLoop:
         self.robot_pkg: str = st.robot_pkg
         # the robot, through its adapter only (robot_agent.contract.load_adapter)
         self.robot = RobotView.load(self.robot_pkg)
+        self.robot.registry = self.sr       # a direct step's skill may be a plan skill / an alias
         # the namemap module behind a namemap-shim adapter (kept for callers that read it)
         self._namemap = getattr(self.robot.adapter, "namemap", None)
         self.cfg = self._resolve_cfg(overrides, st)

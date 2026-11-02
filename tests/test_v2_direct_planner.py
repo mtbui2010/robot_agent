@@ -44,7 +44,8 @@ def test_llm_direct_sends_the_built_prompt(monkeypatch, robot_view):
     prompt, fmt = llm.calls[0]
     assert fmt is None and prompt == dp.build_prompt(robot_view, "Bring the apple.")
     assert "- pick::<object> (Pick)" in prompt and "Notes:\n- Say where you put things." in prompt
-    assert [s["action"] for s in steps] == ["move", "find", "pick", "place"]
+    assert [s["action"] for s in steps] == ["MoveTo", "Find", "Pick", "Place"]       # the skills' actions
+    assert [s["skill"] for s in steps] == ["move", "find", "pick", "place"]            # the calls
     assert steps[2]["_parallel_group"] == steps[3]["_parallel_group"] == 0 and meta["raw"].startswith("move::")
     assert LlmDirectBackend.uses_direct_prompt is True
     b.replan("Bring the apple.", [], {"action": "pick", "object": "apple"}, "slipped", "", [])

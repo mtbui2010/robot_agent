@@ -13,7 +13,6 @@ environments without the provider SDKs installed.
 from __future__ import annotations
 
 from typing import Any, Optional
-from robot_agent.spoken import SpokenError, split_skill, split_value
 
 
 class LlmDirectBackend:
@@ -43,56 +42,44 @@ class LlmDirectBackend:
         kw = {} if self._live_path is None else {"live_path": self._live_path}
         return plan_answer(llm, self._robot(), task, **kw)
 
-    # ── parse `action::inputs && …` → list[PlanStep] ──────────────────
+    # ── parse `skill::inputs && …` → list[PlanStep] ───────────────────
     @staticmethod
-    def _parse_steps(plan: str) -> list[dict]:
-        """Convert the legacy plan string into canonical PlanStep dicts.
+    def _parse_steps(plan: str, actions: Optional[dict] = None) -> list[dict]:
+        """The program as PlanStep dicts, one per ``skill::inputs`` item (``concrete.parse_item``).
 
-        Lines are separated by '\\n'; items within a line by '&&' (a parallel
-        group). Each item is ``action::inputs``. We flatten parallel groups into
-        sequential steps, tagging each emitted step with ``_parallel_group`` so a
-        consumer that cares about concurrency can reconstruct it. The raw
-        ``action::inputs`` text is preserved in ``reason``.
+        Lines are separated by '\\n'; items within a line by '&&' (a parallel group), flattened into
+        sequential steps tagged ``_parallel_group``. Each step keeps the robot's call (``skill``,
+        ``params`` read as Structured mode reads them) and, from ``actions`` (``{skill: action}``,
+        ``concrete.skill_actions`` of the robot), the abstract ``action`` the world model, the
+        verifiers and the guard read (``""`` for a skill with no plan action). The raw item is in
+        ``reason``. Without ``actions`` the old shape (``action`` = the skill name) comes back.
         """
+        from robot_agent.core.planning.concrete import parse_item
         steps: list[dict] = []
         group_idx = 0
         for line in plan.replace("\\n", "\n").split("\n"):
             line = line.strip()
             if "::" not in line:
                 continue
-            items = [el for el in line.split("&&") if len(el.split("::")) == 2]
+            items = [st for st in (parse_item(el, actions) for el in line.split("&&")) if st is not None]
             if not items:
                 continue
-            parallel = len(items) > 1
-            for el in items:
-                action, inputs = (p.strip() for p in el.split("::", 1))
-                # 이동->move::식탁 앞->table_top: the mapper, verifier and world
-                # state work with the real names; the spoken ones go in "say"
-                # for the narration. A k=v argument list is left whole (the
-                # skill registry splits its values).
-                say: dict[str, str] = {}
-                try:
-                    said, action = split_skill(action)
-                    if said:
-                        say["action"] = said
-                    if "=" not in inputs and "->" in inputs:
-                        said, inputs = split_value(inputs)
-                        say["object"] = said.split(">>")[0]
-                except SpokenError:
-                    pass                    # left as written; the skill call reports it
-                step: dict[str, Any] = {
-                    "action": action,
-                    "object": inputs,
-                    "reason": el.strip(),
-                }
-                if say:
-                    step["say"] = say
-                if parallel:
+            for step in items:
+                if len(items) > 1:
                     step["_parallel_group"] = group_idx
                 steps.append(step)
-            if parallel:
+            if len(items) > 1:
                 group_idx += 1
         return steps
+
+    def _steps(self, plan: str) -> list[dict]:
+        from robot_agent.core.planning.concrete import into_containers, skill_actions
+        view = self._robot()
+        try:
+            from robot_agent.skill_configs import ENV as env
+        except Exception:
+            env = {}
+        return into_containers(self._parse_steps(plan, skill_actions(view)), view, env)
 
     # ── Planner interface ─────────────────────────────────────────────
     def generate_plan(
@@ -104,8 +91,7 @@ class LlmDirectBackend:
         # obs / visible_objects are unused: the direct planner plans from the command and the
         # robot's prompt (manifest, places, examples). They are accepted to satisfy the interface.
         plan = self._plan_string(task)
-        steps = self._parse_steps(plan)
-        return steps, {"raw": plan}
+        return self._steps(plan), {"raw": plan}
 
     def replan(
         self,
@@ -119,7 +105,9 @@ class LlmDirectBackend:
         # NOTE: the direct-LLM flow has no true local/suffix replan. We naively
         # re-run a full generate_plan with the failure context appended to the
         # task and let the LLM re-plan from scratch.
-        fs = f"{failed_step.get('action', '')} {failed_step.get('object', '')}".strip()
+        # the failed step as the program wrote it (``pick::apple``), else its action and object
+        fs = (failed_step.get("reason") if failed_step.get("skill") else "") or \
+            f"{failed_step.get('action', '')} {failed_step.get('object', '')}".strip()
         augmented = (
             f"{task}\n"
             f"(The previous attempt failed at step '{fs}': {failure_reason}. "

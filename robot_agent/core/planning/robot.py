@@ -15,7 +15,7 @@ from typing import Any, Optional
 
 from robot_agent.contract import (FailureCode, Geometry, Messages, SkillResult, SkillSpec, Unbindable,
                                   VerifySpec, classify_legacy_failure, load_adapter, policy_for)
-from . import action_model
+from . import action_model, concrete
 
 # what the core says when the robot's i18n has no phrase for a key (English, {placeholders})
 CORE_TEXT = {
@@ -54,6 +54,7 @@ class RobotView:
         self.geometry: Geometry = getattr(adapter, "geometry", None) or self.manifest.geometry_obj()
         self.i18n: Messages = getattr(adapter, "i18n", None) or Messages(language=self.manifest.language or "en")
         self.policy = policy_for(adapter)
+        self.registry: Any = None               # the skill registry (loops set it): plan skills, aliases
 
     @classmethod
     def load(cls, robot_pkg: str) -> "RobotView":
@@ -96,8 +97,18 @@ class RobotView:
         return True if s is None else bool(s.interruptible)
 
     def bind(self, step: dict, world: Any = None) -> Optional[tuple]:
-        """``(skill, params)`` for a plan step, None for a no-op; raises Unbindable."""
+        """``(skill, params)`` for a plan step, None for a no-op; raises Unbindable. A step that
+        names its skill call (``skill`` + ``params``, the direct planner's) is that call, checked
+        against the robot's skills (``concrete.bind``); any other step binds through the adapter."""
+        if concrete.is_concrete(step):
+            return concrete.bind(step, self.knows_skill, robot=self.manifest.robot)
         return self.adapter.bind(step, world)
+
+    def knows_skill(self, name: str) -> bool:
+        """Is ``name`` a skill of this robot: a manifest / skill-map skill, else one the skill
+        registry (``self.registry``) resolves (plan skills, aliases)."""
+        names = {s.name for s in self.manifest.skills} | set(self.skill_map.values())
+        return concrete.knows(name, names, self.registry)
 
     def name_for(self, action: str, obj: str) -> str:
         """The robot's own name of a step's argument (for announcements)."""
