@@ -50,6 +50,39 @@ The template names no robot; every robot word comes from its manifest, ENV and m
 To change what the direct planner sees, change the robot: `planner.notes`, skill `description:`s, the
 ENV aliases, or the seed pool (`kcare_robot/planner/seed_memory.jsonl`, checked by its tests).
 
+## Steps and binding
+
+`LlmDirectBackend._parse_steps` (`concrete.parse_item` per item) turns each `skill::inputs` item of the
+answer into one step that keeps the robot's call and carries its abstract action:
+
+```python
+{"action": "MoveTo", "object": "drawer@kitchen", "reason": "move::drawer@kitchen",
+ "skill": "move", "params": {"inputs": "drawer@kitchen"}}
+```
+
+| key | |
+|---|---|
+| `skill` | the robot's skill name as written (spoken `이동->move`: the real side; `say` keeps the said one) |
+| `params` | the arguments read exactly as Structured mode reads them (`plan_skill.parse_inputs`): no `=` -> `{"inputs": ...}`, else `k=v` |
+| `action` | the manifest action of that skill (`concrete.skill_actions`: the reverse of `skill_map`, plan actions only); `place` into something the robot opens is `PutIn` when the robot's PutIn is the same skill; `""` for a skill with no plan action (`lift::height=0.5`, `announce::...`, a plan skill, an alias, `ask`) |
+| `object` | the place / object the action model reads (the `inputs` value for `k=v` arguments) |
+| `flags` | a leading `!` / `~` / `%` as written (recorded; the closed loops verify every step as usual) |
+| `params_error` | arguments that could not be read (`loc=식탁->table` without quotes): binding fails with it |
+| `_parallel_group` | items joined by `&&`, flattened in order |
+
+Binding (`concrete.bind`, called first by `RobotView.bind` and `ActionMapper.to_skill`): a step with
+`skill` is `(skill, params)` as written, after checking that the skill is one of the robot's (manifest,
+skill map, else `RobotView.registry`, the loop's skill registry: plan skills and aliases); an unknown one
+raises `Unbindable` / `Unmappable` (`no skill 'fly' on robot 'kaair'`), so ClosedLoop's gate refuses
+the plan before any motion. A step without `skill` (grace, SAGE) binds through the adapter exactly as
+before. A skill-only step (`action: ""`) has no symbolic effect: the action model applies nothing,
+`symbolic_check` and `ActionMapper.screen` pass it, and AssistLoop's checker skips it.
+`replan` parses its answer the same way; its prompt names the failed step as written (`pick::apple`).
+
+Until 2026-11-02 the steps carried the skill name as `action` (`{"action": "move"}`), and ClosedLoop
+(dashboard `direct`) failed every step with "no skill for action 'move'". The open-loop path of
+`UnifiedAgent.run` and Structured mode (`run_direct`) never used these steps and are unchanged.
+
 ## Preview
 
 `GET /planner/prompt?command=...[&planner=...]` (read-only, `api/planner.py`) returns
@@ -94,4 +127,5 @@ structured (`format`) branch of the direct planner, and robotapp's Planner Guide
 `common/guides.json` left on a robot is never read. KAAIR's plan answers change with this: see the
 CHANGELOG for how to compare and what to adjust.
 
-Tests: `tests/test_v2_direct_*.py`, scenarios DP01-DP08 (`scenarios/tests/test_t1_v2_direct.py`).
+Tests: `tests/test_v2_direct_*.py`, `tests/test_v2_directfix_*.py`; scenarios DP01-DP08
+(`scenarios/tests/test_t1_v2_direct.py`), DF01-DF07 (`scenarios/tests/test_t1_v2_directfix.py`).

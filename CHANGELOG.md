@@ -5,6 +5,14 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+### Direct planner steps run in the closed loops (docs/direct_prompt.md "Steps and binding")
+- `llm_direct` steps keep the robot's call (`skill`, `params` read as Structured mode reads them, `flags`)
+  and carry the skill's manifest action (`move` -> `MoveTo`; `""` for a skill with no plan action). Binding
+  honours the call in one place, `core/planning/concrete.py` (`RobotView.bind`, `ActionMapper.to_skill`),
+  after checking the skill exists (`RobotView.registry`: plan skills, aliases); grace / SAGE steps bind
+  as before. Fixes ClosedLoop with planner `direct` (and SAGE with generator `llm_direct`) failing every
+  step with "no skill for action 'move'". `ActionMapper(namemap, registry=None)`; `RobotView.knows_skill`.
+
 ### Direct planner prompt (docs/direct_prompt.md) — Planner Guide removed
 - The direct planner (`llm_direct`, dashboard `direct`, and the open-loop path of `UnifiedAgent.run`) builds
   its prompt by code each time it plans (`core/planning/direct_prompt.py`): `describe_robot`, the skill

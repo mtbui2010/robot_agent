@@ -23,6 +23,14 @@ may be the words a person uses, the core grounds them to the robot's places. `me
 (`method`, timings, ...); it is shown as `plan_meta` on the `plan` event. `replan` returns the suffix
 that replaces the failed step and everything after it.
 
+A step MAY also name the robot's own call: `"skill": "move", "params": {"inputs": "kitchen"}` (what
+`llm_direct` gives, one per `skill::inputs` line). Binding then runs that call as written, after
+checking that `skill` is one of the robot's skills (manifest, skill map, or the skill registry: plan
+skills, aliases); a step without `skill` binds through the robot's adapter as before. `action` stays the
+abstract action of that skill (the world model, verifiers, guard and memory read it), or `""` for a skill
+with no plan action (no symbolic effect, no symbolic check). See
+[direct_prompt.md](direct_prompt.md#steps-and-binding) and `core/planning/concrete.py`.
+
 What the planner reads in `obs` (plain text):
 
 | line | loop | meaning |
