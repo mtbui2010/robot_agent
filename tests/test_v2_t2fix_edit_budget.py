@@ -37,6 +37,10 @@ def gate(evs, k):
     return next((e for e in evs if e["event"] == "gate" and e.get("round") == k), {})
 
 
+def last_gate(evs):
+    return [e for e in evs if e["event"] == "gate"][-1]
+
+
 def test_blocks_after_the_goals_are_emptied_without_a_call(make_assist, env):
     """The task done in block 1, the same task repeated in 8 more blocks: no edit call, the plan is block 1."""
     blocks = [Block("put the apple", GOOD)] + [Block(f"again {k}", AGAIN) for k in range(8)]
@@ -47,8 +51,11 @@ def test_blocks_after_the_goals_are_emptied_without_a_call(make_assist, env):
                    "Put the apple on the dining table.")
     assert done(evs)["status"] == "success", done(evs)
     assert planner.edits == []
-    assert gate(evs, 1)["plan"] == [f"{s['action']} {s['object']}" for s in GOOD]
-    assert sum("emptied" in n for n in gate(evs, 1)["edits"]) == 8
+    assert last_gate(evs)["plan"] == [f"{s['action']} {s['object']}" for s in GOOD]
+    # SAGE-v2: the gate's symbolic repair (plan_repair dedupe) or the sub-goal repair empties the repeats,
+    # without a call either way
+    notes = (gate(evs, "symbolic").get("edits") or []) + (gate(evs, 1).get("edits") or [])
+    assert sum("emptied" in n or "(dedupe)" in n for n in notes) >= 1
 
 
 def test_plan_tidy_removes_the_repeats_before_the_gate(make_assist, env):

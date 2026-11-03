@@ -58,7 +58,7 @@ from . import action_model, concrete, episode_memory, goal_change
 from . import search as search_belief
 from .search_hooks import SearchHooks
 from . import goals as goal_kinds
-from . import goal_filter, plan_tidy
+from . import goal_filter, goal_fix, plan_tidy
 from . import reconcile as sensed
 from .robot import run_skill
 from .verify import symbolic_check, verdict
@@ -353,9 +353,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
             # the core default (budget.DEFAULT_LLM_BUDGET)
             "llm_budget": int(overrides.get("llm_budget", env("ROBOT_AGENT_LLM_BUDGET", str(
                 self._manifest_planner("llm_budget", DEFAULT_LLM_BUDGET))))),
-            # the planner's sub-goals: one per understood goal ("goals", no decompose call) or the planner's own
-            # decomposition ("model", SAGE before v2)
-            "sage_subgoals": str(overrides.get("sage_subgoals", env("ROBOT_AGENT_SAGE_SUBGOALS", "goals"))),
+
             "goal_readback": overrides.get("goal_readback", env("ROBOT_AGENT_GOAL_READBACK", "1") == "1"),
             # understand sampling (docs/dialog.md): temperature 0 + a fixed seed, so the same sentence gives the
             # same goals; the consistency re-samples need some spread (their seeds: seed + 1, seed + 2 ...)
@@ -381,6 +379,18 @@ class AssistLoop(SearchHooks, ClosedLoop):
             "generator": self.cfg["planner"],
             "planner": "sage",
         })
+        self.cfg.update(self._v2_cfg(overrides))
+
+    def _v2_cfg(self, overrides) -> dict:
+        """The SAGE-v2 options (docs/env.md): run option > environment > the robot's manifest > default."""
+        env = os.environ.get
+        return {
+            # the planner's sub-goals: one per understood goal ("goals", no decompose call) or the planner's own
+            # decomposition ("model", SAGE before v2)
+            "sage_subgoals": str(overrides.get("sage_subgoals", env("ROBOT_AGENT_SAGE_SUBGOALS", "goals"))),
+            # plan_repair operator 6 (the gate writes a missing goal's segment): off; a separate ablation row
+            "gate_complete": str(overrides.get("gate_complete", env("ROBOT_AGENT_GATE_COMPLETE", "0"))),
+        }
 
     def _manifest_planner(self, key, default=None):
         """The robot's manifest ``planner.<key>`` (robot-pack planner data), else ``default``."""
@@ -1130,9 +1140,16 @@ class AssistLoop(SearchHooks, ClosedLoop):
         words_ = " ".join([r.task, self.original or ""] + answers)
         on = self.cfg["goal_filter"]                                        # goals not asked for (goal_filter.py)
         raw, r.filtered = goal_filter.before_grounding(u["goals"], r.task) if on else (u["goals"], [])
+        raw, empty = goal_fix.drop_empty(raw)                                # F3.4: no "put the ?" questions
+        r.filtered += empty
         goals, q = self._ground_goals(raw, r.places, r.memory, words_, latest=answers[-1] if answers else "")
         goals, more = goal_filter.after_grounding(goals, " ".join([r.task] + answers), r.places) if on else (goals, [])
         r.filtered += more
+        goals, _kinds = goal_fix.kind_from_destination(goals, words_, r.places, "PutIn" in self.robot.plan_actions)
+        goals, invented = goal_fix.drop_invented(goals, words_, r.places)    # F4.4
+        r.filtered += invented
+        if not goals and empty and not q:
+            q = "What should I bring?"
         return goals, q
 
     def _issues(self, r, goals) -> list:
@@ -1318,21 +1335,32 @@ class AssistLoop(SearchHooks, ClosedLoop):
         yield r.ev("gate", round=0, problems=[p_[1] for p_ in probs], plan=[f"{x['action']} {x['object']}" for x in r.steps],
                    **({"tidied": tidied} if tidied else {}))
         edits = []
+        if self._blocking(r, r.steps) and not r.compiled and r.plan_error is None:
+            edits += self._gate_repair(r)                         # symbolic repair first (plan_repair.py)
+            probs = self._check(r.steps, r.world, r.places, r.goals)
+            yield r.ev("gate", round="symbolic", edits=list(edits), problems=[p_[1] for p_ in probs],
+                       plan=[f"{x['action']} {x['object']}" for x in r.steps])
         if any(p_[2] for p_ in probs) and not r.compiled:
             # the planner's sub-goal-local repair with the checker's findings (SubgoalRepair, if it has it)
             try:
-                edited, edits = self._repair_plan(r.planner, r.restated, self._obs(r), lambda s: self._ground_all(r, s),
-                                                  r.world, r.places, r.goals, r.goal_txt, budget=r.llm_budget)
+                edited, llm_edits = self._repair_plan(r.planner, r.restated, self._obs(r), lambda s: self._ground_all(r, s),
+                                                      r.world, r.places, r.goals, r.goal_txt, budget=r.llm_budget)
             except LLMBudgetExceeded as e:
-                edited, r.plan_error = None, e
+                edited, llm_edits, r.plan_error = None, [], e
+            edits += llm_edits
+            # block edits that were LLM calls (an emptied block is the core's)
+            r.block_edits = sum(1 for n in llm_edits if str(n).startswith("sub-goal ") and "emptied" not in str(n))
             if edited is not None:
                 r.steps, more = self._tidy(r, edited)
                 edits += more
+                if self._blocking(r, r.steps):
+                    edits += self._gate_repair(r)                 # the LLM's edits, repaired again
             probs = self._check(r.steps, r.world, r.places, r.goals)
             yield r.ev("gate", round=1, edits=edits, problems=[p_[1] for p_ in probs],
                        plan=[f"{x['action']} {x['object']}" for x in r.steps])
         blocking = self._blocking(r, r.steps)
-        if blocking and r.steps and not r.compiled and r.plan_error is None:
+        if blocking and r.steps and not r.compiled and r.plan_error is None and not getattr(r, "block_edits", 0):
+            # a planner whose sub-goal blocks were edited already (and repaired symbolically) gets no fresh plan
             # still critical after the planner's repair (or it has none): one fresh plan with the findings,
             # certified again
             r.steps = self._tidy(r, self._refine_plan(r, blocking))[0]
@@ -1340,7 +1368,9 @@ class AssistLoop(SearchHooks, ClosedLoop):
             yield r.ev("gate", round=2, problems=blocking, plan=[f"{x['action']} {x['object']}" for x in r.steps])
         r.certified, r.gate_findings = not blocking, blocking
         r.run.plan_meta = dict(meta or {}, plan_sec=round(time.time() - t_plan, 2), llm_plan=self._ground_all(r, raw),
-                               edits=edits, certified=r.certified, gate_findings=blocking)
+                               edits=edits, certified=r.certified, gate_findings=blocking,
+                               repaired_by_op=dict(getattr(r, "repaired_by_op", {})),
+                               completed_by_gate=getattr(r, "repaired_by_op", {}).get("completed_by_gate", 0))
 
     def _plan_call(self, r, name, *args, what="plan", subgoals=None):
         """``r.planner.<name>(*args)`` under the run's LLM-call budget, counting the planner's REAL calls: a
@@ -1370,6 +1400,41 @@ class AssistLoop(SearchHooks, ClosedLoop):
         if self.cfg.get("sage_subgoals", "goals") != "goals" or not r.goals:
             return None
         return [goal_kinds.subgoal_text(g, r.places) for g in r.goals]
+
+    @staticmethod
+    def _has_blocks(r) -> bool:
+        from .base import subgoal_repair
+        rep = subgoal_repair(r.planner)
+        try:
+            return bool(rep is not None and rep.blocks())
+        except Exception:
+            return False
+
+    def _gate_repair(self, r) -> list:
+        """The gate's symbolic repair of r.steps (plan_repair.py): operators proved by the checker, on the
+        planner's sub-goal blocks when it has them. Returns the edit notes; counts go to r.repaired_by_op."""
+        from . import plan_repair
+        from .base import subgoal_repair
+        rep = subgoal_repair(r.planner)
+        try:
+            blocks = rep.blocks() if rep is not None else None
+        except Exception:
+            blocks = None
+        caps = self.robot.model_capabilities()
+        ground = lambda s: self._ground_all(r, s)                                        # noqa: E731
+        score = lambda s: len(self._blocking(r, self._tidy(r, ground(s))[0]))           # noqa: E731
+        steps, notes, counts = plan_repair.repair(
+            r.steps, score, r.world, r.places, r.goals, caps=caps, actions=self.robot.plan_actions,
+            release=sorted(caps.release_actions), hand_goal=lambda g: bool(g.get("hand")),
+            blocks=blocks or None, join=rep.join_blocks if blocks else None, ground=ground,
+            complete=str(self.cfg.get("gate_complete", "0")) in ("1", "true", "True"), reached=self._reaches)
+        acc = r.__dict__.setdefault("repaired_by_op", {})
+        for k, v in counts.items():
+            acc[k] = acc.get(k, 0) + v
+        if notes:
+            new = ground(rep.join_blocks(blocks)) if blocks else steps
+            r.steps = self._tidy(r, new)[0]
+        return notes
 
     def _tidy(self, r, steps) -> tuple:
         """plan_tidy.tidy of `steps` on the belief now: (steps, notes); `plan_tidy` off: unchanged."""
