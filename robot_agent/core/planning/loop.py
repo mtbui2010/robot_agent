@@ -409,8 +409,8 @@ class ClosedLoop:
         lines = []
         w = world.copy()
         for st in steps:
-            action = (st.get("action") or "").strip()
-            obj = (st.get("object") or "").strip()
+            action = str(st.get("action") or "").strip()
+            obj = str(st.get("object") or "").strip()
             try:
                 mapped = mapper.to_skill(st, w)
                 if mapped is None:                       # no-op action

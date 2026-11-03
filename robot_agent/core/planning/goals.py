@@ -168,9 +168,17 @@ def compile_steps(goals: list, at: Optional[str], delivery_text: str = "", can_s
     return out
 
 
-def reached(g: dict, steps: list, at: Optional[str]) -> bool:
-    """Does running `steps` from `at` reach the template goal `g`?"""
+def reached(g: dict, steps: list, at: Optional[str], last: bool = False) -> bool:
+    """Does running `steps` from `at` reach the template goal `g`? A ``go`` goal that is the ``last`` goal is
+    judged where the steps END ("go back and charge": the robot must be at the dock afterwards; a robot that
+    started there and left has not reached it, one that never left has); an earlier ``go`` is reached by a
+    MoveTo there in the steps, or by starting there."""
     t, here = g.get("type"), at
+    if t == "go" and last:
+        for st in steps:
+            if st.get("action") == "MoveTo":
+                here = str(st.get("object") or "")
+        return bool(g.get("to")) and here == g.get("to")
     if t == "go" and here == g.get("to"):
         return True                                   # already there
     for st in steps:

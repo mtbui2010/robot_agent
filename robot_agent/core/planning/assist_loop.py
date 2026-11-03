@@ -425,7 +425,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
             g["object"] = (str(g.get("object") or "").strip() if g.get("type") == "say"
                            else _strip_article(words(g.get("object"))))
             for k in ("from", "to"):
-                g[k] = (g.get(k) or "").strip()
+                g[k] = str(g.get(k) or "").strip()
         d["goals"] = goal_kinds.speaker_slots(d["goals"])     # "me" only as a destination (FROM_ME)
         return d
 
@@ -631,8 +631,9 @@ class AssistLoop(SearchHooks, ClosedLoop):
     # ── plan grounding + gate ──────────────────────────────────────────────
     def _ground_step(self, st, places, goals, task):
         st = dict(st)
-        a = st.get("action", "")
-        o = st.get("object") or st.get("target") or ""
+        a = str(st.get("action") or "")
+        o = str(st.get("object") or st.get("target") or "")
+        st["action"] = a
         if a in _LOC_ACTIONS:
             hint = " ".join([task] + [g.get("to", "") + " " + g.get("from", "") for g in goals])
             c = places.candidates(o, hint)
@@ -664,16 +665,21 @@ class AssistLoop(SearchHooks, ClosedLoop):
                          openable=places.openable, containers=places.openable,
                          object_places={o: f for o, f in src_of.items() if f})}
         w, placed_ok = world.copy(), {}
+        c["opened_by_plan"] = set()
         for i, st in enumerate(steps):
             if self._check_step(i, st, w, goals, c, placed_ok, P):
-                action_model.apply(st, w, inplace=True)
+                if st.get("action") == "Open" and st.get("object") not in w.opened:
+                    c["opened_by_plan"].add(st.get("object"))
+                action_model.apply(st, w, inplace=True, capabilities=c["ctx"]["capabilities"])
         missing = self._missing(steps, world, goals)
         if missing:
             P(len(steps), "the plan does not achieve: " + "; ".join(missing))
         else:
             for k in range(len(steps)):
                 if self._reaches(steps[:k], world, goals):
-                    P(k, f"the goals are done after step {k}; remove the steps after it (do not repeat the task)"); break
+                    if not plan_tidy.closes_only(steps[:k], steps[k:], world):
+                        P(k, f"the goals are done after step {k}; remove the steps after it (do not repeat the task)")
+                    break
         return probs
 
     def _check_step(self, i, st, w, goals, c, placed_ok, P) -> bool:
@@ -713,7 +719,11 @@ class AssistLoop(SearchHooks, ClosedLoop):
                 P(i, f"step {i + 1} '{a} {o}': {nice(o)} cannot be opened or closed")
                 return False
             if o not in (c["need_open"] if a == "Open" else c["need_close"]) and o not in src_of.values():
-                P(i, f"step {i + 1} '{a} {o}': no goal needs it; remove it")
+                # closing what the plan itself opened is the expected default (a goal that needs it open at
+                # the end is a finding of _missing), never critical
+                P(i, f"step {i + 1} '{a} {o}': no goal needs it; remove it",
+                  not (a == "Close" and o in c.get("opened_by_plan", ())
+                       and not any(g["type"] == "open" and g["object"] == o for g in goals)))
             if has("hand_full"):
                 P(i, f"step {i + 1} '{a} {o}': the robot cannot {a.lower()} it while holding the {holding}; do it before the Pick")
             if has("interact_without_find"):
@@ -797,7 +807,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
                 out.append(f"Open {g['object']}")
             elif t == "close" and g["object"] in opened:
                 out.append(f"Close {g['object']}")
-            elif t in goal_kinds.TEMPLATE_KINDS and not goal_kinds.reached(g, steps, world.arrived):
+            elif t in goal_kinds.TEMPLATE_KINDS and not goal_kinds.reached(g, steps, world.arrived,
+                                                                           last=g is goals[-1]):
                 out.append(goal_kinds.summary(g))
         return out
 
@@ -824,7 +835,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
                 return False
             if t == "close" and g["object"] in opened:
                 return False
-            if t in goal_kinds.TEMPLATE_KINDS and not goal_kinds.reached(g, steps, world.arrived):
+            if t in goal_kinds.TEMPLATE_KINDS and not goal_kinds.reached(g, steps, world.arrived,
+                                                                         last=g is goals[-1]):
                 return False
         return bool(goals) or bool(steps)
 
@@ -833,7 +845,11 @@ class AssistLoop(SearchHooks, ClosedLoop):
         deliver goals reached by the steps `done` from `at` (the run's start)."""
         for g in goals:
             t = g["type"]
-            if t in goal_kinds.TEMPLATE_KINDS and not goal_kinds.reached(g, list(done), at):
+            if t == "go" and g is goals[-1]:
+                # the last go goal holds where the robot is now, not where it once passed (or started)
+                if world.arrived != g.get("to"):
+                    return False
+            elif t in goal_kinds.TEMPLATE_KINDS and not goal_kinds.reached(g, list(done), at):
                 return False
             if t in ("on", "in") and (placed.get(g["object"]) != g["to"] or world.holding == g["object"]):
                 return False
@@ -1917,7 +1933,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
         for f in r.failures:
             if f["sig"] == (a, o):
                 f["recovered"] = True                    # the step that failed before has now succeeded
-        if r.i < len(r.steps) and self._goals_hold(r.goals, r.world, r.placed, r.completed, r.world_at_start.arrived):
+        if (r.i < len(r.steps) and self._goals_hold(r.goals, r.world, r.placed, r.completed, r.world_at_start.arrived)
+                and not plan_tidy.closes_only(r.completed, r.steps[r.i:], r.world_at_start)):
             # the user's goals are met: end the task here rather than run what is left of the plan (the
             # goals are then looked at, _plan_ended)
             yield r.ev("status", msg=f"goals reached; {len(r.steps) - r.i} remaining plan steps not run")

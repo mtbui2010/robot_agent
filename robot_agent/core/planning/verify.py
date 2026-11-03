@@ -75,7 +75,7 @@ def effects_check(step: dict, world: "WorldState", effects=(), *, params: Option
     ``?<main>`` binds to the step's object (a Pick without one: the found object), any other
     ``?x`` to the skill param ``x``.
     """
-    obj = (step.get("object") or "").strip() or (world.found if step.get("action") == "Pick" else "") or ""
+    obj = str(step.get("object") or "").strip() or (world.found if step.get("action") == "Pick" else "") or ""
     after = action_model.apply(step, world)
 
     def bind(arg):

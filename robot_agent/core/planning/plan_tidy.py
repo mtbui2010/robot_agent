@@ -42,6 +42,28 @@ def _noop(st: dict, w, ctx: dict) -> bool:
     return bool(codes) and codes <= _NOOP and (st.get("action") != "Open" or "already_open" in codes)
 
 
+def closes_only(head: list, tail: list, world=None) -> bool:
+    """Is ``tail`` only the robot closing what ``head`` opened (a MoveTo to such a container right before its
+    Close included)? Closing a door the plan itself opened is the expected default after the goals, not a
+    repeat of the task (SAGE-v2 F0.4)."""
+    if not tail:
+        return False
+    opened = set()
+    for st in head:
+        if st.get("action") == "Open" and st.get("object") not in set(getattr(world, "opened", ()) or ()):
+            opened.add(st.get("object"))
+        elif st.get("action") == "Close":
+            opened.discard(st.get("object"))
+    for i, st in enumerate(tail):
+        a, o = st.get("action"), st.get("object")
+        nxt = tail[i + 1] if i + 1 < len(tail) else {}
+        if a == "Close" and o in opened:
+            opened.discard(o)
+        elif not (a == "MoveTo" and nxt.get("action") == "Close" and nxt.get("object") == o and o in opened):
+            return False
+    return True
+
+
 def tidy(steps: list, world, goals: list, reaches: Callable, ctx: dict) -> tuple:
     """(steps without the provable no-ops, [notes]). ``world``: the belief the plan starts from (not
     changed); ``reaches(steps, world, goals)``: do these steps reach the goals; ``ctx``: the
@@ -56,10 +78,10 @@ def tidy(steps: list, world, goals: list, reaches: Callable, ctx: dict) -> tuple
         action_model.apply(st, w, inplace=True)
     if goals and out:
         k = next((k for k in range(1, len(out)) if reaches(out[:k], world, goals)), None)
-        if k is not None:
+        if k is not None and not closes_only(out[:k], out[k:], world):
             notes.append(f"the goals are reached after {k} steps: the {len(out) - k} steps after them removed")
             out = out[:k]
     return out, notes
 
 
-__all__ = ["tidy"]
+__all__ = ["tidy", "closes_only"]
