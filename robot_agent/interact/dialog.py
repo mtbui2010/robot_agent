@@ -97,7 +97,10 @@ def ask_heard(run, question: str, io: Callable[[str], str], silence_retries: int
     n = 0
     for k in range(1 + max(0, int(silence_retries))):
         n += 1
-        ans = ask(run, question if k == 0 else again.format(q=question), io)
+        # a robot phrase (planning.speech.LocalText) is asked again as a phrase, so it is said in the user's language
+        q = question if k == 0 else (question.again() if callable(getattr(question, "again", None))
+                                     else again.format(q=question))
+        ans = ask(run, q, io)
         if ans or (run is not None and run.cancel_requested) or (cancelled is not None and cancelled()):
             return ans, n
     return Answer(), n

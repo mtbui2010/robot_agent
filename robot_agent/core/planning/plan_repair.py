@@ -11,7 +11,7 @@ makes a plan worse, and every kept edit is a note.
    the run that fetched X (MoveTo / Find / Pick of X); a Close C while holding X goes after the release of X.
 2. ``dedupe``: a second Find / Pick ... Place of an object already at its goal place is removed with its run.
 3. ``insert``: a MoveTo P before a Place / PutIn / Open / Close at P the robot is not at; a Find X before a
-   Pick X that has none.
+   Pick X that has none; a Find X away from where the person said X is goes there.
 4. ``room``: a MoveTo to a room (not a place) goes to the next step's place in that room, else the goal place in
    that room, else it is removed.
 5. ``action``: the release fits the goal: Place -> PutIn into an ``in`` goal's container, PutIn -> Place onto an
@@ -124,6 +124,13 @@ def op_insert(F, cx: _Ctx):
             return F[:i] + [(owner, _st("MoveTo", o, grounded=True))] + F[i:]
         if a == "Pick" and not w.holding and ({"no_find_before_pick", "pick_not_found"} & codes) and o:
             return F[:i] + [(owner, _st("Find", o))] + F[i:]
+        g = cx.goal_of(o) if a == "Find" else None
+        src = (g or {}).get("from")
+        if src and src in cx.places.env and w.arrived != src:
+            # the person said where it is: look there (the MoveTo before the Find goes there instead)
+            if i > 0 and F[i - 1][1].get("action") == "MoveTo":
+                return F[:i - 1] + [(F[i - 1][0], _st("MoveTo", src, grounded=True))] + F[i:]
+            return F[:i] + [(owner, _st("MoveTo", src, grounded=True))] + F[i:]
     return None
 
 

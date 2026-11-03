@@ -724,6 +724,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
                 and not persons.is_support(places, to) and persons.place_in_answer(places, latest) == to):
             # the answer to "Where are you?" named where they sit / lie: the delivery is to them, never onto the
             # seat itself (the model put the answer's place as the destination)
+            g["user_at"] = to
             to = g["to"] = persons.seat_person(places, to, radius) or asked
         if g.get("type") != "on" or not persons.is_person(places, to):
             return None
@@ -745,6 +746,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
             return speech.LocalText("q_where_is_person", {"person": to},
                                     text=f"Where is {self._say_name(places, to)}?")
         spot = persons.surface_near(places, at, float(self.cfg.get("person_surface_m", 1.2)) if hasattr(self, "cfg") else 1.2)
+        g["user_at"] = at                 # where they said they are: covered by this goal (no "You mentioned ...")
         if spot:
             g["to"], g["near_person"] = spot, to
         else:
@@ -888,6 +890,11 @@ class AssistLoop(SearchHooks, ClosedLoop):
             you = bool((places.env.get(g["to"]) or {}).get("speaker"))
             key = ("rb_hand_you" if you else "rb_hand_person") if g.get("hand") else ("rb_to_you" if you else "rb_to_person")
             return L(key, {"object": o, "person": g["to"]}, text=_fmt_en(key, object=obj, person=nice(g["to"])))
+        if t == "on" and g.get("near_person") and places is not None:
+            you = bool((places.env.get(g["near_person"]) or {}).get("speaker"))
+            key = "rb_on_near_you" if you else "rb_on_near_person"
+            return L(key, {"object": o, "place": g["to"], "person": g["near_person"]},
+                     text=_fmt_en(key, object=obj, place=nice(g["to"]), person=nice(g["near_person"])))
         if t == "on":
             if g.get("from"):
                 return L("rb_on_from", {"object": o, "source": g["from"], "place": g["to"]},
@@ -901,7 +908,11 @@ class AssistLoop(SearchHooks, ClosedLoop):
             who = g.get("to") or ""
             if who and persons.is_person(places, who):
                 return L("rb_say", {"person": who, "text": obj}, text=f"tell {nice(who)}: \"{obj}\"")
-            return L("rb_say_here", {"text": obj}, text=goal_kinds.summary(g))
+            if who:
+                return L("rb_say_at", {"place": who, "text": obj}, text=f"say \"{obj}\" in the {nice(who)}")
+            if g.get("person"):
+                return L("rb_say", {"person": g["person"], "text": obj}, text=f"tell {g['person']}: \"{obj}\"")
+            return L("rb_say_here", {"text": obj}, text=f"say \"{obj}\"")
         if t in goal_kinds.TEMPLATE_KINDS:
             return goal_kinds.summary(g)
         return L(f"rb_{t}", {"place": obj}, text=f"{t} the {nice(obj)}") if t in ("open", "close") else f"{t} the {nice(obj)}"
@@ -1150,8 +1161,9 @@ class AssistLoop(SearchHooks, ClosedLoop):
         for g in goals:
             t = g["type"]
             if t == "go" and g is goals[-1]:
-                # the last go goal holds where the robot is now, not where it once passed (or started)
-                if world.arrived != g.get("to"):
+                # the last go goal holds where the plan's steps end (not where it once passed, or started); the goal
+                # checks' own looks do not count (_observe_goals goes back there)
+                if not goal_kinds.reached(g, list(done), at, last=True) and world.arrived != g.get("to"):
                     return False
             elif t in goal_kinds.TEMPLATE_KINDS and not goal_kinds.reached(g, list(done), at):
                 return False
@@ -2175,6 +2187,9 @@ class AssistLoop(SearchHooks, ClosedLoop):
                 code = FailureCode.DROPPED if g.get("to") == last_placed else FailureCode.ABSENT
                 unmet.append({"code": code.value, "device": device,
                               "evidence": {"goal": r.goal_checks[-1]["goal"], "observed": ev_}})
+        last = r.goals[-1] if r.goals else {}
+        if last.get("type") == "go" and last.get("to") and r.world.arrived != last["to"]:
+            self._look(r, {"action": "MoveTo", "object": last["to"]})    # back where the task ends ("go back and charge")
         return unmet
 
     def _observe_goal(self, r, g):

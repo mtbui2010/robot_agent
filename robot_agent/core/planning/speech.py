@@ -31,6 +31,7 @@ CORE_PHRASES = {
     "q_where_is_person": "Where is {person}?",
     "q_where_is": "I couldn't find the {object}. Where is it?",
     "q_repeat": "Sorry, I didn't catch that. Could you say it again?",
+    "q_silence": "Sorry, I didn't hear you.",
     "q_did_you_mean": "Did you mean the {object}?",
     "q_what_bring": "What should I bring?",
     "q_confirm": "{summary} Is that right?",
@@ -39,6 +40,8 @@ CORE_PHRASES = {
     "sep_then": ", then ",
     "rb_in": "put the {object} in the {place}",
     "rb_to_you": "bring you the {object}",
+    "rb_on_near_you": "bring you the {object} and put it on the {place} next to you",
+    "rb_on_near_person": "bring the {object} to {person} and put it on the {place} next to them",
     "rb_hand_you": "hand you the {object}",
     "rb_to_person": "bring the {object} to {person}",
     "rb_hand_person": "hand the {object} to {person}",
@@ -47,6 +50,7 @@ CORE_PHRASES = {
     "rb_go": "go to the {place}",
     "rb_say": "tell {person}: \"{text}\"",
     "rb_say_here": "say \"{text}\"",
+    "rb_say_at": "say \"{text}\" in the {place}",
     "rb_will": "I will {what}.",
     "safety_partial": "I won't {what}: {why}.",
 }
@@ -117,6 +121,10 @@ class LocalText(str):
         if len(items) == 1 and isinstance(items[0], LocalText):
             return items[0]
         return cls("_join", {}, text=" ".join(str(x) for x in items), parts=tuple(items))
+
+    def again(self) -> "LocalText":
+        """The question asked again after silence ("Sorry, I didn't hear you. <question>")."""
+        return LocalText.join(LocalText("q_silence"), self)
 
     @classmethod
     def seq(cls, items, sep_key: str = "sep_then") -> "LocalText":

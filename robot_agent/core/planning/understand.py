@@ -258,6 +258,8 @@ def _goal_places(goals) -> set:
         if g.get("type") in ("open", "close") and g.get("object"):
             out.add(g["object"])
         out.update(g.get("from_any") or [])
+        if g.get("user_at") and not str(g["user_at"]).startswith("@"):
+            out.add(g["user_at"])                 # where the person said they are (the delivery's reference)
     return out
 
 
@@ -370,8 +372,11 @@ def find_issues(goals, text: str, places, english: str = "", user_words=frozense
     first_person = _first_person(text)
     for g in goals:
         dst = g.get("object") if g.get("type") in ("open", "close") else g.get("to")
-        if dst and (places.env.get(dst) or {}).get("person") and (first_person or g.get("near_person")):
-            continue                                 # the speaker's own destination, said as "me" / "my"
+        e = places.env.get(dst) or {} if dst else {}
+        if e.get("person") and (e.get("speaker") or first_person or g.get("near_person")):
+            continue                                 # the speaker's own destination ("me", or implied: 가져와 주세요)
+        if e.get("person"):
+            continue                                 # a person named in words the ENV aliases may not hold (아버님)
         if g.get("near_person") and dst and dst in places.env:
             continue                                 # the surface beside a person the answer placed
         if dst and dst in places.env and dst not in said:

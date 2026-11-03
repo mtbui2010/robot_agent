@@ -29,3 +29,4 @@ Planning layer (moved here from kcare_robot/docs):
 - [TRACKING_VERIFY_VOICE.md](TRACKING_VERIFY_VOICE.md): run records, layered verification, announcements
 
 Tests: `make test` (see [testing.md](testing.md)).
+- [env.md](env.md): the ENV contract (places, people), the SAGE-v2 manifest keys and options

@@ -250,3 +250,10 @@ def test_operator_fix_survives_block_edit(make_assist, env):
 def test_gate_complete_off_by_default(make_assist, env):
     loop = make_assist(FakeRobot(env, {}), FakeLLM(), BlockPlanner([]))
     assert loop.cfg["gate_complete"] == "0"
+
+
+def test_repair_find_where_the_person_said(loop, robot, places):
+    goals = [G("on", "apple", DS, DT)]
+    plan = steps(f"MoveTo {CT}", "Find apple", "Pick apple", f"MoveTo {DT}", f"Place {DT}")
+    out, _n, counts = run_repair(loop, robot, places, plan, W(), goals)
+    assert counts.get("insert") == 1 and out[0]["object"] == DS

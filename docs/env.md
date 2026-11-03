@@ -1,0 +1,59 @@
+# The ENV contract and the SAGE-v2 options
+
+The ENV (`robot_agent.skill_configs.ENV`) is the robot's map: one entry per place, keyed by its name
+(`"counter@kitchen"`). The core reads it through `assist_loop.Places`. Every field below except `loc` is
+optional; an ENV without the optional fields keeps the earlier behaviour (pinned by
+`tests/test_sage_v2_step4_persons.py::test_env_without_person_fields_unchanged`).
+
+## Place entries
+
+| field | meaning |
+|---|---|
+| `loc` | `{x, y, rz}` where the robot stands for the place |
+| `aliases` | other names, in any language (the robot says the first one in the user's script) |
+| `openable` | the place opens (a drawer, a fridge) |
+| `surface` | `true`: a support surface things can be put down on (table, shelf, counter); `false`: a seat, a bed, the floor. Without the field anywhere, every place that does not open counts |
+| `category` | an optional class name the robot's map knows (read by `core/safety/place_class.py`) |
+
+The core never reads a `tags` field.
+
+## Person entries (SAGE-v2, new optional contract)
+
+| field | meaning |
+|---|---|
+| `person` | the entry is a person (its id), not a place |
+| `speaker` | `true` for the person who gives the task; without it, the person entry whose aliases hold a speaker word ("me", 나한테, tôi) |
+| `loc` | where the robot LAST SAW the person (its perception; may be stale). No `loc`: the person is not tracked and the robot asks "Where are you?" |
+| `seat` | where the person sits or lies (a place key), when known |
+| `spot` | a reachable support surface beside the person (a place key); `null` = none (a hand-over); absent = the robot pack has no such perception (the nearest support place within `person_seat_m`, else a hand-over) |
+
+A destination in the speaker's words ("me", "here", 나한테) grounds to the speaker's entry. For an untracked
+person, the answer to "Where are you?" is mapped onto the map: the support surface nearest to the named place in
+its room (within `person_surface_m`), never the seat or bed itself; with none, a hand-over. A hand-over (a manifest
+action whose effects include `hand_empty()`, `RobotView.release_actions`) at a person reaches a delivery to that
+person; the words asking for the hand ("hand me", 손에, 건네) make it the only way.
+
+## Manifest keys
+
+| key | meaning |
+|---|---|
+| `planner.llm_budget` | the run's cap on core LLM calls (option > `$ROBOT_AGENT_LLM_BUDGET` > manifest > 20) |
+| `planner.translate_model`, `planner.translate_url` | the model (and server) that translates what the robot says; default the planner's |
+| `planner.translate_budget` | the translator's own cap per run (default 10) |
+| `planner.search_legs`, `planner.search_total` | SAGE-v2 search: the belief's next look replaces a failed Find without a replan; after "I don't know" the likely places are searched, up to `search_total` looks |
+| `limits.payload_kg`, `limits.max_object_size_m`, `limits.objects` | what the body can carry, and the robot's own object-class estimates `{name: {weight_kg, size_m}}`; a goal over a limit is refused |
+| `safety.hazards` | robot-pack hazard rules `[{objects: [regex], places: [class or regex], say}]`, added to the core rules |
+
+## AssistLoop options (per run)
+
+`sage_subgoals` (goals | model), `gate_complete` (0 | 1), `hazard_rules` (core | pack | off), `person_seat_m`
+(1.0, a priori), `person_surface_m` (1.2, a priori), `search_legs`, `search_total`, `translate_model`,
+`translate_url`, `translate_budget`.
+
+## What the robot says
+
+Fixed questions and read-backs are `core/planning/speech.py` phrases (`CORE_PHRASES`, English); a robot pack gives
+them in other languages in its i18n under the same keys. A phrase the robot has in the user's language is said
+without an LLM call; free text goes to the translator, whose output is checked (`speech.guard`) and retried once;
+when that fails the English text is said and counted (`say_not_in_lang`). ENV keys are said as names
+(`speech.say_name`), never raw.
