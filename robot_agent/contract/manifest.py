@@ -41,7 +41,9 @@ _TOP_KEYS = {"robot", "version", "language", "capabilities", "geometry", "planne
 #   seed_memory, notes; llm_budget (the run's cap on core LLM calls), translate_model / translate_url (the model
 #   that translates what the robot says into the user's language, default the planner's), translate_budget (its
 #   own cap per run)
-PLANNER_KEYS = {"seed_memory", "notes", "llm_budget", "translate_model", "translate_url", "translate_budget"}
+#   search_legs (SAGE-v2 search: the belief's next look without a replan; go on after "I don't know"), search_total
+PLANNER_KEYS = {"seed_memory", "notes", "llm_budget", "translate_model", "translate_url", "translate_budget",
+                "search_legs", "search_total"}
 # keys of the optional `limits:` section (what the body can carry; checked against the ENV object estimates)
 LIMIT_KEYS = {"payload_kg", "max_object_size_m"}
 # planner.notes: short lines for the direct planner's prompt (docs/direct_prompt.md)

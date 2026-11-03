@@ -261,25 +261,64 @@ def _goal_places(goals) -> set:
     return out
 
 
+# verbs that move an object: a noun group is an object the goals must cover only after one of them (through
+# 'and' / comma chains), never as the subject of a stated clause (SAGE-v2 F3.3, clean-room core list)
+_MANIP = re.compile(r"\b(?:put|puts|place|bring|brings|take|takes|grab|move|fetch|hand|give|pass|stash|carry|get|"
+                    r"set|leave|return|throw|toss|drop|store|hang|pick|lay|keep|send)\b", re.I)
+_COPULA = re.compile(r"^\s*(?:is|are|was|were|will|has|have|had|can|could|should|would|might|must|need|needs|"
+                     r"seems?|looks?|got|gets)\b")
+_SKIP_OBJ = {"please", "thanks", "thank", "okay", "ok", "hey", "hi", "um", "uh", "oh", "well", "yes", "no"}
+
+
+def _object_position(t: str, start: int, end: int) -> bool:
+    """Is the noun group t[start:end] an object of a manipulation verb before it in its clause?"""
+    head = t[:start]
+    cut = max(head.rfind(c) for c in ".;!?")
+    clause = head[cut + 1:]
+    if not _MANIP.search(clause):
+        return False
+    return not _COPULA.match(t[end:])
+
+
 def _object_mentions(text: str, places, user_words) -> list:
-    """Nouns after a determiner in English *text* that are not places, rooms or generic words: 'tennis ball'."""
+    """Nouns after a determiner in English *text* that are not places, rooms or generic words: 'tennis ball';
+    only in object position (after a manipulation verb, not a clause's subject), no fillers or 1-2 letter words."""
     t = _active(text)
     t = _CORR.sub(" ", t)
     place_words = {w for p in _phrases(places) for w in p.split()} | {w for r in places.rooms() for w in _norm(r).split()}
     out = []
     for m in _DET.finditer(t):
+        if not _object_position(t, m.start(), m.end(1)):
+            continue
         toks = []
         for w in m.group(1).split():
             if w in _BOUND:
                 break
             toks.append(w)
-        toks = [w for w in toks if w not in user_words]
-        if not toks or toks[-1] in _NOT_OBJ or toks[-1].rstrip("s") in _NOT_OBJ:
+        toks = [w for w in toks if w not in user_words and w not in _SKIP_OBJ]
+        if not toks or toks[-1] in _NOT_OBJ or toks[-1].rstrip("s") in _NOT_OBJ or len(toks[-1]) < 3:
             continue
         if any(w in place_words or w.rstrip("s") in place_words for w in toks):
             continue
         out.append(" ".join(toks))
     return list(dict.fromkeys(out))
+
+
+def _without_messages(text: str, goals) -> str:
+    """*text* without what a say goal's message says (the places a message names are not places to act on:
+    "tell grandpa to come to the kitchen"; SAGE-v2 F3.6), nor the rest of a tell-clause."""
+    from . import lexicon
+    says = [g for g in goals if g.get("type") == "say"]
+    if not says:
+        return text
+    t = _norm(text)
+    for g in says:
+        msg = _norm(g.get("object"))
+        if msg and msg in t:
+            t = t.replace(msg, " ")
+    for p in lexicon.patterns(lexicon.TELL):
+        t = re.sub(r"(" + p + r")\s+(?:\S+\s+){0,2}?(?:to|that)\s+[^.;!?]*", r"\1 ", t)
+    return t
 
 
 def _user_word(phrase: str, user_words) -> bool:
@@ -312,6 +351,7 @@ def find_issues(goals, text: str, places, english: str = "", user_words=frozense
     issues = []
     if not goals:
         return issues
+    text = _without_messages(text, goals)
     used = _goal_places(goals)
     full = place_mentions(text, places)
     act_t = _active(text)
@@ -341,7 +381,9 @@ def find_issues(goals, text: str, places, english: str = "", user_words=frozense
             issues.append({"kind": "verb", "what": verb})
     for o in _object_mentions(english or text, places, user_words):
         if not _obj_covered(o, goals):
-            issues.append({"kind": "object", "what": o})
+            near = near_name(o, [g.get("object") for g in goals if g.get("type") in ("on", "in")]
+                             + [a for k in places.keys for a in (places.env.get(k) or {}).get("aliases") or []])
+            issues.append({"kind": "object", "what": o, **({"near": near} if near else {})})
     return [x for k, x in enumerate(issues) if x not in issues[:k]]
 
 
@@ -351,6 +393,72 @@ _SAY = {"place": "the {what} you mentioned is not in my plan", "unsaid": "you di
 
 def describe(issue: dict) -> str:
     return _SAY[issue["kind"]].format(**issue)
+
+
+def edit_distance(a: str, b: str) -> int:
+    """Levenshtein distance (characters; a Hangul syllable is one character)."""
+    a, b = str(a or ""), str(b or "")
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+def near_name(word: str, names, max_edits: int = 2) -> str:
+    """The one name of ``names`` within ``max_edits`` of ``word`` (not equal), '' when none or several."""
+    w = _norm(word)
+    c = {n for n in (_norm(x) for x in names if x) if n and n != w and len(n) >= 3 and edit_distance(w, n) <= max_edits}
+    return next(iter(c)) if len(c) == 1 else ""
+
+
+def fuzzy_place(places, text: str, threshold: float = 0.25):
+    """(key, name) of the one ENV place whose name / alias is within ``threshold`` normalised edit distance of a
+    word span of ``text`` (an answer with ASR noise: 식그탁 for 식탁), else (None, ''). The threshold is fixed a priori
+    (one wrong unit in a four-unit name) and not tuned on any benchmark (SAGE-v2 F3.7)."""
+    t = _norm(re.sub(r"[.,!?]", " ", str(text or "")))
+    toks = t.split()
+    spans = {" ".join(toks[i:j]) for i in range(len(toks)) for j in range(i + 1, min(len(toks), i + 3) + 1)}
+    spans |= {re.sub(_KO_TAIL, "", x) for x in spans}
+    best = {}
+    for k in places.keys:
+        if (places.env.get(k) or {}).get("person"):
+            continue
+        for n in {_norm(places.head(k))} | {_norm(a) for a in (places.env.get(k) or {}).get("aliases") or [] if a and "@" not in str(a)}:
+            if len(n) < 2:
+                continue
+            for sp in spans:
+                if not sp:
+                    continue
+                a, b = _jamo(sp), _jamo(n)
+                d = edit_distance(a, b) / max(len(a), len(b))
+                if d <= threshold and (k not in best or d < best[k][0]):
+                    best[k] = (d, n)
+    if len(best) != 1:
+        top = sorted(best.items(), key=lambda kv: kv[1][0])
+        if len(top) >= 2 and top[0][1][0] < top[1][1][0]:
+            return top[0][0], top[0][1][1]
+        return None, ""
+    k, (_d, n) = next(iter(best.items()))
+    return k, n
+
+
+_KO_TAIL = r"(?:에서|에|이요|요|이에요|예요|있어요|요\.)$"
+
+
+def _jamo(s: str) -> str:
+    """A Hangul syllable as its letters (initial, vowel, final), so a one-letter slip (식딱 / 식탁) is one edit of
+    six, not one of two."""
+    out = []
+    for ch in s:
+        c = ord(ch) - 0xAC00
+        if 0 <= c < 11172:
+            out += [chr(0x1100 + c // 588), chr(0x1161 + (c % 588) // 28)] + ([chr(0x11A7 + c % 28)] if c % 28 else [])
+        else:
+            out.append(ch)
+    return "".join(out)
 
 
 def coverage(goals, text: str, places, english: str = "", user_words=frozenset()) -> list:
@@ -373,7 +481,8 @@ def issue_question(issues: list, places) -> str:
         elif i["kind"] == "verb":
             qs.append(f"What should I {i['what']}?")
         elif i["kind"] == "object":
-            qs.append(f"What should I do with the {i['what']}?")
+            near = i.get("near")
+            qs.append(f"Did you mean the {near}?" if near else "Sorry, I didn't catch that. Could you say it again?")
     if multi is not None and not any(i["kind"] == "unsaid" for i in issues):
         qs.insert(0, f"You mentioned the {multi['what']}. What should I do there?")
     return " ".join(list(dict.fromkeys(qs))[:2])

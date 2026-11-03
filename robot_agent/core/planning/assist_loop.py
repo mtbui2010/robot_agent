@@ -58,7 +58,7 @@ from . import action_model, concrete, episode_memory, goal_change
 from . import search as search_belief
 from .search_hooks import SearchHooks
 from . import goals as goal_kinds
-from . import goal_filter, goal_fix, persons, plan_tidy
+from . import goal_filter, goal_fix, persons, plan_tidy, speech
 from . import reconcile as sensed
 from .robot import run_skill
 from .verify import symbolic_check, verdict
@@ -78,7 +78,8 @@ ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify
                 "yes_no_reasks", "search", "search_rank", "search_half_life_s", "vlm_verify", "sensor_health",
                 "reconcile", "search_habit_weight", "edit_reserve", "plan_tidy",
                 "goal_filter", "sage_subgoals", "translate_model", "translate_url", "translate_budget",
-                "gate_complete", "hazard_rules", "person_seat_m", "search_total"}
+                "gate_complete", "hazard_rules", "person_seat_m", "person_surface_m", "search_total",
+                "search_legs"}
 _USER_WORDS = {"me", "user", "here", "you", "myself", "person"}
 
 
@@ -255,6 +256,9 @@ UNDERSTAND_SCHEMA = {
     "properties": {
         "status": {"type": "string", "enum": ["clear", "ambiguous", "unsafe", "infeasible"]},
         "reason": {"type": "string"},
+        # why a refusal (SAGE-v2 F4.1): the contract checks it (same call, no extra LLM call)
+        "reason_type": {"type": "string", "enum": ["", "missing_skill", "payload", "size", "reach", "unknown_task",
+                                                   "other"]},
         "question": {"type": "string"},
         "goals": {"type": "array", "items": {"type": "object", "properties": {
             "type": {"type": "string", "enum": ["on", "in", "open", "close"]},
@@ -267,7 +271,7 @@ UNDERSTAND_SCHEMA = {
 }
 
 UNDERSTAND_PROMPT = """You turn a household robot task into goals. {abilities}
-It cannot: throw, pour, cook, wash, climb, open windows or doors, use tools, handle knives near people, or leave the house.
+{cannot}
 
 Places (use these names):
 {places}
@@ -283,6 +287,8 @@ Return JSON:
   fine); "ambiguous" only if WHAT to do is unclear (e.g. "clean the table" without saying what to move where) — not
   for a missing or unclear place or an object whose location is unknown, those are handled separately; else "clear".
 - reason: one short sentence.
+- reason_type: for "infeasible" one of "missing_skill" (an action the robot does not have), "payload" (too heavy),
+  "size" (too big), "reach" (out of reach), "unknown_task" (not a household task the robot knows), "other"; else "".
 - question: when ambiguous, one short question to the user; else "".
 - goals: one per object to move / container to open, in order:
   {{"type": "on", "object": <object>, "from": <place it is on now, or "">, "to": <place to put it, or "me" when the user
@@ -391,6 +397,17 @@ class AssistLoop(SearchHooks, ClosedLoop):
             "sage_subgoals": str(overrides.get("sage_subgoals", env("ROBOT_AGENT_SAGE_SUBGOALS", "goals"))),
             # plan_repair operator 6 (the gate writes a missing goal's segment): off; a separate ablation row
             "gate_complete": str(overrides.get("gate_complete", env("ROBOT_AGENT_GATE_COMPLETE", "0"))),
+            # SAGE-v2 search (F6.1 the belief's next look spliced in place of a failed Find, no replan; F6.2 "I don't
+            # know" continues over the likely places): option > env > manifest planner.search_legs > off
+            "search_legs": str(overrides.get("search_legs", env("ROBOT_AGENT_SEARCH_LEGS", str(
+                self._manifest_planner("search_legs", "0"))))).lower() in ("1", "true", "yes", "on"),
+            # looks in all before a search gives up (F6.2), after "I don't know" too
+            "search_total": int(overrides.get("search_total", env("ROBOT_AGENT_SEARCH_TOTAL", str(
+                self._manifest_planner("search_total", 8))))),
+            # a person's seat / position within this of a place (F2.1, a priori arm's length) and the surface for a
+            # person who said where they are (F2.1 untracked, Hall's personal-zone edge), metres
+            "person_seat_m": float(overrides.get("person_seat_m", env("ROBOT_AGENT_PERSON_SEAT_M", "1.0"))),
+            "person_surface_m": float(overrides.get("person_surface_m", env("ROBOT_AGENT_PERSON_SURFACE_M", "1.2"))),
         }
 
     def _manifest_planner(self, key, default=None):
@@ -422,7 +439,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
         """The understand call (understand.ask_json: one repair retry on a non-JSON answer). Raises
         LLMUnavailable / LLMBudgetExceeded; a model that still answers no JSON gives no goals (``unparsed``)."""
         prompt = UNDERSTAND_PROMPT.format(
-            abilities=self.robot.robot_description(),
+            abilities=self.robot.robot_description(), cannot=self._cannot_line(),
             goal_kinds=goal_kinds.prompt_lines(goal_kinds.kinds_for(self.robot.plan_actions)),
             # no object memory here: a 7B model refused / asked about every object it did not list
             # (the memory grounds `from` after this call instead)
@@ -451,6 +468,57 @@ class AssistLoop(SearchHooks, ClosedLoop):
                 g[k] = str(g.get(k) or "").strip()
         d["goals"] = goal_kinds.speaker_slots(d["goals"])     # "me" only as a destination (FROM_ME)
         return d
+
+    _CANNOT = ("It cannot: throw, pour, cook, wash, climb, open windows or doors, use tools, handle knives near people, "
+               "or leave the house.")
+
+    def _cannot_line(self) -> str:
+        """The prompt's "It cannot" line: the robot's i18n ``cannot_list`` (else the core's), with the manifest's
+        payload / size limits when it declares them (SAGE-v2 F4.1)."""
+        robot = self.robot
+        line = robot.text("cannot_list") if robot.has_text("cannot_list") else self._CANNOT
+        lim = getattr(robot.manifest, "limits", None) or {}
+        if lim.get("payload_kg"):
+            line += f" It can carry at most {lim['payload_kg']} kg"
+            line += f" and objects up to {lim['max_object_size_m']} m." if lim.get("max_object_size_m") else "."
+        return line
+
+    def _over_limits(self, goals) -> Optional[str]:
+        """A goal whose object is over the manifest's limits, by the robot's own estimates (manifest
+        ``limits.objects``: {name: {weight_kg, size_m}}, its object-class prior): why, else None."""
+        lim = getattr(self.robot.manifest, "limits", None) or {}
+        est = lim.get("objects") or {}
+        pay, size = lim.get("payload_kg"), lim.get("max_object_size_m")
+        if not est or not (pay or size):
+            return None
+        for g in goals:
+            if g.get("type") not in ("on", "in"):
+                continue
+            ws = set(words(g.get("object")).split())
+            hit = max(((n, e) for n, e in est.items() if set(words(n).split()) <= ws and isinstance(e, dict)),
+                      key=lambda x: len(x[0]), default=None)
+            if hit is None:
+                continue
+            n, e = hit
+            if pay and float(e.get("weight_kg") or 0) > float(pay):
+                return f"the {g['object']} is too heavy for me (about {e['weight_kg']} kg; I can carry {pay} kg)"
+            if size and float(e.get("size_m") or 0) > float(size):
+                return f"the {g['object']} is too big for me to carry"
+        return None
+
+    def _capability_check(self, r, u) -> Optional[str]:
+        """The model's "infeasible" against the contract (F4.1 / F4.2): "repeat" (no goals and nothing heard to
+        refuse: say it again), "override" (goals the contract can do and a reason that names a manner it
+        covers: read them back instead of refusing), else None (the refusal stands)."""
+        rt = str(u.get("reason_type") or "").strip()
+        if not r.goals:
+            content = [w for w in re.findall(r"[\w']+", r.task) if len(w) > 1]
+            nothing = re.search(r"\bno (?:task|request|instruction)|not (?:a )?(?:clear|complete|understand)|unclear|"
+                                r"garbled|incomplete|empty|nonsens|meaningless", str(u.get("reason") or ""), re.I)
+            return "repeat" if u.get("unparsed") or len(content) < 3 or nothing else None
+        if self._cannot_do(r.goals) or self._over_limits(r.goals):
+            return None
+        return "override" if rt in ("", "missing_skill", "other") else None
 
     def _understand_schema(self) -> dict:
         """UNDERSTAND_SCHEMA with the goal kinds this robot may be given (``goals.kinds_for``)."""
@@ -498,6 +566,13 @@ class AssistLoop(SearchHooks, ClosedLoop):
             c = places.candidates(v, latest)
         if len(c) == 1 and c[0].startswith("@") and len(places.in_room(c[0][1:])) == 1:
             c = places.in_room(c[0][1:])
+        if t == "go" and len(c) == 1 and c[0].startswith("@"):
+            # a room is a fine place to wait: its first place that does not open, is not a person or the floor
+            # (SAGE-v2 F3.5; no "which place" question for "wait in the bedroom")
+            ok = [k for k in places.in_room(c[0][1:]) if not places.openable(k) and not persons.is_person(places, k)
+                  and "floor" not in places.head(k).lower()]
+            if ok:
+                c = ok[:1]
         if len(c) == 1 and c[0] in places.env:
             g["to"] = c[0]
             return g, None
@@ -1194,6 +1269,19 @@ class AssistLoop(SearchHooks, ClosedLoop):
         heard = bool(r.dialogue) and r.dialogue[-1][0] == "user" and self._answer_source == "robot"
         ref = typed_refusal(u["status"], u.get("reason"), self._cannot_do(r.goals),
                             " ".join([r.task, self.original or ""] + [t for w_, t in r.dialogue if w_ == "user"]), heard)
+        if ref is not None and ref.kind == "capability" and not ref.missing and u["status"] == "infeasible":
+            how = self._capability_check(r, u)
+            if how == "repeat":                          # F4.2: not heard / not a request: say it again
+                yield r.ev("understand_check", issues=["no task heard"], repeat=True)
+                return (yield from self._ask_clarify(r, speech.LocalText("q_repeat")))
+            if how == "override":                        # F4.1: the contract covers it; the person confirms
+                yield r.ev("understand_check", issues=[f"capability refusal overridden: {u.get('reason')}"],
+                           override=True)
+                ref, r.force_readback = None, True
+        over = self._over_limits(r.goals) if ref is None and r.goals else None
+        if over:
+            from .understand import Refusal
+            ref = Refusal("capability", msg=over, say=f"I can't do that: {over}.")
         if ref is not None and ref.misheard:
             r.dialogue, q_again = misheard_question(r.dialogue)
             yield r.ev("understand_check", issues=[f"{ref.kind} refusal after a heard answer"], misheard=True)
@@ -1303,7 +1391,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
         here) or always (`confirm_task`, a voice user whose command itself may be misheard).
         Returns (outcome or None, the question to ask next)."""
         unsure = getattr(r, "unsure", None)
-        if not ((r.dialogue and r.heard and self.cfg["confirm_answers"]) or self.cfg["confirm_task"] or unsure):
+        if not ((r.dialogue and r.heard and self.cfg["confirm_answers"]) or self.cfg["confirm_task"] or unsure
+                or getattr(r, "force_readback", False)):
             return _DONE, None
         if r.confirms >= 2:
             yield self._finish(r, "failed", msg="the user did not confirm the task"); return _STOP, None
@@ -2253,6 +2342,10 @@ class AssistLoop(SearchHooks, ClosedLoop):
             yield r.ev("clarify", question=q, round=0)
             ans = self._ask(q, r.node, self._log_fn(r.i), r.lang)
             k = r.places.ground(ans, ans) if ans else None
+            if not k and ans:
+                k = yield from self._confirm_near(r, ans)        # a noisy answer: "Did you mean the X?" (F3.7)
+            if not k and self.cfg.get("search_legs"):
+                return (yield from self._search_on(r, o))       # "I don't know": search the likely rest (F6.2)
             if not k:
                 yield self._finish(r, "failed", msg=f"could not find the {o} (looked at {', '.join(r.searched)})")
                 return _STOP, ""
@@ -2261,7 +2354,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
             if k in r.searched:
                 r.searched.remove(k)
             return None, f"; the user says the {o} is on {k}"
-        if r.find_fails[o] > self.cfg["search_max"] + 1 or nowhere:
+        if r.find_fails[o] > self.cfg["search_max"] + 1 or nowhere or (
+                self.cfg.get("search_legs") and len(r.searched) >= int(self.cfg.get("search_total", 8))):
             yield self._finish(r, "failed", msg=f"could not find the {o} (looked at {', '.join(r.searched)})")
             return _STOP, ""
         near = f" (it was seen near {r.seen_far[-1]})" if r.seen_far else ""
@@ -2270,10 +2364,54 @@ class AssistLoop(SearchHooks, ClosedLoop):
         if not rule.mark_searched:
             # could not look: no evidence that it is not here (the replan reason is worded by code)
             return None, f"; the {o} could not be checked at {here} ({code}): it may still be there{near}"
+        if leg is not None and self.cfg.get("search_legs") and self._splice_leg(r, leg):
+            # the belief's next look replaces the failed Find in place: no replan call (SAGE-v2 F6.1)
+            yield r.ev("recover", at_index=r.i, kind="search_leg", msg=f"looking for the {o} at {leg.text()}")
+            return _NEXT, ""
         nxt = (f"Look next at {leg.text()}" if leg is not None else
                "Choose where to look next among the places not yet searched")
         return None, (f"; it is not at {world.arrived}. {nxt}"
                       + (f" (it was seen near {r.seen_far[-1]})" if r.seen_far else ""))
+
+    def _splice_leg(self, r, leg) -> bool:
+        """Put the search leg's steps (MoveTo, Open when closed, Find) in place of the failed Find at r.i, when
+        the rest of the plan still runs from there by the action model; False (the planner replans) else."""
+        new = self._ground_all(r, leg.steps(r.world.arrived) + [dict(x) for x in r.steps[r.i + 1:]])
+        w, caps = r.world.copy(), self.robot.model_capabilities()
+        w.found = None
+        for st in new:
+            errs = [v for v in action_model.check(st, w, capabilities=caps, actions=self.robot.plan_actions,
+                                                  openable=r.places.openable) if v.is_error]
+            if errs:
+                return False
+            action_model.apply(st, w, inplace=True, capabilities=caps)
+        r.steps[r.i:] = new
+        return True
+
+    def _confirm_near(self, r, ans):
+        """The one place an answer with ASR noise nearly names (understand.fuzzy_place), confirmed with a yes /
+        no question; None."""
+        from .understand import fuzzy_place
+        k, _n = fuzzy_place(r.places, ans)
+        if not k:
+            return None
+        q = speech.LocalText("q_did_you_mean", {"object": self._say_name(r.places, k), "place": k})
+        yield r.ev("clarify", question=q, round=0, kind="did_you_mean")
+        _a, ok_, _rest = self._ask_yes_no(r, q)
+        return k if ok_ is True else None
+
+    def _search_on(self, r, o):
+        """No place from the person: the search goes on over the likely places not searched yet (up to
+        ``search_total`` looks in all), else the run ends naming the places looked at (F6.2)."""
+        leg = r.search.next_leg(o, r.world.arrived, r.world.opened) if getattr(r, "search", None) is not None else None
+        looks = len(r.searched)
+        if leg is None or looks >= int(self.cfg.get("search_total", 8)):
+            named = ", ".join(self._say_name(r.places, k) for k in r.searched) or "nowhere"
+            yield self._finish(r, "failed", msg=f"could not find the {o} (looked at {', '.join(r.searched)})",
+                               say=f"I couldn't find the {o}. I looked at: {named}.")
+            return _STOP, ""
+        r.find_fails[o] = 0                                     # the belief's next legs, without the person
+        return None, f"; it is not at {r.world.arrived}. Look next at {leg.text()}"
 
     def _recover_pick(self, r, st, reason, rule):
         """Look + grasp again in place (pick_retries, not when out of lateral reach), then ask the person
