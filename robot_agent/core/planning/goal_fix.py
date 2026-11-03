@@ -101,4 +101,73 @@ def drop_invented(goals: list, text: str, places) -> tuple:
     return out, dropped
 
 
-__all__ = ["says_into", "kind_from_destination", "drop_empty", "drop_invented"]
+def _tokens(s: str) -> list:
+    return [w for w in re.findall(r"[\w']+", _norm(s)) if len(w) > 1]
+
+
+def _is_request(text: str, task: str, listener_names) -> bool:
+    """Is a say goal's text the request itself ("tell dad to come ..." relayed whole), not the message?"""
+    t = _norm(text)
+    if not t:
+        return True
+    task_t = set(_tokens(task))
+    toks = set(_tokens(t))
+    if task_t and len(toks & task_t) >= 0.9 * len(task_t):
+        return True
+    for n in listener_names:
+        n = _norm(n)
+        if not n or n.startswith("@"):
+            continue
+        # the listener as the addressee of a tell ("to dad", "tell dad", 아빠한테 / 아빠에게): the request itself;
+        # a vocative ("Dinner is ready, dad.") is part of a message
+        if re.search(r"\b(?:to|tell|ask|remind|let)\s+(?:the\s+|my\s+|your\s+)?" + re.escape(n) + r"\b", t) or \
+                re.search(r"(?<!\w)" + re.escape(n) + r"\s*(?:한테|에게|께|더러)", t):
+            return True
+    return lexicon.has(lexicon.TELL, t)
+
+
+def relay_check(goals: list, task: str, places) -> tuple:
+    """(goals, question): F4.6. A say goal whose text is the whole request (high overlap with the instruction,
+    the listener's name in it, a tell / ask verb) takes the model's ``content`` (the reported message only) when
+    that passes the same check, else the robot asks what to say. A priori threshold 0.9 of the instruction tokens, not tuned on any benchmark."""
+    out, q = [], None
+    for g in goals:
+        if g.get("type") != "say":
+            out.append(g)
+            continue
+        g = dict(g)
+        who = g.get("to") or g.get("person") or ""
+        names = [who] + list((places.env.get(who) or {}).get("aliases") or []) if who else []
+        if _is_request(g.get("object"), task, names):
+            c = str(g.get("content") or "").strip()
+            if c and not _is_request(c, task, names):
+                g["object"] = c
+            else:
+                q = "What should I say?"
+        out.append(g)
+    return out, q
+
+
+_KO_ACC = re.compile(r"([\uac00-\ud7a3][\uac00-\ud7a3 ]*?[\uac00-\ud7a3])(?:을|를)(?=\s|$|[.,!?])")
+_KO_AND = re.compile(r"\s*(?:과|와|하고|이랑|랑|,)\s*")
+
+
+def ko_object_issues(goals: list, text: str) -> list:
+    """F4.5: every Korean accusative noun group (을 / 를, with 과 / 와 / 하고 / 이랑 chains) must be covered by a
+    goal's ``said`` (the person's own words for its object, from the same understand call). Only when the goals
+    carry ``said`` (the model filled it); a miss is an ``object`` issue (re-sample, then ask)."""
+    saids = [_norm(g.get("said")) for g in goals if g.get("said")]
+    if not saids or not re.search(r"[\uac00-\ud7a3]", str(text or "")):
+        return []
+    out = []
+    for m in _KO_ACC.finditer(_norm(text)):
+        for part in _KO_AND.split(m.group(1)):
+            noun = part.strip().split()[-1] if part.strip() else ""
+            if len(noun) < 2:
+                continue
+            if not any(noun in s or s in noun for s in saids):
+                out.append({"kind": "object", "what": noun})
+    return [x for k, x in enumerate(out) if x not in out[:k]]
+
+
+__all__ = ["says_into", "kind_from_destination", "drop_empty", "drop_invented", "relay_check", "ko_object_issues"]

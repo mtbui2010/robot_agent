@@ -268,6 +268,9 @@ UNDERSTAND_SCHEMA = {
         "goals": {"type": "array", "items": {"type": "object", "properties": {
             "type": {"type": "string", "enum": ["on", "in", "open", "close"]},
             "object": {"type": "string"},
+            # the person's own words for the object (SAGE-v2 F4.5) and, for a message, only what to pass on (F4.6)
+            "said": {"type": "string"},
+            "content": {"type": "string"},
             "from": {"type": "string"},
             "to": {"type": "string"}},
             "required": ["type", "object", "from", "to"]}},
@@ -298,7 +301,8 @@ Return JSON:
 - goals: one per object to move / container to open, in order:
   {{"type": "on", "object": <object>, "from": <place it is on now, or "">, "to": <place to put it, or "me" when the user
   wants it given to them>}}; "in" = put into a drawer (to = the drawer); "open" / "close": object = the drawer, from/to "".{goal_kinds}
-  Object names: lower case, as the user said them ("tennis ball", "red cup").
+  Object names: lower case English ("tennis ball", "red cup"); "said": the user's own words for it, in their
+  language ("빨간 컵"); for "say", "content": only the message to pass on, in the user's words.
 
 Task: {task}{original}
 {dialogue}"""
@@ -402,6 +406,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
             "sage_subgoals": str(overrides.get("sage_subgoals", env("ROBOT_AGENT_SAGE_SUBGOALS", "goals"))),
             # plan_repair operator 6 (the gate writes a missing goal's segment): off; a separate ablation row
             "gate_complete": str(overrides.get("gate_complete", env("ROBOT_AGENT_GATE_COMPLETE", "0"))),
+            # the core safety layer (core/safety): core | pack (the robot pack's manifest rules only) | off
+            "hazard_rules": str(overrides.get("hazard_rules", env("ROBOT_AGENT_HAZARD_RULES", "core"))),
             # SAGE-v2 search (F6.1 the belief's next look spliced in place of a failed Find, no replan; F6.2 "I don't
             # know" continues over the likely places): option > env > manifest planner.search_legs > off
             "search_legs": str(overrides.get("search_legs", env("ROBOT_AGENT_SEARCH_LEGS", str(
@@ -532,6 +538,26 @@ class AssistLoop(SearchHooks, ClosedLoop):
         if self._cannot_do(r.goals) or self._over_limits(r.goals):
             return None
         return "override" if rt in ("", "missing_skill", "other") else None
+
+    def _hazard_gate(self, r):
+        """Goals the robot's safety rules forbid (core/safety, option ``hazard_rules`` core | pack | off): all of
+        them -> a typed safety refusal (_STOP); some -> those are dropped and said at the end
+        (``r.refused_parts``); None."""
+        from ..safety import check_goal
+        mode = str(self.cfg.get("hazard_rules", "core"))
+        pack = (getattr(self.robot.manifest, "safety", None) or {}).get("hazards") or []
+        bad = [(g, why) for g in r.goals for why in [check_goal(g, r.places, pack, mode)] if why]
+        if not bad:
+            return None
+        yield r.ev("understand_check", issues=[f"unsafe: {goal_kinds.describe(g)} ({w})" for g, w in bad], hazard=True)
+        if len(bad) == len(r.goals):
+            g, why = bad[0]
+            yield self._finish(r, "refused", refusal="safety", msg=f"unsafe: {goal_kinds.describe(g)}: {why}",
+                               say=f"I won't do that: {why}.")
+            return _STOP
+        r.refused_parts = list(getattr(r, "refused_parts", [])) + bad
+        r.goals = [g for g in r.goals if all(g is not b for b, _w in bad)]
+        return None
 
     def _understand_schema(self) -> dict:
         """UNDERSTAND_SCHEMA with the goal kinds this robot may be given (``goals.kinds_for``)."""
@@ -1407,6 +1433,9 @@ class AssistLoop(SearchHooks, ClosedLoop):
                                msg=ref.msg if not ref.missing else f"{ref.msg}, needed for: "
                                    + "; ".join(goal_kinds.describe(g) for g in r.goals))
             return _STOP
+        out = yield from self._hazard_gate(r)                      # F4.3: the robot's own safety rules
+        if out is _STOP:
+            return _STOP
         r.goals, conflict = goal_kinds.conflicts(r.goals)          # the goal validator
         if conflict:
             q = conflict if not q else f"{conflict} {q}"
@@ -1449,6 +1478,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
         goals, _kinds = goal_fix.kind_from_destination(goals, words_, r.places, "PutIn" in self.robot.plan_actions)
         goals, invented = goal_fix.drop_invented(goals, words_, r.places)    # F4.4
         r.filtered += invented
+        goals, rq = goal_fix.relay_check(goals, r.task, r.places)           # F4.6
+        q = q or (speech.LocalText("q_what_say") if rq else None)
         if not goals and empty and not q:
             q = speech.LocalText("q_what_bring")
         return goals, q
@@ -1460,8 +1491,10 @@ class AssistLoop(SearchHooks, ClosedLoop):
         answers = [t for w_, t in r.dialogue if w_ == "user"]
         # a place the person replaced in a read-back correction no longer counts as asked for (docs/dialog.md)
         said = without_places(" ".join([r.task, self.original or ""]), r.places, getattr(r, "replaced", ()))
-        return find_issues(goals, " ".join([said] + answers), r.places,
-                           english=r.task, user_words=_USER_WORDS)   # objects: the task's own words only
+        goals = list(goals) + [g for g, _w in getattr(r, "refused_parts", [])]   # refused for safety: covered
+        issues = find_issues(goals, " ".join([said] + answers), r.places,
+                             english=r.task, user_words=_USER_WORDS)   # objects: the task's own words only
+        return issues + [i for i in goal_fix.ko_object_issues(goals, r.task) if i not in issues]   # F4.5
 
     def _goal_readback(self, r):
         """The goals read back against the person's words before planning: a model that dropped or changed a
@@ -1477,7 +1510,11 @@ class AssistLoop(SearchHooks, ClosedLoop):
             if agreed is _STOP:
                 return _STOP
             if agreed is not None:
-                r.goals, r.unsure = agreed, []
+                from ..safety import check_goal
+                pack = (getattr(self.robot.manifest, "safety", None) or {}).get("hazards") or []
+                mode = str(self.cfg.get("hazard_rules", "core"))
+                keep = [g for g in agreed if not check_goal(g, r.places, pack, mode)]
+                r.goals, r.unsure = (keep or r.goals), []          # a re-sample never brings back a refused goal
                 return None
         if not issues or getattr(r, "issue_asked", False):
             return None
@@ -2535,6 +2572,9 @@ class AssistLoop(SearchHooks, ClosedLoop):
                                say=f"I couldn't find the {o}. I looked at: {named}.")
             return _STOP, ""
         r.find_fails[o] = 0                                     # the belief's next legs, without the person
+        if self._splice_leg(r, leg):
+            yield r.ev("recover", at_index=r.i, kind="search_leg", msg=f"looking for the {o} at {leg.text()}")
+            return _NEXT, ""
         return None, f"; it is not at {r.world.arrived}. Look next at {leg.text()}"
 
     def _recover_pick(self, r, st, reason, rule):
@@ -2628,6 +2668,12 @@ class AssistLoop(SearchHooks, ClosedLoop):
                 episode_memory.record_if_verified(r.planner, r.restated, r.completed, r.goals,
                                                   getattr(r, "goal_checks", []),
                                                   mode=self.cfg.get("memory_record"), run_id=r.run_id)
+            parts = getattr(r, "refused_parts", [])
+            if parts:
+                g, why = parts[0]
+                return self._finish(r, "success", say=self._in_lang(
+                    self._humanize(f"I did the rest, but I won't {str(self._goal_phrase(g, r.places, lambda k: speech.say_name(r.places, k, 'en')))}: {why}."), r.lang),
+                    localized=True, refused_parts=[goal_kinds.describe(x) for x, _w in parts])
             return self._finish(r, "success")
         return self._finish(r, "failed", msg="plan finished but the goals do not hold: "
                             + json.dumps(r.goals, ensure_ascii=False))
