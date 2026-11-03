@@ -23,6 +23,7 @@ CORE_PHRASES = {
     "q_where_put": "Where should I put the {object}?",
     "q_which_place": "Which place do you mean: {options}?",
     "q_which_x": "Which {what} do you mean: {options}?",
+    "q_which_drawer": "Which drawer should I {verb}?",
     "q_where_go": "Where should I go?",
     "q_where_take": "Where should I take it?",
     "q_what_say": "What should I say?",
@@ -34,6 +35,8 @@ CORE_PHRASES = {
     "q_what_bring": "What should I bring?",
     "q_confirm": "{summary} Is that right?",
     "rb_on": "put the {object} on the {place}",
+    "rb_on_from": "put the {object} from the {source} on the {place}",
+    "sep_then": ", then ",
     "rb_in": "put the {object} in the {place}",
     "rb_to_you": "bring you the {object}",
     "rb_hand_you": "hand you the {object}",
@@ -44,8 +47,7 @@ CORE_PHRASES = {
     "rb_go": "go to the {place}",
     "rb_say": "tell {person}: \"{text}\"",
     "rb_say_here": "say \"{text}\"",
-    "rb_then": "I will {first}, then {rest}.",
-    "rb_one": "I will {first}.",
+    "rb_will": "I will {what}.",
     "safety_partial": "I won't {what}: {why}.",
 }
 
@@ -112,7 +114,17 @@ class LocalText(str):
     def join(cls, *items) -> "LocalText":
         """Several phrases said one after the other ("Which shelf ...? Where should I put the cup?")."""
         items = [x for x in items if x]
+        if len(items) == 1 and isinstance(items[0], LocalText):
+            return items[0]
         return cls("_join", {}, text=" ".join(str(x) for x in items), parts=tuple(items))
+
+    @classmethod
+    def seq(cls, items, sep_key: str = "sep_then") -> "LocalText":
+        """Phrases in a row with the robot's separator ("A, then B, then C")."""
+        items = [x for x in items if x]
+        sep = CORE_PHRASES.get(sep_key, " ")
+        out = cls("_seq", {"sep": sep_key}, text=sep.join(str(x) for x in items), parts=tuple(items))
+        return out
 
 
 def _fmt(s: str, slots: dict) -> str:
@@ -137,19 +149,24 @@ def render(text, lang: str, robot=None, places=None, name_slots=("place", "perso
     lg = (lang or "en")[:2]
     if not isinstance(text, LocalText):
         return str(text) if lg == "en" else None
-    if text.key == "_join":
+    if text.key in ("_join", "_seq"):
         out = [render(p, lang, robot, places, name_slots) for p in text.parts]
-        return None if any(o is None for o in out) else " ".join(out)
+        if any(o is None for o in out):
+            return None
+        sep = " " if text.key == "_join" else phrase(robot, text.slots.get("sep", "sep_then"), lg)
+        return None if sep is None else sep.join(out)
     tpl = phrase(robot, text.key, lg)
     if tpl is None:
         return str(text) if lg == "en" else None
     slots = {}
     for k, v in text.slots.items():
+        if "{" + k + "}" not in tpl:
+            continue                                  # a slot this language's phrase does not say
         if isinstance(v, LocalText):
             v = render(v, lang, robot, places, name_slots)
             if v is None:
                 return None
-        elif k in ("place", "person") and places is not None and v in (getattr(places, "env", {}) or {}):
+        elif k in ("place", "person", "source") and places is not None and v in (getattr(places, "env", {}) or {}):
             v = say_name(places, v, lg)
             if not v:
                 return None

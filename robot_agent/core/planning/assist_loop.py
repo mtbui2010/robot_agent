@@ -97,6 +97,11 @@ def _strip_article(s: str) -> str:
     return re.sub(r"^(the|a|an|my|your)\s+", "", s or "").strip()
 
 
+def _fmt_en(key: str, **slots) -> str:
+    from .speech import CORE_PHRASES
+    return CORE_PHRASES[key].format(**slots)
+
+
 class Places:
     """The live ENV as a closed vocabulary of places. ``openable(key, entry)``: the robot's rule
     (``RobotView.openable``); default, the ENV entry's ``openable`` flag."""
@@ -408,6 +413,14 @@ class AssistLoop(SearchHooks, ClosedLoop):
             # person who said where they are (F2.1 untracked, Hall's personal-zone edge), metres
             "person_seat_m": float(overrides.get("person_seat_m", env("ROBOT_AGENT_PERSON_SEAT_M", "1.0"))),
             "person_surface_m": float(overrides.get("person_surface_m", env("ROBOT_AGENT_PERSON_SURFACE_M", "1.2"))),
+            # the model that translates what the robot says into the user's language (default: the planner's), its
+            # server, and its own cap of calls per run (F5.3; manifest planner.translate_*)
+            "translate_model": str(overrides.get("translate_model", env("ROBOT_AGENT_TRANSLATE_MODEL",
+                                                                        self._manifest_planner("translate_model", ""))) or ""),
+            "translate_url": overrides.get("translate_url", env("ROBOT_AGENT_TRANSLATE_URL",
+                                                                self._manifest_planner("translate_url", None))),
+            "translate_budget": int(overrides.get("translate_budget", env("ROBOT_AGENT_TRANSLATE_BUDGET", str(
+                self._manifest_planner("translate_budget", 10))))),
         }
 
     def _manifest_planner(self, key, default=None):
@@ -542,7 +555,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
             drawers = [p for p in places.keys if places.openable(p)]
             k = drawers[0] if len(drawers) == 1 else None
         g["object"] = k or g["object"]; g["to"] = k or ""
-        return g, (None if k else f"Which drawer should I {g['type']}?")
+        return g, (None if k else speech.LocalText("q_which_drawer", {"verb": g["type"]},
+                                                   text=f"Which drawer should I {g['type']}?"))
 
     @staticmethod
     def _ground_template(g, places, task, latest=""):
@@ -552,7 +566,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
         v, t = g.get("to") or "", g["type"]
         if t == "say":
             if not g.get("object"):
-                return g, "What should I say?"
+                return g, speech.LocalText("q_what_say")
             k = places.ground(v, task) if v else None
             if v and not k:
                 g["person"], g["to"] = v, ""
@@ -560,7 +574,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
                 g["to"] = k
             return g, None
         if not v:
-            return g, "Where should I go?" if t == "go" else "Where should I take it?"
+            return g, speech.LocalText("q_where_go" if t == "go" else "q_where_take")
         c = places.candidates(v, task)
         if len(c) > 1 and latest and len(places.candidates(v, latest)) == 1:
             c = places.candidates(v, latest)
@@ -578,7 +592,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
             return g, None
         opts = places.in_room(c[0][1:]) if len(c) == 1 else c
         nice = [k.replace("@", " in the ") for k in (opts or places.keys[:4])]
-        return g, f"Which place do you mean: {' or '.join(nice)}?"
+        return g, speech.LocalText("q_which_place", {"options": list(opts or places.keys[:4])},
+                                   text=f"Which place do you mean: {' or '.join(nice)}?")
 
     def _ground_goals(self, goals, places, memory, task, latest=""):
         """Ground every goal's places on ENV. Returns (goals, question|None). `latest`: the user's last answer,
@@ -596,7 +611,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
                 v = g.get(slot) or ""
                 if not v:
                     if slot == "to":
-                        questions.append(f"Where should I put the {g['object']}?")
+                        questions.append(speech.LocalText("q_where_put", {"object": g.get("said") or g["object"]},
+                                                          text=f"Where should I put the {g['object']}?"))
                     continue
                 if words(v) in _USER_WORDS or (slot == "to" and persons.is_speaker_word(v)):
                     q_ = self._ground_speaker(g, slot, places, task, latest)
@@ -635,7 +651,9 @@ class AssistLoop(SearchHooks, ClosedLoop):
                         g["from_any"] = opts; g[slot] = ""   # 'from the kitchen' / 'the shelf': search them
                     else:
                         nice = [k.replace("@", " in the ") for k in (opts or places.keys[:4])]
-                        questions.append(f"Which {places.head(v) if '@' in v else words(v)} do you mean: {' or '.join(nice)}?")
+                        what = places.head(v) if '@' in v else words(v)
+                        questions.append(speech.LocalText("q_which_x", {"what": what, "options": list(opts or places.keys[:4])},
+                                                          text=f"Which {what} do you mean: {' or '.join(nice)}?"))
             if g.get("from") and g.get("from") == g.get("to"):
                 g["from"] = ""                       # 'from the desk to the desk': the model's slip, search instead
             if t == "in" and g.get("to") and not places.openable(g["to"]):
@@ -649,7 +667,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
             if g.get("from") and g.get("from") == g.get("to"):
                 g["from"] = ""                       # already where it should go? search rather than trust it
             out.append(g)
-        return out, (" ".join(dict.fromkeys(questions)) if questions else None)
+        return out, (speech.LocalText.join(*dict.fromkeys(questions)) if questions else None)
 
     def _ground_speaker(self, g, slot, places, task, latest):
         """A destination in the speaker's own words ("me", "here", 나한테): the speaker's ENV entry (F2.1, no
@@ -697,8 +715,9 @@ class AssistLoop(SearchHooks, ClosedLoop):
         if at is None:
             self._where_asked = to
             if (places.env.get(to) or {}).get("speaker") or to == persons.speaker_key(places):
-                return "Where are you?"
-            return f"Where is {self._say_name(places, to)}?"
+                return speech.LocalText("q_where_are_you")
+            return speech.LocalText("q_where_is_person", {"person": to},
+                                    text=f"Where is {self._say_name(places, to)}?")
         spot = persons.surface_near(places, at, float(self.cfg.get("person_surface_m", 1.2)) if hasattr(self, "cfg") else 1.2)
         if spot:
             g["to"], g["near_person"] = spot, to
@@ -715,20 +734,76 @@ class AssistLoop(SearchHooks, ClosedLoop):
 
     _LANGS = {"ko": "Korean", "vi": "Vietnamese", "ja": "Japanese", "zh": "Chinese"}
 
+    _REGISTER = {"ko": "polite spoken Korean, 해요체", "vi": "polite spoken Vietnamese", "ja": "polite spoken Japanese",
+                 "zh": "polite spoken Chinese"}
+
+    def _translator(self):
+        """The client that translates what the robot says (F5.3): option / $ROBOT_AGENT_TRANSLATE_MODEL / the
+        manifest's planner.translate_model; the planner's own client when none is set or it is the same model."""
+        tm = str(self.cfg.get("translate_model") or "").strip()
+        if not tm or tm == str((self._llm_cfg or {}).get("model") or ""):
+            return self._llm()
+        if getattr(self, "_tr_client", None) is None:
+            from ...connect.llm import init_llm_client
+            url = self.cfg.get("translate_url") or (self._llm_cfg or {}).get("url")
+            self._tr_client = init_llm_client(cfg=dict(self._llm_cfg or {}, model=tm, url=url))
+        return self._tr_client
+
+    def _glossary(self, text, lang) -> dict:
+        """{English name in ``text``: its name in ``lang``} for the ENV places / people the text names."""
+        places, lg, out = getattr(self, "_env_places", None), (lang or "en")[:2], {}
+        if places is None:
+            return out
+        t = str(text or "")
+        for k in places.keys:
+            en, local = speech.say_name(places, k, "en"), speech.say_name(places, k, lg)
+            if en and local and en != local and en in t and local.isascii() is False:
+                out[en] = local
+        return out
+
     def _in_lang(self, text, lang) -> str:
-        """`text` (English) in the user's language: the questions and read-backs are written in English."""
-        name = self._LANGS.get((lang or "en")[:2])
-        if not name or not text or getattr(self, "_llm_unreachable", False):
-            return text                              # (the model is down: no translation call to wait for)
+        """``text`` (English) in the user's language: the robot's own phrase when ``text`` is a phrase
+        (``speech.LocalText``) it has in that language, else the translator (``translate_model``, its own budget
+        ``translate_budget``, an output check); the English text when neither works (counted:
+        ``say_not_in_lang``)."""
+        lg = (lang or "en")[:2]
+        name = self._LANGS.get(lg)
+        if not name or not text:
+            return str(text) if text else text
+        done = speech.render(text, lang, self.robot, getattr(self, "_env_places", None))
+        if done is not None:
+            return done
+        if getattr(self, "_llm_unreachable", False):
+            return str(text)                         # (the model is down: no translation call to wait for)
         cache = self.__dict__.setdefault("_tr_cache", {})
-        if (text, name) not in cache:
+        key = (str(text), name, str(self.cfg.get("translate_model") or ""))
+        if key not in cache:
+            cache[key] = self._translate(str(text), lg, name)
+        return cache[key]
+
+    def _translate(self, text, lg, name) -> str:
+        """One translation with the output check and one retry naming what was wrong; the English text when it
+        fails (``self._say_not_in_lang`` counts it, never hidden)."""
+        gl = self._glossary(text, lg)
+        names = "; ".join(f"{a} = {b}" for a, b in gl.items())
+        base = (f"Translate into natural {self._REGISTER.get(lg, name)} ({name}). Keep the meaning, the names and any "
+                f"quoted sentence; do not add anything." + (f" Use these names: {names}." if names else "")
+                + " Output only the translation:")
+        why = None
+        for _k in range(2):
+            budget = getattr(self, "_tr_budget", None)
             try:
-                out = str(self._llm().chat(prompt=f"Translate into natural spoken {name}. Keep it short and "
-                                                  f"polite. Output only the translation:\n{text}")).strip().strip('"')
+                if budget is not None:
+                    budget.take(what="translate")
+                prompt = base if why is None else base.replace(" Output only", f" (Your last answer was wrong: {why}.) Output only")
+                out = str(self._translator().chat(prompt=f"{prompt}\n{text}", temperature=0, seed=0)).strip().strip('"')
             except Exception:
-                out = ""
-            cache[(text, name)] = out or text
-        return cache[(text, name)]
+                break
+            why = speech.guard(out, lg, keep=list(gl.values()))
+            if why is None:
+                return out
+        self._say_not_in_lang = getattr(self, "_say_not_in_lang", 0) + 1
+        return text
 
     def _ask(self, question, node, log_fn, lang) -> str:
         """Ask the user (``interact.dialog`` via run_control: the run waits on the question, so an answer
@@ -769,21 +844,41 @@ class AssistLoop(SearchHooks, ClosedLoop):
         return yes_no(text)
 
     @staticmethod
-    def summary(goals):
-        nice = lambda k: (k or "").replace("@", " in the ")
-        out = []
-        for g in goals:
-            t = g["type"]
-            if t == "on":
-                out.append(f"put the {g['object']}" + (f" from the {nice(g['from'])}" if g.get("from") else "")
-                           + f" on the {nice(g['to'])}")
-            elif t == "in":
-                out.append(f"put the {g['object']} in the {nice(g['to'])}")
-            elif t in goal_kinds.TEMPLATE_KINDS:
-                out.append(goal_kinds.summary(g))
-            else:
-                out.append(f"{t} the {nice(g['object'])}")
-        return "I will " + ", then ".join(out) + "."
+    def summary(goals, places=None):
+        """The read-back "I will ..., then ...": a ``speech.LocalText`` (English text; the robot's phrases in the
+        user's language, ``speech.render``). With ``places`` the keys are named as a person says them (F5.1) and a
+        delivery to a person reads "bring you the cup" / "hand the cup to grandpa"."""
+        nice = (lambda k: speech.say_name(places, k, "en")) if places is not None else \
+            (lambda k: (k or "").replace("@", " in the "))
+        return speech.LocalText("rb_will", {"what": speech.LocalText.seq(
+            [AssistLoop._goal_phrase(g, places, nice) for g in goals])},
+            text="I will " + ", then ".join(str(AssistLoop._goal_phrase(g, places, nice)) for g in goals) + ".")
+
+    @staticmethod
+    def _goal_phrase(g, places, nice):
+        L, t, obj = speech.LocalText, g["type"], g.get("object") or ""
+        o = g.get("said") or obj
+        if t == "on" and places is not None and persons.is_person(places, g.get("to")):
+            you = bool((places.env.get(g["to"]) or {}).get("speaker"))
+            key = ("rb_hand_you" if you else "rb_hand_person") if g.get("hand") else ("rb_to_you" if you else "rb_to_person")
+            return L(key, {"object": o, "person": g["to"]}, text=_fmt_en(key, object=obj, person=nice(g["to"])))
+        if t == "on":
+            if g.get("from"):
+                return L("rb_on_from", {"object": o, "source": g["from"], "place": g["to"]},
+                         text=f"put the {obj} from the {nice(g['from'])} on the {nice(g['to'])}")
+            return L("rb_on", {"object": o, "place": g["to"]}, text=f"put the {obj} on the {nice(g['to'])}")
+        if t == "in":
+            return L("rb_in", {"object": o, "place": g["to"]}, text=f"put the {obj} in the {nice(g['to'])}")
+        if t == "go" and places is not None:
+            return L("rb_go", {"place": g.get("to")}, text=f"go to the {nice(g.get('to'))}")
+        if t == "say" and places is not None:
+            who = g.get("to") or ""
+            if who and persons.is_person(places, who):
+                return L("rb_say", {"person": who, "text": obj}, text=f"tell {nice(who)}: \"{obj}\"")
+            return L("rb_say_here", {"text": obj}, text=goal_kinds.summary(g))
+        if t in goal_kinds.TEMPLATE_KINDS:
+            return goal_kinds.summary(g)
+        return L(f"rb_{t}", {"place": obj}, text=f"{t} the {nice(obj)}") if t in ("open", "close") else f"{t} the {nice(obj)}"
 
     # ── plan grounding + gate ──────────────────────────────────────────────
     def _ground_step(self, st, places, goals, task):
@@ -1055,6 +1150,12 @@ class AssistLoop(SearchHooks, ClosedLoop):
         a, o = st["action"], st["object"]
         if a in _LOC_ACTIONS or a in ("Find", "Pick"):
             p["inputs"] = o
+        lang = getattr(self, "_run_lang", "en") or "en"
+        if a in ("Say", "Announce") and lang[:2] != "en":
+            from . import lexicon
+            for k_ in ("inputs", "text"):
+                if isinstance(p.get(k_), str) and p[k_].strip() and lexicon.lang_of(p[k_]) != lang[:2]:
+                    p[k_] = self._in_lang(p[k_], lang)       # a Say in the user's language (F5.4)
         if a == "Find" and self.cfg["find_min_conf"] > 0 and "min_conf" in self._find_params:
             p["min_conf"] = self.cfg["find_min_conf"]
         if a == "Find" and self.cfg["find_verify"] and "verify" in self._find_params:
@@ -1166,6 +1267,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
         r.llm_budget, self._llm_unreachable = LLMBudget(self.cfg["llm_budget"]), False
         self._where_asked = None                      # the person "Where are you?" was asked about (this run)
         self._handed = set()                          # objects this run handed over (release actions)
+        self._tr_budget = LLMBudget(self.cfg["translate_budget"])   # translation calls: their own cap (F5.3)
+        self._say_not_in_lang, self._run_lang = 0, lang
         self._mute(r)
         try:
             yield r.ev("task_start", say=r.announcer.announce("task_start"), task=task, run_id=r.run_id,
@@ -1197,10 +1300,23 @@ class AssistLoop(SearchHooks, ClosedLoop):
             kw = {**self._deciding_failure(r, msg, kw), **kw}
         say, localized = kw.pop("say", None), kw.pop("localized", False)
         if say is None and status in ("failed", "refused") and msg and not msg.startswith(("internal error", "plan finished")):
-            # tell the user why (dropped it, can't find it, ...), without the skill's error text
-            say = re.split(r": [\'\"{]|: Exception| \(replan| \(searched", msg)[0].strip()
+            # tell the user why (dropped it, can't find it, ...), without the skill's error text or the gate's findings
+            say = re.split(r": [\'\"{]|: Exception| \(replan| \(searched| \(looked|: step \d|: the plan does", msg)[0].strip()
+        if say and not localized:
+            say = self._humanize(say)                         # no raw ENV key reaches the user (F5.1)
         return r.ev("done", status=status, run_id=r.run_id, msg=msg,
                     say=(say if localized else self._in_lang(say, r.lang)) if say else r.announcer.announce(kind), world=r.world.to_dict(), **kw)
+
+    def _humanize(self, text):
+        """``text`` with every ENV key it names said as a person names it (speech.say_name, English)."""
+        places = getattr(self, "_env_places", None)
+        if places is None or isinstance(text, speech.LocalText) or not text:
+            return text
+        out = str(text)
+        for k in sorted(places.keys, key=len, reverse=True):
+            if ("@" in k or "_" in k) and k in out:
+                out = out.replace(k, speech.say_name(places, k, "en"))
+        return out
 
     def _llm_failed(self, r, e, what="language model") -> dict:
         """The run's end when an LLM / planner call raised (understand.LLMUnavailable) or the run's LLM-call
@@ -1334,7 +1450,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
         goals, invented = goal_fix.drop_invented(goals, words_, r.places)    # F4.4
         r.filtered += invented
         if not goals and empty and not q:
-            q = "What should I bring?"
+            q = speech.LocalText("q_what_bring")
         return goals, q
 
     def _issues(self, r, goals) -> list:
@@ -1397,8 +1513,10 @@ class AssistLoop(SearchHooks, ClosedLoop):
         if r.confirms >= 2:
             yield self._finish(r, "failed", msg="the user did not confirm the task"); return _STOP, None
         r.confirms += 1
-        cq = (f"I am not sure I understood ({'; '.join(unsure)}). " if unsure else "") + \
-            f"{self.summary(r.goals)} Is that right?"
+        rb = self.summary(r.goals, r.places)
+        cq = speech.LocalText("q_confirm", {"summary": rb}, text=f"{rb} Is that right?")
+        if unsure:
+            cq = speech.LocalText.join(f"I am not sure I understood ({'; '.join(unsure)}).", cq)
         yield r.ev("clarify", question=cq, round=r.confirms, kind="confirm")
         ans, ok_, rest = self._ask_yes_no(r, cq)
         stop = self._cancelled(r)
@@ -2338,7 +2456,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
         r.find_fails[o] = r.find_fails.get(o, 0) + 1
         if (r.find_fails[o] > self.cfg["search_max"] or nowhere) and self.cfg["ask_help"] and ("where", o) not in r.helped:
             r.helped.add(("where", o))
-            q = f"I couldn't find the {o}. Where is it?"
+            q = speech.LocalText("q_where_is", {"object": self._said_of(r, o)}, text=f"I couldn't find the {o}. Where is it?")
             yield r.ev("clarify", question=q, round=0)
             ans = self._ask(q, r.node, self._log_fn(r.i), r.lang)
             k = r.places.ground(ans, ans) if ans else None
@@ -2387,6 +2505,12 @@ class AssistLoop(SearchHooks, ClosedLoop):
             action_model.apply(st, w, inplace=True, capabilities=caps)
         r.steps[r.i:] = new
         return True
+
+    @staticmethod
+    def _said_of(r, obj) -> str:
+        """The person's own words for ``obj`` (the understood goal's ``said``, F4.5), else the object name."""
+        return next((g.get("said") for g in getattr(r, "goals", []) or [] if g.get("object") == obj and g.get("said")),
+                    obj)
 
     def _confirm_near(self, r, ans):
         """The one place an answer with ASR noise nearly names (understand.fuzzy_place), confirmed with a yes /
