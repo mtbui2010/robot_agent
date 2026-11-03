@@ -31,7 +31,9 @@ HAND = {
     "en": [r"\bhand (?:it |them |that |this )?(?:over )?(?:to )?(?:me|him|her|them)\b", r"\bhand me\b",
            r"\binto (?:my|his|her|their) hands?\b", r"\bin(?:to)? (?:my|his|her|their) hands?\b",
            r"\bpass (?:it |them )?(?:straight |directly )?(?:to )?me\b", r"\bdirectly to me\b",
-           r"\bstraight to me\b", r"\bgive (?:it|them) to me directly\b", r"\bhand-?over\b", r"\bhand (?:it|them) over\b"],
+           r"\bstraight to me\b", r"\bgive (?:it|them) to me directly\b", r"\bhand-?over\b", r"\bhand (?:it|them) over\b",
+           r"\bhand (?:it|them|this|that|these|those)\b", r"\bpass me\b", r"\bpass (?:it|them) to me\b",
+           r"\bhand (?:\w+ ){0,2}(?:his|her|their) \w+"],
     "ko": [r"손에", r"손으로", r"건네", r"쥐여", r"쥐어"],
     "vi": [r"tận tay", r"vào tay", r"đưa tay"],
 }

@@ -58,7 +58,7 @@ from . import action_model, concrete, episode_memory, goal_change
 from . import search as search_belief
 from .search_hooks import SearchHooks
 from . import goals as goal_kinds
-from . import goal_filter, goal_fix, plan_tidy
+from . import goal_filter, goal_fix, persons, plan_tidy
 from . import reconcile as sensed
 from .robot import run_skill
 from .verify import symbolic_check, verdict
@@ -380,6 +380,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
             "planner": "sage",
         })
         self.cfg.update(self._v2_cfg(overrides))
+        self._reaches = lambda steps, world, goals, loop=None: AssistLoop._reaches(steps, world, goals, self)
 
     def _v2_cfg(self, overrides) -> dict:
         """The SAGE-v2 options (docs/env.md): run option > environment > the robot's manifest > default."""
@@ -522,14 +523,9 @@ class AssistLoop(SearchHooks, ClosedLoop):
                     if slot == "to":
                         questions.append(f"Where should I put the {g['object']}?")
                     continue
-                if words(v) in _USER_WORDS:
-                    # "to me ... at the sofa": the task names the user's place
-                    m = re.search(r"\b(?:at|on|by|near) (?:the )?([a-z ]+?)(?:[.,!?]|$)", task.lower())
-                    k = places.ground(m.group(1), task) if m else None
-                    if k:
-                        g[slot] = k
-                    else:
-                        questions.append("Where are you? Which place should I bring it to?")
+                if words(v) in _USER_WORDS or (slot == "to" and persons.is_speaker_word(v)):
+                    q_ = self._ground_speaker(g, slot, places, task, latest)
+                    questions += [q_] if q_ else []
                     continue
                 c = places.candidates(v, task)
                 if len(c) > 1 and latest:
@@ -571,12 +567,76 @@ class AssistLoop(SearchHooks, ClosedLoop):
                 drawers = [p for p in places.keys if places.openable(p)]
                 if len(drawers) == 1:
                     g["to"] = drawers[0]
+            if slot_q := self._person_destination(g, places, task, latest):
+                questions.append(slot_q)
             if not g.get("from") and not g.get("from_any"):
                 g["from"] = self._remembered(memory, g["object"]) or ""
             if g.get("from") and g.get("from") == g.get("to"):
                 g["from"] = ""                       # already where it should go? search rather than trust it
             out.append(g)
         return out, (" ".join(dict.fromkeys(questions)) if questions else None)
+
+    def _ground_speaker(self, g, slot, places, task, latest):
+        """A destination in the speaker's own words ("me", "here", 나한테): the speaker's ENV entry (F2.1, no
+        question when the robot knows where they are); an untracked speaker's place from their answer, else
+        "Where are you?"; without a speaker entry, the place the words name ("to me ... at the sofa"), else the
+        question (as before). Returns the question or None."""
+        sk = persons.speaker_key(places)
+        if sk is not None and slot == "to":
+            g[slot] = sk
+            return None                                   # untracked: _person_destination asks / maps
+        m = re.search(r"\b(?:at|on|by|near) (?:the )?([a-z ]+?)(?:[.,!?]|$)", task.lower())
+        k = places.ground(m.group(1), task) if m else None
+        if k:
+            g[slot] = k
+            return None
+        return "Where are you? Which place should I bring it to?"
+
+    def _person_destination(self, g, places, task, latest):
+        """An ``on`` goal to a person entry (F2.1 / F2.3): a tracked person -> a hand-over (``g['hand']``) or a
+        put-down at the support surface beside them (``persons.delivery``); an untracked person (no ENV position,
+        ``people_tracking`` off) -> the support surface nearest to the place their answer names, never the seat
+        itself, else a hand-over; no answer yet -> "Where are you?" / "Where is X?". Returns the question or None."""
+        to = g.get("to") or ""
+        radius = float(self.cfg.get("person_seat_m", persons.PERSON_SEAT_M)) if hasattr(self, "cfg") else persons.PERSON_SEAT_M
+        robot = getattr(self, "robot", None)
+        asked = getattr(self, "_where_asked", None)
+        if (g.get("type") == "on" and asked and latest and to in places.env and not persons.is_person(places, to)
+                and not persons.is_support(places, to) and persons.place_in_answer(places, latest) == to):
+            # the answer to "Where are you?" named where they sit / lie: the delivery is to them, never onto the
+            # seat itself (the model put the answer's place as the destination)
+            to = g["to"] = persons.seat_person(places, to, radius) or asked
+        if g.get("type") != "on" or not persons.is_person(places, to):
+            return None
+        if persons.tracked(places, to):
+            mode, where = persons.delivery(places, to, task, robot, radius)
+            if mode == "hand":
+                g["hand"] = True
+            else:
+                g["to"] = where
+            return None
+        if persons.wants_hand(task, robot):
+            g["hand"] = True
+            return None
+        at = persons.place_in_answer(places, latest) if latest else None
+        if at is None:
+            self._where_asked = to
+            if (places.env.get(to) or {}).get("speaker") or to == persons.speaker_key(places):
+                return "Where are you?"
+            return f"Where is {self._say_name(places, to)}?"
+        spot = persons.surface_near(places, at, float(self.cfg.get("person_surface_m", 1.2)) if hasattr(self, "cfg") else 1.2)
+        if spot:
+            g["to"], g["near_person"] = spot, to
+        else:
+            g["hand"] = True
+        return None
+
+    @staticmethod
+    def _say_name(places, key, lang="en") -> str:
+        """How the robot names ``key`` to a person (F5.1): an alias in the user's script, else the key's head
+        in words with its room; a person by their name."""
+        from . import speech
+        return speech.say_name(places, key, lang)
 
     _LANGS = {"ko": "Korean", "vi": "Vietnamese", "ja": "Japanese", "zh": "Chinese"}
 
@@ -679,6 +739,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
         Critical problems go back to the planner for a repair; the others are only mentioned alongside them.
         The action rules are the shared action model's; this adds the goal / ENV findings and the wording."""
         probs = []
+        self._env_places = places
         P = lambda i, txt, crit=True: probs.append((i, txt, crit))
         src_of = {g["object"]: g.get("from") for g in goals}
         c = {"need_open": {g["to"] for g in goals if g["type"] == "in"} | {g["object"] for g in goals if g["type"] == "open"},
@@ -806,23 +867,56 @@ class AssistLoop(SearchHooks, ClosedLoop):
 
     _sage_edit = _repair_plan            # pre-v2 name
 
-    def _missing(self, steps, world, goals):
-        holding, opened, on = world.holding, set(world.opened), {}
+    def _releases(self) -> set:
+        """The robot's own actions that release the held object (RobotView.release_actions: a hand-over)."""
+        if not isinstance(self, AssistLoop):
+            return set()
+        robot = getattr(self, "robot", None)
+        try:
+            return set(robot.release_actions()) if robot is not None else set()
+        except Exception:
+            return set()
+
+    def _simulate_goals(self, steps, world) -> tuple:  # self: the loop, or None (no release actions)
+        """(opened, on): what the steps leave open and where each object ends: on[obj] = (action, where);
+        a release action (hand-over) is ("release", the person / place the robot is at)."""
+        holding, opened, on, at = world.holding, set(world.opened), {}, world.arrived
+        rel = AssistLoop._releases(self) if self is not None else set()
         for st in steps:
             a, o = st.get("action"), st.get("object")
-            if a == "Pick":
+            if a == "MoveTo":
+                at = o
+            elif a == "Pick":
                 holding = o
             elif a in ("Place", "PutIn") and holding:
                 on[holding] = (a, o); holding = None
+            elif a in rel and holding:
+                on[holding] = ("release", o or at); holding = None
             elif a == "Open":
                 opened.add(o)
             elif a == "Close":
                 opened.discard(o)
+        return opened, on
+
+    def _on_reached(self, g, got) -> bool:
+        """Is the ``on`` goal ``g`` reached by ``got`` = (action, where)? A Place there; for a goal to a person
+        (F2.2) also the robot's hand-over there, and only the hand-over when the goal asks for the hand."""
+        if not got or got[1] != g.get("to"):
+            return False
+        places = getattr(self, "_env_places", None) if self is not None else None
+        to_person = places is not None and persons.is_person(places, g.get("to"))
+        if g.get("hand") and to_person:
+            return got[0] == "release"
+        return got[0] == "Place" or (got[0] == "release" and to_person)
+
+    def _missing(self, steps, world, goals):
+        opened, on = self._simulate_goals(steps, world)
         out = []
         for g in goals:
             t = g["type"]
-            if t == "on" and on.get(g["object"]) != ("Place", g["to"]):
-                out.append(f"Place the {g['object']} on {g['to']}")
+            if t == "on" and not self._on_reached(g, on.get(g["object"])):
+                out.append(f"{'Hand over' if g.get('hand') else 'Place'} the {g['object']} "
+                           f"{'to' if g.get('hand') else 'on'} {g['to']}")
             elif t == "in" and on.get(g["object"]) != ("PutIn", g["to"]):
                 out.append(f"PutIn the {g['object']} into {g['to']}")
             elif t == "open" and g["object"] not in opened:
@@ -835,21 +929,13 @@ class AssistLoop(SearchHooks, ClosedLoop):
         return out
 
     @staticmethod
-    def _reaches(steps, world, goals) -> bool:
-        holding, opened, on = world.holding, set(world.opened), {}
-        for st in steps:
-            a, o = st.get("action"), st.get("object")
-            if a == "Pick":
-                holding = o
-            elif a in ("Place", "PutIn") and holding:
-                on[holding] = (a, o); holding = None
-            elif a == "Open":
-                opened.add(o)
-            elif a == "Close":
-                opened.discard(o)
+    def _reaches(steps, world, goals, loop=None) -> bool:
+        """Do ``steps`` from ``world`` reach ``goals``? With ``loop`` (bound calls pass it: ``self._reaches``
+        is wrapped in ``__init__``) a hand-over to a person counts too (F2.2)."""
+        opened, on = AssistLoop._simulate_goals(loop, steps, world)
         for g in goals:
             t = g["type"]
-            if t == "on" and on.get(g["object"]) != ("Place", g["to"]):
+            if t == "on" and not AssistLoop._on_reached(loop, g, on.get(g["object"])):
                 return False
             if t == "in" and on.get(g["object"]) != ("PutIn", g["to"]):
                 return False
@@ -875,6 +961,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
                 return False
             if t in ("on", "in") and (placed.get(g["object"]) != g["to"] or world.holding == g["object"]):
                 return False
+            if t == "on" and g.get("hand") and g["object"] not in getattr(self, "_handed", set()):
+                return False                                  # a hand delivery holds only after a hand-over
             if t == "open" and g["object"] not in world.opened:
                 return False
             if t == "close" and g["object"] in world.opened:
@@ -942,9 +1030,15 @@ class AssistLoop(SearchHooks, ClosedLoop):
         elif a == "Pick":
             world.holding_since = time.time()
             memory.see(world.holding, "robot", "picked")
-        elif a in ("Place", "PutIn"):
+        elif a in ("Place", "PutIn") or (a in self._releases() and held):
             if held:
-                placed[held] = o; memory.see(held, o, "placed")
+                where = o if a in ("Place", "PutIn") else (o or world.arrived)
+                placed[held] = where; memory.see(held, where, "placed" if a in ("Place", "PutIn") else "handed over")
+                if a not in ("Place", "PutIn"):
+                    world.holding = None                    # the hand-over released it (manifest effects)
+                    self.__dict__.setdefault("_handed", set()).add(held)
+                else:
+                    self.__dict__.setdefault("_handed", set()).discard(held)
             world.holding_since = None; world.holding_pose = None
         try:
             current().save_world()
@@ -977,7 +1071,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
         best = None
         for k in places.keys:
             l = places.env[k].get("loc") or {}
-            if "x" in l and "y" in l and not places.openable(k):
+            if "x" in l and "y" in l and not places.openable(k) and not persons.is_person(places, k):
                 d = math.hypot(l["x"] - wx, l["y"] - wy)
                 if best is None or d < best[0]:
                     best = (d, k)
@@ -991,9 +1085,12 @@ class AssistLoop(SearchHooks, ClosedLoop):
         fixed = self._reconcile(r, "start")              # adapter.reconcile + the declared sensors
         from robot_agent.skill_configs import ENV
         r.places = Places(dict(ENV), openable=r.robot.openable)
+        self._env_places = r.places
         r.verifier = self._verifier(r.node, r.places.env)
         r.memory = Memory(self.cfg["memory_path"])
         r.llm_budget, self._llm_unreachable = LLMBudget(self.cfg["llm_budget"]), False
+        self._where_asked = None                      # the person "Where are you?" was asked about (this run)
+        self._handed = set()                          # objects this run handed over (release actions)
         self._mute(r)
         try:
             yield r.ev("task_start", say=r.announcer.announce("task_start"), task=task, run_id=r.run_id,

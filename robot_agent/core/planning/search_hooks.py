@@ -43,8 +43,10 @@ class SearchHooks:
         if not sc.enabled:
             return
         fn = getattr(r.robot.adapter, "containers", None)
+        # people are not places to search (SAGE-v2 F2.4: a person entry was searched like a shelf)
+        keys = [k for k in r.places.keys if not (r.places.env.get(k) or {}).get("person")]
         r.search = search_belief.SearchBelief(
-            r.places.keys, sc, openable=r.places.openable, can_open="Open" in r.robot.plan_actions,
+            keys, sc, openable=r.places.openable, can_open="Open" in r.robot.plan_actions,
             containers=(lambda k: fn(k, r.places.env.get(k) or {})) if callable(fn)
             else search_belief.containers_from_env(r.places.env, r.places.openable))
         exp = search_experience.picked_at(self.cfg.get("live_path"), r.places.keys) if sc.habit_weight > 0 else {}

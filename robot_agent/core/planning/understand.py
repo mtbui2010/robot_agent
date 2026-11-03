@@ -170,9 +170,21 @@ def _phrases(places) -> dict:
     return out
 
 
+# Korean particles a noun may take (lexicon.KO_PARTICLES), longest first: a Hangul phrase is a mention only as a
+# whole word: at the start / after a space or punctuation, and followed by the end, a space, punctuation or one
+# of these particles (SAGE-v2 F3.2: 나 is not in 하나 / 나중에, 냉장고 is not inside 김치냉장고)
+_KO_PART = "|".join(sorted(("이랑", "에서", "한테", "에게", "으로", "까지", "부터", "하고", "에다", "에", "을", "를", "이",
+                            "가", "은", "는", "께", "로", "도", "만", "의", "과", "와", "랑", "위", "안", "옆", "쪽"),
+                           key=len, reverse=True))
+_HANGUL_RX = re.compile(r"[\uac00-\ud7a3]")
+
+
 def _find(phrase: str, text: str):
     if phrase.isascii():
         return [m.span() for m in re.finditer(r"(?<![\w-])" + re.escape(phrase) + r"(?:s|es)?(?![\w-])", text)]
+    if _HANGUL_RX.search(phrase):
+        rx = r"(?<![\w])" + re.escape(phrase) + r"(?=$|[\s.,!?;:)\]\"'~]|(?:" + _KO_PART + r"))"
+        return [m.span() for m in re.finditer(rx, text)]
     return [m.span() for m in re.finditer(re.escape(phrase), text)]
 
 
@@ -270,6 +282,23 @@ def _object_mentions(text: str, places, user_words) -> list:
     return list(dict.fromkeys(out))
 
 
+def _user_word(phrase: str, user_words) -> bool:
+    from .persons import is_speaker_word
+    p = _norm(phrase)
+    return p in {_norm(u) for u in user_words or ()} or is_speaker_word(p)
+
+
+def _people_covered(goals, keys) -> bool:
+    """Is every person entry of ``keys`` a goal's destination, source or listener?"""
+    used = {g.get(s) for g in goals for s in ("to", "from", "person", "near_person") if g.get(s)}
+    return set(keys) <= used
+
+
+def _first_person(text: str) -> bool:
+    from . import lexicon
+    return lexicon.has(lexicon.FIRST_PERSON, text)
+
+
 def _obj_covered(phrase: str, goals) -> bool:
     stem = lambda w: w[:-2] if w.endswith("es") and len(w) > 4 else (w[:-1] if w.endswith("s") and len(w) > 3 else w)
     ws = {stem(w) for w in phrase.split()}
@@ -286,15 +315,25 @@ def find_issues(goals, text: str, places, english: str = "", user_words=frozense
     used = _goal_places(goals)
     full = place_mentions(text, places)
     act_t = _active(text)
+    people = {k for k in places.keys if (places.env.get(k) or {}).get("person")}
     for _s, _e, p, keys, is_src in _drop_corrected(act_t, place_mentions(act_t, places)):
         if keys & used:
+            continue
+        if _user_word(p, user_words):
+            continue                                 # "me" / 나한테: the speaker, not a place to act on (F3.1)
+        if keys and keys <= people and _people_covered(goals, keys):
             continue
         if is_src and any(g.get("type") in ("on", "in") and not g.get("from") for g in goals):
             continue                                 # a source the goals search instead of trusting
         issues.append({"kind": "place", "what": p, "keys": sorted(keys)})
     said = set().union(*(m[3] for m in full)) if full else set()
+    first_person = _first_person(text)
     for g in goals:
         dst = g.get("object") if g.get("type") in ("open", "close") else g.get("to")
+        if dst and (places.env.get(dst) or {}).get("person") and (first_person or g.get("near_person")):
+            continue                                 # the speaker's own destination, said as "me" / "my"
+        if g.get("near_person") and dst and dst in places.env:
+            continue                                 # the surface beside a person the answer placed
         if dst and dst in places.env and dst not in said:
             issues.append({"kind": "unsaid", "what": _norm(places.head(dst)), "object": g.get("object", "")})
     for verb, rx in _VERB.items():
