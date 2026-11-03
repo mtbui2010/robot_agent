@@ -617,17 +617,22 @@ class RecordingPlanner(_Proxy):
                     latency_ms=round((time.time() - t0) * 1000, 1))
         return steps, meta
 
-    def generate_plan(self, task, obs, visible_objects):
+    def generate_plan(self, task, obs, visible_objects, **kw):
+        # optional keywords (subgoals=, budget=) go through only when the caller passes them
+        # (base.accepts looks through this proxy at the planner's own signature)
         inner = object.__getattribute__(self, '_inner')
-        return self._call('generate_plan', {'task': task, 'obs': obs, 'visible': visible_objects},
-                          lambda: inner.generate_plan(task, obs, visible_objects))
+        inputs = {'task': task, 'obs': obs, 'visible': visible_objects}
+        if kw.get('subgoals'):
+            inputs['subgoals'] = list(kw['subgoals'])
+        return self._call('generate_plan', inputs,
+                          lambda: inner.generate_plan(task, obs, visible_objects, **kw))
 
-    def replan(self, task, completed, failed_step, failure_reason, obs, visible_objects):
+    def replan(self, task, completed, failed_step, failure_reason, obs, visible_objects, **kw):
         inner = object.__getattribute__(self, '_inner')
         return self._call('replan', {'task': task, 'completed': completed, 'failed_step': failed_step,
                                      'reason': failure_reason, 'obs': obs, 'visible': visible_objects},
                           lambda: inner.replan(task, completed, failed_step, failure_reason, obs,
-                                               visible_objects))
+                                               visible_objects, **kw))
 
 
 def recording_planner(planner):

@@ -77,7 +77,8 @@ ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify
                 "goal_readback", "understand_temperature", "understand_seed", "understand_sample_temperature",
                 "yes_no_reasks", "search", "search_rank", "search_half_life_s", "vlm_verify", "sensor_health",
                 "reconcile", "search_habit_weight", "edit_reserve", "plan_tidy",
-                "goal_filter"}
+                "goal_filter", "sage_subgoals", "translate_model", "translate_url", "translate_budget",
+                "gate_complete", "hazard_rules", "person_seat_m", "search_total"}
 _USER_WORDS = {"me", "user", "here", "you", "myself", "person"}
 
 
@@ -348,7 +349,13 @@ class AssistLoop(SearchHooks, ClosedLoop):
             # on core LLM calls
             "understand_retries": int(overrides.get("understand_retries", env("ROBOT_AGENT_UNDERSTAND_RETRIES", "1"))),
             "understand_samples": int(overrides.get("understand_samples", env("ROBOT_AGENT_UNDERSTAND_SAMPLES", "2"))),
-            "llm_budget": int(overrides.get("llm_budget", env("ROBOT_AGENT_LLM_BUDGET", str(DEFAULT_LLM_BUDGET)))),
+            # precedence: the run's option > $ROBOT_AGENT_LLM_BUDGET > the robot's manifest planner.llm_budget >
+            # the core default (budget.DEFAULT_LLM_BUDGET)
+            "llm_budget": int(overrides.get("llm_budget", env("ROBOT_AGENT_LLM_BUDGET", str(
+                self._manifest_planner("llm_budget", DEFAULT_LLM_BUDGET))))),
+            # the planner's sub-goals: one per understood goal ("goals", no decompose call) or the planner's own
+            # decomposition ("model", SAGE before v2)
+            "sage_subgoals": str(overrides.get("sage_subgoals", env("ROBOT_AGENT_SAGE_SUBGOALS", "goals"))),
             "goal_readback": overrides.get("goal_readback", env("ROBOT_AGENT_GOAL_READBACK", "1") == "1"),
             # understand sampling (docs/dialog.md): temperature 0 + a fixed seed, so the same sentence gives the
             # same goals; the consistency re-samples need some spread (their seeds: seed + 1, seed + 2 ...)
@@ -374,6 +381,11 @@ class AssistLoop(SearchHooks, ClosedLoop):
             "generator": self.cfg["planner"],
             "planner": "sage",
         })
+
+    def _manifest_planner(self, key, default=None):
+        """The robot's manifest ``planner.<key>`` (robot-pack planner data), else ``default``."""
+        v = (getattr(self.robot.manifest, "planner", None) or {}).get(key)
+        return default if v is None or v == "" else v
 
     def _make_planner(self):
         name, self.cfg["planner"] = self.cfg["planner"], self.cfg["generator"]
@@ -990,6 +1002,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
             # a stop during an LLM / planner call (run_control.call_cancellable) ends the run at once
             yield self._finish(r, "aborted", msg="Cancelled by user") if is_cancel(e) else self._crashed(r, e)
         finally:
+            self._last_budget_used = getattr(getattr(r, "llm_budget", None), "used", None)
             self._close_run(r)
 
     def _finish(self, r, status, msg="", **kw) -> dict:
@@ -1294,8 +1307,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
                     r.goals, r.world.arrived, r.robot.text("delivery", r.lang),
                     can_say="Say" in r.robot.plan_actions), {"method": "compiled"}
             else:
-                r.llm_budget.take(what="plan")
-                raw, meta = call_cancellable(r.planner.generate_plan, r.restated, self._obs(r), [])
+                raw, meta = self._plan_call(r, "generate_plan", r.restated, self._obs(r), [],
+                                            what="plan", subgoals=self._subgoals(r))
         except Exception as e:
             if is_cancel(e):
                 raise
@@ -1328,6 +1341,35 @@ class AssistLoop(SearchHooks, ClosedLoop):
         r.certified, r.gate_findings = not blocking, blocking
         r.run.plan_meta = dict(meta or {}, plan_sec=round(time.time() - t_plan, 2), llm_plan=self._ground_all(r, raw),
                                edits=edits, certified=r.certified, gate_findings=blocking)
+
+    def _plan_call(self, r, name, *args, what="plan", subgoals=None):
+        """``r.planner.<name>(*args)`` under the run's LLM-call budget, counting the planner's REAL calls: a
+        planner with a budget hook (``budget=``, SAGE >= 0.2.6) takes a unit before each of its calls; any other
+        takes one unit before and its reported ``llm_calls`` - 1 after. ``subgoals`` go to a planner that takes
+        them (F1.2)."""
+        from ..run_control import call_cancellable
+        from .base import accepts
+        kw = {}
+        if subgoals and accepts(r.planner, name, "subgoals"):
+            kw["subgoals"] = list(subgoals)
+        hooked = accepts(r.planner, name, "budget")
+        if hooked:
+            kw["budget"] = r.llm_budget
+        else:
+            r.llm_budget.take(what=what)
+        raw, meta = call_cancellable(getattr(r.planner, name), *args, **kw)
+        if not hooked:
+            extra = int((meta or {}).get("llm_calls") or 1) - 1 if isinstance(meta, dict) else 0
+            if extra > 0:
+                r.llm_budget.used += extra
+        return raw, meta
+
+    def _subgoals(self, r) -> Optional[list]:
+        """One sub-goal phrase per understood goal, in goal order (option ``sage_subgoals=goals``), else None
+        (the planner decomposes the task itself)."""
+        if self.cfg.get("sage_subgoals", "goals") != "goals" or not r.goals:
+            return None
+        return [goal_kinds.subgoal_text(g, r.places) for g in r.goals]
 
     def _tidy(self, r, steps) -> tuple:
         """plan_tidy.tidy of `steps` on the belief now: (steps, notes); `plan_tidy` off: unchanged."""
@@ -1379,8 +1421,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
         obs = self._obs(r) + "\nA checker rejected the previous plan:\n" + "\n".join(f"- {t}" for t in findings)
         from ..run_control import call_cancellable, is_cancel
         try:
-            r.llm_budget.take(what="plan refinement")
-            raw, _m = call_cancellable(r.planner.generate_plan, r.restated, obs, [])
+            raw, _m = self._plan_call(r, "generate_plan", r.restated, obs, [], what="plan refinement",
+                                      subgoals=self._subgoals(r))
         except LLMBudgetExceeded as e:
             r.plan_error, raw = e, []
         except Exception as e:
@@ -1432,8 +1474,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
         """The planner's suffix for the failure `ers`, grounded: (suffix, ers + any planner error)."""
         from ..run_control import call_cancellable, is_cancel
         try:
-            r.llm_budget.take(what="replan")
-            suffix, _m = call_cancellable(r.planner.replan, r.restated, r.completed, failed, ers, self._obs(r), [])
+            suffix, _m = self._plan_call(r, "replan", r.restated, r.completed, failed, ers, self._obs(r), [],
+                                         what="replan")
             return self._tidy(r, self._search_steer(r, self._ground_all(r, suffix or [])))[0], ers
         except Exception as e:
             if is_cancel(e):

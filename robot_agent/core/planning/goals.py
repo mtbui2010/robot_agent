@@ -127,6 +127,29 @@ def speaker_slots(goals: list) -> list:
     return out
 
 
+def subgoal_text(g: dict, places=None) -> str:
+    """One goal as the sub-goal phrase the planner expands (``AssistLoop._subgoals``, SAGE-v2 F1.2): what to do
+    with which object, from where (when known) to where, with the ENV keys the plan must use."""
+    t, o = g.get("type"), g.get("object") or ""
+    src = f" (it is at {g['from']})" if g.get("from") else (
+        f" (look for it at {' or '.join(g['from_any'])})" if g.get("from_any") else "")
+    if t == "on":
+        verb = "hand" if g.get("hand") else "put"
+        return f"{verb} the {o}{src} " + (f"to {g['to']}" if g.get("hand") else f"on {g.get('to')}")
+    if t == "in":
+        return f"put the {o}{src} into {g.get('to')}"
+    if t in ("open", "close"):
+        return f"{t} {o}"
+    if t == "go":
+        return f"go to {g.get('to')}"
+    if t == "say":
+        who = g.get("to") or g.get("person") or ""
+        return f"say \"{o}\"" + (f" at {who}" if who else "")
+    if t == "deliver":
+        return f"deliver the {o} to {g.get('to')}" if o else f"deliver what the robot carries to {g.get('to')}"
+    return describe(g)
+
+
 def describe(g: dict) -> str:
     """The goal in the obs / goal-text form: '<type> <object>[ from <from>][ to <to>]'."""
     return (f"{g['type']} {g.get('object') or ''}".rstrip() + (f" from {g['from']}" if g.get("from") else "")
@@ -200,4 +223,4 @@ def _same_text(a, b) -> bool:
 
 
 __all__ = ["GoalKind", "GOAL_KINDS", "MANIPULATION", "TEMPLATE_KINDS", "missing_actions", "kinds_for",
-           "prompt_lines", "is_template", "conflicts", "SPEAKER_WORDS", "is_speaker", "speaker_slots", "describe", "summary", "compile_steps", "reached"]
+           "prompt_lines", "is_template", "conflicts", "SPEAKER_WORDS", "is_speaker", "speaker_slots", "describe", "subgoal_text", "summary", "compile_steps", "reached"]

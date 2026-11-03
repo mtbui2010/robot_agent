@@ -362,3 +362,26 @@ def planner_capabilities(planner) -> set[str]:
     if hasattr(planner, "progress"):
         out.add("progress")
     return out
+
+
+def accepts(planner, method: str, name: str) -> bool:
+    """Does ``planner.method`` take the keyword ``name`` (e.g. ``generate_plan(subgoals=)``,
+    ``budget=``)? Transparent proxies (``_inner``) are looked through. Only a parameter of that NAME counts:
+    a ``**kwargs`` planner may drop the keyword (a budget it never takes would leave its calls uncounted).
+    Optional planner keywords are passed only when this says so."""
+    import inspect
+    p = planner
+    for _ in range(6):
+        try:
+            p = object.__getattribute__(p, "_inner")
+        except AttributeError:
+            break
+    fn = getattr(p, method, None)
+    if fn is None:
+        return False
+    try:
+        params = inspect.signature(fn).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    return any(q.name == name and q.kind in (q.POSITIONAL_OR_KEYWORD, q.KEYWORD_ONLY) for q in params)
+

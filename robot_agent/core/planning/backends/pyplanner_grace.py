@@ -220,14 +220,47 @@ class GraceBackend:
         self._p = embodiplan.get("GRACE", **selected)
 
     # ── Planner interface ────────────────────────────────────────────
+    def _optional(self, method: str, subgoals=None, budget=None) -> tuple[dict, Any]:
+        """The optional keywords SAGE's ``method`` takes (embodiplan >= 0.2.6: ``subgoals``, ``budget``),
+        and the budget this backend must take itself when SAGE has no budget hook (None: SAGE takes it)."""
+        from ..base import accepts
+        kw: dict = {}
+        if subgoals and accepts(self._p, method, "subgoals"):
+            kw["subgoals"] = list(subgoals)
+        own = None
+        if budget is not None:
+            if accepts(self._p, method, "budget"):
+                kw["budget"] = budget
+            else:
+                own = budget
+        return kw, own
+
+    @staticmethod
+    def _count_after(own, metrics: dict) -> None:
+        """An older SAGE without the budget hook: one unit was taken before the call, the rest of its real
+        calls are counted after it (``llm_calls``), so the run's budget sees the truth."""
+        if own is not None:
+            extra = int((metrics or {}).get("llm_calls") or 1) - 1
+            if extra > 0:
+                own.used = getattr(own, "used", 0) + extra
+
     def generate_plan(
         self,
         task: str,
         obs: str,
         visible_objects: list[str],
+        subgoals: list | None = None,
+        budget: Any = None,
     ) -> tuple[list[dict], dict]:
-        steps, metrics = self._p.generate_plan(task, obs, visible_objects)
-        return list(steps), _metrics_to_dict(metrics)
+        """SAGE's plan. ``subgoals``: one per goal the caller understood (no decompose call);
+        ``budget``: the run's LLM-call budget, taken before every call SAGE makes."""
+        kw, own = self._optional("generate_plan", subgoals, budget)
+        if own is not None:
+            own.take(what="plan")
+        steps, metrics = self._p.generate_plan(task, obs, visible_objects, **kw)
+        out = _metrics_to_dict(metrics)
+        self._count_after(own, out)
+        return list(steps), out
 
     def replan(
         self,
@@ -237,7 +270,11 @@ class GraceBackend:
         failure_reason: str,
         obs: str,
         visible_objects: list[str],
+        budget: Any = None,
     ) -> tuple[list[dict], dict]:
+        kw, own = self._optional("replan", None, budget)
+        if own is not None:
+            own.take(what="replan")
         steps, metrics = self._p.replan(
             task,
             completed,
@@ -245,8 +282,11 @@ class GraceBackend:
             failure_reason,
             obs,
             visible_objects,
+            **kw,
         )
-        return list(steps), _metrics_to_dict(metrics)
+        out = _metrics_to_dict(metrics)
+        self._count_after(own, out)
+        return list(steps), out
 
     # ── Optional capability: SubgoalRepair (SAGE's sub-goal-local Editing) ──
     def blocks(self) -> list | None:

@@ -36,9 +36,14 @@ from typing import Optional
 
 from .types import VERIFY_KINDS, FailureCode, Geometry, SkillSpec, VerifySpec
 
-_TOP_KEYS = {"robot", "version", "language", "capabilities", "geometry", "planner", "skills"}
-# keys of the optional `planner:` section (planner data the robot ships)
-PLANNER_KEYS = {"seed_memory", "notes"}
+_TOP_KEYS = {"robot", "version", "language", "capabilities", "geometry", "planner", "skills", "limits", "safety"}
+# keys of the optional `planner:` section (planner data the robot ships; docs/env.md):
+#   seed_memory, notes; llm_budget (the run's cap on core LLM calls), translate_model / translate_url (the model
+#   that translates what the robot says into the user's language, default the planner's), translate_budget (its
+#   own cap per run)
+PLANNER_KEYS = {"seed_memory", "notes", "llm_budget", "translate_model", "translate_url", "translate_budget"}
+# keys of the optional `limits:` section (what the body can carry; checked against the ENV object estimates)
+LIMIT_KEYS = {"payload_kg", "max_object_size_m"}
 # planner.notes: short lines for the direct planner's prompt (docs/direct_prompt.md)
 NOTE_MAX_CHARS = 300
 _SKILL_KEYS = {"name", "action", "params", "pre", "hold", "effects", "verify", "interruptible", "errors", "version"}
@@ -74,6 +79,9 @@ class Manifest:
     skills: list = field(default_factory=list)        # list[SkillSpec]
     # optional planner data: {seed_memory: <path to a JSONL seed pool, relative to the manifest>}
     planner: dict = field(default_factory=dict)
+    # optional body limits {payload_kg, max_object_size_m} and safety add-ons {hazards: [...]} (docs/env.md)
+    limits: dict = field(default_factory=dict)
+    safety: dict = field(default_factory=dict)
     extra: dict = field(default_factory=dict)
     source: Optional[str] = None                      # file it was read from
 
@@ -123,6 +131,8 @@ class Manifest:
                     errs.append(f"geometry.{k}: must be a number (metres), got {v!r}")
 
         planner = _planner(d.get("planner"), errs)
+        limits = _limits(d.get("limits"), errs)
+        safety = _safety(d.get("safety"), errs)
 
         raw_skills = d.get("skills")
         if raw_skills is None:
@@ -143,7 +153,7 @@ class Manifest:
         if errs:
             raise ManifestError(errs, source)
         return cls(robot=robot.strip(), version=version, capabilities=dict(caps), language=language.strip(),
-                   geometry=dict(geom), skills=skills, planner=planner,
+                   geometry=dict(geom), skills=skills, planner=planner, limits=limits, safety=safety,
                    extra={k: v for k, v in d.items() if k not in _TOP_KEYS}, source=source)
 
     def to_dict(self) -> dict:
@@ -152,6 +162,10 @@ class Manifest:
              "skills": [s.to_dict() for s in self.skills]}
         if self.planner:
             d["planner"] = dict(self.planner)
+        if self.limits:
+            d["limits"] = dict(self.limits)
+        if self.safety:
+            d["safety"] = dict(self.safety)
         d.update(self.extra)
         return d
 
@@ -295,6 +309,14 @@ def _planner(v, errs) -> dict:
     sm = v.get("seed_memory")
     if sm is not None and (not isinstance(sm, str) or not sm.strip()):
         errs.append("planner.seed_memory: must be a file path (relative to the manifest)")
+    for k in ("llm_budget", "translate_budget"):
+        x = v.get(k)
+        if x is not None and not (isinstance(x, int) and not isinstance(x, bool) and x >= 0):
+            errs.append(f"planner.{k}: must be a count of LLM calls (0 = no cap), got {x!r}")
+    for k in ("translate_model", "translate_url"):
+        x = v.get(k)
+        if x is not None and (not isinstance(x, str) or not x.strip()):
+            errs.append(f"planner.{k}: must be a non-empty string")
     notes = v.get("notes")
     if notes is not None:
         if not isinstance(notes, list):
@@ -305,6 +327,30 @@ def _planner(v, errs) -> dict:
                     errs.append(f"planner.notes[{i}]: must be a non-empty string")
                 elif len(n) > NOTE_MAX_CHARS:
                     errs.append(f"planner.notes[{i}]: longer than {NOTE_MAX_CHARS} characters")
+    return dict(v)
+
+
+def _limits(v, errs) -> dict:
+    if v is None:
+        return {}
+    if not isinstance(v, dict):
+        errs.append(f"limits: must be a mapping, got {type(v).__name__}")
+        return {}
+    for k, x in v.items():
+        if k in LIMIT_KEYS and not (_is_number(x) and x > 0):
+            errs.append(f"limits.{k}: must be a positive number, got {x!r}")
+    return dict(v)
+
+
+def _safety(v, errs) -> dict:
+    if v is None:
+        return {}
+    if not isinstance(v, dict):
+        errs.append(f"safety: must be a mapping, got {type(v).__name__}")
+        return {}
+    hz = v.get("hazards")
+    if hz is not None and not (isinstance(hz, list) and all(isinstance(h, dict) for h in hz)):
+        errs.append("safety.hazards: must be a list of mappings {objects, places, say}")
     return dict(v)
 
 
