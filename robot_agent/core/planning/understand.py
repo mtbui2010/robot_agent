@@ -24,6 +24,8 @@ from typing import Optional
 
 from robot_agent.contract import FailureCode
 
+from .speech import LocalText
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # LLM calls: errors, budget, JSON repair
@@ -401,7 +403,11 @@ _SAY = {"place": "the {what} you mentioned is not in my plan", "unsaid": "you di
 
 
 def describe(issue: dict) -> str:
-    return _SAY[issue["kind"]].format(**issue)
+    """The issue as a short sentence; the kinds with a robot phrase (``speech``) come as a LocalText, so they
+    are said in the user's language without a translation call."""
+    text = _SAY[issue["kind"]].format(**issue)
+    key = {"place": "iss_place", "unsaid": "iss_unsaid", "object": "iss_object"}.get(issue["kind"])
+    return LocalText(key, {"what": issue["what"]}, text=text) if key else text
 
 
 def edit_distance(a: str, b: str) -> int:
@@ -482,19 +488,22 @@ def issue_question(issues: list, places) -> str:
     qs = []
     multi = next((i for i in issues if i["kind"] == "place" and len(i.get("keys") or ()) > 1), None)
     for i in issues:
+        if i["kind"] == "unsaid" and not (multi or i.get("object")):
+            continue                              # no empty-slot question ("Where should I put the ?")
         if i["kind"] == "unsaid":
-            qs.append(f"Which {multi['what']} do you mean: {' or '.join(nice(k) for k in multi['keys'])}?" if multi
-                      else f"Where should I put the {i['object']}?")
+            qs.append(LocalText("q_which_x", {"what": multi["what"], "options": list(multi["keys"])},
+                                text=f"Which {multi['what']} do you mean: {' or '.join(nice(k) for k in multi['keys'])}?")
+                      if multi else LocalText("q_where_put", {"object": i["object"]}))
         elif i["kind"] == "place" and i is not multi:
-            qs.append(f"You mentioned the {i['what']}. What should I do there?")
+            qs.append(LocalText("q_mentioned", {"what": i["what"]}))
         elif i["kind"] == "verb":
             qs.append(f"What should I {i['what']}?")
         elif i["kind"] == "object":
             near = i.get("near")
-            qs.append(f"Did you mean the {near}?" if near else "Sorry, I didn't catch that. Could you say it again?")
+            qs.append(LocalText("q_did_you_mean", {"object": near, "place": near}) if near else LocalText("q_repeat"))
     if multi is not None and not any(i["kind"] == "unsaid" for i in issues):
-        qs.insert(0, f"You mentioned the {multi['what']}. What should I do there?")
-    return " ".join(list(dict.fromkeys(qs))[:2])
+        qs.insert(0, LocalText("q_mentioned", {"what": multi["what"]}))
+    return LocalText.join(*list(dict.fromkeys(qs))[:2]) if qs else ""
 
 
 def signature(goals) -> tuple:

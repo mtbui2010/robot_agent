@@ -37,8 +37,10 @@ RANK_SCHEMA = {
     "required": ["places"],
 }
 
-RANK_PROMPT = """A household robot is looking for the {obj}. Rank the places where the {obj} is most likely to be, \
-most likely first. Use only these place names:
+RANK_PROMPT = """A household robot is looking for the {obj}. First think of the room or rooms where the {obj} is usually \
+kept in a home, then of the furniture there. Rank the places where the {obj} is most likely to be, most likely \
+first, over the whole home (not only the room the robot is in). Leave out places where it is never \
+kept. Use only these place names, grouped by room:
 {places}
 {known}
 Return JSON: {{"places": [<place name>, ...]}} (the likely places only, most likely first)."""
@@ -167,7 +169,15 @@ class SearchBelief:
         done = list(self.searched.get(obj, {}))
         if done:
             known.append(f"Already searched (not there): {', '.join(done)}.")
-        return RANK_PROMPT.format(obj=obj, places="\n".join(f"- {k}" for k in self.places), known="\n".join(known))
+        return RANK_PROMPT.format(obj=obj, places=self._layout(), known="\n".join(known))
+
+    def _layout(self) -> str:
+        """The places grouped by the room their ENV key names (``place@room``): the house layout the ranking
+        reasons over (a model that sees only a flat list ranks the room the robot is in)."""
+        rooms: dict = {}
+        for k in self.places:
+            rooms.setdefault(k.split("@", 1)[1] if "@" in k else "", []).append(k)
+        return "\n".join(f"{room or 'elsewhere'}: {', '.join(ks)}" for room, ks in rooms.items())
 
     def rank(self, obj: str, ask: Callable[[str], Optional[dict]],
              ground: Optional[Callable[[str], Optional[str]]] = None) -> list:

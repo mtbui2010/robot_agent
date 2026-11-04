@@ -168,6 +168,8 @@ class Places:
                                            for h in said_heads)]
         if not hits and rest:                         # 'table' -> 'dining table', 'test table'
             hits = [k for k in self.keys if any(t == x for t in rest.split() for x in self.head(k).split())]
+        if not hits:
+            hits = self._alias_hits(w)
         if room:
             in_room = [k for k in hits if self.room(k) == room]
             if in_room:
@@ -191,6 +193,24 @@ class Places:
             if len(hinted) == 1:
                 return hinted
         return hits
+
+    def _alias_hits(self, w: str) -> list:
+        """The keys an alias of which the words ``w`` say inside a sentence ("식탁 위에 있어요": a Hangul alias
+        takes particles, so it counts as a substring there; other scripts as a whole word). The longest alias said
+        wins; [] when the sentence names none."""
+        found = []
+        for k in self.keys:
+            for al in self.env[k].get("aliases") or []:
+                n = words(al)
+                if len(n) < 2 or n == w:
+                    continue
+                hit = (n in w) if re.search(r"[가-힣]", n) else bool(re.search(r"(?<!\w)" + re.escape(n) + r"(?!\w)", w))
+                if hit:
+                    found.append((len(n), k))
+        if not found:
+            return []
+        top = max(n for n, _k in found)
+        return list(dict.fromkeys(k for n, k in found if n == top))
 
     def room_said(self, key: str, text: str) -> bool:
         """Does *text* name *key* with its room ('shelf in the restroom', 'restroom shelf', "kitchen's shelf")?"""
@@ -766,7 +786,9 @@ class AssistLoop(SearchHooks, ClosedLoop):
         if persons.wants_hand(task, robot):
             g["hand"] = True
             return None
-        at = persons.place_in_answer(places, latest) if latest else None
+        # only an answer to "Where are you?" tells where the person is (an answer to another question, the request
+        # said again, names places of the task)
+        at = persons.place_in_answer(places, latest) if latest and asked else None
         if at is None:
             self._where_asked = to
             if (places.env.get(to) or {}).get("speaker") or to == persons.speaker_key(places):
@@ -1377,6 +1399,13 @@ class AssistLoop(SearchHooks, ClosedLoop):
         if status == "failed":
             kw = {**self._deciding_failure(r, msg, kw), **kw}
         say, localized = kw.pop("say", None), kw.pop("localized", False)
+        if say is None and status == "failed" and getattr(kw.get("code"), "value", kw.get("code")) == FailureCode.CANCELLED.value:
+            say = speech.LocalText("say_stopped")         # the person stopped the run: not the skill's error text
+        elif say is None and status == "failed":
+            # the run's own dialogue messages carry the last question: one plain sentence is said instead
+            say = {"no answer to": speech.LocalText("say_no_answer"),
+                   "the user did not confirm": speech.LocalText("say_not_confirmed")}.get(
+                       next((k for k in ("no answer to", "the user did not confirm") if msg.startswith(k)), ""))
         if say is None and status in ("failed", "refused") and msg and not msg.startswith(("internal error", "plan finished")):
             # tell the user why (dropped it, can't find it, ...), without the skill's error text or the gate's findings
             say = re.split(r": [\'\"{]|: Exception| \(replan| \(searched| \(looked|: step \d|: the plan does", msg)[0].strip()
@@ -1503,8 +1532,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
         if u["status"] == "ambiguous" and u.get("question") and not r.goals:
             q = u["question"] if not q else f"{u['question']} {q}"
         if not r.goals and not q:
-            q = u.get("question") or ("Sorry, I did not understand. Could you say the task in other words?"
-                                      if u.get("unparsed") else "What should I do exactly?")
+            q = u.get("question") or (speech.LocalText("q_unclear_task") if u.get("unparsed")
+                                      else speech.LocalText("q_what_exactly"))
         if not q:
             q = yield from self._goal_readback(r)
             if q is _STOP:
@@ -1704,7 +1733,9 @@ class AssistLoop(SearchHooks, ClosedLoop):
         rb = self.summary(r.goals, r.places)
         cq = speech.LocalText("q_confirm", {"summary": rb}, text=f"{rb} Is that right?")
         if unsure:
-            cq = speech.LocalText.join(f"I am not sure I understood ({'; '.join(unsure)}).", cq)
+            cq = speech.LocalText.join(
+                speech.LocalText("rb_unsure", {"issues": speech.LocalText.seq(unsure, "sep_semi")},
+                                 text=f"I am not sure I understood ({'; '.join(unsure)})."), cq)
         yield r.ev("clarify", question=cq, round=r.confirms, kind="confirm")
         ans, ok_, rest = self._ask_yes_no(r, cq)
         stop = self._cancelled(r)
@@ -1716,7 +1747,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
             yield self._finish(r, "failed", msg=f"no answer to: {cq}"); return _STOP, None
         r.dialogue += [("robot", cq), ("user", ans)]
         if not rest:                     # a bare "no": ask what instead
-            return None, "Sorry. What should I do?"
+            return None, speech.LocalText("q_what_do")
         r.corrected = getattr(r, "corrected", 0) + 1
         r.memory.remember_answer(r.task, cq, ans)
         k = r.places.ground(rest, rest)
@@ -1742,7 +1773,9 @@ class AssistLoop(SearchHooks, ClosedLoop):
     def _ask_clarify(self, r, q):
         """Ask the user `q` (bounded by clarify_rounds): _NEXT with the answer in the dialogue, or _STOP."""
         if r.asked >= self.cfg["clarify_rounds"]:
-            yield self._finish(r, "failed", msg=f"still unclear after {r.asked} questions: {q}")
+            # (what the run says is a plain sentence, not the internal message that holds the last question)
+            yield self._finish(r, "failed", msg=f"still unclear after {r.asked} questions: {q}",
+                               say=speech.LocalText("say_gave_up"))
             return _STOP
         r.asked += 1
         yield r.ev("clarify", question=q, round=r.asked)
@@ -1756,7 +1789,17 @@ class AssistLoop(SearchHooks, ClosedLoop):
             return _STOP
         r.memory.remember_answer(r.task, q, ans)
         r.dialogue += [("robot", q), ("user", ans)]
+        if self._restates(r, ans) and not getattr(r, "free_round_used", False):
+            r.free_round_used = True     # an answer that says the whole request again was informative: not a spent round
+            r.asked -= 1
         return _NEXT
+
+    def _restates(self, r, ans) -> bool:
+        """True when `ans` carries most of the words of the request the run started with (the person said it
+        all again after "could you say it again?" / "what do you mean by ...?")."""
+        words = lambda t: {w for w in re.findall(r"\w+", str(t).lower()) if len(w) > 2}
+        base = words(self.original or r.task)
+        return len(base) >= 4 and len(base & words(ans)) >= 0.6 * len(base)
 
     # ── 2. plan: the planner generates, the checker reports, the planner repairs
     def _obs(self, r) -> str:

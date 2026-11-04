@@ -90,7 +90,7 @@ def test_rank_is_asked_once_and_cached():
     out = b.rank("apple", ask, ground=lambda n: SK if "shelf" in n else None)
     assert out == [SK, CT]                            # grounded, unknown + duplicate dropped
     assert b.rank("apple", ask) == [SK, CT] and len(asked) == 1
-    assert "Rank the places where the apple" in asked[0] and f"- {DT}" in asked[0]
+    assert "Rank the places where the apple" in asked[0] and DT in asked[0]
     b.rank("mug", ask)
     assert len(asked) == 2 and b.rank_calls == 2
 

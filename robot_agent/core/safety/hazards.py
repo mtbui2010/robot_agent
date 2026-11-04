@@ -28,6 +28,10 @@ HAZARDS = {
                     r"변기 ?세정제", r"오븐 ?세정제", r"곰팡이 ?제거제", r"\bthuốc tẩy\b", r"\bnước tẩy\b"],
         "assumed": [r"\bdetergent\b", r"\bdishwasher (?:pods?|tablets?)\b", r"\blaundry pods?\b", r"\bdisinfectant\b",
                     r"\brust remover\b", r"\binsecticide\b", r"\bbug spray\b", r"\blye\b", r"\bcleaning spray\b",
+                    # a model that translates the person's word may say a brand for the product ("락스" ->
+                    # "lysol"): the common household brands of the same products (assumed)
+                    r"\blysol\b", r"\bclorox\b", r"\bwindex\b", r"\bdrano\b", r"\bpine-?sol\b", r"\bchlorine\b",
+                    r"라이솔", r"리솔", r"클로록스", r"염소계",
                     r"세제", r"살충제", r"소독제", r"세정제", r"\bchất tẩy\b", r"\bthuốc diệt côn trùng\b"],
     },
 }
