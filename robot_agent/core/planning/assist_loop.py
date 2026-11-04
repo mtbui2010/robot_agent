@@ -458,7 +458,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
             # the language layer (language.py): what a non-English user says reaches the understand prompt as the
             # original only (none), its English translation (translate) or both; option > env > manifest
             "input_pivot": str(overrides.get("input_pivot", env("ROBOT_AGENT_INPUT_PIVOT",
-                                                                self._manifest_planner("input_pivot", "both")))).lower(),
+                                                                self._manifest_planner("input_pivot", "none")))).lower(),
             # F4.8: a Korean request's English object names checked against the person's words (translator)
             "object_check": str(overrides.get("object_check", env("ROBOT_AGENT_OBJECT_CHECK", "1"))),
         }
@@ -1754,6 +1754,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
                                say=speech.LocalText("say_gave_up"))
             return _STOP
         r.asked += 1
+        if not self._asks_where(q):
+            self._where_asked = None     # "Where are you?" was built but another question was asked: not asked yet
         if r.asked > self.cfg["clarify_rounds"]:
             r.essential_used = True          # the one round past the cap that a delivery's "Where are you?" may take
         yield r.ev("clarify", question=q, round=r.asked)
@@ -1771,6 +1773,14 @@ class AssistLoop(SearchHooks, ClosedLoop):
             r.free_round_used = True     # an answer that says the whole request again was informative: not a spent round
             r.asked -= 1
         return _NEXT
+
+    @staticmethod
+    def _asks_where(q) -> bool:
+        """Does ``q`` ask where a person is ("Where are you?" / "Where is X?")?"""
+        if not isinstance(q, speech.LocalText):
+            return False
+        keys = ("q_where_are_you", "q_where_is_person")
+        return q.key in keys or any(isinstance(p, speech.LocalText) and p.key in keys for p in q.parts)
 
     @staticmethod
     def _essential(q) -> bool:

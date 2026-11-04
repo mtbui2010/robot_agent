@@ -251,3 +251,24 @@ def test_pack_line_with_raw_keys_and_an_english_reason():
     out = lp._in_lang("bath_cabinet@bathroom 열기에 실패했습니다. cannot reach the handle of bath_cabinet@bathroom", "ko")
     assert out == "욕실 수납장 열기에 실패했습니다." and lp._llm_client.calls == []
     assert lp._in_lang("hall_shelf@hall 이동을 완료했습니다", "ko") == "현관 선반 이동을 완료했습니다"
+
+
+def test_where_asked_is_cleared_when_another_question_was_asked():
+    """A "Where are you?" built but replaced by another question in the same round was never asked: a later
+    answer that names a place must not count as the person's position."""
+    r = _Run()
+    lp = AssistLoop.__new__(AssistLoop)
+    lp.cfg = {"clarify_rounds": 3}
+    lp._answer_source = "robot"
+    lp._ask_heard = lambda *a: ("ok", 1)
+    lp._cancelled = lambda r: None
+    lp._log_fn = lambda k: None
+    lp._restates = lambda r, a: False
+    lp._where_asked = "u"
+    g = lp._ask_clarify(r, speech.LocalText("q_what_do"))
+    list(iter(lambda: next(g, None), None))
+    assert lp._where_asked is None
+    lp._where_asked = "u"
+    g = lp._ask_clarify(r, speech.LocalText.join(speech.LocalText("q_what_do"), speech.LocalText("q_where_are_you")))
+    list(iter(lambda: next(g, None), None))
+    assert lp._where_asked == "u" and lp._asks_where(speech.LocalText("q_where_is_person", {"person": "x"}))

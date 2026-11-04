@@ -40,7 +40,7 @@ person; the words asking for the hand ("hand me", 손에, 건네) make it the on
 | `planner.llm_budget` | the run's cap on core LLM calls (option > `$ROBOT_AGENT_LLM_BUDGET` > manifest > 20) |
 | `planner.translate_model`, `planner.translate_url` | the model (and server) that translates what the robot says; default the planner's |
 | `planner.translate_budget` | the translator's own cap per run (default 10): one call per user utterance (kept while more than 2 calls are left) and what the robot says |
-| `planner.input_pivot` | the language layer's IN side for a non-English user: `none` (original only), `translate` (English translation; original only as the source of `said`), `both` (default) |
+| `planner.input_pivot` | the language layer's IN side for a non-English user: `none` (original only), `translate` (English translation; original only as the source of `said`), `both`; default `none` (chosen by the m10 KO comparison) |
 | `planner.search_legs`, `planner.search_total` | SAGE-v2 search: the belief's next look replaces a failed Find without a replan; after "I don't know" the likely places are searched, up to `search_total` looks |
 | `limits.payload_kg`, `limits.max_object_size_m`, `limits.objects` | what the body can carry, and the robot's own object-class estimates `{name: {weight_kg, size_m}}`; a goal over a limit is refused |
 | `safety.hazards` | robot-pack hazard rules `[{objects: [regex], places: [class or regex], say}]`, added to the core rules |
