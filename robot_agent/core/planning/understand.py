@@ -386,7 +386,9 @@ def find_issues(goals, text: str, places, english: str = "", user_words=frozense
         if g.get("near_person") and dst and dst in places.env:
             continue                                 # the surface beside a person the answer placed
         if dst and dst in places.env and dst not in said:
-            issues.append({"kind": "unsaid", "what": _norm(places.head(dst)), "object": g.get("object", "")})
+            # an open / close goal is not a delivery: it has no "where to put" slot, so no object (no question)
+            issues.append({"kind": "unsaid", "what": _norm(places.head(dst)),
+                           "object": "" if g.get("type") in ("open", "close") else g.get("object", "")})
     for verb, rx in _VERB.items():
         if rx.search(act_t) and not any(g.get("type") == verb for g in goals):
             issues.append({"kind": "verb", "what": verb})

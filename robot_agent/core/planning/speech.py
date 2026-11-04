@@ -188,7 +188,8 @@ def render(text, lang: str, robot=None, places=None, name_slots=("place", "perso
             v = render(v, lang, robot, places, name_slots, slot_tr)
             if v is None:
                 return None
-        elif k in ("place", "person", "source") and places is not None and v in (getattr(places, "env", {}) or {}):
+        elif k in ("place", "person", "source", "object") and places is not None and isinstance(v, str) \
+                and v in (getattr(places, "env", {}) or {}):      # a raw ENV key is never said
             v = say_name(places, v, lg)
             if not v:
                 return None
