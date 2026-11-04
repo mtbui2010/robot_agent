@@ -1601,8 +1601,17 @@ class AssistLoop(SearchHooks, ClosedLoop):
         said = without_places(" ".join([r.task, self.original or ""]), r.places, getattr(r, "replaced", ()))
         goals = list(goals) + [g for g, _w in getattr(r, "refused_parts", [])]   # refused for safety: covered
         issues = find_issues(goals, " ".join([said] + answers), r.places,
-                             english=r.task, user_words=_USER_WORDS)   # objects: the task's own words only
+                             english=self._object_source(r, answers), user_words=_USER_WORDS)   # objects: own words only
         return issues + [i for i in goal_fix.ko_object_issues(goals, r.task) if i not in issues]   # F4.5
+
+    def _object_source(self, r, answers) -> str:
+        """The words the object-coverage check reads: the task's own words, unless a later answer said the whole
+        request again (ASR garbled the first one): then that answer replaces it, so a garbled noun of the first
+        hearing is not an open issue once the restatement was understood."""
+        for a in reversed(answers):
+            if self._restates(r, a):
+                return a
+        return r.task
 
     def _goal_readback(self, r):
         """The goals read back against the person's words before planning: a model that dropped or changed a

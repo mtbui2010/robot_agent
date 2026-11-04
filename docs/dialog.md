@@ -118,3 +118,10 @@ Tests: `tests/test_v2_dialog_*.py`. Scenarios: `scenarios/tests/test_t1_v2_under
 A read-back correction that names a new destination ("Put the apple on the dining table", then "on the
 kitchen counter") replaces the destination it read back: the goal read-back (`goal_readback`) no longer counts
 the task's mention of that place (`understand.without_places`). ASR2c and GR06 run with `goal_readback` on.
+
+### A restated request replaces a garbled first hearing in the object check (m10 round 6)
+
+The object-coverage check of `find_issues` reads the task's own words. After a first hearing the recogniser garbled
+("the chicken bring"), a clean answer that said the whole request again was understood, but the check still read the
+garbled original and re-asked. `AssistLoop._object_source` now reads the latest answer that restates the request
+(`_restates`: most of the original's words again) in place of the first hearing. Short answers do not replace it.
