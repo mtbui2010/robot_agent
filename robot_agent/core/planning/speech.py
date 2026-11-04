@@ -64,6 +64,7 @@ CORE_PHRASES = {
     "say_stopped": "Okay, I stopped.",
     "say_no_answer": "I did not hear an answer, so I will stop here.",
     "say_not_confirmed": "I could not confirm with you what to do, so I will stop here.",
+    "say_could_not_do": "Sorry, I could not finish the task.",
     "say_gave_up": "I am sorry, I still could not understand what you want me to do.",
     "say_untranslated": "Sorry, I cannot say that in your language right now.",
     "safety_partial": "I won't {what}: {why}.",

@@ -352,6 +352,13 @@ def _obj_covered(phrase: str, goals) -> bool:
     return any(ws & {stem(w) for w in str(g.get("object") or "").split()} for g in goals)
 
 
+def _room_said(text: str, places, key: str) -> bool:
+    """Does *text* name the room of the place *key* (a room alone is not a place mention, but it is a whole
+    destination for a go goal)?"""
+    rm = _norm(places.room(key) or "")
+    return bool(rm) and bool(_find(rm, _norm(text)))
+
+
 def find_issues(goals, text: str, places, english: str = "", user_words=frozenset()) -> list:
     """What the person's words ask for that the goals do not cover, and goals the words do not support.
     *text*: everything the person said (task, own words, answers); *english*: the English part (object check).
@@ -385,6 +392,8 @@ def find_issues(goals, text: str, places, english: str = "", user_words=frozense
             continue                                 # a person named in words the ENV aliases may not hold (아버님)
         if g.get("near_person") and dst and dst in places.env:
             continue                                 # the surface beside a person the answer placed
+        if dst and g.get("type") == "go" and _room_said(text, places, dst):
+            continue                                 # "wait in the bedroom": the room is the destination, any place of it will do
         if dst and dst in places.env and dst not in said:
             # an open / close goal is not a delivery: it has no "where to put" slot, so no object (no question)
             issues.append({"kind": "unsaid", "what": _norm(places.head(dst)),
@@ -400,7 +409,17 @@ def find_issues(goals, text: str, places, english: str = "", user_words=frozense
     return [x for k, x in enumerate(issues) if x not in issues[:k]]
 
 
-_SAY = {"place": "the {what} you mentioned is not in my plan", "unsaid": "you did not say the {what}",
+# an English request whose verb was lost to the microphone: "could you the book on the shelf?" (a modal, "you",
+# then an article straight away): the goals are a guess, so the person is asked what to do
+_NOVERB = re.compile(r"\b(?:can|could|would|will|shall)\s+you\s+(?:please\s+)?(?:the|a|an|my|this|that|these|those)\b", re.I)
+
+
+def verb_lost(text: str) -> bool:
+    """Is *text* a request with no verb after "can you ..." (the speech recogniser dropped it)?"""
+    return bool(_NOVERB.search(str(text or "")))
+
+
+_SAY = {"noverb": "I did not hear what to do", "place": "the {what} you mentioned is not in my plan", "unsaid": "you did not say the {what}",
         "verb": "you asked me to {what} something", "object": "the {what} is not in my plan"}
 
 
@@ -500,6 +519,8 @@ def issue_question(issues: list, places) -> str:
             qs.append(LocalText("q_mentioned", {"what": i["what"]}))
         elif i["kind"] == "verb":
             qs.append(f"What should I {i['what']}?")
+        elif i["kind"] == "noverb":
+            qs.append(LocalText("q_what_do"))
         elif i["kind"] == "object":
             near = i.get("near")
             qs.append(LocalText("q_did_you_mean", {"object": near, "place": near}) if near else LocalText("q_repeat"))

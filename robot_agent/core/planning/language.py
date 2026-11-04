@@ -41,6 +41,7 @@ from .understand import LLMBudgetExceeded
 
 PIVOTS = ("none", "translate", "both")
 
+_SNAKE = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b")
 LANGS = {"ko": "Korean", "vi": "Vietnamese", "ja": "Japanese", "zh": "Chinese"}
 REGISTER = {"ko": "polite spoken Korean, 해요체", "vi": "polite spoken Vietnamese", "ja": "polite spoken Japanese",
             "zh": "polite spoken Chinese"}
@@ -184,6 +185,12 @@ class LanguageAdapter:
                     text = text.replace(k, local)
         return text
 
+    def plain_names(self, text: str) -> str:
+        """English ``text`` with every ENV key said as a name (``say_name``) and every other snake_case id
+        (``desk_chair``, ``room_a``: a place head or a room of the ENV) said as words."""
+        text = self.names(text, "en")
+        return _SNAKE.sub(lambda m: m.group(0).replace("_", " "), text)
+
     @staticmethod
     def _local_sentences(text: str, lg: str) -> str:
         """The sentences of ``text`` that are already in ``lg`` ("" when none or all)."""
@@ -217,8 +224,10 @@ class LanguageAdapter:
 
     def _speak(self, text, lang, kind: str):
         lg = (lang or "en")[:2]
-        if lg not in LANGS or not text:
-            return str(text) if text else text
+        if not text:
+            return text
+        if lg not in LANGS:
+            return self.plain_names(str(text))          # an English line never names an ENV key either
         if not isinstance(text, speech.LocalText):
             text = self.names(str(text), lg)             # no raw ENV key (kimchi_fridge@kitchen) reaches the user
             if _NON_LATIN.search(text):
