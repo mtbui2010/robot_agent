@@ -25,9 +25,20 @@ def test_the_where_answer_is_not_forgotten_after_a_later_answer():
     assert g["to"] == "side@den" and g["near_person"] == "you"
 
 
-def test_without_a_where_question_a_remembered_place_is_not_invented():
+def test_another_question_in_between_does_not_forget_the_place():
     lp, places = _loop()
-    lp._person_at = {"you": "sofa@den"}
     g = {"type": "on", "object": "cup", "to": "you"}
-    q = lp._person_destination(g, places, "bring me the cup", "just bring it")
+    lp._person_destination(g, places, "bring me the cup", "")
+    g = {"type": "on", "object": "cup", "to": "you"}
+    assert lp._person_destination(g, places, "bring me the cup", "I am on the sofa") is None
+    lp._where_asked = None             # another question was asked afterwards (the mark is cleared)
+    g = {"type": "on", "object": "cup", "to": "you"}
+    assert lp._person_destination(g, places, "bring me the cup", "the red one") is None
+    assert g["to"] == "side@den"
+
+
+def test_an_unasked_remark_never_places_the_person():
+    lp, places = _loop()
+    g = {"type": "on", "object": "cup", "to": "you"}
+    q = lp._person_destination(g, places, "bring me the cup", "put the cup on the sofa")
     assert q is not None and q.key == "q_where_are_you"

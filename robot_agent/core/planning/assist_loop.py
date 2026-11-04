@@ -807,10 +807,11 @@ class AssistLoop(SearchHooks, ClosedLoop):
         # said again, names places of the task)
         at = persons.place_in_answer(places, latest) if latest and asked else None
         known = self.__dict__.setdefault("_person_at", {})
-        if at is None and asked:
-            at = known.get(to)             # said earlier: a later answer (another question's) does not forget it
-        elif at is not None:
-            known[to] = at
+        if at is None:
+            at = known.get(to)             # said earlier (as the answer to the question): a later answer, or a
+            #                                different question in between, does not forget it
+        else:
+            known[to] = at                 # only an answer to the asked question gets here
         if at is None:
             self._where_asked = to
             if (places.env.get(to) or {}).get("speaker") or to == persons.speaker_key(places):
