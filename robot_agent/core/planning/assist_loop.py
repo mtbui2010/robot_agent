@@ -806,6 +806,11 @@ class AssistLoop(SearchHooks, ClosedLoop):
         # only an answer to "Where are you?" tells where the person is (an answer to another question, the request
         # said again, names places of the task)
         at = persons.place_in_answer(places, latest) if latest and asked else None
+        known = self.__dict__.setdefault("_person_at", {})
+        if at is None and asked:
+            at = known.get(to)             # said earlier: a later answer (another question's) does not forget it
+        elif at is not None:
+            known[to] = at
         if at is None:
             self._where_asked = to
             if (places.env.get(to) or {}).get("speaker") or to == persons.speaker_key(places):
@@ -1325,6 +1330,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
         r.verifier = self._verifier(r.node, r.places.env)
         r.memory = Memory(self.cfg["memory_path"])
         r.llm_budget, self._llm_unreachable = LLMBudget(self.cfg["llm_budget"]), False
+        self._person_at = {}                          # {person: place they said they are at} (this run)
         self._where_asked = None                      # the person "Where are you?" was asked about (this run)
         self._handed = set()                          # objects this run handed over (release actions)
         self._tr_budget = LLMBudget(self.cfg["translate_budget"])   # translation calls: their own cap (F5.3)

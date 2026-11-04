@@ -47,6 +47,14 @@ The understand model sometimes writes `from: "me"` for "bring me the cup". Befor
 when `to` is set. The source is then searched for or taken from the object memory. "Where are you?" is asked
 only for a `to: "me"` whose place the person's words do not name ("... to me at the sofa" names it).
 
+### The place the person said is remembered (m10 round 5)
+
+An untracked speaker's answer to "Where are you?" names where they are. The place is kept for the run
+(`AssistLoop._person_at`, per person). A later answer to another question ("what should I do?", a restated request)
+is the latest answer, but it does not clear the place: before this, the next grounding found no place in the latest
+answer and asked "Where are you?" again until the clarify cap ended the run. The place is used only after the
+question was asked; an unasked remark never places the person.
+
 ### Unclear answers to a yes / no question (ASR2)
 
 `dialog.read_yes_no(text)` returns a `Reply` whose `kind` is one of:
