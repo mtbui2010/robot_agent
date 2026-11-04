@@ -40,10 +40,10 @@ _TOP_KEYS = {"robot", "version", "language", "capabilities", "geometry", "planne
 # keys of the optional `planner:` section (planner data the robot ships; docs/env.md):
 #   seed_memory, notes; llm_budget (the run's cap on core LLM calls), translate_model / translate_url (the model
 #   that translates what the robot says into the user's language, default the planner's), translate_budget (its
-#   own cap per run)
+#   own cap per run), input_pivot (none | translate | both: how a non-English user's words reach the understand prompt)
 #   search_legs (SAGE-v2 search: the belief's next look without a replan; go on after "I don't know"), search_total
 PLANNER_KEYS = {"seed_memory", "notes", "llm_budget", "translate_model", "translate_url", "translate_budget",
-                "search_legs", "search_total"}
+                "search_legs", "search_total", "input_pivot"}
 # keys of the optional `limits:` section (what the body can carry; checked against the ENV object estimates)
 LIMIT_KEYS = {"payload_kg", "max_object_size_m"}
 # planner.notes: short lines for the direct planner's prompt (docs/direct_prompt.md)
@@ -315,6 +315,9 @@ def _planner(v, errs) -> dict:
         x = v.get(k)
         if x is not None and not (isinstance(x, int) and not isinstance(x, bool) and x >= 0):
             errs.append(f"planner.{k}: must be a count of LLM calls (0 = no cap), got {x!r}")
+    pv = v.get("input_pivot")
+    if pv is not None and pv not in ("none", "translate", "both"):
+        errs.append(f"planner.input_pivot: must be none, translate or both, got {pv!r}")
     for k in ("translate_model", "translate_url"):
         x = v.get(k)
         if x is not None and (not isinstance(x, str) or not x.strip()):

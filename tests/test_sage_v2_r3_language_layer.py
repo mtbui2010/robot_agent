@@ -272,3 +272,13 @@ def test_where_asked_is_cleared_when_another_question_was_asked():
     g = lp._ask_clarify(r, speech.LocalText.join(speech.LocalText("q_what_do"), speech.LocalText("q_where_are_you")))
     list(iter(lambda: next(g, None), None))
     assert lp._where_asked == "u" and lp._asks_where(speech.LocalText("q_where_is_person", {"person": "x"}))
+
+
+def test_manifest_accepts_input_pivot_and_rejects_others():
+    from robot_agent.contract import manifest as M
+    assert "input_pivot" in M.PLANNER_KEYS
+    errs = []
+    M._planner({"input_pivot": "both"}, errs)
+    assert errs == []
+    M._planner({"input_pivot": "sideways"}, errs)
+    assert len(errs) == 1 and "input_pivot" in errs[0]
