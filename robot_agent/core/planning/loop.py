@@ -254,6 +254,10 @@ class ClosedLoop:
         sensible defaults in :meth:`_resolve_cfg`.
     """
 
+    # the post-step verify applies a step with the robot's body (its release actions empty the hand); off for the
+    # ClosedLoop / grace path (its behaviour stays as it is), on for AssistLoop (SAGE-v2 F6.1)
+    _verify_with_body = False
+
     def __init__(self, agent, emit=None, **overrides) -> None:
         self.agent = agent
         # Optional direct emit channel (the async-queue pusher from
@@ -441,7 +445,8 @@ class ClosedLoop:
                        observe=self._observe_object, min_conf=float(robot.geometry.extra.get("vlm_min_conf", 0) or 0))
         return StepVerifier(self.cfg["vlm_enabled"], robot.vlm_actions, robot.vlm_hook, robot=robot,
                             sensor=lambda skill: run_skill(self.sr, skill, {}, node, raise_errors=True),
-                            locate=locate, vlm_check=vlm)
+                            locate=locate, vlm_check=vlm,
+                            capabilities=robot.model_capabilities() if self._verify_with_body else None)
 
     def _observe_object(self, obj: str, node=None):
         """The VLM fallback's look: the robot's Find of ``obj`` here. True seen, False not seen,

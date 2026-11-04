@@ -322,6 +322,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
     """See the module docstring."""
 
     _answer_source = "robot"          # where the last answer came from (interact.dialog: robot | typed | '')
+    _verify_with_body = True          # F6.1: a successful Handover empties the hand in the post-step verify
 
     def __init__(self, agent, emit=None, **overrides) -> None:
         overrides = dict(overrides)
@@ -2362,6 +2363,10 @@ class AssistLoop(SearchHooks, ClosedLoop):
             return None, f"{g.get('type')} {g.get('object')}: no sensor declared for it (belief)", None
         o, place = g["object"], g.get("to") or ""
         nice = place.replace("@", " in the ")
+        if o in getattr(self, "_handed", set()) and r.placed.get(o) == place:
+            # F6.2: handed over by a release action of the contract (a Handover) that succeeded: the person holds
+            # it, so a look at their spot cannot see it there; the hand-over's own success is the evidence
+            return True, f"the {o} was handed over at the {nice} (the hand-over succeeded)", None
         if r.places.openable(place) and place not in r.world.opened:
             return None, f"the {o} is inside the closed {nice}: not visible (belief)", None
         if r.world.arrived != place:

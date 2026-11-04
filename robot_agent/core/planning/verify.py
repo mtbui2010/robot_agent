@@ -67,7 +67,7 @@ def _holds(world, pred: str, bind) -> Optional[bool]:
 
 
 def effects_check(step: dict, world: "WorldState", effects=(), *, params: Optional[dict] = None,
-                  main: str = "inputs") -> tuple[bool, str]:
+                  main: str = "inputs", capabilities=None) -> tuple[bool, str]:
     """After a skill REPORTED SUCCESS: apply the step's effects (the action model) to a copy of
     ``world`` and check the skill's declared ``effects`` predicates there. ``(ok, reason)``.
 
@@ -76,7 +76,8 @@ def effects_check(step: dict, world: "WorldState", effects=(), *, params: Option
     ``?x`` to the skill param ``x``.
     """
     obj = str(step.get("object") or "").strip() or (world.found if step.get("action") == "Pick" else "") or ""
-    after = action_model.apply(step, world)
+    after = action_model.apply(step, world, capabilities=capabilities) if capabilities is not None \
+        else action_model.apply(step, world)
 
     def bind(arg):
         if not arg.startswith("?"):
@@ -125,6 +126,7 @@ class StepVerifier:
         sensor: Optional[Callable[[str], Any]] = None,
         locate: Optional[Callable[[str], Optional[tuple]]] = None,
         vlm_check: Any = None,
+        capabilities: Any = None,
     ) -> None:
         self.vlm_enabled = vlm_enabled
         self.vlm_actions = set(vlm_actions or ())
@@ -133,6 +135,7 @@ class StepVerifier:
         self.sensor = sensor
         self.locate = locate
         self.vlm_check = vlm_check      # .verify_vlm.VlmCheck: the manifest's vlm VerifySpecs
+        self.capabilities = capabilities  # the body the effects are applied with (release actions); None: core default
 
     def verify(
         self,
@@ -156,7 +159,8 @@ class StepVerifier:
         # ── Layer 2: symbolic -- the effects hold (0 token; no precondition check) ──
         spec = self.robot.spec(step.get('action', '')) if self.robot is not None else None
         main = (spec.required_params[:1] or ['inputs'])[0] if spec is not None else 'inputs'
-        ok2, why = effects_check(step, world, spec.effects if spec is not None else (), params=params, main=main)
+        ok2, why = effects_check(step, world, spec.effects if spec is not None else (), params=params, main=main,
+                                 capabilities=self.capabilities)
         out.append(VerifyResult('symbolic', ok2, why))
 
         # ── Layer 3a: the manifest's vlm VerifySpecs (verify_vlm; none declared = never called) ──
