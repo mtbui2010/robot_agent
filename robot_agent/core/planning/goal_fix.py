@@ -133,6 +133,29 @@ def unsaid_speaker(goals: list, text: str, places, robot=None) -> tuple:
     return out, notes
 
 
+def shared_listener(goals: list, text: str, places) -> tuple:
+    """(goals, notes): a person the words name once cannot be both the listener of a message and the recipient of a
+    delivery: "tell X to ..., and bring me the cup" names X once, the recipient of the cup is the speaker. A
+    delivery goal to a person who is also a say goal's listener, with only that one mention of them in the words
+    and the speaker known from the ENV, goes to the speaker (the model took the last person it had read)."""
+    from .persons import speaker_key
+    sk = speaker_key(places)
+    if not sk:
+        return goals, []
+    listeners = {g.get("to") or g.get("person") for g in goals if g.get("type") == "say"} - {None, ""}
+    out, notes = [], []
+    for g in goals:
+        to = g.get("to")
+        if g.get("type") in ("on", "in") and to in listeners and to != sk and (places.env.get(to) or {}).get("person"):
+            n = sum(1 for _s, _e, _p, keys, _src in place_mentions(_norm(text), places) if to in keys)
+            if n < 2:
+                g = {**g, "to": sk}
+                g.pop("near_person", None)
+                notes.append(f"recipient {to} -> {sk}: the words name {to} once, as the listener of a message")
+        out.append(g)
+    return out, notes
+
+
 _KO_FROM = re.compile(r"(?:에서|에게서|한테서|부터|으로부터|로부터)")
 
 
@@ -230,5 +253,5 @@ def ko_object_issues(goals: list, text: str) -> list:
     return [x for k, x in enumerate(out) if x not in out[:k]]
 
 
-__all__ = ["says_into", "kind_from_destination", "drop_empty", "drop_invented", "relay_check", "ko_object_issues",
+__all__ = ["shared_listener", "says_into", "kind_from_destination", "drop_empty", "drop_invented", "relay_check", "ko_object_issues",
            "repair_destination", "unsaid_speaker"]

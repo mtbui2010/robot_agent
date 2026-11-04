@@ -17,6 +17,7 @@ makes a plan worse, and every kept edit is a note.
    that room, else it is removed.
 5. ``action``: the release fits the goal: Place -> PutIn into an ``in`` goal's container, PutIn -> Place onto an
    ``on`` goal's surface, Place on a person -> the robot's hand-over action when the goal is a hand delivery.
+5b. ``say``: an Announce of a say goal's sentence becomes Say, the goal's own action.
 6. ``complete`` (OFF by default, ``gate_complete``): a goal no step reaches gets its canonical segment at the end
    (fetch, deliver). It writes steps the planner did not, so it is counted apart (``completed_by_gate``).
 7. ``finish`` (a replan's suffix only): a goal still to do that the suffix dropped (the held object put down on
@@ -35,7 +36,7 @@ from typing import Callable, Optional
 from . import action_model
 
 RELEASES = ("Place", "PutIn")
-OPS = ("hoist", "dedupe", "insert", "room", "action", "complete", "finish")
+OPS = ("hoist", "dedupe", "insert", "room", "action", "say", "complete", "finish")
 
 
 def _st(a, o, **kw) -> dict:
@@ -183,6 +184,19 @@ def op_action(F, cx: _Ctx):
     return None
 
 
+def op_say(F, cx: _Ctx):
+    """A speech step of another kind (Announce: to the adjacent rooms) that says a say goal's sentence becomes the
+    goal's own action (Say: to the person where the robot stands), when the robot has it."""
+    from .goals import _same_text
+    texts = [g.get("object") for g in cx.goals if g.get("type") == "say"]
+    if "Say" not in cx.actions or not texts:
+        return None
+    for i, (owner, st) in enumerate(F):
+        if st.get("action") == "Announce" and any(_same_text(st.get("object"), t) for t in texts):
+            return F[:i] + [(owner, dict(st, action="Say"))] + F[i + 1:]
+    return None
+
+
 def op_complete(F, cx: _Ctx, reached: Callable):
     """The canonical segment of the first goal the plan does not reach (fetch, then deliver), at the end."""
     plan = [s for _o, s in F]
@@ -275,7 +289,7 @@ def repair(steps: list, score: Callable, world, places, goals, *, caps=None, act
     F = owned_plan(blocks, join, ground) if blocks else [(0, dict(s)) for s in steps]
     n, notes, counts = score([s for _o, s in F]), [], {}
     ops = [("hoist", op_hoist), ("dedupe", op_dedupe), ("insert", op_insert), ("room", op_room),
-           ("action", op_action)]
+           ("action", op_action), ("say", op_say)]
     if complete and reached is not None:
         ops.append(("complete", lambda F_, c: op_complete(F_, c, reached)))
     if reached is not None and (only is not None and "finish" in only):

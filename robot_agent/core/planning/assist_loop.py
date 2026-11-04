@@ -1595,6 +1595,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
         goals, invented = goal_fix.drop_invented(goals, words_, r.places)    # F4.4
         r.filtered += invented
         goals, rq = goal_fix.relay_check(goals, r.task, r.places)           # F4.6
+        goals, shared = goal_fix.shared_listener(goals, words_, r.places)    # a listener is not also the recipient
+        r.filtered += shared
         q = q or (speech.LocalText("q_what_say") if rq else None)
         if not goals and empty and not q:
             q = speech.LocalText("q_what_bring")
