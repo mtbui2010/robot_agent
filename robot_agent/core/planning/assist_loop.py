@@ -1755,7 +1755,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
     def _ask_clarify(self, r, q):
         """Ask the user `q` (bounded by clarify_rounds): _NEXT with the answer in the dialogue, or _STOP."""
         q = self._fresh_question(r, q)
-        if r.asked >= self.cfg["clarify_rounds"] + (1 if self._essential(q) and not getattr(r, "essential_used", False) else 0):
+        if r.asked >= self.cfg["clarify_rounds"] + (1 if self._essential(q) and not getattr(r, "essential_used", False) and not self.__dict__.get("_person_at") else 0):
             # (what the run says is a plain sentence, not the internal message that holds the last question)
             yield self._finish(r, "failed", msg=f"still unclear after {r.asked} questions: {q}",
                                say=speech.LocalText("say_gave_up"))
@@ -1803,7 +1803,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
         """A question already asked in this run (word for word) is not asked again: the person answered it, so
         the answer did not settle it. Ask them to say the task in other words instead (once)."""
         asked = {" ".join(str(t).lower().split()) for w_, t in r.dialogue if w_ == "robot"}
-        if " ".join(str(q).lower().split()) in asked and not getattr(r, "reworded", False) and not AssistLoop._essential(q):
+        if " ".join(str(q).lower().split()) in asked and not getattr(r, "reworded", False):
             r.reworded = True
             return speech.LocalText("q_unclear_task")
         return q

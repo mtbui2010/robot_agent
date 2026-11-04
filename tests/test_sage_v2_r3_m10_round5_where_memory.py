@@ -42,3 +42,11 @@ def test_an_unasked_remark_never_places_the_person():
     g = {"type": "on", "object": "cup", "to": "you"}
     q = lp._person_destination(g, places, "bring me the cup", "put the cup on the sofa")
     assert q is not None and q.key == "q_where_are_you"
+
+
+def test_an_essential_question_does_not_skip_the_repeat_guard():
+    from robot_agent.core.planning import speech
+    from types import SimpleNamespace
+    r = SimpleNamespace(dialogue=[("robot", speech.LocalText("q_where_are_you"))], reworded=False)
+    q = AssistLoop._fresh_question(r, speech.LocalText("q_where_are_you"))
+    assert q.key == "q_unclear_task" and r.reworded
