@@ -8,7 +8,8 @@ checker: an edit is kept only when the plan's critical findings strictly decreas
 makes a plan worse, and every kept edit is a note.
 
 1. ``hoist``: an Open / Close with the hand full. Open C while holding X goes, with a MoveTo C, to just before
-   the run that fetched X (MoveTo / Find / Pick of X); a Close C while holding X goes after the release of X.
+   the run that fetched X (MoveTo / Open of the source / Find / Pick of X); a Close C while holding X goes after
+   the release of X.
 2. ``dedupe``: a second Find / Pick ... Place of an object already at its goal place is removed with its run.
 3. ``insert``: a MoveTo P before a Place / PutIn / Open / Close at P the robot is not at; a Find X before a
    Pick X that has none; a Find X away from where the person said X is goes there.
@@ -58,10 +59,13 @@ class _Ctx:
 
 
 # ── operators: each returns a new owned plan [(owner, step)] or None ─────────────────────────────────────────
-def _fetch_start(F, p) -> int:
-    """Index where the run that fetched the object picked at ``p`` starts (its Find and the MoveTo before it)."""
+def _fetch_start(F, p, at=None) -> int:
+    """Index where the run that fetched the object picked at ``p`` starts: its Find, an Open of ``at`` (the
+    place it is picked at: a drawer opened to take it out) and the MoveTo before them."""
     s = p
     if s > 0 and F[s - 1][1].get("action") == "Find":
+        s -= 1
+    while at and s > 0 and F[s - 1][1].get("action") == "Open" and F[s - 1][1].get("object") == at:
         s -= 1
     if s > 0 and F[s - 1][1].get("action") == "MoveTo":
         s -= 1
@@ -82,7 +86,7 @@ def op_hoist(F, cx: _Ctx):
                      and F[j][1].get("object") in (held, "")), default=None)
             if p is None:
                 return None
-            s = _fetch_start(F, p)
+            s = _fetch_start(F, p, sim[p][0].arrived)
             owner = F[s][0]
             pre = [] if sim[s][0].arrived == c else [(owner, _st("MoveTo", c, grounded=True))]
             return F[:s] + pre + [(owner, dict(F[i][1]))] + F[s:i] + F[i + 1:]
@@ -217,10 +221,12 @@ def write_back(blocks, F) -> None:
 
 def repair(steps: list, score: Callable, world, places, goals, *, caps=None, actions=(), release=(),
            hand_goal: Callable = lambda g: False, blocks=None, join=None, ground=None, complete: bool = False,
-           reached: Optional[Callable] = None, max_edits: int = 8) -> tuple:
+           reached: Optional[Callable] = None, max_edits: int = 8, only=None) -> tuple:
     """(steps, notes, counts): the plan after the operators, ``notes`` per kept edit, ``counts`` {op: n} (with
     ``completed_by_gate``). ``score(steps)``: the number of critical findings; an edit is kept only when it
-    strictly lowers it. With ``blocks`` (+ ``join`` / ``ground``) the blocks are edited in place."""
+    strictly lowers it. With ``blocks`` (+ ``join`` / ``ground``) the blocks are edited in place. ``only``: the
+    operator names to use (a replan's suffix: not ``insert`` / ``room``, whose "where the person said" no longer
+    holds after the object was not there)."""
     caps = action_model.Capabilities.from_any(caps) if not hasattr(caps, "hands") else caps
     cx = _Ctx(world, places, goals, caps, actions, tuple(release or ()), hand_goal)
     F = owned_plan(blocks, join, ground) if blocks else [(0, dict(s)) for s in steps]
@@ -229,6 +235,8 @@ def repair(steps: list, score: Callable, world, places, goals, *, caps=None, act
            ("action", op_action)]
     if complete and reached is not None:
         ops.append(("complete", lambda F_, c: op_complete(F_, c, reached)))
+    if only is not None:
+        ops = [(n_, o_) for n_, o_ in ops if n_ in set(only)]
     for _k in range(max_edits):
         if n == 0:
             break

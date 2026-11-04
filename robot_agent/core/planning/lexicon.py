@@ -12,6 +12,8 @@ never replaces it.
   VI đưa tận tay).
 * ``FIRST_PERSON``: the speaker's own words (EN I / me / my, KO 나 / 저 / 제 / 내, VI tôi / mình), as whole
   words.
+* ``RECIPIENT``: words that make the speaker the one who gets the object ("bring me", "here", 나한테, 가져다,
+  "컵 좀 줘"; VI cho tôi / mang / đưa).
 * ``TELL``: verbs that relay a message ("tell", "let ... know", "remind", "ask ... to"; KO 말해 / 전해 / 알려 /
   얘기해 / 물어봐; VI nói / bảo / nhắn).
 * ``KO_PARTICLES``: the closed list of Korean particles a noun may take (word boundaries for Hangul matching).
@@ -41,6 +43,15 @@ FIRST_PERSON = {
     "en": [r"\bi\b", r"\bme\b", r"\bmy\b", r"\bmyself\b", r"\bmine\b"],
     "ko": [r"(?:^|(?<=\s))(?:나|저|제|내)(?:한테|에게|게|가|는|를|도|의)?(?=\s|$|[.,!?])", r"(?:^|(?<=\s))(?:내게|제게)"],
     "vi": [r"\btôi\b", r"\bmình\b", r"\bem\b"],
+}
+# words that make the speaker the recipient ("bring me", "give it here", 나한테 / 가져다 / 컵 좀 줘): a delivery to the
+# speaker needs one of them (F2.5); "put the milk away" names no recipient
+RECIPIENT = {
+    "en": [r"\bme\b", r"\bhere\b", r"\bbring\b", r"\bbrings\b", r"\bfetch\b", r"\bgive\b", r"\bhand\b", r"\bpass\b",
+           r"\bdeliver\b", r"\bget me\b", r"\bmy way\b", r"\bus\b"],
+    "ko": [r"(?:나|저|우리)(?:한테|에게)", r"제게|내게|저희", r"가져다|갖다|가져와|가져 와|갖고 와|가지고 와|건네", r"여기|이리|이쪽",
+           r"(?:을|를|좀)\s*(?:줘|주세요|줄래|주실래|주시겠|주실 수|줄 수)"],
+    "vi": [r"\bcho tôi\b", r"\bmang\b", r"\bđưa\b", r"\bđây\b"],
 }
 TELL = {
     "en": [r"\btell\b", r"\blet \w+(?: \w+)? know\b", r"\bremind\b", r"\bask \w+(?: \w+)? to\b", r"\bsay to\b",
@@ -82,4 +93,4 @@ def has(table: dict, text: str, robot=None, key: str = "") -> bool:
     return any(re.search(p, t) for p in patterns(table, robot, key))
 
 
-__all__ = ["PUTIN", "ON_TOP", "HAND", "FIRST_PERSON", "TELL", "KO_PARTICLES", "lang_of", "patterns", "has"]
+__all__ = ["PUTIN", "ON_TOP", "HAND", "FIRST_PERSON", "RECIPIENT", "TELL", "KO_PARTICLES", "lang_of", "patterns", "has"]

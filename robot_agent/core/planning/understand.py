@@ -177,13 +177,15 @@ _KO_PART = "|".join(sorted(("이랑", "에서", "한테", "에게", "으로", "�
                             "가", "은", "는", "께", "로", "도", "만", "의", "과", "와", "랑", "위", "안", "옆", "쪽"),
                            key=len, reverse=True))
 _HANGUL_RX = re.compile(r"[\uac00-\ud7a3]")
+# a Hangul noun made a verb by 하다 ("충전하러", "청소해 줘", "정리한 다음"): the noun is still a whole-word mention
+_KO_HADA = r"(?:하|해|했|할|한|합|함)"
 
 
 def _find(phrase: str, text: str):
     if phrase.isascii():
         return [m.span() for m in re.finditer(r"(?<![\w-])" + re.escape(phrase) + r"(?:s|es)?(?![\w-])", text)]
     if _HANGUL_RX.search(phrase):
-        rx = r"(?<![\w])" + re.escape(phrase) + r"(?=$|[\s.,!?;:)\]\"'~]|(?:" + _KO_PART + r"))"
+        rx = r"(?<![\w])" + re.escape(phrase) + r"(?=$|[\s.,!?;:)\]\"'~]|(?:" + _KO_PART + r")|" + _KO_HADA + r")"
         return [m.span() for m in re.finditer(rx, text)]
     return [m.span() for m in re.finditer(re.escape(phrase), text)]
 
@@ -266,7 +268,9 @@ def _goal_places(goals) -> set:
 # verbs that move an object: a noun group is an object the goals must cover only after one of them (through
 # 'and' / comma chains), never as the subject of a stated clause (SAGE-v2 F3.3, clean-room core list)
 _MANIP = re.compile(r"\b(?:put|puts|place|bring|brings|take|takes|grab|move|fetch|hand|give|pass|stash|carry|get|"
-                    r"set|leave|return|throw|toss|drop|store|hang|pick|lay|keep|send)\b", re.I)
+                    r"set|leave|return|throw|toss|drop|store|hang|pick|lay|keep|send|"
+                    r"slide|slides|push|pushes|tuck|tucks|stick|sticks|pop|pops|insert|load|stow|shove|hide|"
+                    r"deliver)\b", re.I)
 _COPULA = re.compile(r"^\s*(?:is|are|was|were|will|has|have|had|can|could|should|would|might|must|need|needs|"
                      r"seems?|looks?|got|gets)\b")
 _SKIP_OBJ = {"please", "thanks", "thank", "okay", "ok", "hey", "hi", "um", "uh", "oh", "well", "yes", "no"}

@@ -79,7 +79,7 @@ ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify
                 "reconcile", "search_habit_weight", "edit_reserve", "plan_tidy",
                 "goal_filter", "sage_subgoals", "translate_model", "translate_url", "translate_budget",
                 "gate_complete", "hazard_rules", "person_seat_m", "person_surface_m", "search_total",
-                "search_legs"}
+                "search_legs", "object_check"}
 _USER_WORDS = {"me", "user", "here", "you", "myself", "person"}
 
 
@@ -157,8 +157,15 @@ class Places:
         rest = re.sub(r"[.,!?;:]", " ", rest)
         rest = " ".join(t for t in rest.split() if t not in ("the", "of", "on", "kitchen's", "it", "is", "it's",
                                                              "its", "there", "a", "an"))
+        phrase = lambda h: bool(h) and re.search(r"(?<!\w)" + re.escape(h) + r"(?!\w)", rest)      # noqa: E731
+        hd = lambda k: words(self.head(k))                                                     # noqa: E731
         hits = [k for k in self.keys if rest and (self.head(k) == rest or rest in self.head(k)
-                                                     or self.head(k) in rest.split())]
+                                                     or phrase(hd(k)))]
+        # the longest name said wins: "in the wine fridge, please" is not the fridge (fixer rerun of m5)
+        said_heads = [hd(k) for k in hits if phrase(hd(k))]
+        hits = [k for k in hits if not any(h != hd(k) and phrase(hd(k))
+                                           and re.search(r"(?<!\w)" + re.escape(hd(k)) + r"(?!\w)", h)
+                                           for h in said_heads)]
         if not hits and rest:                         # 'table' -> 'dining table', 'test table'
             hits = [k for k in self.keys if any(t == x for t in rest.split() for x in self.head(k).split())]
         if room:
@@ -427,6 +434,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
                                                                 self._manifest_planner("translate_url", None))),
             "translate_budget": int(overrides.get("translate_budget", env("ROBOT_AGENT_TRANSLATE_BUDGET", str(
                 self._manifest_planner("translate_budget", 10))))),
+            # F4.8: a Korean request's English object names checked against the person's words (translator)
+            "object_check": str(overrides.get("object_check", env("ROBOT_AGENT_OBJECT_CHECK", "1"))),
         }
 
     def _manifest_planner(self, key, default=None):
@@ -454,7 +463,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
         seed = int(seed) + sample if str(seed).strip() not in ("", "none", "None") and int(seed) >= 0 else None
         return sampling(c["understand_sample_temperature"] if sample else c["understand_temperature"], seed)
 
-    def _understand(self, task, places, memory, world, dialogue, budget=None, sample: int = 0) -> dict:
+    def _understand(self, task, places, memory, world, dialogue, budget=None, sample: int = 0, note: str = "") -> dict:
         """The understand call (understand.ask_json: one repair retry on a non-JSON answer). Raises
         LLMUnavailable / LLMBudgetExceeded; a model that still answers no JSON gives no goals (``unparsed``)."""
         prompt = UNDERSTAND_PROMPT.format(
@@ -467,10 +476,12 @@ class AssistLoop(SearchHooks, ClosedLoop):
             dialogue=("You already asked the user, and the answers below complete the task (a later answer corrects "
                       "an earlier one, and a \"no, ...\" corrects what the robot read back): take the object, source "
                       "and destination from them, and say \"clear\" unless something is still missing.\n"
-                      + "\n".join(f"{'Robot' if who == 'robot' else 'User'}: {t}" for who, t in dialogue))
+                      + "\n".join(f"{'Robot' if who == 'robot' else 'User'}: {self._heard_as(t) if who == 'robot' else t}"
+                                  for who, t in dialogue))
             if dialogue else "", task=task,
             # the user's own words: a translation loses names (식탁 'dining table' came out as 'table')
-            original=(f"\n(the user's own words: {self.original})" if self.original and self.original != task else ""))
+            original=(f"\n(the user's own words: {self.original})" if self.original and self.original != task else "")
+            + (f"\n{note}" if note else ""))
         from ..run_control import call_cancellable, is_cancel
         try:                                     # every call (repairs too) cancellable: a stop does not wait
             d = ask_json(self._llm(), prompt, self._understand_schema(), budget=budget, retries=self.cfg["understand_retries"],
@@ -488,14 +499,24 @@ class AssistLoop(SearchHooks, ClosedLoop):
         d["goals"] = goal_kinds.speaker_slots(d["goals"])     # "me" only as a destination (FROM_ME)
         return d
 
-    _CANNOT = ("It cannot: throw, pour, cook, wash, climb, open windows or doors, use tools, handle knives near people, "
-               "or leave the house.")
+    # "doors" are room doors: an appliance's / cabinet's door is the place itself, which Open covers (a model
+    # refused "open the microwave door" as "cannot open doors")
+    def _heard_as(self, text) -> str:
+        """A robot line of the dialogue as the person heard it (``_ask_io`` records it; the English text when
+        the run is in English or the line was not said through the robot's Ask skill)."""
+        return str((getattr(self, "_said_as", None) or {}).get(str(text), text))
+
+    _CANNOT = ("It cannot: throw, pour, cook, wash, climb, open windows or room doors, use tools, handle knives near "
+               "people, or leave the house.")
+    _CAN_OPEN = " (Opening a place listed below, or its door, is fine.)"
 
     def _cannot_line(self) -> str:
         """The prompt's "It cannot" line: the robot's i18n ``cannot_list`` (else the core's), with the manifest's
         payload / size limits when it declares them (SAGE-v2 F4.1)."""
         robot = self.robot
         line = robot.text("cannot_list") if robot.has_text("cannot_list") else self._CANNOT
+        if "Open" in (robot.plan_actions or ()) and not robot.has_text("cannot_list"):
+            line += self._CAN_OPEN
         lim = getattr(robot.manifest, "limits", None) or {}
         if lim.get("payload_kg"):
             line += f" It can carry at most {lim['payload_kg']} kg"
@@ -534,7 +555,13 @@ class AssistLoop(SearchHooks, ClosedLoop):
             content = [w for w in re.findall(r"[\w']+", r.task) if len(w) > 1]
             nothing = re.search(r"\bno (?:task|request|instruction)|not (?:a )?(?:clear|complete|understand)|unclear|"
                                 r"garbled|incomplete|empty|nonsens|meaningless", str(u.get("reason") or ""), re.I)
-            return "repeat" if u.get("unparsed") or len(content) < 3 or nothing else None
+            if u.get("unparsed") or len(content) < 3 or nothing:
+                return "repeat"
+            # F4.2b: a goal-less refusal that comes with the model's own question ("Do you want me to check the
+            # microwave?") is a guess about a request it did not get (a misheard word read as an impossible
+            # action): the person says it again once; refused again after that, the refusal stands
+            unsure = bool(str(u.get("question") or "").strip())
+            return "repeat" if unsure and not r.dialogue and not getattr(r, "repeat_asked", False) else None
         if self._cannot_do(r.goals) or self._over_limits(r.goals):
             return None
         return "override" if rt in ("", "missing_skill", "other") else None
@@ -784,9 +811,12 @@ class AssistLoop(SearchHooks, ClosedLoop):
             return out
         t = str(text or "")
         for k in places.keys:
+            if (places.env.get(k) or {}).get("speaker"):
+                continue          # the listener: English "you" is a pronoun, and natural Korean leaves it out
             en, local = speech.say_name(places, k, "en"), speech.say_name(places, k, lg)
-            if en and local and en != local and en in t and local.isascii() is False:
-                out[en] = local
+            if en and local and en != local and local.isascii() is False and \
+                    re.search(r"(?<![\w-])" + re.escape(en) + r"(?![\w-])", t, re.I):
+                out[en] = local   # a whole-word name only ("you" is not in "your", "door" not in "indoor")
         return out
 
     def _in_lang(self, text, lang) -> str:
@@ -801,6 +831,10 @@ class AssistLoop(SearchHooks, ClosedLoop):
         done = speech.render(text, lang, self.robot, getattr(self, "_env_places", None))
         if done is not None:
             return done
+        if isinstance(text, speech.LocalText) and text.key == "_join" and len(text.parts) > 1:
+            # F5.3c: phrases said one after the other ("Sorry, I didn't hear you." + the question asked before):
+            # each part on its own, so the robot's own phrase needs no call and a part said before is cached
+            return " ".join(str(self._in_lang(p, lang)) for p in text.parts)
         if getattr(self, "_llm_unreachable", False):
             return str(text)                         # (the model is down: no translation call to wait for)
         cache = self.__dict__.setdefault("_tr_cache", {})
@@ -847,7 +881,12 @@ class AssistLoop(SearchHooks, ClosedLoop):
         spec = self.robot.ask_spec()
         if spec is None:
             return ""
-        params = {(spec.required_params[:1] or ["inputs"])[0]: self._in_lang(question, lang)}
+        # a question in the model's own words may name raw ENV keys ("... in fridge@kitchen?"): said as names (F5.1)
+        said = self._in_lang(self._humanize(question), lang)
+        # what the person heard, for the understanding's dialogue (F5.5: a Korean user corrected a read-back the
+        # model only saw in English, and the model kept the object the person had just rejected)
+        self.__dict__.setdefault("_said_as", {})[str(question)] = said
+        params = {(spec.required_params[:1] or ["inputs"])[0]: said}
         for k, v in (("retries", 0), ("lang", lang)):            # optional params the skill may take
             if k in spec.param_names:
                 params[k] = v
@@ -885,8 +924,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
     @staticmethod
     def _goal_phrase(g, places, nice):
         L, t, obj = speech.LocalText, g["type"], g.get("object") or ""
-        o = g.get("said") or obj
-        if t == "on" and places is not None and persons.is_person(places, g.get("to")):
+        o = g.get("said") or g.get("name_local") or obj          # name_local: the object's name in the user's
+        if t == "on" and places is not None and persons.is_person(places, g.get("to")):   # language (F4.8)
             you = bool((places.env.get(g["to"]) or {}).get("speaker"))
             key = ("rb_hand_you" if you else "rb_hand_person") if g.get("hand") else ("rb_to_you" if you else "rb_to_person")
             return L(key, {"object": o, "person": g["to"]}, text=_fmt_en(key, object=obj, person=nice(g["to"])))
@@ -1306,7 +1345,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
         self._where_asked = None                      # the person "Where are you?" was asked about (this run)
         self._handed = set()                          # objects this run handed over (release actions)
         self._tr_budget = LLMBudget(self.cfg["translate_budget"])   # translation calls: their own cap (F5.3)
-        self._say_not_in_lang, self._run_lang = 0, lang
+        self._say_not_in_lang, self._run_lang, self._said_as = 0, lang, {}
         self._mute(r)
         try:
             yield r.ev("task_start", say=r.announcer.announce("task_start"), task=task, run_id=r.run_id,
@@ -1340,6 +1379,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
         if say is None and status in ("failed", "refused") and msg and not msg.startswith(("internal error", "plan finished")):
             # tell the user why (dropped it, can't find it, ...), without the skill's error text or the gate's findings
             say = re.split(r": [\'\"{]|: Exception| \(replan| \(searched| \(looked|: step \d|: the plan does", msg)[0].strip()
+            codes = "|".join(re.escape(c.value) for c in FailureCode)
+            say = re.sub(r"\s*\((?:[a-z_]+: )?(?:" + codes + r")\)", "", say)   # no failure code said (F5.1)
         if say and not localized:
             say = self._humanize(say)                         # no raw ENV key reaches the user (F5.1)
         return r.ev("done", status=status, run_id=r.run_id, msg=msg,
@@ -1421,17 +1462,22 @@ class AssistLoop(SearchHooks, ClosedLoop):
         # a refusal only for a typed reason (understand.typed_refusal): a goal needs an action this robot has
         # no skill for, or the model's unsafe / infeasible on words that are not a misheard answer
         heard = bool(r.dialogue) and r.dialogue[-1][0] == "user" and self._answer_source == "robot"
+        if heard and getattr(r, "repeat_asked", False) and len(r.dialogue) == 2:
+            heard = False            # the request said again after "say it again": a refusal of it is a refusal
         ref = typed_refusal(u["status"], u.get("reason"), self._cannot_do(r.goals),
                             " ".join([r.task, self.original or ""] + [t for w_, t in r.dialogue if w_ == "user"]), heard)
         if ref is not None and ref.kind == "capability" and not ref.missing and u["status"] == "infeasible":
             how = self._capability_check(r, u)
             if how == "repeat":                          # F4.2: not heard / not a request: say it again
                 yield r.ev("understand_check", issues=["no task heard"], repeat=True)
+                r.repeat_asked = True
                 return (yield from self._ask_clarify(r, speech.LocalText("q_repeat")))
             if how == "override":                        # F4.1: the contract covers it; the person confirms
                 yield r.ev("understand_check", issues=[f"capability refusal overridden: {u.get('reason')}"],
                            override=True)
                 ref, r.force_readback = None, True
+                if (yield from self._complete_override(r)) is _STOP:
+                    return _STOP
         over = self._over_limits(r.goals) if ref is None and r.goals else None
         if over:
             from .understand import Refusal
@@ -1448,7 +1494,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
         out = yield from self._hazard_gate(r)                      # F4.3: the robot's own safety rules
         if out is _STOP:
             return _STOP
-        r.goals, conflict = goal_kinds.conflicts(r.goals)          # the goal validator
+        r.goals, conflict = goal_kinds.conflicts(r.goals, name=lambda k: speech.say_name(r.places, k, "en"))
         if conflict:
             q = conflict if not q else f"{conflict} {q}"
         # the grounding decides about places; the model's "ambiguous" counts only when it found nothing
@@ -1468,6 +1514,38 @@ class AssistLoop(SearchHooks, ClosedLoop):
                 return out
         return (yield from self._ask_clarify(r, q))
 
+    _OVERRIDE_NOTE = ("Note: this robot has a skill for every part of this task ({skills}). How an object is moved "
+                      "into or onto a place (sliding, pushing, tucking it in) does not matter: it is a put. Give the "
+                      "goals for ALL of the task, with status \"clear\".")
+
+    def _complete_override(self, r):
+        """F4.1b: a capability refusal the contract overrides keeps only the goals the model did not refuse
+        ("cannot slide an object into the fridge" came with open(fridge) alone, and the plate was lost). When
+        the person's words name something those goals leave out, the task is understood once more with the
+        robot's skills stated; its goals are taken when they leave out less. This call replaces the
+        consistency samples of the read-back (r.sampled). _STOP when the LLM failed."""
+        issues = [i for i in self._issues(r, r.goals) if i["kind"] in ("object", "verb", "place")]
+        if not issues or self.cfg["understand_samples"] <= 0:
+            return None
+        r.sampled = True
+        skills = ", ".join(sorted(a for a in self.robot.plan_actions if a[:1].isupper()))
+        try:
+            u2 = self._understand(r.task, r.places, r.memory, r.world, r.dialogue, budget=r.llm_budget,
+                                  note=self._OVERRIDE_NOTE.format(skills=skills))
+        except LLMBudgetExceeded:
+            return None
+        except LLMUnavailable as e:
+            yield self._llm_failed(r, e); return _STOP
+        g2, q2 = self._ground_understood(r, u2)
+        left = [i for i in self._issues(r, g2) if i["kind"] in ("object", "verb", "place")] if g2 else issues
+        took = bool(g2) and not q2 and u2["status"] != "unsafe" and len(left) < len(issues) \
+            and not self._cannot_do(g2)
+        if took:
+            r.goals = g2
+        yield r.ev("understand_check", issues=[describe(i) for i in issues], override_completed=took,
+                   goals=g2 if took else r.goals)
+        return None
+
     def _ground_understood(self, r, u):
         """An understanding's goals grounded on ENV (with the read-back's pinned destination): (goals, question)."""
         if r.pin_to:
@@ -1484,9 +1562,14 @@ class AssistLoop(SearchHooks, ClosedLoop):
         raw, r.filtered = goal_filter.before_grounding(u["goals"], r.task) if on else (u["goals"], [])
         raw, empty = goal_fix.drop_empty(raw)                                # F3.4: no "put the ?" questions
         r.filtered += empty
+        raw, _nob = goal_fix.unsaid_speaker(raw, words_, r.places, self.robot)   # F2.5: no recipient, no hand-over
         goals, q = self._ground_goals(raw, r.places, r.memory, words_, latest=answers[-1] if answers else "")
         goals, more = goal_filter.after_grounding(goals, " ".join([r.task] + answers), r.places) if on else (goals, [])
         r.filtered += more
+        said_ = " ".join([without_places(" ".join([r.task, self.original or ""]), r.places, getattr(r, "replaced", ()))]
+                         + answers)
+        goals, fixed = goal_fix.repair_destination(goals, said_, r.places)          # F4.7
+        r.repaired = list(getattr(r, "repaired", [])) + fixed
         goals, _kinds = goal_fix.kind_from_destination(goals, words_, r.places, "PutIn" in self.robot.plan_actions)
         goals, invented = goal_fix.drop_invented(goals, words_, r.places)    # F4.4
         r.filtered += invented
@@ -1516,6 +1599,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
         later the read-back names the doubt (r.unsure). _STOP when an LLM call failed."""
         issues = self._issues(r, r.goals)
         r.unsure = [describe(i) for i in issues]
+        if self._unverified_objects(r):
+            r.force_readback = True                                                    # F4.8: read it back
         if issues and not getattr(r, "sampled", False) and self.cfg["understand_samples"] > 0:
             r.sampled = True
             agreed = yield from self._resample(r, r.unsure)
@@ -1532,6 +1617,57 @@ class AssistLoop(SearchHooks, ClosedLoop):
             return None
         r.issue_asked = True
         return issue_question(issues, r.places) or None
+
+    _NAMES_PROMPT = ("Give the usual Korean name of each household object below, one per line, in the same order, "
+                     "as a plain noun in Hangul (no numbering, nothing else):")
+
+    def _unverified_objects(self, r) -> list:
+        """F4.8: the English object names of a Korean request that nothing the person said supports. The model
+        names objects in English (and leaves ``said`` empty), so a misheard noun ("회색 수이건") came out as an
+        invented object ("gray sock") that no check saw. The translator gives each object's usual Korean name
+        once (one call for all, cached, the translator's own budget); an object whose head noun is not in the
+        person's words is read back before planning (r.unsure). No lexicon; no call for English requests."""
+        if (r.lang or "en")[:2] != "ko" or str(self.cfg.get("object_check", "1")) in ("0", "false", "False"):
+            return []
+        hangul = re.compile(r"[\uac00-\ud7a3]")
+        objs = list(dict.fromkeys(str(g.get("object")) for g in r.goals if g.get("type") in ("on", "in")
+                                  and g.get("object") and not g.get("said") and not hangul.search(str(g["object"]))))
+        if not objs or not hangul.search(r.task or ""):
+            return []
+        heard = re.sub(r"\s+", "", " ".join([r.task, self.original or ""] + [t for w_, t in r.dialogue if w_ == "user"]))
+        names = self._local_names(objs)
+        for g in r.goals:                    # the read-back names the object in the user's language: no call
+            if names.get(g.get("object")) and not g.get("said"):
+                g["name_local"] = names[g["object"]]
+        out = []
+        for o in objs:
+            toks = re.findall(r"[\uac00-\ud7a3]+", names.get(o) or "")
+            while len(toks) > 1 and len(toks[-1]) < 2:
+                toks.pop()                                  # a one-syllable packaging noun ("우유 팩"): the noun before
+            if toks and toks[-1] not in heard:
+                out.append(o)
+        return out
+
+    def _local_names(self, objs) -> dict:
+        """{object: its Korean name} from the translator (one call, cached; {} when it fails or is over budget)."""
+        cache = self.__dict__.setdefault("_tr_cache", {})
+        key = ("names", tuple(objs), str(self.cfg.get("translate_model") or ""))
+        if key not in cache:
+            out = {}
+            try:
+                budget = getattr(self, "_tr_budget", None)
+                if budget is not None:
+                    budget.take(what="translate")
+                txt = str(self._translator().chat(prompt=self._NAMES_PROMPT + "\n" + "\n".join(objs), temperature=0,
+                                                  seed=0))
+                lines = [re.sub(r"^\s*(?:\d+[.)]|[-*])\s*", "", x).strip() for x in txt.splitlines() if x.strip()]
+                lg = "ko"                                       # the Hangul names the check reads
+                if len(lines) == len(objs):
+                    out = {o: n for o, n in zip(objs, lines) if speech.guard(n, lg) is None}
+            except Exception:
+                out = {}
+            cache[key] = out
+        return cache[key]
 
     def _resample(self, r, issues):
         """`understand_samples` more understandings: the issue-free goal set they agree on, None, or _STOP."""
@@ -1559,7 +1695,9 @@ class AssistLoop(SearchHooks, ClosedLoop):
         if not ((r.dialogue and r.heard and self.cfg["confirm_answers"]) or self.cfg["confirm_task"] or unsure
                 or getattr(r, "force_readback", False)):
             return _DONE, None
-        if r.confirms >= 2:
+        # two read-backs; a third only after a correction the robot has not read back yet (a misheard
+        # correction made the second read-back repeat the first; fixer rerun of m5)
+        if r.confirms >= 2 and not (r.confirms < 3 and getattr(r, "corrected", 0) >= r.confirms):
             yield self._finish(r, "failed", msg="the user did not confirm the task"); return _STOP, None
         r.confirms += 1
         rb = self.summary(r.goals, r.places)
@@ -1578,6 +1716,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
         r.dialogue += [("robot", cq), ("user", ans)]
         if not rest:                     # a bare "no": ask what instead
             return None, "Sorry. What should I do?"
+        r.corrected = getattr(r, "corrected", 0) + 1
         r.memory.remember_answer(r.task, cq, ans)
         k = r.places.ground(rest, rest)
         if k and not re.search(r"\b(from|take|pick)\b", rest):
@@ -1789,6 +1928,29 @@ class AssistLoop(SearchHooks, ClosedLoop):
             r.steps = self._tidy(r, new)[0]
         return notes
 
+    def _repair_suffix(self, r, suffix) -> list:
+        """F1.3c: the gate's symbolic repair (plan_repair.py) of a replan's suffix too, from the belief now: a
+        suffix that opens a container with the hand full ran as the planner wrote it (the gate only repaired the
+        first plan). An edit is kept only when the suffix's critical findings drop; no LLM call."""
+        from . import plan_repair
+        if not suffix:
+            return suffix
+        ground = lambda s: self._ground_all(r, s)                                        # noqa: E731
+        score = lambda s: len(self._blocking(r, self._tidy(r, ground(s))[0]))           # noqa: E731
+        if score(suffix) == 0:
+            return suffix
+        caps = self.robot.model_capabilities()
+        steps, notes, counts = plan_repair.repair(
+            suffix, score, r.world, r.places, r.goals, caps=caps, actions=self.robot.plan_actions,
+            release=sorted(caps.release_actions), hand_goal=lambda g: bool(g.get("hand")),
+            only=("hoist", "dedupe", "action"))
+        if not notes:
+            return suffix
+        acc = r.__dict__.setdefault("repaired_by_op", {})
+        for k, v in counts.items():
+            acc[k] = acc.get(k, 0) + v
+        return self._tidy(r, ground(steps))[0]
+
     def _tidy(self, r, steps) -> tuple:
         """plan_tidy.tidy of `steps` on the belief now: (steps, notes); `plan_tidy` off: unchanged."""
         if not self.cfg["plan_tidy"] or not steps:
@@ -1863,10 +2025,12 @@ class AssistLoop(SearchHooks, ClosedLoop):
                f"S: robot at {world.arrived}, holding {world.holding or 'nothing'}; goals: {r.goal_txt}")
         r.replan_error = None
         suffix, ers = self._replan_suffix(r, failed, ers)
+        suffix = self._repair_suffix(r, suffix) if r.replan_error is None else suffix
         bad = self._hard_findings(r, suffix) if r.replan_error is None else []
         if bad and r.replans < self.cfg["max_replans"]:
             r.replans += 1                            # one refinement with the gate's findings
             suffix, ers = self._replan_suffix(r, failed, ers + "; the new plan was rejected: " + "; ".join(bad))
+            suffix = self._repair_suffix(r, suffix) if r.replan_error is None else suffix
             bad = self._hard_findings(r, suffix) if r.replan_error is None else []
         if r.replan_error is not None:
             # the planner is down: the old rest of the plan is not run either (the caller ends the run with it)
@@ -2011,7 +2175,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
             q = (f"Someone asked me to {self.summary(new)[len('I will '):].rstrip('.')}. Should I do that first? "
                  f"If not, I will do it after the current task.")
             yield r.ev("clarify", question=q, round=0, kind="new_task")
-            ans = self._ask(q, r.node, self._log_fn(r.i), r.lang)
+            ans = self._ask(q, r.node, self._log_fn(r.i), r.lang)          # silence: after the current task
             stop = self._cancelled(r)
             if stop:
                 yield stop; return _STOP
@@ -2464,9 +2628,11 @@ class AssistLoop(SearchHooks, ClosedLoop):
         r.health = health = yield from self._wait_health(r, wait_s)
         ev_["health"] = health
         if health.get("ok") is False:
+            # the person hears why in words (no failure code, no skill name: a Dock runs the move skill)
             yield self._finish(r, "failed", code=code, device=device, evidence=ev_,
-                               msg=f"the robot is not healthy after {skill} failed ({code.value}): "
-                                   f"{health.get('error') or health}")
+                               msg=f"the robot is not healthy after {st.get('action')} {st.get('object')} failed "
+                                   f"({skill}: {code.value}): {health.get('error') or health}",
+                               say="I have to stop: something is wrong with my hardware.")
             return _STOP
         if todo is Recovery.HEALTH_CHECK:
             return None
@@ -2510,7 +2676,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
             r.helped.add(("where", o))
             q = speech.LocalText("q_where_is", {"object": self._said_of(r, o)}, text=f"I couldn't find the {o}. Where is it?")
             yield r.ev("clarify", question=q, round=0)
-            ans = self._ask(q, r.node, self._log_fn(r.i), r.lang)
+            ans, _n = self._ask_heard(q, r.node, self._log_fn(r.i), r.lang)   # silence: asked again (F3.8)
             k = r.places.ground(ans, ans) if ans else None
             if not k and ans:
                 k = yield from self._confirm_near(r, ans)        # a noisy answer: "Did you mean the X?" (F3.7)
@@ -2524,8 +2690,17 @@ class AssistLoop(SearchHooks, ClosedLoop):
             if k in r.searched:
                 r.searched.remove(k)
             return None, f"; the user says the {o} is on {k}"
+        looks = len(r.searched) + len((getattr(r, "second_looks", {}) or {}).get(o, []))
+        total = int(self.cfg.get("search_total", 8))
+        if self.cfg.get("search_legs") and looks >= total - self.SECOND_LOOKS and not nowhere \
+                and self._second_look(r, o):
+            # the last looks of the search go to the most likely places again, before the unlikely rest (F6.3)
+            yield r.ev("recover", at_index=r.i, kind="second_look", msg=f"looking again for the {o}")
+            return _NEXT, ""
         if r.find_fails[o] > self.cfg["search_max"] + 1 or nowhere or (
-                self.cfg.get("search_legs") and len(r.searched) >= int(self.cfg.get("search_total", 8))):
+                self.cfg.get("search_legs") and looks >= total):
+            if nowhere and self._second_look(r, o):
+                return _NEXT, ""
             yield self._finish(r, "failed", msg=f"could not find the {o} (looked at {', '.join(r.searched)})")
             return _STOP, ""
         near = f" (it was seen near {r.seen_far[-1]})" if r.seen_far else ""
@@ -2542,6 +2717,39 @@ class AssistLoop(SearchHooks, ClosedLoop):
                "Choose where to look next among the places not yet searched")
         return None, (f"; it is not at {world.arrived}. {nxt}"
                       + (f" (it was seen near {r.seen_far[-1]})" if r.seen_far else ""))
+
+    SECOND_LOOKS = 2       # a priori: the two most likely places, once each (a detector misses ~1 look in 10)
+
+    def _second_look(self, r, o) -> bool:
+        """F6.3: the search is used up, but one look is not proof of absence (an object detector misses some
+        looks): look once more at the most likely places already searched (the belief's scores, then the order
+        they were looked at; up to SECOND_LOOKS, never the place the robot is at), spliced in place of the failed
+        Find. False when done."""
+        bel = getattr(r, "search", None)
+        if bel is None or not self.cfg.get("search_legs"):
+            return False
+        again = r.__dict__.setdefault("second_looks", {}).setdefault(o, [])
+        if len(again) >= self.SECOND_LOOKS:
+            return False
+        opened = set(r.world.opened)
+        # the belief's scores (ranking, sightings, habits) first, then the order the places were first looked at
+        # (the plan's own first guess before the belief's legs)
+        sc = bel.scores(o)
+        cands = sorted(r.searched, key=lambda p: (-sc.get(p, 0.0), r.searched.index(p)))
+        for p in cands:
+            if p in again or p == r.world.arrived:
+                continue
+            leg = bel.leg_for(o, p, opened)
+            if leg is None:
+                continue
+            bel.unsearch(o, p)
+            if self._splice_leg(r, leg):
+                again.append(p)
+                r.searched.remove(p)
+                return True
+            bel.missed(o, p, opened)
+            return False
+        return False
 
     def _splice_leg(self, r, leg) -> bool:
         """Put the search leg's steps (MoveTo, Open when closed, Find) in place of the failed Find at r.i, when
@@ -2581,6 +2789,10 @@ class AssistLoop(SearchHooks, ClosedLoop):
         ``search_total`` looks in all), else the run ends naming the places looked at (F6.2)."""
         leg = r.search.next_leg(o, r.world.arrived, r.world.opened) if getattr(r, "search", None) is not None else None
         looks = len(r.searched)
+        looks += len((getattr(r, "second_looks", {}) or {}).get(o, []))
+        if (leg is None or looks >= int(self.cfg.get("search_total", 8)) - self.SECOND_LOOKS) and self._second_look(r, o):
+            yield r.ev("recover", at_index=r.i, kind="second_look", msg=f"looking again for the {o}")
+            return _NEXT, ""
         if leg is None or looks >= int(self.cfg.get("search_total", 8)):
             named = ", ".join(self._say_name(r.places, k) for k in r.searched) or "nowhere"
             yield self._finish(r, "failed", msg=f"could not find the {o} (looked at {', '.join(r.searched)})",
@@ -2617,7 +2829,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
             q = (f"The {o} is too far for my arm. Could you move it closer to the edge, then say yes?"
                  if out_of_reach else f"I can't pick up the {o}. Could you move it closer to the edge, then say yes?")
             yield r.ev("clarify", question=q, round=0)
-            ans = self._ask(q, r.node, self._log_fn(r.i), r.lang)
+            ans, _n = self._ask_heard(q, r.node, self._log_fn(r.i), r.lang)   # silence: asked again (F3.8)
             k = r.places.ground(ans, ans) if ans else None
             if ans and self.yes_no(ans)[0] is True:
                 r.steps[r.i:r.i] = [{"action": "Find", "object": o}]
@@ -2628,6 +2840,11 @@ class AssistLoop(SearchHooks, ClosedLoop):
                 r.memory.see(o, k, "user said"); world.found = None
                 self._search_told(r, o, k)
                 extra = f"; the user says the {o} is on {k}"
+        if not extra and rule is not None and rule.then is Recovery.REPLAN and r.replans < self.cfg["max_replans"] \
+                and not out_of_reach:
+            # F3.9: no help: the policy's next action (contract.recovery GRASP_FAILED then=REPLAN), a new plan
+            # that grasps again, bounded by max_replans; it used to end the run although the rule says replan
+            extra = f"; the grasp of the {o} failed {r.pick_tries[o]} times and nobody could help: try it again"
         if not extra:
             yield self._finish(r, "failed", msg=f"could not pick up the {o}: {reason}")
             return _STOP, ""

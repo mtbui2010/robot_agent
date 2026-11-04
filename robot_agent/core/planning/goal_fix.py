@@ -5,6 +5,9 @@
   becomes ``in``; an ``in`` goal to a place that is not a container becomes ``on``. "on top of" / 위에 keeps
   ``on``; "put it away on the shelf" stays ``on`` ("away" is not an into-word, lexicon.PUTIN).
 * F3.4 ``drop_empty``: a move goal the model gave no object is dropped (it made "Where should I put the ?").
+* F4.7 ``repair_destination``: a move goal to a place the words never name, when the words name exactly one
+  other place no goal uses, goes to that place.
+* F2.5 ``unsaid_speaker``: a move goal to the speaker with no recipient word gets an empty destination (ask).
 * F4.4 ``drop_invented``: an ``on`` / ``in`` goal whose OBJECT is an ENV place (an appliance is not carried) is
   dropped, or becomes the open / close goal the words ask for; a ``go`` goal to a place the words never name is
   dropped when other goals remain.
@@ -43,14 +46,24 @@ def says_into(key: str, text: str, places) -> bool:
     return False
 
 
+_EN_ON = re.compile(r"\b(?:on|onto|atop)\s+(?:top\s+of\s+)?(?:the\s+|my\s+|your\s+|a\s+|our\s+)?(?:[\w'-]+\s+){0,2}$")
+
+
+def says_on(key: str, text: str, places) -> bool:
+    """Do the words put something ON ``key`` ("on the fridge", "on top of", 위에)?"""
+    spans, t = _mentions_of(key, text, places)
+    return any(_EN_ON.search(t[max(0, s - 32):s]) or _KO_ONTOP.search(t[e:e + 16]) for s, e in spans)
+
+
 def kind_from_destination(goals: list, text: str, places, can_putin: bool = True) -> tuple:
-    """(goals, notes): F1.1 (see the module doc)."""
+    """(goals, notes): F1.1 (see the module doc). An ``on`` goal to an openable container the words do not put
+    ON ("The fridge." as an answer, no preposition) becomes ``in`` too (F1.1b): a container is filled."""
     out, notes = [], []
     for g in goals:
         g = dict(g)
         to = g.get("to")
         if g.get("type") == "on" and to in places.env and places.openable(to) and can_putin \
-                and says_into(to, text, places):
+                and (says_into(to, text, places) or not says_on(to, text, places)):
             g["type"] = "in"
             notes.append(f"on -> in: the words put the {g.get('object')} into {to}")
         elif g.get("type") == "in" and to in places.env and not places.openable(to) \
@@ -99,6 +112,53 @@ def drop_invented(goals: list, text: str, places) -> tuple:
             keep.append(g)
         out = keep
     return out, dropped
+
+
+def unsaid_speaker(goals: list, text: str, places, robot=None) -> tuple:
+    """(goals, notes): F2.5. A move goal to the speaker ("me", the speaker's ENV entry) whose words name no
+    recipient (lexicon.RECIPIENT: "bring me", "here", 나한테, 가져다, ...) gets an empty destination, so the robot
+    asks where to put it instead of handing it over ("put the milk away" understood as "give the milk to me")."""
+    from .persons import is_speaker_word
+    if lexicon.has(lexicon.RECIPIENT, text, robot, "recipient_words"):
+        return goals, []
+    out, notes = [], []
+    for g in goals:
+        to = str(g.get("to") or "")
+        e = places.env.get(to) or {}
+        if g.get("type") in ("on", "in") and to and (e.get("speaker") or is_speaker_word(to)
+                                                     or _norm(to) in ("me", "user", "you", "myself")):
+            g = {**g, "to": ""}
+            notes.append(f"destination {to} dropped: the words name no recipient")
+        out.append(g)
+    return out, notes
+
+
+_KO_FROM = re.compile(r"(?:에서|에게서|한테서|부터|으로부터|로부터)")
+
+
+def repair_destination(goals: list, text: str, places) -> tuple:
+    """(goals, notes): F4.7 symbolic destination repair. The model put an object somewhere the person never
+    named, while the person named exactly one place (one ENV key, not a source, not a person) that no goal
+    uses: that place is the destination. Only with one such move goal (two goals and one place: which one is
+    unclear, the read-back asks). Example: "put the towel in the cabinet" understood as "in the drawer"."""
+    from .understand import _active, _drop_corrected
+    t = _active(text)
+    ms = _drop_corrected(t, place_mentions(t, places))
+    person = lambda k: bool((places.env.get(k) or {}).get("person"))
+    said = set().union(*(m[3] for m in ms)) if ms else set()
+    used = {g.get(s) for g in goals for s in ("to", "from") if g.get(s)} | \
+        {g.get("object") for g in goals if g.get("type") in ("open", "close")}
+    free = {next(iter(keys)) for _s, e, _p, keys, src in ms
+            if len(keys) == 1 and not src and not _KO_FROM.match(t[e:]) and not person(next(iter(keys)))} - used
+    movers = [k for k, g in enumerate(goals) if g.get("type") in ("on", "in") and g.get("to") in places.env
+              and not person(g["to"]) and g["to"] not in said and not g.get("near_person") and not g.get("hand")]
+    if len(free) != 1 or len(movers) != 1:
+        return goals, []
+    k, dst = movers[0], next(iter(free))
+    out = [dict(g) for g in goals]
+    note = f"destination {out[k]['to']} -> {dst}: the words name {dst}, not {out[k]['to']}"
+    out[k]["to"] = dst
+    return out, [note]
 
 
 def _tokens(s: str) -> list:
@@ -170,4 +230,5 @@ def ko_object_issues(goals: list, text: str) -> list:
     return [x for k, x in enumerate(out) if x not in out[:k]]
 
 
-__all__ = ["says_into", "kind_from_destination", "drop_empty", "drop_invented", "relay_check", "ko_object_issues"]
+__all__ = ["says_into", "kind_from_destination", "drop_empty", "drop_invented", "relay_check", "ko_object_issues",
+           "repair_destination", "unsaid_speaker"]

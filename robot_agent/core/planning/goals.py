@@ -81,9 +81,10 @@ def is_template(goals: list) -> bool:
     return bool(goals) and all(g.get("type") in TEMPLATE_KINDS for g in goals)
 
 
-def conflicts(goals: list) -> tuple:
+def conflicts(goals: list, name=None) -> tuple:
     """(goals, question|None): the goal validator. Two destinations for one object is a question
-    for the person; an open and a close of one container keep the last one (the final state)."""
+    for the person; an open and a close of one container keep the last one (the final state). ``name``: how a
+    place key is said (default: 'shelf@kitchen' -> 'shelf in the kitchen')."""
     q, dest = None, {}
     for g in goals:
         if g.get("type") in ("on", "in") and g.get("object"):
@@ -92,7 +93,7 @@ def conflicts(goals: list) -> tuple:
                 dest[g["object"]].append(g["to"])
     for obj, tos in dest.items():
         if len(tos) > 1:
-            nice = [t.replace("@", " in the ") for t in tos]
+            nice = [name(t) if name is not None else t.replace("@", " in the ") for t in tos]
             q = f"Where should the {obj} go in the end: {' or '.join(nice)}? It cannot be in two places."
             break
     last = {}
