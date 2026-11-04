@@ -194,6 +194,7 @@ class RunContext:
         self.world = current().world
         self.node = getattr(loop.dm, "_ros_node", None)
         self.muted = False
+        self.speak = None            # the language layer's speak(): every `say` of this run's events passes it
         now = time.time()
         # one id per run: the RunManager run this executive acts for (events, RunLogger file and RunRecord
         # agree, GET /runs/<id> finds it); a run started outside the RunManager gets a time-based one
@@ -231,7 +232,7 @@ class RunContext:
         """An event to stream, logged to the run's JSONL."""
         d = {"event": event, **fields}
         if say is not None:
-            d["say"] = say
+            d["say"] = self.speak(say) if self.speak is not None and isinstance(say, str) else say
         try:
             self.logger.event(event, t=time.time(), **{k: v for k, v in d.items() if k != "event"})
         except Exception:

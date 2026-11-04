@@ -39,7 +39,8 @@ person; the words asking for the hand ("hand me", 손에, 건네) make it the on
 |---|---|
 | `planner.llm_budget` | the run's cap on core LLM calls (option > `$ROBOT_AGENT_LLM_BUDGET` > manifest > 20) |
 | `planner.translate_model`, `planner.translate_url` | the model (and server) that translates what the robot says; default the planner's |
-| `planner.translate_budget` | the translator's own cap per run (default 10) |
+| `planner.translate_budget` | the translator's own cap per run (default 10): one call per user utterance (kept while more than 2 calls are left) and what the robot says |
+| `planner.input_pivot` | the language layer's IN side for a non-English user: `none` (original only), `translate` (English translation; original only as the source of `said`), `both` (default) |
 | `planner.search_legs`, `planner.search_total` | SAGE-v2 search: the belief's next look replaces a failed Find without a replan; after "I don't know" the likely places are searched, up to `search_total` looks |
 | `limits.payload_kg`, `limits.max_object_size_m`, `limits.objects` | what the body can carry, and the robot's own object-class estimates `{name: {weight_kg, size_m}}`; a goal over a limit is refused |
 | `safety.hazards` | robot-pack hazard rules `[{objects: [regex], places: [class or regex], say}]`, added to the core rules |
@@ -48,7 +49,7 @@ person; the words asking for the hand ("hand me", 손에, 건네) make it the on
 
 `sage_subgoals` (goals | model), `gate_complete` (0 | 1), `hazard_rules` (core | pack | off), `person_seat_m`
 (1.0, a priori), `person_surface_m` (1.2, a priori), `search_legs`, `search_total`, `translate_model`,
-`translate_url`, `translate_budget`.
+`translate_url`, `translate_budget`, `input_pivot`.
 
 ## What the robot says
 
@@ -57,3 +58,14 @@ them in other languages in its i18n under the same keys. A phrase the robot has 
 without an LLM call; free text goes to the translator, whose output is checked (`speech.guard`) and retried once;
 when that fails the English text is said and counted (`say_not_in_lang`). ENV keys are said as names
 (`speech.say_name`), never raw.
+
+## Language layer (`core/planning/language.py`)
+
+A non-English user is an I/O layer around an English core. `LanguageAdapter` (`loop.language`) does both sides.
+IN: each user utterance is translated once (cached, counted in the translate budget); the original stays the task
+for the coverage check, the read-back and `said`. A translation is distrusted when the translator says `UNCLEAR`
+(ASR noise), is not English, or loses an ENV place or person the original names by alias: the robot then asks to
+repeat, once per run. OUT: every text the user hears passes `speak()` (the run's `ev` calls it for each `say`).
+The pack's phrases cost no call; an English slot is translated alone; raw ENV keys are said as names; an English
+reason after a pack line is dropped. When nothing works the user hears the pack's `q_unclear_task` (question) or
+`say_untranslated`, never English. English users: no call, no change.

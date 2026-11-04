@@ -5,7 +5,7 @@
   their name; the speaker as "you". No raw key (``bath_cabinet@bathroom``, ``person_b``) reaches the user.
 * ``LocalText``: a question / read-back the loop builds from a fixed phrase. It is the English text (a ``str``:
   logs, the structured-question derive and every old caller see the English template) and carries the phrase
-  ``key`` and its ``slots``, so ``render(text, lang, robot, places)`` says the ROBOT's own phrase in the user's
+  ``key`` and its ``slots``, so ``render(text, lang, robot, places, slot_tr=...)`` says the ROBOT's own phrase in the user's
   language (its i18n), with the slots named by ``say_name``. Only free text (the model's own questions, Say
   sentences) needs the translator.
 * ``CORE_PHRASES``: the English phrases (the core default; a robot pack gives other languages in its i18n under
@@ -65,6 +65,7 @@ CORE_PHRASES = {
     "say_no_answer": "I did not hear an answer, so I will stop here.",
     "say_not_confirmed": "I could not confirm with you what to do, so I will stop here.",
     "say_gave_up": "I am sorry, I still could not understand what you want me to do.",
+    "say_untranslated": "Sorry, I cannot say that in your language right now.",
     "safety_partial": "I won't {what}: {why}.",
 }
 
@@ -164,14 +165,14 @@ def phrase(robot, key: str, lang: str) -> Optional[str]:
     return CORE_PHRASES.get(key) if lg == "en" else None
 
 
-def render(text, lang: str, robot=None, places=None, name_slots=("place", "person", "options")) -> Optional[str]:
+def render(text, lang: str, robot=None, places=None, name_slots=("place", "person", "options"), slot_tr=None) -> Optional[str]:
     """``text`` said in ``lang`` from the robot's phrases (None: a slot / phrase is missing in that language,
     the caller translates instead). A plain str is returned as is for en, else None."""
     lg = (lang or "en")[:2]
     if not isinstance(text, LocalText):
         return str(text) if lg == "en" else None
     if text.key in ("_join", "_seq"):
-        out = [render(p, lang, robot, places, name_slots) for p in text.parts]
+        out = [render(p, lang, robot, places, name_slots, slot_tr) for p in text.parts]
         if any(o is None for o in out):
             return None
         sep = " " if text.key == "_join" else phrase(robot, text.slots.get("sep", "sep_then"), lg)
@@ -184,7 +185,7 @@ def render(text, lang: str, robot=None, places=None, name_slots=("place", "perso
         if "{" + k + "}" not in tpl:
             continue                                  # a slot this language's phrase does not say
         if isinstance(v, LocalText):
-            v = render(v, lang, robot, places, name_slots)
+            v = render(v, lang, robot, places, name_slots, slot_tr)
             if v is None:
                 return None
         elif k in ("place", "person", "source") and places is not None and v in (getattr(places, "env", {}) or {}):
@@ -198,7 +199,9 @@ def render(text, lang: str, robot=None, places=None, name_slots=("place", "perso
             v = (" 아니면 " if lg == "ko" else " or ").join(names)
         elif k in ("object", "text", "what", "why", "summary", "first", "rest") and lg != "en" and \
                 v and not _in_script(str(v), lg):
-            return None                               # an English slot in a Korean phrase: translate the whole
+            v = slot_tr(str(v)) if slot_tr is not None else None   # an English slot in a Korean phrase: say it alone
+            if v is None:
+                return None                           # (or translate the whole)
         slots[k] = v
     return _fmt(tpl, slots)
 

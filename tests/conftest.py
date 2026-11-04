@@ -88,7 +88,8 @@ def make_assist(tmp_path, monkeypatch, env, agent_state):
                                       _llm_cfg={"name": "fake", "url": None, "model": "scripted"})
         ov = dict(log_dir=str(tmp_path / "runs"), live_path=str(tmp_path / "live.jsonl"),
                   memory_path=str(tmp_path / "object_memory.json"), mute_skill_tts=False,
-                  speak_backend=False, vlm_enabled=False)
+                  speak_backend=False, vlm_enabled=False,
+                  input_pivot="none")      # the older tests exercise the loop without the language layer's IN side
         ov.update(overrides)
         loop = AL.AssistLoop(agent, emit=None, **ov)
         loop._llm_client = llm

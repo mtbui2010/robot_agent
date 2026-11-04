@@ -58,7 +58,7 @@ from . import action_model, concrete, episode_memory, goal_change
 from . import search as search_belief
 from .search_hooks import SearchHooks
 from . import goals as goal_kinds
-from . import goal_filter, goal_fix, persons, plan_tidy, speech
+from . import goal_filter, goal_fix, language, persons, plan_tidy, speech
 from . import reconcile as sensed
 from .robot import run_skill
 from .verify import symbolic_check, verdict
@@ -455,6 +455,10 @@ class AssistLoop(SearchHooks, ClosedLoop):
                                                                 self._manifest_planner("translate_url", None))),
             "translate_budget": int(overrides.get("translate_budget", env("ROBOT_AGENT_TRANSLATE_BUDGET", str(
                 self._manifest_planner("translate_budget", 10))))),
+            # the language layer (language.py): what a non-English user says reaches the understand prompt as the
+            # original only (none), its English translation (translate) or both; option > env > manifest
+            "input_pivot": str(overrides.get("input_pivot", env("ROBOT_AGENT_INPUT_PIVOT",
+                                                                self._manifest_planner("input_pivot", "both")))).lower(),
             # F4.8: a Korean request's English object names checked against the person's words (translator)
             "object_check": str(overrides.get("object_check", env("ROBOT_AGENT_OBJECT_CHECK", "1"))),
         }
@@ -487,6 +491,9 @@ class AssistLoop(SearchHooks, ClosedLoop):
     def _understand(self, task, places, memory, world, dialogue, budget=None, sample: int = 0, note: str = "") -> dict:
         """The understand call (understand.ask_json: one repair retry on a non-JSON answer). Raises
         LLMUnavailable / LLMBudgetExceeded; a model that still answers no JSON gives no goals (``unparsed``)."""
+        # the language layer (input_pivot): the task and the user's answers as the model reads them
+        task_text, pivot_orig, dlines = self.language.understand_view(
+            task, dialogue, lambda t, en: f"Robot: {t if en else self._heard_as(t)}")
         prompt = UNDERSTAND_PROMPT.format(
             abilities=self.robot.robot_description(), cannot=self._cannot_line(),
             goal_kinds=goal_kinds.prompt_lines(goal_kinds.kinds_for(self.robot.plan_actions)),
@@ -497,12 +504,11 @@ class AssistLoop(SearchHooks, ClosedLoop):
             dialogue=("You already asked the user, and the answers below complete the task (a later answer corrects "
                       "an earlier one, and a \"no, ...\" corrects what the robot read back): take the object, source "
                       "and destination from them, and say \"clear\" unless something is still missing.\n"
-                      + "\n".join(f"{'Robot' if who == 'robot' else 'User'}: {self._heard_as(t) if who == 'robot' else t}"
-                                  for who, t in dialogue))
-            if dialogue else "", task=task,
+                      + "\n".join(dlines))
+            if dialogue else "", task=task_text,
             # the user's own words: a translation loses names (식탁 'dining table' came out as 'table')
             original=(f"\n(the user's own words: {self.original})" if self.original and self.original != task else "")
-            + (f"\n{note}" if note else ""))
+            + pivot_orig + (f"\n{note}" if note else ""))
         from ..run_control import call_cancellable, is_cancel
         try:                                     # every call (repairs too) cancellable: a stop does not wait
             d = ask_json(self._llm(), prompt, self._understand_schema(), budget=budget, retries=self.cfg["understand_retries"],
@@ -598,14 +604,25 @@ class AssistLoop(SearchHooks, ClosedLoop):
         if not bad:
             return None
         yield r.ev("understand_check", issues=[f"unsafe: {goal_kinds.describe(g)} ({w})" for g, w in bad], hazard=True)
-        if len(bad) == len(r.goals):
+        support = self._support_goals(r.goals, [g for g, _w in bad])
+        if len(bad) + len(support) == len(r.goals):
             g, why = bad[0]
             yield self._finish(r, "refused", refusal="safety", msg=f"unsafe: {goal_kinds.describe(g)}: {why}",
                                say=f"I won't do that: {why}.")
             return _STOP
         r.refused_parts = list(getattr(r, "refused_parts", [])) + bad
-        r.goals = [g for g in r.goals if all(g is not b for b, _w in bad)]
+        r.goals = [g for g in r.goals if all(g is not b for b, _w in bad) and all(g is not x for x in support)]
         return None
+
+    @staticmethod
+    def _support_goals(goals, refused) -> list:
+        """The open / close goals that only served the refused goals (the container a refused put goes into or
+        comes from) and that no kept goal uses: refused with them. Else the person would hear "I will open the
+        fridge" for a request that was a put, say no, and never reach a refusal."""
+        kept = [g for g in goals if all(g is not b for b in refused)]
+        uses = lambda k: any(h.get("type") in ("on", "in") and k in (h.get("to"), h.get("from")) for h in kept)
+        return [g for g in kept if g.get("type") in ("open", "close") and not uses(g.get("object"))
+                and any(g.get("object") in (b.get("to"), b.get("from")) for b in refused)]
 
     def _understand_schema(self) -> dict:
         """UNDERSTAND_SCHEMA with the goal kinds this robot may be given (``goals.kinds_for``)."""
@@ -807,88 +824,31 @@ class AssistLoop(SearchHooks, ClosedLoop):
     def _say_name(places, key, lang="en") -> str:
         """How the robot names ``key`` to a person (F5.1): an alias in the user's script, else the key's head
         in words with its room; a person by their name."""
-        from . import speech
+        from . import language, speech
         return speech.say_name(places, key, lang)
 
-    _LANGS = {"ko": "Korean", "vi": "Vietnamese", "ja": "Japanese", "zh": "Chinese"}
+    _LANGS = language.LANGS
+    _REGISTER = language.REGISTER
 
-    _REGISTER = {"ko": "polite spoken Korean, 해요체", "vi": "polite spoken Vietnamese", "ja": "polite spoken Japanese",
-                 "zh": "polite spoken Chinese"}
+    @property
+    def language(self) -> "language.LanguageAdapter":
+        """The language layer (core/planning/language.py): what the user says in, and what the robot says out."""
+        ad = self.__dict__.get("_language")
+        if ad is None:
+            ad = self.__dict__["_language"] = language.LanguageAdapter(self)
+        return ad
 
     def _translator(self):
-        """The client that translates what the robot says (F5.3): option / $ROBOT_AGENT_TRANSLATE_MODEL / the
-        manifest's planner.translate_model; the planner's own client when none is set or it is the same model."""
-        tm = str(self.cfg.get("translate_model") or "").strip()
-        if not tm or tm == str((self._llm_cfg or {}).get("model") or ""):
-            return self._llm()
-        if getattr(self, "_tr_client", None) is None:
-            from ...connect.llm import init_llm_client
-            url = self.cfg.get("translate_url") or (self._llm_cfg or {}).get("url")
-            self._tr_client = init_llm_client(cfg=dict(self._llm_cfg or {}, model=tm, url=url))
-        return self._tr_client
+        """The client that translates (see ``LanguageAdapter.translator``)."""
+        return self.language.translator()
 
     def _glossary(self, text, lang) -> dict:
         """{English name in ``text``: its name in ``lang``} for the ENV places / people the text names."""
-        places, lg, out = getattr(self, "_env_places", None), (lang or "en")[:2], {}
-        if places is None:
-            return out
-        t = str(text or "")
-        for k in places.keys:
-            if (places.env.get(k) or {}).get("speaker"):
-                continue          # the listener: English "you" is a pronoun, and natural Korean leaves it out
-            en, local = speech.say_name(places, k, "en"), speech.say_name(places, k, lg)
-            if en and local and en != local and local.isascii() is False and \
-                    re.search(r"(?<![\w-])" + re.escape(en) + r"(?![\w-])", t, re.I):
-                out[en] = local   # a whole-word name only ("you" is not in "your", "door" not in "indoor")
-        return out
+        return self.language.glossary(text, lang)
 
     def _in_lang(self, text, lang) -> str:
-        """``text`` (English) in the user's language: the robot's own phrase when ``text`` is a phrase
-        (``speech.LocalText``) it has in that language, else the translator (``translate_model``, its own budget
-        ``translate_budget``, an output check); the English text when neither works (counted:
-        ``say_not_in_lang``)."""
-        lg = (lang or "en")[:2]
-        name = self._LANGS.get(lg)
-        if not name or not text:
-            return str(text) if text else text
-        done = speech.render(text, lang, self.robot, getattr(self, "_env_places", None))
-        if done is not None:
-            return done
-        if isinstance(text, speech.LocalText) and text.key == "_join" and len(text.parts) > 1:
-            # F5.3c: phrases said one after the other ("Sorry, I didn't hear you." + the question asked before):
-            # each part on its own, so the robot's own phrase needs no call and a part said before is cached
-            return " ".join(str(self._in_lang(p, lang)) for p in text.parts)
-        if getattr(self, "_llm_unreachable", False):
-            return str(text)                         # (the model is down: no translation call to wait for)
-        cache = self.__dict__.setdefault("_tr_cache", {})
-        key = (str(text), name, str(self.cfg.get("translate_model") or ""))
-        if key not in cache:
-            cache[key] = self._translate(str(text), lg, name)
-        return cache[key]
-
-    def _translate(self, text, lg, name) -> str:
-        """One translation with the output check and one retry naming what was wrong; the English text when it
-        fails (``self._say_not_in_lang`` counts it, never hidden)."""
-        gl = self._glossary(text, lg)
-        names = "; ".join(f"{a} = {b}" for a, b in gl.items())
-        base = (f"Translate into natural {self._REGISTER.get(lg, name)} ({name}). Keep the meaning, the names and any "
-                f"quoted sentence; do not add anything." + (f" Use these names: {names}." if names else "")
-                + " Output only the translation:")
-        why = None
-        for _k in range(2):
-            budget = getattr(self, "_tr_budget", None)
-            try:
-                if budget is not None:
-                    budget.take(what="translate")
-                prompt = base if why is None else base.replace(" Output only", f" (Your last answer was wrong: {why}.) Output only")
-                out = str(self._translator().chat(prompt=f"{prompt}\n{text}", temperature=0, seed=0)).strip().strip('"')
-            except Exception:
-                break
-            why = speech.guard(out, lg, keep=list(gl.values()))
-            if why is None:
-                return out
-        self._say_not_in_lang = getattr(self, "_say_not_in_lang", 0) + 1
-        return text
+        """``text`` as the user hears it: the ONE speaking function (``LanguageAdapter.speak``)."""
+        return self.language.speak(text, lang)
 
     def _ask(self, question, node, log_fn, lang) -> str:
         """Ask the user (``interact.dialog`` via run_control: the run waits on the question, so an answer
@@ -1369,6 +1329,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
         self._handed = set()                          # objects this run handed over (release actions)
         self._tr_budget = LLMBudget(self.cfg["translate_budget"])   # translation calls: their own cap (F5.3)
         self._say_not_in_lang, self._run_lang, self._said_as = 0, lang, {}
+        self.language.reset()
+        r.speak = lambda text: self.language.speak(text, lang)        # every `say` of the run's events (RunContext.ev)
         self._mute(r)
         try:
             yield r.ev("task_start", say=r.announcer.announce("task_start"), task=task, run_id=r.run_id,
@@ -1479,6 +1441,12 @@ class AssistLoop(SearchHooks, ClosedLoop):
     def _understand_round(self, r):
         """One understanding of the task: _DONE (goals settled), _NEXT (asked something) or _STOP."""
         yield r.ev("status", msg="Understanding the task...")
+        bad = self._distrusted(r)
+        if bad:                           # the language layer: a translation that cannot be trusted is asked again
+            r.pivot_asked = True
+            yield r.ev("understand_check", issues=[f"translation not trusted: {bad}"], repeat=True)
+            r.repeat_asked = True
+            return (yield from self._ask_clarify(r, speech.LocalText("q_repeat")))
         try:
             u = self._understand(r.task, r.places, r.memory, r.world, r.dialogue, budget=r.llm_budget)
         except (LLMUnavailable, LLMBudgetExceeded) as e:
@@ -1543,6 +1511,14 @@ class AssistLoop(SearchHooks, ClosedLoop):
             if out is not None:
                 return out
         return (yield from self._ask_clarify(r, q))
+
+    def _distrusted(self, r) -> Optional[str]:
+        """Why the English of the user's latest words (the instruction, else the last answer) cannot be trusted
+        (``LanguageAdapter.untrusted``); asked once per run. None for an English run or a pivot of ``none``."""
+        if getattr(r, "pivot_asked", False) or (r.lang or "en")[:2] == "en" or self.language.pivot == "none":
+            return None
+        last = [t for w_, t in r.dialogue if w_ == "user"]
+        return self.language.untrusted(last[-1] if last else r.task)
 
     _OVERRIDE_NOTE = ("Note: this robot has a skill for every part of this task ({skills}). How an object is moved "
                       "into or onto a place (sliding, pushing, tucking it in) does not matter: it is a put. Give the "
@@ -1685,9 +1661,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
         if key not in cache:
             out = {}
             try:
-                budget = getattr(self, "_tr_budget", None)
-                if budget is not None:
-                    budget.take(what="translate")
+                if not self.language._take():
+                    raise LLMBudgetExceeded("translate budget")
                 txt = str(self._translator().chat(prompt=self._NAMES_PROMPT + "\n" + "\n".join(objs), temperature=0,
                                                   seed=0))
                 lines = [re.sub(r"^\s*(?:\d+[.)]|[-*])\s*", "", x).strip() for x in txt.splitlines() if x.strip()]
@@ -1772,12 +1747,15 @@ class AssistLoop(SearchHooks, ClosedLoop):
 
     def _ask_clarify(self, r, q):
         """Ask the user `q` (bounded by clarify_rounds): _NEXT with the answer in the dialogue, or _STOP."""
-        if r.asked >= self.cfg["clarify_rounds"]:
+        q = self._fresh_question(r, q)
+        if r.asked >= self.cfg["clarify_rounds"] + (1 if self._essential(q) and not getattr(r, "essential_used", False) else 0):
             # (what the run says is a plain sentence, not the internal message that holds the last question)
             yield self._finish(r, "failed", msg=f"still unclear after {r.asked} questions: {q}",
                                say=speech.LocalText("say_gave_up"))
             return _STOP
         r.asked += 1
+        if r.asked > self.cfg["clarify_rounds"]:
+            r.essential_used = True          # the one round past the cap that a delivery's "Where are you?" may take
         yield r.ev("clarify", question=q, round=r.asked)
         ans, _n = self._ask_heard(q, r.node, self._log_fn(-1), r.lang)
         r.heard += self._answer_source == "robot"
@@ -1793,6 +1771,25 @@ class AssistLoop(SearchHooks, ClosedLoop):
             r.free_round_used = True     # an answer that says the whole request again was informative: not a spent round
             r.asked -= 1
         return _NEXT
+
+    @staticmethod
+    def _essential(q) -> bool:
+        """Is ``q`` a question the task cannot go on without whatever else was asked (where the speaker is, for a
+        delivery to them)? It may take one round past ``clarify_rounds``."""
+        if not isinstance(q, speech.LocalText):
+            return False
+        return q.key == "q_where_are_you" or any(isinstance(p, speech.LocalText) and p.key == "q_where_are_you"
+                                                 for p in q.parts)
+
+    @staticmethod
+    def _fresh_question(r, q):
+        """A question already asked in this run (word for word) is not asked again: the person answered it, so
+        the answer did not settle it. Ask them to say the task in other words instead (once)."""
+        asked = {" ".join(str(t).lower().split()) for w_, t in r.dialogue if w_ == "robot"}
+        if " ".join(str(q).lower().split()) in asked and not getattr(r, "reworded", False) and not AssistLoop._essential(q):
+            r.reworded = True
+            return speech.LocalText("q_unclear_task")
+        return q
 
     def _restates(self, r, ans) -> bool:
         """True when `ans` carries most of the words of the request the run started with (the person said it
