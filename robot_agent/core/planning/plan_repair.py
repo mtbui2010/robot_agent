@@ -19,6 +19,8 @@ makes a plan worse, and every kept edit is a note.
    ``on`` goal's surface, Place on a person -> the robot's hand-over action when the goal is a hand delivery.
 6. ``complete`` (OFF by default, ``gate_complete``): a goal no step reaches gets its canonical segment at the end
    (fetch, deliver). It writes steps the planner did not, so it is counted apart (``completed_by_gate``).
+7. ``finish`` (a replan's suffix only): a goal still to do that the suffix dropped (the held object put down on
+   another surface) gets its delivery back, from the object in the hand.
 
 Block-aware: the planner's sub-goal blocks (``SubgoalRepair``) are edited in place, so a later LLM block edit
 starts from the repaired blocks (an edit of the flat plan alone would be overwritten by the planner's next
@@ -33,7 +35,7 @@ from typing import Callable, Optional
 from . import action_model
 
 RELEASES = ("Place", "PutIn")
-OPS = ("hoist", "dedupe", "insert", "room", "action", "complete")
+OPS = ("hoist", "dedupe", "insert", "room", "action", "complete", "finish")
 
 
 def _st(a, o, **kw) -> dict:
@@ -202,6 +204,47 @@ def op_complete(F, cx: _Ctx, reached: Callable):
     return None
 
 
+def op_finish(F, cx: _Ctx, reached: Callable):
+    """A replan's suffix that drops a pending goal (the planner repaired the failed step and forgot what was still
+    to do): the first ``on`` / ``in`` goal the plan does not reach gets its delivery from where the object is when
+    the plan lets go of it. Held and put down on the wrong place: that release is replaced by the delivery (the
+    MoveTo right before it goes too); never released: the delivery goes at the end; put down and not taken again: a
+    fetch from there comes first. Only for a goal whose object the plan holds or leaves somewhere known."""
+    plan = [s for _o, s in F]
+    for g in cx.goals:
+        if g.get("type") not in ("on", "in") or not g.get("to") or reached(plan, cx.world, [g]):
+            continue
+        o, to = g["object"], g["to"]
+        held, rel_i, rel_at, opened = cx.world.holding, None, None, set(cx.world.opened)
+        for i, s in enumerate(plan):
+            a = s.get("action")
+            if a == "Open":
+                opened.add(s.get("object"))
+            elif a == "Close":
+                opened.discard(s.get("object"))
+            if a == "Pick":
+                held = s.get("object")
+            elif a in cx.release or a in RELEASES:
+                if held == o and rel_i is None:
+                    rel_i, rel_at = i, s.get("object")
+                held = None
+        deliver = []
+        deliver += [_st("MoveTo", to, grounded=True)]
+        if g["type"] == "in" and cx.places.openable(to) and to not in opened:
+            deliver += [_st("Open", to)]
+        deliver += [_st("PutIn" if g["type"] == "in" else (next(iter(cx.release)) if cx.hand_goal(g) and cx.release
+                                                           else "Place"), to)]
+        owner = F[rel_i][0] if rel_i is not None else (F[-1][0] if F else 0)
+        if rel_i is not None:                       # held, let go of in the wrong place: deliver instead
+            j = rel_i - 1 if rel_i and plan[rel_i - 1].get("action") == "MoveTo" and \
+                plan[rel_i - 1].get("object") == rel_at else rel_i
+            return F[:j] + [(owner, s) for s in deliver] + F[rel_i + 1:]
+        if held == o:                               # still in the hand at the end
+            return F + [(owner, s) for s in deliver]
+        return None
+    return None
+
+
 # ── driver ──────────────────────────────────────────────────────────────────────────────────────────────────
 def owned_plan(blocks, join, ground) -> list:
     """[(block index, grounded step)] of the planner's blocks, in plan order (the flat plan = ``join``)."""
@@ -235,6 +278,8 @@ def repair(steps: list, score: Callable, world, places, goals, *, caps=None, act
            ("action", op_action)]
     if complete and reached is not None:
         ops.append(("complete", lambda F_, c: op_complete(F_, c, reached)))
+    if reached is not None and (only is not None and "finish" in only):
+        ops.append(("finish", lambda F_, c: op_finish(F_, c, reached)))
     if only is not None:
         ops = [(n_, o_) for n_, o_ in ops if n_ in set(only)]
     for _k in range(max_edits):

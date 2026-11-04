@@ -1975,7 +1975,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
     def _repair_suffix(self, r, suffix) -> list:
         """F1.3c: the gate's symbolic repair (plan_repair.py) of a replan's suffix too, from the belief now: a
         suffix that opens a container with the hand full ran as the planner wrote it (the gate only repaired the
-        first plan). An edit is kept only when the suffix's critical findings drop; no LLM call."""
+        first plan). ``finish``: a suffix that dropped a goal still to do gets that goal's delivery back. An edit is
+        kept only when the suffix's critical findings drop; no LLM call."""
         from . import plan_repair
         if not suffix:
             return suffix
@@ -1987,7 +1988,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
         steps, notes, counts = plan_repair.repair(
             suffix, score, r.world, r.places, r.goals, caps=caps, actions=self.robot.plan_actions,
             release=sorted(caps.release_actions), hand_goal=lambda g: bool(g.get("hand")),
-            only=("hoist", "dedupe", "action"))
+            only=("hoist", "dedupe", "action", "finish"), reached=self._reaches)
         if not notes:
             return suffix
         acc = r.__dict__.setdefault("repaired_by_op", {})
