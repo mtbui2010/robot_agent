@@ -2684,6 +2684,9 @@ class AssistLoop(SearchHooks, ClosedLoop):
         if r.seen_fail[sig] > 2 and a != "Find":
             yield self._finish(r, "failed", msg=f"{a} {o} failed again the same way: {reason}"); return _STOP
         # ── skill-level retry in place / ask the person (not planning) ──
+        # only a sensor check disagrees with the skill's own success (the layers before it passed)
+        r.sensor_only = bool(rec.verifies) and all(v.ok for v in rec.verifies if v.layer != "sensor") \
+            and any(v.layer == "sensor" and not v.ok for v in rec.verifies)
         no = refuted(rec.verifies)                     # the VLM / its Find said it did not happen: replan
         recover = None if no is not None else {"Find": self._recover_find, "Pick": self._recover_pick,
                                                "MoveTo": self._recover_move, "Place": self._recover_place,
@@ -2904,6 +2907,18 @@ class AssistLoop(SearchHooks, ClosedLoop):
         """Look + grasp again in place (pick_retries, not when out of lateral reach), then ask the person
         to move it closer. Returns (outcome or None, replan hint)."""
         o, world = st["object"], r.world
+        if getattr(r, "sensor_only", False) and self._holding(r.node, default=False) \
+                and self._holding(r.node, default=False):
+            # the skill reported success and only the check after it read an empty gripper; the next two readings
+            # say it holds something: two of three, a noisy sensor and not a failed grasp. The pick stands.
+            self._effect(st, world, r.memory, r.placed)
+            r.completed.append(st)
+            for f in r.failures:
+                if f["sig"] == (st["action"], o):
+                    f["recovered"] = True
+            r.i += 1
+            yield r.ev("recover", at_index=r.i - 1, kind="reconcile", msg=f"the {o} is in the gripper (2 of 3 readings)")
+            return _NEXT, ""
         if self._holding(r.node, default=False):
             # failed, yet something is in the gripper (a neighbour?): never carry on with an unknown object
             world.holding = f"unknown object (picking {o})"

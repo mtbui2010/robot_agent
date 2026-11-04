@@ -255,3 +255,15 @@ def test_verify_spec_expect_in_the_manifest():
     d["skills"][0]["verify"][0]["expect"] = "no"
     with pytest.raises(ManifestError, match="expect"):
         Manifest.from_dict(d)
+
+
+def test_a_sensor_that_failed_is_unknown_not_a_contradiction(robot):
+    """A sensor call that fails with a device fault gave no reading: the skill's report stands (a broken sensor is
+    not evidence against the step), while a sensor that read a negative still fails it."""
+    broken = lambda s: SkillResult(False, "hw_fault", "hardware fault: pose")             # noqa: E731
+    v = StepVerifier(False, set(), robot=robot, sensor=broken, locate=lambda k: (1.0, 0.0))
+    out = v.verify({"action": "Pick", "object": "cup"}, {"isdone": True}, W(found="cup"), None)
+    assert out[-1].ok and out[-1].unknown and "hardware fault" in out[-1].detail
+    empty = lambda s: SkillResult.from_legacy({"isdone": False})                           # noqa: E731
+    v = StepVerifier(False, set(), robot=robot, sensor=empty, locate=lambda k: (1.0, 0.0))
+    assert not v.verify({"action": "Pick", "object": "cup"}, {"isdone": True}, W(found="cup"), None)[-1].ok

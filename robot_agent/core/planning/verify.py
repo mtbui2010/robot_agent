@@ -15,10 +15,14 @@ import re
 from typing import Any, Callable, Optional
 
 from robot_agent.contract import SkillResult
+from robot_agent.contract.types import FailureCode
 
 from . import action_model
 from .base import WorldState  # noqa: F401  (contract: do not redefine WorldState)
 from .records import VerifyResult
+
+# a sensor call that failed with one of these gave no reading
+_SENSOR_BROKEN = {FailureCode.HW_FAULT, FailureCode.TIMEOUT, FailureCode.PERCEPTION_UNAVAILABLE, FailureCode.SOFTWARE}
 
 
 # --------------------------------------------------------------------------- #
@@ -210,6 +214,13 @@ class StepVerifier:
                 continue
             data = r.data if isinstance(r, SkillResult) else dict(r or {})
             ok = r.ok if isinstance(r, SkillResult) else bool(data.get('isdone'))
+            code = FailureCode.try_parse(getattr(r, 'code', None) or data.get('code')) if not ok else None
+            if code in _SENSOR_BROKEN:
+                # the sensor itself failed (a device fault, a timeout): that is no reading, so it neither confirms
+                # nor contradicts the skill's report (a broken pose sensor made a good move a failed one)
+                out.append(VerifyResult('sensor', True, robot.text('sensor_unknown', sensor=v.skill,
+                                                                   why=getattr(r, 'msg', '') or code.value), unknown=True))
+                continue
             if 'pose' in data:
                 out.append(self._at_target(step, v.skill, data['pose'], (params or {}).get(main)))
             elif ok == v.expected:

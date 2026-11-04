@@ -68,3 +68,28 @@ def test_a_miss_where_the_grasp_just_failed_is_looked_at_again(make_assist, env)
                    "Bring the apple from the desk to the dining table.")
     assert [e.get("kind") for e in evs if e["event"] == "recover"].count("relook") == 1
     assert done(evs)["status"] == "success"
+
+
+def test_a_pick_the_skill_reported_and_two_of_three_readings_confirm_stands(make_assist, env):
+    """The check after the pick read an empty gripper (a noisy reading); the next readings say it holds the
+    apple: the pick stands, no 'please take it from me' and no second pick."""
+    from fakes import FakeLLM, FakeRobot, ScriptedPlanner, done, run_task, steps
+    ds, dt = "desk@study room", "dining table@kitchen"
+    robot = FakeRobot(env, {"apple": ds})
+    reads = {"n": 0}
+    real = robot._exec
+
+    def exec_(skill, o, params):
+        if skill == "grasp_succeed":
+            reads["n"] += 1
+            return {"isdone": reads["n"] != 1}          # the first reading (the pick's check) is wrong
+        return real(skill, o, params)
+
+    robot._exec = exec_
+    llm = FakeLLM({"status": "clear", "reason": "", "question": "",
+                   "goals": [{"type": "on", "object": "apple", "from": "desk", "to": "dining table"}]})
+    plan = steps(f"MoveTo {ds}", "Find apple", "Pick apple", f"MoveTo {dt}", f"Place {dt}")
+    evs = run_task(make_assist(robot, llm, ScriptedPlanner(plan), max_replans=0, ask_help=False),
+                   "Bring the apple from the desk to the dining table.")
+    assert any("2 of 3" in str(e.get("msg")) for e in evs if e["event"] == "recover")
+    assert [t[0] for t in robot.trace].count("pick") == 1
