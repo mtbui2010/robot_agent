@@ -409,6 +409,16 @@ def find_issues(goals, text: str, places, english: str = "", user_words=frozense
     return [x for k, x in enumerate(issues) if x not in issues[:k]]
 
 
+def vacuous_goal_issues(goals, english: str, places, user_words=frozenset()) -> list:
+    """A goal set that only walks somewhere (every goal ``go``) for a request whose English reading names an
+    object to handle in object position: the model read the request as "go to X" and dropped the rest, and the
+    run would end in a success against its own goals. The English reading is the translation of a non-English
+    request (the language layer's cached one; the object check cannot read other scripts). Returns object issues."""
+    if not goals or any(g.get("type") != "go" for g in goals) or not english:
+        return []
+    return [{"kind": "object", "what": o} for o in _object_mentions(english, places, user_words)]
+
+
 # an English request whose verb was lost to the microphone: "could you the book on the shelf?" (a modal, "you",
 # then an article straight away): the goals are a guess, so the person is asked what to do
 _NOVERB = re.compile(r"\b(?:can|could|would|will|shall)\s+you\s+(?:please\s+)?(?:the|a|an|my|this|that|these|those)\b", re.I)

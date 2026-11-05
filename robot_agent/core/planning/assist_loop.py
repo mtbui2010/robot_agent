@@ -66,7 +66,7 @@ from .verify_vlm import refuted
 from .budget import DEFAULT_LLM_BUDGET, budget_end
 from .sensor_health import arrival_check, find_precheck
 from .understand import (LLMBadOutput, LLMBudget, LLMBudgetExceeded, LLMUnavailable, ask_json, consensus,
-                         describe, find_issues, issue_question, misheard_question, sampling, typed_refusal, verb_lost,
+                         describe, find_issues, vacuous_goal_issues, issue_question, misheard_question, sampling, typed_refusal, verb_lost,
                          without_places)
 
 _LOC_ACTIONS = {"MoveTo", "Place", "PutIn", "Open", "Close"}
@@ -1614,7 +1614,11 @@ class AssistLoop(SearchHooks, ClosedLoop):
                              english=self._object_source(r, answers), user_words=_USER_WORDS)   # objects: own words only
         if not answers and verb_lost(r.task):             # the request's verb was lost: the goals are a guess
             issues = [{"kind": "noverb", "what": ""}] + issues
-        return issues + [i for i in goal_fix.ko_object_issues(goals, r.task) if i not in issues]   # F4.5
+        extra = goal_fix.ko_object_issues(goals, r.task)                                          # F4.5
+        if (getattr(r, "lang", None) or "en")[:2] != "en":         # a goal set that only goes somewhere: the English reading's objects
+            h = self.language.hear(r.task)
+            extra += vacuous_goal_issues(goals, h.english if h.trusted else "", r.places, _USER_WORDS)
+        return issues + [i for i in extra if i not in issues]
 
     def _object_source(self, r, answers) -> str:
         """The words the object-coverage check reads: the task's own words, unless a later answer said the whole
