@@ -55,10 +55,14 @@ class SearchConfig:
     trust: float = 0.5                # a sighting at least this confident is believed without a ranking
     rank_weight: float = 0.5          # the ranking's weight against the prior (top ranked = rank_weight)
     habit_weight: float = 0.75        # where past episodes picked the object up (all of them there = habit_weight)
+    miss_rate: float = 0.1            # P(a look at the right place does not see the object): the detector's false-negative rate
 
     @classmethod
-    def from_env(cls, overrides: Optional[dict] = None, env: Callable = os.environ.get) -> "SearchConfig":
-        o = overrides or {}
+    def from_env(cls, overrides: Optional[dict] = None, env: Callable = os.environ.get,
+                 miss_default: float = 0.1) -> "SearchConfig":
+        """``miss_default``: the robot pack's own value (manifest ``planner.detector_miss_rate``), the fallback of
+        the option ``detector_miss_rate`` and the env ``ROBOT_AGENT_DETECTOR_MISS_RATE``."""
+        o, miss_default = overrides or {}, clamp_miss_rate(miss_default)
         get = lambda k, e, d: o[k] if k in o else env(e, d)            # noqa: E731
         on = get("search", "ROBOT_AGENT_SEARCH", "1")
         return cls(enabled=on if isinstance(on, bool) else str(on).lower() not in ("0", "off", "false", "no"),
@@ -66,7 +70,18 @@ class SearchConfig:
                    half_life_s=float(get("search_half_life_s", "ROBOT_AGENT_SEARCH_HALF_LIFE_S", "21600")),
                    trust=float(get("search_trust", "ROBOT_AGENT_SEARCH_TRUST", "0.5")),
                    rank_weight=float(get("search_rank_weight", "ROBOT_AGENT_SEARCH_RANK_WEIGHT", "0.5")),
-                   habit_weight=float(get("search_habit_weight", "ROBOT_AGENT_SEARCH_HABIT_WEIGHT", "0.75")))
+                   habit_weight=float(get("search_habit_weight", "ROBOT_AGENT_SEARCH_HABIT_WEIGHT", "0.75")),
+                   miss_rate=clamp_miss_rate(get("detector_miss_rate", "ROBOT_AGENT_DETECTOR_MISS_RATE", miss_default),
+                                             miss_default))
+
+
+def clamp_miss_rate(v, default: float = 0.1) -> float:
+    """A false-negative rate in [0, 0.9] (a bad value: ``default``). 1 would make a look worthless."""
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return default
+    return min(max(x, 0.0), 0.9) if x == x else default
 
 
 def confidence(age_s: float, half_life_s: float) -> float:
@@ -119,6 +134,9 @@ class SearchBelief:
         self.ranked: dict = {}         # obj -> [places] (asked once; [] = no usable answer)
         self.searched: dict = {}       # obj -> {place: set of containers there that were closed}
         self.habits: dict = {}         # obj -> {place: times past episodes picked it up there}
+        self._before_found: dict = {}  # obj -> the search state before its last Find saw it
+        self.stale: dict = {}          # obj -> {place: (ts, how)} sightings a miss removed (the posterior's prior)
+        self.misses: dict = {}         # obj -> {place: looks there that did not see it} (kept when a place is looked at again)
         self.rank_calls = 0
 
     # ── what is where ───────────────────────────────────────────────────
@@ -136,6 +154,7 @@ class SearchBelief:
         if place in _NOT_A_PLACE or place not in self.places:
             return
         self.sightings.setdefault(obj, {})[place] = (self.now() if ts is None else float(ts), how)
+        self.stale.get(obj, {}).pop(place, None)
 
     def learn(self, obj: str, counts: dict) -> None:
         """Experience: ``counts`` {place: times the robot's past episodes picked ``obj`` up there}
@@ -227,13 +246,18 @@ class SearchBelief:
         return bool(pr) and max(pr.values()) < self.cfg.trust and self.wants_rank(obj)
 
     # ── searched places (the hard constraint) ─────────────────────────────
-    def missed(self, obj: str, place: Optional[str], opened: Iterable[str]) -> None:
-        """``obj`` was looked for at ``place`` and not seen (with ``opened`` open at the time)."""
+    def missed(self, obj: str, place: Optional[str], opened: Iterable[str], count: bool = True) -> None:
+        """``obj`` was looked for at ``place`` and not seen (with ``opened`` open at the time). ``count`` False:
+        only the place is marked searched again (a look that was taken back), not one more miss."""
         if place not in self.places:
             return
         op = set(opened or ())
         self.searched.setdefault(obj, {})[place] = {c for c in self.containers(place) if c not in op}
-        self.sightings.get(obj, {}).pop(place, None)
+        m = self.misses.setdefault(obj, {})
+        m[place] = m.get(place, 0) + (1 if count else 0)
+        gone = self.sightings.get(obj, {}).pop(place, None)
+        if gone is not None:
+            self.stale.setdefault(obj, {})[place] = gone       # the posterior still weighs what pointed here
 
     def is_searched(self, obj: str, place: Optional[str], opened: Iterable[str] = ()) -> bool:
         e = self.searched.get(obj, {}).get(place)
@@ -248,8 +272,27 @@ class SearchBelief:
         return [o for o, d in self.searched.items() if d]
 
     def found(self, obj: str, place: Optional[str]) -> None:
+        # what the search knew is kept for one step: a phantom (a Find that saw it, a Pick that finds nothing)
+        # takes it back (restore_search)
+        self._before_found[obj] = ({p: set(c) for p, c in self.searched.get(obj, {}).items()},
+                                   dict(self.misses.get(obj, {})), dict(self.stale.get(obj, {})),
+                                   dict(self.sightings.get(obj, {})))
         self.searched.pop(obj, None)
+        self.misses.pop(obj, None)
+        self.stale.pop(obj, None)
         self.see(obj, place, how="found")
+
+    def restore_search(self, obj: str) -> bool:
+        """The Find that ended ``obj``'s search was a false positive: the places searched and the misses from
+        before it are back (the caller then marks the place of the false positive as a miss). False when
+        there is nothing to take back."""
+        snap = self._before_found.pop(obj, None)
+        if snap is None:
+            return False
+        searched, misses, stale, sightings = snap
+        self.searched[obj], self.misses[obj], self.stale[obj] = searched, misses, stale
+        self.sightings[obj] = sightings
+        return True
 
     def unsearch(self, obj: str, place: Optional[str]) -> None:
         self.searched.get(obj, {}).pop(place, None)
@@ -258,6 +301,50 @@ class SearchBelief:
         """The robot moved an object at ``place``: every search there is void."""
         for d in self.searched.values():
             d.pop(place, None)
+
+    # ── one miss is not proof of absence (the detector's false-negative rate) ──
+    POSTERIOR_FLOOR = 0.02      # a place nothing points to is still possible (a share of a sighting's confidence)
+
+    def posterior(self, obj: str) -> dict:
+        """{place: P(the object is there | the misses so far)}, summing to 1. The prior is the score of the place
+        (sightings, habits, ranking; a small floor for every place) and each look that missed multiplies it by the
+        false-negative rate: a place looked at once keeps ``miss_rate`` of its weight, twice ``miss_rate`` squared."""
+        w, now = {}, self.now()
+        for p, sc in self.scores(obj).items():
+            ts_how = self.stale.get(obj, {}).get(p)
+            if ts_how is not None:
+                sc += confidence(now - ts_how[0], self.cfg.half_life_s)
+            w[p] = (sc + self.POSTERIOR_FLOOR) * self.cfg.miss_rate ** (self.misses.get(obj, {}).get(p, 0))
+        tot = sum(w.values())
+        return {p: v / tot for p, v in w.items()} if tot > 0 else {}
+
+    def relook_budget(self) -> int:
+        """How many places may get a second look once the search is used up: 0 for a detector that never misses,
+        else about 20 x the false-negative rate (at least 1, at most 4; the default rate 0.1 gives 2)."""
+        m = self.cfg.miss_rate
+        return 0 if m <= 0 else max(1, min(4, int(m * 20 + 0.5)))
+
+    def relook_order(self, obj: str, exclude: Iterable[str] = ()) -> list:
+        """The places already looked at, most probable first by the posterior (equal: the one looked at first;
+        a place looked at twice has lost the rate's factor again)."""
+        post, ex = self.posterior(obj), set(exclude or ())
+        done = [p for p in self.misses.get(obj, {}) if p not in ex]       # in the order they were looked at
+        return sorted(done, key=lambda p: (-post.get(p, 0.0), done.index(p)))
+
+    def relook_beats_next(self, obj: str, here: Optional[str], opened: Iterable[str] = ()) -> Optional[Leg]:
+        """A place already looked at whose posterior is higher than that of every place not yet looked at (a
+        strong sighting there against a flat rest): the look at it, else None. Never the place the robot is at
+        and not a place that cannot be looked at (a closed container the robot cannot open)."""
+        op, post = set(opened or ()), self.posterior(obj)
+        rest = [post.get(p, 0.0) for p in self.places if not self.is_searched(obj, p, op) and p not in self.misses.get(obj, {})
+                and self.leg_for(obj, p, op) is not None]
+        for p in self.relook_order(obj, exclude=[here]):
+            if post.get(p, 0.0) > max(rest or [0.0]):
+                leg = self.leg_for(obj, p, op)
+                if leg is not None:
+                    return leg
+            break                                     # the order is by posterior: no later place beats it either
+        return None
 
     # ── the next look ───────────────────────────────────────────────────
     def _closed_here(self, obj: str, place: str, opened: set) -> list:
@@ -340,6 +427,8 @@ class SearchBelief:
         return {"sightings": {o: {p: list(v) for p, v in d.items()} for o, d in self.sightings.items()},
                 "ranked": dict(self.ranked), "rank_calls": self.rank_calls,
                 "habits": {o: dict(d) for o, d in self.habits.items()},
+                "misses": {o: dict(d) for o, d in self.misses.items()},
+                "stale": {o: {p: list(v) for p, v in d.items()} for o, d in self.stale.items()},
                 "searched": {o: {p: sorted(c) for p, c in d.items()} for o, d in self.searched.items()}}
 
     def load(self, d: dict) -> "SearchBelief":
@@ -349,6 +438,10 @@ class SearchBelief:
         self.ranked.update({o: list(v) for o, v in (d.get("ranked") or {}).items()})
         for o, dd in (d.get("habits") or {}).items():
             self.learn(o, dd)
+        for o, dd in (d.get("stale") or {}).items():
+            self.stale[o] = {p: (float(v[0]), str(v[1])) for p, v in dd.items()}
+        for o, dd in (d.get("misses") or {}).items():
+            self.misses[o] = {p: int(n) for p, n in dd.items()}
         for o, dd in (d.get("searched") or {}).items():
             self.searched[o] = {p: set(c) for p, c in dd.items()}
         self.rank_calls = int(d.get("rank_calls") or 0)
@@ -414,5 +507,5 @@ def containers_from_env(env: dict, openable: Callable[[str], bool]) -> Callable[
     return at
 
 
-__all__ = ["SearchBelief", "SearchConfig", "Leg", "confidence", "containers_from_env", "skip_relook", "RANK_PROMPT",
+__all__ = ["SearchBelief", "SearchConfig", "Leg", "clamp_miss_rate", "confidence", "containers_from_env", "skip_relook", "RANK_PROMPT",
            "RANK_SCHEMA"]

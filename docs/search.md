@@ -64,6 +64,26 @@ search the robot searched the living room and gave up (T2 S06, H04, H07, M04).
 The planner still writes every plan. The core only moves the search leg of a suffix, as the
 policy above says; it adds no other steps.
 
+## A miss is not proof of absence (the detector's false-negative rate)
+
+An object detector does not see an object that is in view on some looks. The rate is the robot's own
+number: manifest `planner.detector_miss_rate` (0 to 0.9, default 0.1), the option `detector_miss_rate`
+or `ROBOT_AGENT_DETECTOR_MISS_RATE` (option > env > manifest > 0.1). The core never reads a simulator's or
+a benchmark's profile for it; a pack that knows its detector sets it, a pack that does not gets the default.
+
+`SearchBelief.posterior(obj)` is the place's score (sighting, experience, ranking, plus a small floor so no
+place is impossible) times `miss_rate ** misses at that place`, normalised. A sighting that a miss removed
+still counts in the prior, so a place where the object was seen a minute ago stays probable after one miss
+(weight x0.1) and is looked at again before the unlikely rest:
+
+* **Before the search is used up** (`relook_beats_next`): the look at a searched place whose posterior is higher
+  than every place not looked at yet replaces the next leg. Never the place the robot is at.
+* **When the search is used up** (`_second_look`): the searched places in order of posterior, at most
+  `relook_budget()` of them: 0 for a rate of 0 (a perfect detector is believed), else `round(20 x rate)` from 1
+  to 4 (2 at the default rate, as before). Ties go to the place looked at first.
+
+Misses survive `unsearch` (the count is for the whole run) and `to_dict` / `load`.
+
 ## Searched places are a hard constraint
 
 Kept on the run context: they survive every replan, a pause / resume and a task-stack resume of
@@ -90,6 +110,7 @@ never gets an Open step from the search.
 | `ROBOT_AGENT_SEARCH_TRUST` | | `0.5` | a sighting at least this confident is believed without a ranking |
 | `ROBOT_AGENT_SEARCH_RANK_WEIGHT` | | `0.5` | weight of the ranking against the prior |
 | `ROBOT_AGENT_SEARCH_HABIT_WEIGHT` | `search_habit_weight` | `0.75` | weight of the experience prior; `0`: off (the v2 search) |
+| `ROBOT_AGENT_DETECTOR_MISS_RATE` | `detector_miss_rate` | manifest `planner.detector_miss_rate`, else `0.1` | the detector's false-negative rate (posterior of a place after a miss; second-look budget) |
 
 The ranking counts against the run's LLM budget (`ROBOT_AGENT_LLM_BUDGET`); a failed or
 over-budget ranking leaves the prior alone, it never ends the run.

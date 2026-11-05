@@ -79,7 +79,7 @@ ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify
                 "reconcile", "search_habit_weight", "edit_reserve", "plan_tidy",
                 "goal_filter", "sage_subgoals", "translate_model", "translate_url", "translate_budget",
                 "gate_complete", "hazard_rules", "person_seat_m", "person_surface_m", "search_total",
-                "search_legs", "object_check"}
+                "search_legs", "object_check", "detector_miss_rate"}
 _USER_WORDS = {"me", "user", "here", "you", "myself", "person"}
 
 
@@ -415,7 +415,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
             "memory_path": Path(overrides.get("memory_path") or data_dir("object_memory", common, host_id())),  # observe.paths
             # search with a belief (search.py, docs/search.md): prior from the object memory, one LLM ranking
             # per object, searched places never again
-            "search": search_belief.SearchConfig.from_env(overrides),
+            "search": search_belief.SearchConfig.from_env(overrides, miss_default=self._manifest_planner("detector_miss_rate", 0.1)),
             # the belief against the sensors at the start / on resume and a non-sensor `arrived` against a fresh
             # pose before a step at a place, with provenance (reconcile.py, docs/guard.md); 0: the adapter only
             "reconcile": str(overrides.get("reconcile", env("ROBOT_AGENT_RECONCILE", "1"))) not in ("0", "False", "false"),
@@ -2933,8 +2933,9 @@ class AssistLoop(SearchHooks, ClosedLoop):
             return None, f"; the user says the {o} is on {k}"
         looks = len(r.searched) + len((getattr(r, "second_looks", {}) or {}).get(o, []))
         total = int(self.cfg.get("search_total", 8))
-        if self.cfg.get("search_legs") and looks >= total - self.SECOND_LOOKS and not nowhere \
-                and self._second_look(r, o):
+        if self.cfg.get("search_legs") and not nowhere and (
+                self._second_look(r, o, only_if_beats=True) if looks < total - self._relook_budget(r) else
+                self._second_look(r, o)):
             # the last looks of the search go to the most likely places again, before the unlikely rest (F6.3)
             yield r.ev("recover", at_index=r.i, kind="second_look", msg=f"looking again for the {o}")
             return _NEXT, ""
@@ -2962,24 +2963,33 @@ class AssistLoop(SearchHooks, ClosedLoop):
         return None, (f"; it is not at {world.arrived}. {nxt}"
                       + (f" (it was seen near {r.seen_far[-1]})" if r.seen_far else ""))
 
-    SECOND_LOOKS = 2       # a priori: the two most likely places, once each (a detector misses ~1 look in 10)
+    SECOND_LOOKS = 2       # without a belief: the two most likely places, once each (the default rate 0.1)
 
-    def _second_look(self, r, o) -> bool:
-        """F6.3: the search is used up, but one look is not proof of absence (an object detector misses some
-        looks): look once more at the most likely places already searched (the belief's scores, then the order
-        they were looked at; up to SECOND_LOOKS, never the place the robot is at), spliced in place of the failed
-        Find. False when done."""
+    def _relook_budget(self, r) -> int:
+        """Places that may get a second look: from the detector's false-negative rate (SearchBelief.relook_budget)."""
+        bel = getattr(r, "search", None)
+        return bel.relook_budget() if bel is not None else self.SECOND_LOOKS
+
+    def _second_look(self, r, o, only_if_beats: bool = False) -> bool:
+        """F6.3: one look is not proof of absence (an object detector misses a share of its looks, the rate is the
+        robot's own: ``planner.detector_miss_rate``). Look once more at the place the belief's posterior (prior x
+        miss rate per miss) makes most probable among those already searched, up to the rate's budget, never the
+        place the robot is at, spliced in place of the failed Find. ``only_if_beats``: only while that place is more
+        probable than every place not looked at yet (a strong sighting against a flat rest), before the search
+        is used up. False when done."""
         bel = getattr(r, "search", None)
         if bel is None or not self.cfg.get("search_legs"):
             return False
         again = r.__dict__.setdefault("second_looks", {}).setdefault(o, [])
-        if len(again) >= self.SECOND_LOOKS:
+        if len(again) >= self._relook_budget(r):
             return False
         opened = set(r.world.opened)
-        # the belief's scores (ranking, sightings, habits) first, then the order the places were first looked at
-        # (the plan's own first guess before the belief's legs)
-        sc = bel.scores(o)
-        cands = sorted(r.searched, key=lambda p: (-sc.get(p, 0.0), r.searched.index(p)))
+        if only_if_beats:
+            beat = bel.relook_beats_next(o, r.world.arrived, opened)
+            cands = [beat.place] if beat is not None and beat.place in r.searched else []
+        else:
+            cands = [p for p in bel.relook_order(o, exclude=[r.world.arrived]) if p in r.searched]
+            cands += [p for p in r.searched if p not in cands]
         for p in cands:
             if p in again or p == r.world.arrived:
                 continue
@@ -2991,7 +3001,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
                 again.append(p)
                 r.searched.remove(p)
                 return True
-            bel.missed(o, p, opened)
+            bel.missed(o, p, opened, count=False)
             return False
         return False
 
@@ -3034,7 +3044,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
         leg = r.search.next_leg(o, r.world.arrived, r.world.opened) if getattr(r, "search", None) is not None else None
         looks = len(r.searched)
         looks += len((getattr(r, "second_looks", {}) or {}).get(o, []))
-        if (leg is None or looks >= int(self.cfg.get("search_total", 8)) - self.SECOND_LOOKS) and self._second_look(r, o):
+        if (leg is None or looks >= int(self.cfg.get("search_total", 8)) - self._relook_budget(r)) and self._second_look(r, o):
             yield r.ev("recover", at_index=r.i, kind="second_look", msg=f"looking again for the {o}")
             return _NEXT, ""
         if leg is None or looks >= int(self.cfg.get("search_total", 8)):
