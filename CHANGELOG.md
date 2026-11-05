@@ -5,6 +5,14 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+### Person goals (option `person_goals`, env `ROBOT_AGENT_PERSON_GOALS`, manifest `planner.person_goals`; default off)
+- A mixed request (go / say goals and moves) gives the planner the template goals as fixed sub-goals with the
+  loop's own steps (`goals.compile_steps`); the planner expands the moves only (embodiplan 0.2.7
+  `fixed_subgoals`). New gate operators `recipient` (a hand-over for a hand goal goes to the goal's person, after
+  a MoveTo) and `unopenable` (an Open / Close of what the map says cannot be opened, named by no goal, goes).
+  `goals.dedupe` drops an exact repeat of a goal. A fixed block gets no LLM edit and is never emptied. Off: nothing
+  changes.
+
 ### Direct planner steps run in the closed loops (docs/direct_prompt.md "Steps and binding")
 - `llm_direct` steps keep the robot's call (`skill`, `params` read as Structured mode reads them, `flags`)
   and carry the skill's manifest action (`move` -> `MoveTo`; `""` for a skill with no plan action). Binding

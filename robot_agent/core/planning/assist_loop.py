@@ -80,7 +80,7 @@ ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify
                 "reconcile", "search_habit_weight", "edit_reserve", "plan_tidy",
                 "goal_filter", "sage_subgoals", "translate_model", "translate_url", "translate_budget",
                 "gate_complete", "hazard_rules", "person_seat_m", "person_surface_m", "search_total",
-                "search_legs", "object_check", "detector_miss_rate"}
+                "search_legs", "object_check", "detector_miss_rate", "person_goals"}
 _USER_WORDS = {"me", "user", "here", "you", "myself", "person"}
 
 
@@ -465,6 +465,11 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             # R4b item 2 (dialog_converge.py): a correction edits the goal it names, a rejected reading is not read
             # back again, the caps count what gained nothing; "0" = the earlier dialogue loop (the ablation)
             "dialog_converge": str(overrides.get("dialog_converge", env("ROBOT_AGENT_DIALOG_CONVERGE", "1"))),
+            # solution-lab round 1 (default OFF): a request that mixes go / say / deliver goals with moves is planned
+            # with the template goals as the loop's own fixed steps, the planner expands only the moves, a hand-over
+            # goes to the person its goal names, a duplicated goal is dropped, an Open of what cannot be opened goes
+            "person_goals": str(overrides.get("person_goals", env("ROBOT_AGENT_PERSON_GOALS", str(
+                self._manifest_planner("person_goals", "0"))))).lower() in ("1", "true", "yes", "on"),
         }
 
     def _converge(self) -> bool:
@@ -2016,6 +2021,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         t_plan, r.plan_error = time.time(), None
         from ..run_control import call_cancellable, is_cancel
         r.compiled = goal_kinds.is_template(r.goals)
+        if self.cfg.get("person_goals"):
+            r.goals = goal_kinds.dedupe(r.goals)
         try:
             if r.compiled:
                 # go / say / deliver goals: a fixed sequence of the robot's own actions, no LLM
@@ -2098,7 +2105,33 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         (the planner decomposes the task itself)."""
         if self.cfg.get("sage_subgoals", "goals") != "goals" or not r.goals:
             return None
+        if self.cfg.get("person_goals") and getattr(r.planner, "fixed_subgoals", False):
+            return self._lab_subgoals(r)
         return [goal_kinds.subgoal_text(g, r.places) for g in r.goals]
+
+    def _lab_subgoals(self, r) -> list:
+        """``person_goals``: in a request that mixes template goals (go / say / deliver) with moves, a template goal
+        is a sub-goal with its own steps (``goals.compile_steps``: MoveTo, Say with the exact sentence), so the
+        planner expands the moves only and never paraphrases a sentence or invents a go. The speaker as the place
+        to say it at is the speaker's ENV entry; a place the ENV does not know is not driven to. A request of
+        template goals alone is compiled whole already, one of moves alone is unchanged."""
+        kinds = {g.get("type") in goal_kinds.TEMPLATE_KINDS for g in r.goals}
+        text = [goal_kinds.subgoal_text(g, r.places) for g in r.goals]
+        if kinds != {True, False}:
+            return text
+        out, can_say = [], "Say" in r.robot.plan_actions
+        for g, t in zip(r.goals, text):
+            if g.get("type") not in goal_kinds.TEMPLATE_KINDS:
+                out.append(t)
+                continue
+            h = dict(g)
+            if goal_kinds.is_speaker(h.get("to")):
+                h["to"] = persons.speaker_key(r.places) or ""
+            elif h.get("to") and h["to"] not in r.places.env:
+                h["to"] = ""
+            steps = goal_kinds.compile_steps([h], None, r.robot.text("delivery", r.lang), can_say=can_say)
+            out.append((t, steps) if steps else t)
+        return out
 
     @staticmethod
     def _has_blocks(r) -> bool:
@@ -2126,7 +2159,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             r.steps, score, r.world, r.places, r.goals, caps=caps, actions=self.robot.plan_actions,
             release=sorted(caps.release_actions), hand_goal=lambda g: bool(g.get("hand")),
             blocks=blocks or None, join=rep.join_blocks if blocks else None, ground=ground,
-            complete=str(self.cfg.get("gate_complete", "0")) in ("1", "true", "True"), reached=self._reaches)
+            complete=str(self.cfg.get("gate_complete", "0")) in ("1", "true", "True"),
+            person_goals=bool(self.cfg.get("person_goals")), reached=self._reaches)
         acc = r.__dict__.setdefault("repaired_by_op", {})
         for k, v in counts.items():
             acc[k] = acc.get(k, 0) + v
