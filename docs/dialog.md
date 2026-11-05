@@ -161,3 +161,20 @@ goals (a wrong object, place or recipient), not right goals left unconfirmed, so
 
 Generality: objects are the goals' names, places are the ENV, the speaker words are `persons.SPEAKER_FORMS`.
 The Korean phrase for `q_which_part` comes from the robot pack's i18n; a pack without it gets the translator.
+
+### Two objects fit the words: which one? (R4b item 3, `core/planning/which_one.py`)
+
+A Find that sees more than one object fitting its query may put `candidates` in its result: short descriptions of
+the instances in view, the way a person tells them apart ("red mug", "blue mug"), never an internal id. A pack whose
+Find has no `candidates` is not affected. After such a Find, when a Pick of the same object follows in the plan:
+
+1. The candidates are narrowed by the words the person used for the object (`said`). One left: it is taken, no
+   question.
+2. Otherwise one question per object and run: "I see more than one mug here: the red mug or the blue mug. Which one
+   do you mean?" (`q_which_one`; in another language the whole sentence is translated). It is asked outside the
+   `clarify_rounds` count, so it is never lost to the cap. The answer is read by the words that tell the candidates
+   apart; when they do not decide ("the second one", an answer in the user's language) one model call chooses
+   (`where="which_one"`, under the run's LLM budget). An answer that chooses nothing leaves the robot as it was;
+   the question is not asked again.
+3. From then on the Find and Pick of that object get the chosen description as the skill input (the plan's object
+   name stays, so goals and memory are unchanged); a Find that had seen the other instance is repeated.

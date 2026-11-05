@@ -57,6 +57,7 @@ from .records import StepRecord, VerifyResult
 from . import action_model, concrete, episode_memory, goal_change
 from . import search as search_belief
 from .search_hooks import SearchHooks
+from .which_one import WhichOne
 from . import goals as goal_kinds
 from . import dialog_converge, goal_filter, goal_fix, language, persons, plan_tidy, speech
 from . import reconcile as sensed
@@ -338,7 +339,7 @@ Task: {task}{original}
 # ─────────────────────────────────────────────────────────────────────────────
 # the loop
 # ─────────────────────────────────────────────────────────────────────────────
-class AssistLoop(SearchHooks, ClosedLoop):
+class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
     """See the module docstring."""
 
     _answer_source = "robot"          # where the last answer came from (interact.dialog: robot | typed | '')
@@ -1221,7 +1222,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
         skill, p = mapped[0], dict(mapped[1] or {})
         a, o = st["action"], st["object"]
         if a in _LOC_ACTIONS or a in ("Find", "Pick"):
-            p["inputs"] = o
+            p["inputs"] = self._query_of(st, o)          # the instance the person chose (which_one), else the name
         lang = getattr(self, "_run_lang", "en") or "en"
         if a in ("Say", "Announce") and lang[:2] != "en":
             from . import lexicon
@@ -2460,6 +2461,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
         """Run the plan step by step. True when the run ended."""
         r.placed = {}
         r.pick_tries, r.move_tries, r.helped, r.seen_fail, r.seen_at, r.find_fails = {}, {}, set(), {}, {}, {}
+        r.queries = self._run_queries = {}            # object -> the description the person chose (which_one)
         r.refinds, r.found_at, r.relooked = {}, {}, set()
         r.completed, r.replans, r.i, r.replan_error = [], 0, 0, None
         r.code_tries, r.doubted, r.failures, r.goal_checks, r.health = {}, set(), [], [], None
@@ -2780,6 +2782,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
         rec.status = "success"; r.run.steps.append(rec)
         self._search_effect(r, st)                       # before the effect: where the robot did it
         self._effect(st, r.world, r.memory, r.placed)
+        if a == "Find":
+            yield from self._which_one(r, st, rec)      # two objects fit the words: which one?
         if a == "MoveTo":
             sensed.confirm_arrival(r.world, rec.verifies)    # measured at its target: sensor provenance
         if st.get("verify_goal"):
