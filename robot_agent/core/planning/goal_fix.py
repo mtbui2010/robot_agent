@@ -287,7 +287,7 @@ def go_steps(goals: list, task: str, places) -> tuple:
 OPEN_WORDS = {      # words that ask to OPEN something (a robot pack extends them with its i18n key ``open_words``)
     "en": [r"\bopen"],
     # 열다 is l-irregular: the l drops before n, p, s (연다, 엽니다, 여세요, 여는); 열쇠 (key) does not count
-    "ko": [r"(?<![가-힣])열(?:[어었고면려기게을은린]|$)", r"(?<![가-힣])(?:여(?:세요|십시오|시|는|니|라|네)|엽니|연다)"],
+    "ko": [r"(?<![가-힣])열(?:[어었고면려기게을은린지자까래도며나겠야렴]|\s+(?:수|거|것|때)|$)", r"(?<![가-힣])(?:여(?:세요|십시오|시|는|니|라|네)|엽니|연다)"],
     "vi": [r"\bmở\b"],
 }
 
