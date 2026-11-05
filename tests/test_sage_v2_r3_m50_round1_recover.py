@@ -120,3 +120,19 @@ def test_a_lone_full_reading_after_an_empty_check_is_not_a_pick_and_not_an_abort
                    "Bring the apple from the desk to the dining table.")
     assert "take it from me" not in str(done(evs).get("msg"))
     assert [t[0] for t in robot.trace].count("pick") == 2
+
+
+def test_the_goal_check_looks_twice_where_the_robot_put_the_object(make_assist, env):
+    """One camera miss at the final look is not 'the goal does not hold' when a verified release put the object
+    there: the check looks again. A second miss still fails the goal."""
+    from fakes import FakeLLM, FakeRobot, ScriptedPlanner, done, run_task, steps
+    ds, dt = "desk@study room", "dining table@kitchen"
+    llm = FakeLLM({"status": "clear", "reason": "", "question": "",
+                   "goals": [{"type": "on", "object": "apple", "from": "desk", "to": "dining table"}]})
+    plan = steps(f"MoveTo {ds}", "Find apple", "Pick apple", f"MoveTo {dt}", f"Place {dt}")
+    for nth, want in (([2], "success"), ([2, 3], "failed")):          # the 2nd Find is the final look
+        robot = FakeRobot(env, {"apple": ds}, faults=[{"skill": "find", "kind": "fail", "obj": "apple", "nth": nth,
+                                                       "msg": "apple not found"}])
+        evs = run_task(make_assist(robot, llm, ScriptedPlanner(plan), max_replans=0, ask_help=False),
+                       "Bring the apple from the desk to the dining table.")
+        assert done(evs)["status"] == want, (nth, done(evs))

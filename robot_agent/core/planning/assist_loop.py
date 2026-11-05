@@ -2023,7 +2023,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
         steps, notes, counts = plan_repair.repair(
             suffix, score, r.world, r.places, r.goals, caps=caps, actions=self.robot.plan_actions,
             release=sorted(caps.release_actions), hand_goal=lambda g: bool(g.get("hand")),
-            only=("hoist", "dedupe", "action", "finish"), reached=self._reaches)
+            only=("hoist", "dedupe", "action", "unclose", "finish"), reached=self._reaches)
         if not notes:
             return suffix
         acc = r.__dict__.setdefault("repaired_by_op", {})
@@ -2460,6 +2460,15 @@ class AssistLoop(SearchHooks, ClosedLoop):
             r.memory.see(o, place, "seen at its goal place")
             return True, f"the {o} is seen on the {nice}", skill
         code = r.robot.failure_code(res, res.msg)
+        if code is FailureCode.ABSENT and r.placed.get(o) == place:
+            # a step of the plan put it here and the release was verified: one miss of the camera is weak evidence
+            # against that, so the check looks a second time before it says the goal does not hold
+            again, skill2 = self._look(r, {"action": "Find", "object": o})
+            if again is not None and again.ok:
+                r.memory.see(o, place, "seen at its goal place")
+                return True, f"the {o} is seen on the {nice} (second look)", skill2
+            res, skill = (again, skill2) if again is not None else (res, skill)
+            code = r.robot.failure_code(res, res.msg)
         if code is FailureCode.ABSENT:
             return False, f"the {o} is not on the {nice} (looked after the task: {res.msg or 'not found'})", skill
         return None, f"could not look for the {o} ({code.value}: {res.msg})", skill

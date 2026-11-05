@@ -17,6 +17,7 @@ makes a plan worse, and every kept edit is a note.
    that room, else it is removed.
 5. ``action``: the release fits the goal: Place -> PutIn into an ``in`` goal's container, PutIn -> Place onto an
    ``on`` goal's surface, Place on a person -> the robot's hand-over action when the goal is a hand delivery.
+5c. ``unclose``: a Close of a container an ``open`` goal wants left open is removed.
 5b. ``say``: an Announce of a say goal's sentence becomes Say, the goal's own action.
 6. ``complete`` (OFF by default, ``gate_complete``): a goal no step reaches gets its canonical segment at the end
    (fetch, deliver). It writes steps the planner did not, so it is counted apart (``completed_by_gate``).
@@ -36,7 +37,7 @@ from typing import Callable, Optional
 from . import action_model
 
 RELEASES = ("Place", "PutIn")
-OPS = ("hoist", "dedupe", "insert", "room", "action", "say", "complete", "finish")
+OPS = ("hoist", "dedupe", "insert", "room", "action", "say", "unclose", "complete", "finish")
 
 
 def _st(a, o, **kw) -> dict:
@@ -184,6 +185,17 @@ def op_action(F, cx: _Ctx):
     return None
 
 
+def op_unclose(F, cx: _Ctx):
+    """A Close of a container a goal wants open (an ``open`` goal and no ``close`` goal for it) is removed: the
+    planner closed what the task says to leave open."""
+    keep_open = {g.get("object") for g in cx.goals if g.get("type") == "open"} - \
+        {g.get("object") for g in cx.goals if g.get("type") == "close"}
+    for i, (_owner, st) in enumerate(F):
+        if st.get("action") == "Close" and st.get("object") in keep_open:
+            return F[:i] + F[i + 1:]
+    return None
+
+
 def op_say(F, cx: _Ctx):
     """A speech step of another kind (Announce: to the adjacent rooms) that says a say goal's sentence becomes the
     goal's own action (Say: to the person where the robot stands), when the robot has it."""
@@ -289,7 +301,7 @@ def repair(steps: list, score: Callable, world, places, goals, *, caps=None, act
     F = owned_plan(blocks, join, ground) if blocks else [(0, dict(s)) for s in steps]
     n, notes, counts = score([s for _o, s in F]), [], {}
     ops = [("hoist", op_hoist), ("dedupe", op_dedupe), ("insert", op_insert), ("room", op_room),
-           ("action", op_action), ("say", op_say)]
+           ("action", op_action), ("say", op_say), ("unclose", op_unclose)]
     if complete and reached is not None:
         ops.append(("complete", lambda F_, c: op_complete(F_, c, reached)))
     if reached is not None and (only is not None and "finish" in only):

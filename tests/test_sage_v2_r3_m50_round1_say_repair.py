@@ -31,3 +31,15 @@ def test_other_announcements_are_not_touched():
     plan = [{"action": "Announce", "object": "something else"}]
     out, _n, counts = run(plan, {"Say", "Announce"})
     assert out == plan and "say" not in counts
+
+
+def test_a_close_of_a_container_the_goal_leaves_open_is_removed():
+    env = {"box@den": {"aliases": ["box"], "openable": True}}
+    goals = [{"type": "open", "object": "box@den", "from": "", "to": "box@den"}]
+    score = lambda steps: sum(1 for s in steps if s["action"] == "Close")            # noqa: E731
+    plan = [{"action": "Open", "object": "box@den"}, {"action": "Close", "object": "box@den"}]
+    out, _n, counts = plan_repair.repair(plan, score, WorldState(), Places(env), goals, actions={"Open", "Close"}, release=())
+    assert [s["action"] for s in out] == ["Open"] and counts.get("unclose") == 1
+    both = goals + [{"type": "close", "object": "box@den", "from": "", "to": "box@den"}]
+    out, _n, counts = plan_repair.repair(plan, score, WorldState(), Places(env), both, actions={"Open", "Close"}, release=())
+    assert "unclose" not in counts
