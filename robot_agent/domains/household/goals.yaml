@@ -1,0 +1,51 @@
+# Goal kinds of the household domain: what each kind needs (abstract actions; a nested list = any one of
+# them), the understand-prompt line of a kind, and the read-back phrases of the template kinds.
+# Loader: core/domain.py; consumers: core/planning/goals.py, assist_loop.py. docs/domain.md
+manipulation:
+- 'on'
+- in
+- open
+- close
+template_kinds:
+- go
+- say
+- deliver
+kinds:
+  'on':
+    needs:
+    - Pick
+    - Place
+  in:
+    needs:
+    - Pick
+    - - PutIn
+      - Place
+  open:
+    needs:
+    - Open
+  close:
+    needs:
+    - Close
+  go:
+    needs:
+    - MoveTo
+    prompt: '"go" = only go somewhere, nothing to move: object "", from "", to = the place.'
+  say:
+    needs:
+    - Say
+    prompt: '"say" = tell someone something: object = the sentence to say, as the robot should say it; from "";
+      to = the place to say it at, or the person, or "".'
+  deliver:
+    needs:
+    - MoveTo
+    - WaitForUnload
+    prompt: '"deliver" = take what the robot carries to a place and hand it over: object = the item (or ""), from
+      "", to = the place.'
+readback:
+  go: go to the {place}
+  say: say "{object}"{where}
+  say_at_place: ' in the {place}'
+  say_to_person: ' to {person}'
+  deliver: deliver {item} to the {place}
+  deliver_item: the {object}
+  deliver_nothing: what I carry

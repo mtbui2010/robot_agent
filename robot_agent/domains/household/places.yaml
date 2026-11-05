@@ -1,0 +1,42 @@
+# Place classes of the household domain, inferred from a place's own names (core/safety/place_class.py).
+# Order matters: the first class with a matching pattern wins.
+classes:
+  food_storage:
+  - \bfridge\b
+  - \brefrigerator\b
+  - \bfreezer\b
+  - \bpantry\b
+  - \blarder\b
+  - \bbread ?box\b
+  - \bkimchi fridge\b
+  - \bice ?box\b
+  - \bfood (?:cabinet|storage|container)\b
+  - \blunch ?box\b
+  - 냉장고
+  - 냉동고
+  - 김치냉장고
+  - 팬트리
+  - 식료품
+  - 찬장
+  - 반찬통
+  - 도시락
+  - \btủ lạnh\b
+  - \btủ đông\b
+  food_prep:
+  - \bcutting board\b
+  - \bchopping board\b
+  - \bstove\b
+  - \bhob\b
+  - \boven\b
+  - \bmicrowave\b
+  - \brice cooker\b
+  - \btoaster\b
+  - 도마
+  - 가스레인지
+  - 레인지
+  - 오븐
+  - 전자레인지
+  - 밥솥
+  - \bbếp\b
+  - \blò\b
+  - \bnồi cơm\b

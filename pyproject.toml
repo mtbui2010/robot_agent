@@ -82,6 +82,10 @@ all = [
 where = ["."]
 include = ["robot_agent*"]
 
+[tool.setuptools.package-data]
+# the domain profiles (core/domain.py) are YAML data next to the code
+"robot_agent.domains" = ["*/*.yaml"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"

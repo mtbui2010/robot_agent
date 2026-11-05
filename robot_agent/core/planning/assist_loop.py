@@ -44,6 +44,7 @@ import math
 import os
 import re
 import threading
+import functools
 import time
 import traceback
 from pathlib import Path
@@ -57,6 +58,7 @@ from .records import StepRecord, VerifyResult
 from . import action_model, concrete, episode_memory, goal_change
 from . import search as search_belief
 from .search_hooks import SearchHooks
+from .. import domain as _domain
 from . import goals as goal_kinds
 from . import goal_filter, goal_fix, language, persons, plan_tidy, speech
 from . import reconcile as sensed
@@ -293,7 +295,7 @@ UNDERSTAND_SCHEMA = {
                                                    "other"]},
         "question": {"type": "string"},
         "goals": {"type": "array", "items": {"type": "object", "properties": {
-            "type": {"type": "string", "enum": ["on", "in", "open", "close"]},
+            "type": {"type": "string", "enum": list(goal_kinds.MANIPULATION)},
             "object": {"type": "string"},
             # the person's own words for the object (SAGE-v2 F4.5) and, for a message, only what to pass on (F4.6)
             "said": {"type": "string"},
@@ -333,6 +335,17 @@ Return JSON:
 
 Task: {task}{original}
 {dialogue}"""
+
+
+class _ReadBack:
+    """``summary`` stays a static function (``AssistLoop.summary(goals, places)``); called on a loop it uses the
+    domain profile of the loop's robot (``dom=self.domain``)."""
+
+    def __init__(self, fn):
+        self.fn = fn
+
+    def __get__(self, obj, cls=None):
+        return self.fn if obj is None else functools.partial(self.fn, dom=obj.domain)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -496,7 +509,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
             task, dialogue, lambda t, en: f"Robot: {t if en else self._heard_as(t)}")
         prompt = UNDERSTAND_PROMPT.format(
             abilities=self.robot.robot_description(), cannot=self._cannot_line(),
-            goal_kinds=goal_kinds.prompt_lines(goal_kinds.kinds_for(self.robot.plan_actions)),
+            goal_kinds=goal_kinds.prompt_lines(goal_kinds.kinds_for(self.robot.plan_actions, self.domain), self.domain),
             # no object memory here: a 7B model refused / asked about every object it did not list
             # (the memory grounds `from` after this call instead)
             places=places.describe(), answers=memory.answers_text(),
@@ -600,7 +613,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
         from ..safety import check_goal
         mode = str(self.cfg.get("hazard_rules", "core"))
         pack = (getattr(self.robot.manifest, "safety", None) or {}).get("hazards") or []
-        bad = [(g, why) for g in r.goals for why in [check_goal(g, r.places, pack, mode)] if why]
+        bad = [(g, why) for g in r.goals for why in [check_goal(g, r.places, pack, mode, self.domain)] if why]
         if not bad:
             return None
         yield r.ev("understand_check", issues=[f"unsafe: {goal_kinds.describe(g)} ({w})" for g, w in bad], hazard=True)
@@ -624,18 +637,27 @@ class AssistLoop(SearchHooks, ClosedLoop):
         return [g for g in kept if g.get("type") in ("open", "close") and not uses(g.get("object"))
                 and any(g.get("object") in (b.get("to"), b.get("from")) for b in refused)]
 
+    @property
+    def domain(self):
+        """The domain profile the robot's manifest selects (``domain:``, default household; core/domain.py)."""
+        try:
+            robot = self.robot
+        except AttributeError:          # a loop made without __init__ and without a robot (tests, tools)
+            robot = None
+        return _domain.of(robot)
+
     def _understand_schema(self) -> dict:
         """UNDERSTAND_SCHEMA with the goal kinds this robot may be given (``goals.kinds_for``)."""
         schema = json.loads(json.dumps(UNDERSTAND_SCHEMA))
         schema["properties"]["goals"]["items"]["properties"]["type"]["enum"] = \
-            goal_kinds.kinds_for(self.robot.plan_actions)
+            goal_kinds.kinds_for(self.robot.plan_actions, self.domain)
         return schema
 
     def _cannot_do(self, goals) -> Optional[str]:
         """Why the robot cannot do these goals (an action a goal kind needs is not in its manifest),
         or None. Checked before any planning or motion."""
         acts = self.robot.plan_actions
-        missing = list(dict.fromkeys(a for g in goals for a in goal_kinds.missing_actions(g, acts)))
+        missing = list(dict.fromkeys(a for g in goals for a in goal_kinds.missing_actions(g, acts, self.domain)))
         return ", ".join(missing) if missing else None
 
     @staticmethod
@@ -693,8 +715,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
         for g in goals:
             g = dict(g)
             t = g.get("type")
-            if t in goal_kinds.TEMPLATE_KINDS or t in ("open", "close"):
-                g, q_ = (self._ground_template(g, places, task, latest) if t in goal_kinds.TEMPLATE_KINDS
+            if t in self.domain.template_kinds or t in ("open", "close"):
+                g, q_ = (self._ground_template(g, places, task, latest) if t in self.domain.template_kinds
                          else self._ground_container(g, places, task))
                 out.append(g); questions += [q_] if q_ else []
                 continue
@@ -899,19 +921,19 @@ class AssistLoop(SearchHooks, ClosedLoop):
         from ..run_control import yes_no
         return yes_no(text)
 
-    @staticmethod
-    def summary(goals, places=None):
+    @_ReadBack
+    def summary(goals, places=None, dom=None):
         """The read-back "I will ..., then ...": a ``speech.LocalText`` (English text; the robot's phrases in the
         user's language, ``speech.render``). With ``places`` the keys are named as a person says them (F5.1) and a
         delivery to a person reads "bring you the cup" / "hand the cup to grandpa"."""
         nice = (lambda k: speech.say_name(places, k, "en")) if places is not None else \
             (lambda k: (k or "").replace("@", " in the "))
         return speech.LocalText("rb_will", {"what": speech.LocalText.seq(
-            [AssistLoop._goal_phrase(g, places, nice) for g in goals])},
-            text="I will " + ", then ".join(str(AssistLoop._goal_phrase(g, places, nice)) for g in goals) + ".")
+            [AssistLoop._goal_phrase(g, places, nice, dom) for g in goals])},
+            text="I will " + ", then ".join(str(AssistLoop._goal_phrase(g, places, nice, dom)) for g in goals) + ".")
 
     @staticmethod
-    def _goal_phrase(g, places, nice):
+    def _goal_phrase(g, places, nice, dom=None):
         L, t, obj = speech.LocalText, g["type"], g.get("object") or ""
         o = g.get("said") or g.get("name_local") or obj          # name_local: the object's name in the user's
         if t == "on" and places is not None and persons.is_person(places, g.get("to")):   # language (F4.8)
@@ -941,8 +963,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
             if g.get("person"):
                 return L("rb_say", {"person": g["person"], "text": obj}, text=f"tell {g['person']}: \"{obj}\"")
             return L("rb_say_here", {"text": obj}, text=f"say \"{obj}\"")
-        if t in goal_kinds.TEMPLATE_KINDS:
-            return goal_kinds.summary(g)
+        if t in (dom or _domain.load()).template_kinds:
+            return goal_kinds.summary(g, dom)
         return L(f"rb_{t}", {"place": obj}, text=f"{t} the {nice(obj)}") if t in ("open", "close") else f"{t} the {nice(obj)}"
 
     # ── plan grounding + gate ──────────────────────────────────────────────
@@ -1158,9 +1180,9 @@ class AssistLoop(SearchHooks, ClosedLoop):
                 out.append(f"Open {g['object']}")
             elif t == "close" and g["object"] in opened:
                 out.append(f"Close {g['object']}")
-            elif t in goal_kinds.TEMPLATE_KINDS and not goal_kinds.reached(g, steps, world.arrived,
-                                                                           last=g is goals[-1]):
-                out.append(goal_kinds.summary(g))
+            elif t in self.domain.template_kinds and not goal_kinds.reached(g, steps, world.arrived,
+                                                                            last=g is goals[-1]):
+                out.append(goal_kinds.summary(g, self.domain))
         return out
 
     @staticmethod
@@ -1178,8 +1200,8 @@ class AssistLoop(SearchHooks, ClosedLoop):
                 return False
             if t == "close" and g["object"] in opened:
                 return False
-            if t in goal_kinds.TEMPLATE_KINDS and not goal_kinds.reached(g, steps, world.arrived,
-                                                                         last=g is goals[-1]):
+            if t in (loop.domain if loop is not None else _domain.load()).template_kinds and not goal_kinds.reached(
+                    g, steps, world.arrived, last=g is goals[-1]):
                 return False
         return bool(goals) or bool(steps)
 
@@ -1193,7 +1215,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
                 # checks' own looks do not count (_observe_goals goes back there)
                 if not goal_kinds.reached(g, list(done), at, last=True) and world.arrived != g.get("to"):
                     return False
-            elif t in goal_kinds.TEMPLATE_KINDS and not goal_kinds.reached(g, list(done), at):
+            elif t in self.domain.template_kinds and not goal_kinds.reached(g, list(done), at):
                 return False
             if t in ("on", "in") and (placed.get(g["object"]) != g["to"] or world.holding == g["object"]):
                 return False
@@ -1478,7 +1500,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
         if heard and getattr(r, "repeat_asked", False) and len(r.dialogue) == 2:
             heard = False            # the request said again after "say it again": a refusal of it is a refusal
         ref = typed_refusal(u["status"], u.get("reason"), self._cannot_do(r.goals),
-                            " ".join([r.task, self.original or ""] + [t for w_, t in r.dialogue if w_ == "user"]), heard)
+                            " ".join([r.task, self.original or ""] + [t for w_, t in r.dialogue if w_ == "user"]), heard, self.domain)
         if ref is not None and ref.kind == "capability" and not ref.missing and u["status"] == "infeasible":
             how = self._capability_check(r, u)
             if how == "repeat":                          # F4.2: not heard / not a request: say it again
@@ -1644,7 +1666,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
                 from ..safety import check_goal
                 pack = (getattr(self.robot.manifest, "safety", None) or {}).get("hazards") or []
                 mode = str(self.cfg.get("hazard_rules", "core"))
-                keep = [g for g in agreed if not check_goal(g, r.places, pack, mode)]
+                keep = [g for g in agreed if not check_goal(g, r.places, pack, mode, self.domain)]
                 r.goals, r.unsure = (keep or r.goals), []          # a re-sample never brings back a refused goal
                 return None
         if not issues or getattr(r, "issue_asked", False):
@@ -1887,7 +1909,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
         """The planner's plan, checked as written; critical findings go back to its sub-goal repair (if any)."""
         t_plan, r.plan_error = time.time(), None
         from ..run_control import call_cancellable, is_cancel
-        r.compiled = goal_kinds.is_template(r.goals)
+        r.compiled = goal_kinds.is_template(r.goals, self.domain)
         try:
             if r.compiled:
                 # go / say / deliver goals: a fixed sequence of the robot's own actions, no LLM
@@ -3067,7 +3089,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
             if parts:
                 g, why = parts[0]
                 return self._finish(r, "success", say=self._in_lang(
-                    self._humanize(f"I did the rest, but I won't {str(self._goal_phrase(g, r.places, lambda k: speech.say_name(r.places, k, 'en')))}: {why}."), r.lang),
+                    self._humanize(f"I did the rest, but I won't {str(self._goal_phrase(g, r.places, lambda k: speech.say_name(r.places, k, 'en'), self.domain))}: {why}."), r.lang),
                     localized=True, refused_parts=[goal_kinds.describe(x) for x, _w in parts])
             return self._finish(r, "success")
         return self._finish(r, "failed", msg="plan finished but the goals do not hold: "

@@ -1,0 +1,5 @@
+# Words that make a request unsafe / beyond the robot (understand.typed_refusal): a refusal given after an answer
+# heard through the microphone needs one of them in the person's words, else the answer was misheard. Regex, ignore-case.
+safety: \b(?:knife|knives|blade|scissors|razor|fire|flame|stove|burn|hot|boil|window|throw|hit|hurt|poison|bleach|medicine|pills?|child|baby|kid|outside)\b|칼|불|창문|던지|가위|독|약|아이|dao|lửa|cửa
+  sổ|ném|thuốc|trẻ
+capability: \b(?:throw|pour|cook|wash|washer|climb|window|door|tools?|turn on|switch on|lift|furniture|sofa|bed|leave|outside|clean)\b|던지|붓|요리|씻|세탁|올라|창문|문을|켜|ném|đổ|nấu|giặt|leo|bật

@@ -21,6 +21,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
+from .. import domain as _domain
+
 
 @dataclass(frozen=True)
 class GoalKind:
@@ -29,29 +31,29 @@ class GoalKind:
     prompt: str = ""        # the understand prompt's line for it ('' = described in the base prompt)
 
 
-MANIPULATION = ("on", "in", "open", "close")
-GOAL_KINDS: dict = {
-    "on": GoalKind("on", ("Pick", "Place")),
-    "in": GoalKind("in", ("Pick", ("PutIn", "Place"))),
-    "open": GoalKind("open", ("Open",)),
-    "close": GoalKind("close", ("Close",)),
-    "go": GoalKind("go", ("MoveTo",),
-                   '"go" = only go somewhere, nothing to move: object "", from "", to = the place.'),
-    "say": GoalKind("say", ("Say",),
-                    '"say" = tell someone something: object = the sentence to say, as the robot should say it; '
-                    'from ""; to = the place to say it at, or the person, or "".'),
-    "deliver": GoalKind("deliver", ("MoveTo", "WaitForUnload"),
-                        '"deliver" = take what the robot carries to a place and hand it over: object = the item '
-                        '(or ""), from "", to = the place.'),
-}
-TEMPLATE_KINDS = ("go", "say", "deliver")
+def _tup(x):
+    return tuple(_tup(i) for i in x) if isinstance(x, (list, tuple)) else x
 
 
-def missing_actions(goal: dict, actions: Iterable[str]) -> list:
+def kinds_of(dom=None) -> dict:
+    """The goal kinds of a domain profile (default household): {name: GoalKind} from its goals.yaml."""
+    dom = dom or _domain.load()
+    return {k: GoalKind(k, _tup(v.get("needs") or ()), v.get("prompt") or "")
+            for k, v in (dom.goals.get("kinds") or {}).items()}
+
+
+# the default (household) profile's kinds, kept as module names; a robot that selects another profile
+# (manifest ``domain:``) is served by the ``dom`` argument of the functions below
+MANIPULATION = _domain.load().manipulation
+GOAL_KINDS: dict = kinds_of()
+TEMPLATE_KINDS = _domain.load().template_kinds
+
+
+def missing_actions(goal: dict, actions: Iterable[str], dom=None) -> list:
     """The actions `goal` needs that are not in `actions` (an any-of group by its first name).
     An unknown kind needs an action nobody has: [its type]."""
     acts = set(actions)
-    kind = GOAL_KINDS.get(goal.get("type"))
+    kind = (GOAL_KINDS if dom is None else kinds_of(dom)).get(goal.get("type"))
     if kind is None:
         return [str(goal.get("type"))]
     out = []
@@ -64,21 +66,24 @@ def missing_actions(goal: dict, actions: Iterable[str]) -> list:
     return out
 
 
-def kinds_for(actions: Iterable[str]) -> list:
+def kinds_for(actions: Iterable[str], dom=None) -> list:
     """The goal kinds the understand step may use for a robot with `actions`: the manipulation
     kinds always (so a request the robot cannot do is understood, then refused with a reason),
     the others only when the robot has their actions."""
     acts = set(actions)
-    return list(MANIPULATION) + [k for k in TEMPLATE_KINDS if not missing_actions({"type": k}, acts)]
+    d = dom or _domain.load()
+    return list(d.manipulation) + [k for k in d.template_kinds if not missing_actions({"type": k}, acts, d)]
 
 
-def prompt_lines(kinds: Iterable[str]) -> str:
-    lines = [GOAL_KINDS[k].prompt for k in kinds if k in GOAL_KINDS and GOAL_KINDS[k].prompt]
+def prompt_lines(kinds: Iterable[str], dom=None) -> str:
+    table = GOAL_KINDS if dom is None else kinds_of(dom)
+    lines = [table[k].prompt for k in kinds if k in table and table[k].prompt]
     return "".join(f"\n  {line}" for line in lines)
 
 
-def is_template(goals: list) -> bool:
-    return bool(goals) and all(g.get("type") in TEMPLATE_KINDS for g in goals)
+def is_template(goals: list, dom=None) -> bool:
+    kinds = TEMPLATE_KINDS if dom is None else dom.template_kinds
+    return bool(goals) and all(g.get("type") in kinds for g in goals)
 
 
 def conflicts(goals: list, name=None) -> tuple:
@@ -157,15 +162,18 @@ def describe(g: dict) -> str:
             + (f" to {g['to']}" if g.get("to") else ""))
 
 
-def summary(g: dict) -> str:
-    """The read-back phrase of a template goal."""
+def summary(g: dict, dom=None) -> str:
+    """The read-back phrase of a template goal (the phrases are the profile's ``readback``)."""
+    rb = (dom or _domain.load()).readback
     nice = (g.get("to") or "").replace("@", " in the ")
     if g["type"] == "go":
-        return f"go to the {nice}"
+        return rb["go"].format(place=nice)
     if g["type"] == "say":
-        where = f" in the {nice}" if g.get("to") else (f" to {g['person']}" if g.get("person") else "")
-        return f"say \"{g.get('object')}\"{where}"
-    return f"deliver {('the ' + g['object']) if g.get('object') else 'what I carry'} to the {nice}"
+        where = rb["say_at_place"].format(place=nice) if g.get("to") else (
+            rb["say_to_person"].format(person=g["person"]) if g.get("person") else "")
+        return rb["say"].format(object=g.get("object"), where=where)
+    item = rb["deliver_item"].format(object=g["object"]) if g.get("object") else rb["deliver_nothing"]
+    return rb["deliver"].format(item=item, place=nice)
 
 
 def compile_steps(goals: list, at: Optional[str], delivery_text: str = "", can_say: bool = False) -> list:
@@ -223,5 +231,5 @@ def _same_text(a, b) -> bool:
     return norm(a) == norm(b)
 
 
-__all__ = ["GoalKind", "GOAL_KINDS", "MANIPULATION", "TEMPLATE_KINDS", "missing_actions", "kinds_for",
+__all__ = ["GoalKind", "kinds_of", "GOAL_KINDS", "MANIPULATION", "TEMPLATE_KINDS", "missing_actions", "kinds_for",
            "prompt_lines", "is_template", "conflicts", "SPEAKER_WORDS", "is_speaker", "speaker_slots", "describe", "subgoal_text", "summary", "compile_steps", "reached"]

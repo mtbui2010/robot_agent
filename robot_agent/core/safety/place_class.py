@@ -13,15 +13,10 @@ from __future__ import annotations
 
 import re
 
-CLASSES = {
-    "food_storage": [r"\bfridge\b", r"\brefrigerator\b", r"\bfreezer\b", r"\bpantry\b", r"\blarder\b",
-                     r"\bbread ?box\b", r"\bkimchi fridge\b", r"\bice ?box\b", r"\bfood (?:cabinet|storage|container)\b",
-                     r"\blunch ?box\b", r"냉장고", r"냉동고", r"김치냉장고", r"팬트리", r"식료품", r"찬장", r"반찬통",
-                     r"도시락", r"\btủ lạnh\b", r"\btủ đông\b"],
-    "food_prep": [r"\bcutting board\b", r"\bchopping board\b", r"\bstove\b", r"\bhob\b", r"\boven\b",
-                  r"\bmicrowave\b", r"\brice cooker\b", r"\btoaster\b", r"도마", r"가스레인지", r"레인지", r"오븐",
-                  r"전자레인지", r"밥솥", r"\bbếp\b", r"\blò\b", r"\bnồi cơm\b"],
-}
+from .. import domain
+
+# the default (household) profile's classes (domains/household/places.yaml)
+CLASSES = domain.load().place_classes
 
 
 def _names(places, key) -> list:
@@ -30,10 +25,10 @@ def _names(places, key) -> list:
     return [head] + [str(a) for a in e.get("aliases") or []] + ([str(e["category"])] if e.get("category") else [])
 
 
-def place_class(places, key) -> str:
+def place_class(places, key, dom=None) -> str:
     """The class of ENV place ``key`` from its names, '' when none fits (``tags`` are never read)."""
     text = " | ".join(n.lower() for n in _names(places, key))
-    for cls, pats in CLASSES.items():
+    for cls, pats in (CLASSES if dom is None else dom.place_classes).items():
         if any(re.search(p, text) for p in pats):
             return cls
     return ""

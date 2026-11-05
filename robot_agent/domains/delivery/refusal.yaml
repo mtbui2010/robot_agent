@@ -1,0 +1,4 @@
+# Words that make a refusal after a heard answer genuine (understand.typed_refusal); regex, ignore-case.
+# A base-only robot cannot lift or pick anything up, and must not push into people or go outside.
+safety: \b(?:hit|hurt|ram|crash|child|baby|kid|stairs|outside|fire|burn)\b|던지|아이|계단|밖|dao|lửa|trẻ|cầu thang
+capability: \b(?:pick|lift|grab|grasp|open|close|pour|cook|wash|clean|climb|stairs|outside|leave)\b|들어|집어|잡아|열어|닫아|요리|씻|계단|밖|nhặt|cầm|mở|đóng|nấu|giặt|leo

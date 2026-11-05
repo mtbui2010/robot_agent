@@ -1,0 +1,4 @@
+# The delivery domain has no hazard classes and no rules: nothing is put into a kitchen place by this robot.
+# A pack may still add rules in its manifest (safety.hazards). Loader: core/domain.py.
+hazards: {}
+rules: []

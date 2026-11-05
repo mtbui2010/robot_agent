@@ -1,0 +1,57 @@
+# Hazard classes and rules of the household domain. Sources and the assumed entries: see the docstring of
+# core/safety/hazards.py (the list was written from a public poison-control page; entries not on it are in `assumed`).
+# A rule refuses a (hazard class) x (place class, places.yaml) move. Loader: core/domain.py.
+hazards:
+  cleaning_chemical:
+    sourced:
+    - \bbleach\b
+    - \bammonia\b
+    - \bglass cleaner\b
+    - \bfloor cleaner\b
+    - \bjewel(?:le)?ry cleaner\b
+    - \bdrain (?:opener|cleaner)\b
+    - \btoilet (?:bowl )?cleaner\b
+    - \boven cleaner\b
+    - \bmildew (?:stain )?remover\b
+    - 표백제
+    - 락스
+    - 암모니아
+    - 유리 ?세정제
+    - 배수구 ?세정제
+    - 변기 ?세정제
+    - 오븐 ?세정제
+    - 곰팡이 ?제거제
+    - \bthuốc tẩy\b
+    - \bnước tẩy\b
+    assumed:
+    - \bdetergent\b
+    - \bdishwasher (?:pods?|tablets?)\b
+    - \blaundry pods?\b
+    - \bdisinfectant\b
+    - \brust remover\b
+    - \binsecticide\b
+    - \bbug spray\b
+    - \blye\b
+    - \bcleaning spray\b
+    - \blysol\b
+    - \bclorox\b
+    - \bwindex\b
+    - \bdrano\b
+    - \bpine-?sol\b
+    - \bchlorine\b
+    - 라이솔
+    - 리솔
+    - 클로록스
+    - 염소계
+    - 세제
+    - 살충제
+    - 소독제
+    - 세정제
+    - \bchất tẩy\b
+    - \bthuốc diệt côn trùng\b
+rules:
+- hazard: cleaning_chemical
+  places:
+  - food_storage
+  - food_prep
+  say: cleaning chemicals do not go with food

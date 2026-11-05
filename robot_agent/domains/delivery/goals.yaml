@@ -1,0 +1,25 @@
+# Goal kinds of the delivery domain: a base-only robot that goes to places, says things, and takes what it carries
+# to a place where a person takes it. No manipulation kinds (on / in / open / close). Docking is a `go` to the dock
+# place; waiting for a person is the end of a `deliver`. Loader: core/domain.py. docs/domain.md
+manipulation: []
+template_kinds: [go, say, deliver]
+kinds:
+  go:
+    needs: [MoveTo]
+    prompt: '"go" = only go somewhere, nothing to move: object "", from "", to = the place.'
+  say:
+    needs: [Say]
+    prompt: '"say" = tell someone something: object = the sentence to say, as the robot should say it; from "";
+      to = the place to say it at, or the person, or "".'
+  deliver:
+    needs: [MoveTo, WaitForUnload]
+    prompt: '"deliver" = take what the robot carries to a place and hand it over: object = the item (or ""), from
+      "", to = the place.'
+readback:
+  go: go to the {place}
+  say: say "{object}"{where}
+  say_at_place: ' in the {place}'
+  say_to_person: ' to {person}'
+  deliver: deliver {item} to the {place}
+  deliver_item: the {object}
+  deliver_nothing: what I carry

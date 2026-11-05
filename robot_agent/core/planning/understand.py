@@ -24,6 +24,7 @@ from typing import Optional
 
 from robot_agent.contract import FailureCode
 
+from .. import domain as _domain
 from .speech import LocalText
 
 
@@ -553,14 +554,7 @@ def consensus(samples: list, need: int = 2):
 CAPABILITY, SAFETY, DECLINED = "capability", "safety", "declined"
 # words that make a request unsafe / beyond a household robot (the understand prompt's "It cannot" list):
 # a refusal the model gives after an answer heard through the microphone needs one of them in the person's words
-_MARK = {
-    SAFETY: re.compile(r"\b(?:knife|knives|blade|scissors|razor|fire|flame|stove|burn|hot|boil|window|throw|"
-                       r"hit|hurt|poison|bleach|medicine|pills?|child|baby|kid|outside)\b|칼|불|창문|던지|가위|독|약|"
-                       r"아이|dao|lửa|cửa sổ|ném|thuốc|trẻ", re.I),
-    CAPABILITY: re.compile(r"\b(?:throw|pour|cook|wash|washer|climb|window|door|tools?|turn on|switch on|lift|"
-                           r"furniture|sofa|bed|leave|outside|clean)\b|던지|붓|요리|씻|세탁|올라|창문|문을|켜|"
-                           r"ném|đổ|nấu|giặt|leo|bật", re.I),
-}
+_MARK = {k: _domain.load().refusal_mark(k) for k in (SAFETY, CAPABILITY)}    # domains/household/refusal.yaml
 
 
 @dataclass(frozen=True)
@@ -577,14 +571,15 @@ class Refusal:
 
 
 def typed_refusal(status: str, reason: str, missing: Optional[str], words: str,
-                  answer_heard: bool) -> Optional[Refusal]:
+                  answer_heard: bool, dom=None) -> Optional[Refusal]:
     """The refusal of one understanding, or None. ``status`` / ``reason``: the model's typed status and its
     sentence; ``missing``: the actions the goals need that the manifest lacks; ``words``: everything the
     person said; ``answer_heard``: the last thing in play is an answer heard through the robot's I/O (a
     typed one cannot be misheard). The model's free text never refuses by itself."""
     if status in ("unsafe", "infeasible"):
         kind = SAFETY if status == "unsafe" else CAPABILITY
-        if answer_heard and not _MARK[kind].search(words or ""):
+        mark = _MARK[kind] if dom is None else dom.refusal_mark(kind)
+        if answer_heard and mark is not None and not mark.search(words or ""):
             return Refusal(kind, misheard=True)
         msg = (reason or "").strip() or "I can't do that."
         return Refusal(kind, msg=msg, say=f"I can't do that: {msg}")

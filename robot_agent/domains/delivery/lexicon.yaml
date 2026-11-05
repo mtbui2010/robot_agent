@@ -1,0 +1,18 @@
+# Word lists of the delivery domain. The manipulation lists (put-in, on-top, hand-over) are empty: this robot has no
+# arm. The speaker / recipient / tell lists are the ones a person uses to ask for a delivery or a message.
+PUTIN: {}
+ON_TOP: {}
+HAND: {}
+FIRST_PERSON:
+  en: ['\bi\b', '\bme\b', '\bmy\b', '\bmyself\b', '\bmine\b']
+  ko: ['(?:^|(?<=\s))(?:나|저|제|내)(?:한테|에게|게|가|는|를|도|의)?(?=\s|$|[.,!?])', '(?:^|(?<=\s))(?:내게|제게)']
+  vi: ['\btôi\b', '\bmình\b', '\bem\b']
+RECIPIENT:
+  en: ['\bme\b', '\bhere\b', '\bbring\b', '\bbrings\b', '\bdeliver\b', '\bmy way\b', '\bus\b']
+  ko: ['(?:나|저|우리)(?:한테|에게)', '제게|내게|저희', '가져다|갖다|가져와|가져 와|갖고 와|가지고 와', '여기|이리|이쪽']
+  vi: ['\bcho tôi\b', '\bmang\b', '\bđưa\b', '\bđây\b']
+TELL:
+  en: ['\btell\b', '\blet \w+(?: \w+)? know\b', '\bremind\b', '\bask \w+(?: \w+)? to\b', '\bsay to\b', '\bpass on\b', '\binform\b', '\bwarn\b']
+  ko: [말해, 말씀, 전해, 알려, 얘기해, 이야기해, 물어봐, 여쭤]
+  vi: ['\bnói\b', '\bbảo\b', '\bnhắn\b', '\bbáo\b']
+KO_PARTICLES: [이랑, 에서, 한테, 에게, 으로, 까지, 부터, 하고, 에, 을, 를, 이, 가, 은, 는, 께, 로, 도, 만, 의, 과, 와, 랑, 위, 안, 옆, 쪽]

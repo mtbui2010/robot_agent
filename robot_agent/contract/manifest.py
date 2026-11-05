@@ -36,7 +36,7 @@ from typing import Optional
 
 from .types import VERIFY_KINDS, FailureCode, Geometry, SkillSpec, VerifySpec
 
-_TOP_KEYS = {"robot", "version", "language", "capabilities", "geometry", "planner", "skills", "limits", "safety"}
+_TOP_KEYS = {"robot", "version", "language", "capabilities", "geometry", "planner", "skills", "limits", "safety", "domain"}
 # keys of the optional `planner:` section (planner data the robot ships; docs/env.md):
 #   seed_memory, notes; llm_budget (the run's cap on core LLM calls), translate_model / translate_url (the model
 #   that translates what the robot says into the user's language, default the planner's), translate_budget (its
@@ -84,6 +84,8 @@ class Manifest:
     # optional body limits {payload_kg, max_object_size_m} and safety add-ons {hazards: [...]} (docs/env.md)
     limits: dict = field(default_factory=dict)
     safety: dict = field(default_factory=dict)
+    # the domain profile (core/domain.py, robot_agent/domains/<name>/): '' = the default, household
+    domain: str = ""
     extra: dict = field(default_factory=dict)
     source: Optional[str] = None                      # file it was read from
 
@@ -135,6 +137,7 @@ class Manifest:
         planner = _planner(d.get("planner"), errs)
         limits = _limits(d.get("limits"), errs)
         safety = _safety(d.get("safety"), errs)
+        domain = _domain_name(d.get("domain"), errs)
 
         raw_skills = d.get("skills")
         if raw_skills is None:
@@ -155,7 +158,7 @@ class Manifest:
         if errs:
             raise ManifestError(errs, source)
         return cls(robot=robot.strip(), version=version, capabilities=dict(caps), language=language.strip(),
-                   geometry=dict(geom), skills=skills, planner=planner, limits=limits, safety=safety,
+                   geometry=dict(geom), skills=skills, planner=planner, limits=limits, safety=safety, domain=domain,
                    extra={k: v for k, v in d.items() if k not in _TOP_KEYS}, source=source)
 
     def to_dict(self) -> dict:
@@ -168,6 +171,8 @@ class Manifest:
             d["limits"] = dict(self.limits)
         if self.safety:
             d["safety"] = dict(self.safety)
+        if self.domain:
+            d["domain"] = self.domain
         d.update(self.extra)
         return d
 
@@ -345,6 +350,17 @@ def _limits(v, errs) -> dict:
         if k in LIMIT_KEYS and not (_is_number(x) and x > 0):
             errs.append(f"limits.{k}: must be a positive number, got {x!r}")
     return dict(v)
+
+
+def _domain_name(v, errs) -> str:
+    """The optional ``domain:`` key: the name of a profile under robot_agent/domains/ ('' = the default)."""
+    if v is None:
+        return ""
+    from ..core import domain
+    if not isinstance(v, str) or v.strip() not in domain.available():
+        errs.append(f"domain: must be one of {', '.join(domain.available())}, got {v!r}")
+        return ""
+    return v.strip()
 
 
 def _safety(v, errs) -> dict:

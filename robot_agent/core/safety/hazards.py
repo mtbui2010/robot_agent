@@ -18,55 +18,47 @@ from __future__ import annotations
 import re
 from typing import Optional
 
+from .. import domain
 from .place_class import place_class
 
-HAZARDS = {
-    "cleaning_chemical": {
-        "sourced": [r"\bbleach\b", r"\bammonia\b", r"\bglass cleaner\b", r"\bfloor cleaner\b", r"\bjewel(?:le)?ry cleaner\b",
-                    r"\bdrain (?:opener|cleaner)\b", r"\btoilet (?:bowl )?cleaner\b", r"\boven cleaner\b",
-                    r"\bmildew (?:stain )?remover\b", r"표백제", r"락스", r"암모니아", r"유리 ?세정제", r"배수구 ?세정제",
-                    r"변기 ?세정제", r"오븐 ?세정제", r"곰팡이 ?제거제", r"\bthuốc tẩy\b", r"\bnước tẩy\b"],
-        "assumed": [r"\bdetergent\b", r"\bdishwasher (?:pods?|tablets?)\b", r"\blaundry pods?\b", r"\bdisinfectant\b",
-                    r"\brust remover\b", r"\binsecticide\b", r"\bbug spray\b", r"\blye\b", r"\bcleaning spray\b",
-                    # a model that translates the person's word may say a brand for the product ("락스" ->
-                    # "lysol"): the common household brands of the same products (assumed)
-                    r"\blysol\b", r"\bclorox\b", r"\bwindex\b", r"\bdrano\b", r"\bpine-?sol\b", r"\bchlorine\b",
-                    r"라이솔", r"리솔", r"클로록스", r"염소계",
-                    r"세제", r"살충제", r"소독제", r"세정제", r"\bchất tẩy\b", r"\bthuốc diệt côn trùng\b"],
-    },
-}
-HAZARD_RULES = [
-    {"hazard": "cleaning_chemical", "places": ["food_storage", "food_prep"],
-     "say": "cleaning chemicals do not go with food"},
-]
+_H = domain.load()
+# the default (household) profile's tables (domains/household/hazards.yaml); a robot that selects another
+# profile is served by the ``dom`` argument below
+HAZARDS = _H.hazard_classes
+HAZARD_RULES = _H.hazard_rules
 
 
-def hazard_class(name: str) -> str:
+def _place_class_names(dom=None):
+    """The place-class names of the profile (a rule's place that is not one of them is a regex on the place's name)."""
+    return tuple((dom or domain.load()).place_classes)
+
+
+def hazard_class(name: str, dom=None) -> str:
     t = str(name or "").lower()
-    for cls, lists in HAZARDS.items():
+    for cls, lists in (HAZARDS if dom is None else dom.hazard_classes).items():
         if any(re.search(p, t) for p in lists["sourced"] + lists["assumed"]):
             return cls
     return ""
 
 
-def check_goal(goal: dict, places, pack_rules=(), mode: str = "core") -> Optional[str]:
+def check_goal(goal: dict, places, pack_rules=(), mode: str = "core", dom=None) -> Optional[str]:
     """Why the robot will not do ``goal`` (a move of a hazardous product into / onto a place of a forbidden
     class), None. ``mode`` core: the core rules (+ pack rules when given); pack: the pack's rules only; off: none."""
     if mode == "off" or goal.get("type") not in ("on", "in"):
         return None
     obj = " ".join(str(goal.get(k) or "") for k in ("object", "said"))
     to = goal.get("to") or ""
-    pc = place_class(places, to)
-    rules = (list(HAZARD_RULES) if mode != "pack" else []) + list(pack_rules or ())
+    pc = place_class(places, to, dom)
+    rules = ((list(HAZARD_RULES) if dom is None else dom.hazard_rules) if mode != "pack" else []) + list(pack_rules or ())
     for r in rules:
         if r.get("hazard"):
-            hit = hazard_class(obj) == r["hazard"]
+            hit = hazard_class(obj, dom) == r["hazard"]
         else:
             hit = any(re.search(p, obj.lower()) for p in r.get("objects") or [])
         if not hit:
             continue
         for p in r.get("places") or []:
-            if p == pc or (p not in ("food_storage", "food_prep") and re.search(p, str(to).lower())):
+            if p == pc or (p not in (_place_class_names(dom)) and re.search(p, str(to).lower())):
                 return r.get("say") or "that is not safe"
     return None
 
