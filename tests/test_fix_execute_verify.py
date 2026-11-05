@@ -42,7 +42,10 @@ def test_goal_undone_by_a_person_is_seen(make_assist, env):
     evs = run_task(make_assist(robot, llm, ScriptedPlanner(plan)), "Take the mug from the desk to the chest, then the apple from the desk to the dining table.")
     d = done(evs)
     assert checks(evs) == [("apple", True), ("mug", False)]          # where it stands first, then the chest
-    assert robot.trace[-2:] == [("move", CH, True, f"arrived at {CH}"), ("find", "mug", False, "mug not found")]
+    # at the chest the look misses; the object was put there by a verified Place, so the check looks a second time
+    # (one camera miss is weak evidence) and the second look misses as well
+    assert robot.trace[-3:] == [("move", CH, True, f"arrived at {CH}"), ("find", "mug", False, "mug not found"),
+                                ("find", "mug", False, "mug not found")]
     assert d["status"] == "failed" and d["code"] == "absent"
 
 
