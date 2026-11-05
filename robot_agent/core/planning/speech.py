@@ -56,6 +56,7 @@ CORE_PHRASES = {
     "q_unclear_task": "Sorry, I did not understand. Could you say the task in other words?",
     "q_what_exactly": "What should I do exactly?",
     "q_what_do": "Sorry. What should I do?",
+    "q_which_part": "Which part is not right: what I take, where I put it, or who it is for?",
     "iss_place": "the {what} you mentioned is not in my plan",
     "iss_unsaid": "you did not say the {what}",
     "iss_object": "the {what} is not in my plan",

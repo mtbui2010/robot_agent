@@ -58,7 +58,7 @@ from . import action_model, concrete, episode_memory, goal_change
 from . import search as search_belief
 from .search_hooks import SearchHooks
 from . import goals as goal_kinds
-from . import goal_filter, goal_fix, language, persons, plan_tidy, speech
+from . import dialog_converge, goal_filter, goal_fix, language, persons, plan_tidy, speech
 from . import reconcile as sensed
 from .robot import run_skill
 from .verify import symbolic_check, verdict
@@ -461,7 +461,13 @@ class AssistLoop(SearchHooks, ClosedLoop):
                                                                 self._manifest_planner("input_pivot", "none")))).lower(),
             # F4.8: a Korean request's English object names checked against the person's words (translator)
             "object_check": str(overrides.get("object_check", env("ROBOT_AGENT_OBJECT_CHECK", "1"))),
+            # R4b item 2 (dialog_converge.py): a correction edits the goal it names, a rejected reading is not read
+            # back again, the caps count what gained nothing; "0" = the earlier dialogue loop (the ablation)
+            "dialog_converge": str(overrides.get("dialog_converge", env("ROBOT_AGENT_DIALOG_CONVERGE", "1"))),
         }
+
+    def _converge(self) -> bool:
+        return str(self.cfg.get("dialog_converge", "1")).lower() not in ("0", "false", "no", "off")
 
     def _manifest_planner(self, key, default=None):
         """The robot's manifest ``planner.<key>`` (robot-pack planner data), else ``default``."""
@@ -924,7 +930,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
             return L(key, {"object": o, "place": g["to"], "person": g["near_person"]},
                      text=_fmt_en(key, object=obj, place=nice(g["to"]), person=nice(g["near_person"])))
         if t == "on":
-            if g.get("from"):
+            if g.get("from") and not (places is not None and persons.is_person(places, g["from"])):
                 return L("rb_on_from", {"object": o, "source": g["from"], "place": g["to"]},
                          text=f"put the {obj} from the {nice(g['from'])} on the {nice(g['to'])}")
             return L("rb_on", {"object": o, "place": g["to"]}, text=f"put the {obj} on the {nice(g['to'])}")
@@ -1444,6 +1450,9 @@ class AssistLoop(SearchHooks, ClosedLoop):
         """Goals from the task and the user's answers. True when the run ended."""
         r.dialogue, r.asked, r.confirms, r.pin_to, r.goals = [], 0, 0, None, []
         r.heard = 0                      # answers heard through the robot's I/O (a typed one cannot be misheard)
+        r.readings, r.rejected, r.patched, r.seen_sigs, r.refunds, r.part_asked = [], [], None, set(), 0, False
+        r.same_used = r.allow_repeat = False
+        r.converge = self._converge()
         while True:
             out = yield from self._understand_round(r)
             if out is _STOP:
@@ -1462,11 +1471,11 @@ class AssistLoop(SearchHooks, ClosedLoop):
             yield r.ev("understand_check", issues=[f"translation not trusted: {bad}"], repeat=True)
             r.repeat_asked = True
             return (yield from self._ask_clarify(r, speech.LocalText("q_repeat")))
-        try:
-            u = self._understand(r.task, r.places, r.memory, r.world, r.dialogue, budget=r.llm_budget)
-        except (LLMUnavailable, LLMBudgetExceeded) as e:
-            yield self._llm_failed(r, e); return _STOP
-        r.goals, q = self._ground_understood(r, u)
+        took = yield from self._take_understanding(r)
+        if took is _STOP:
+            return _STOP
+        u, q = took
+        self._progress(r)
         yield r.ev("understand", status=u["status"], reason=u.get("reason"), goals=r.goals,
                    question=u.get("question") or q, **({"filtered": r.filtered} if r.filtered else {}))
         if u["status"] == "infeasible" and r.dialogue and r.goals:
@@ -1522,10 +1531,59 @@ class AssistLoop(SearchHooks, ClosedLoop):
             if q is _STOP:
                 return _STOP
         if not q:
+            out = yield from self._refused_reading(r)
+            if out is not None:
+                return out
+        if not q:
             out, q = yield from self._read_back(r)
             if out is not None:
                 return out
         return (yield from self._ask_clarify(r, q))
+
+    def _take_understanding(self, r):
+        """(understanding, question) of the task: the goals a correction edited (no new understanding, R4b item 2)
+        or the model's, grounded. _STOP when the language model failed."""
+        patched = getattr(r, "patched", None)
+        r.patched = None
+        if patched is not None:
+            r.goals, r.filtered = patched, []
+            return {"status": "clear", "reason": "goals edited by the person's correction", "goals": patched,
+                    "question": None}, None
+        r.allow_repeat = False
+        try:
+            u = self._understand(r.task, r.places, r.memory, r.world, r.dialogue, budget=r.llm_budget)
+        except (LLMUnavailable, LLMBudgetExceeded) as e:
+            yield self._llm_failed(r, e); return _STOP
+        r.goals, q = self._ground_understood(r, u)
+        return u, q
+
+    def _refused_reading(self, r):
+        """The goals equal a reading the person refused in a read-back: reading it back again only gets the same
+        "no". Ask once which part is wrong (a choice); a second time stop. None = read it back as usual."""
+        repeat_ok, r.allow_repeat = getattr(r, "allow_repeat", False), False
+        if repeat_ok or not self._converge() or not r.goals \
+                or dialog_converge.goal_sig(r.goals) not in getattr(r, "rejected", ()):
+            return None
+        if not getattr(r, "part_asked", False):
+            r.part_asked = True
+            yield r.ev("understand_check", issues=["a refused reading again"], correction="repeat")
+            return (yield from self._ask_clarify(r, speech.LocalText("q_which_part")))
+        yield self._finish(r, "failed", msg="the user did not confirm the task"); return _STOP
+
+    def _progress(self, r) -> None:
+        """A question whose answer gave a goal set not seen before has gained something: its round is given
+        back to the cap (twice per run at most). The cap then counts the questions that gained nothing."""
+        if not self._converge():
+            return
+        sig = dialog_converge.goal_sig(r.goals)
+        seen = getattr(r, "seen_sigs", None)
+        if seen is None:
+            return
+        if (r.goals and sig not in seen and r.asked > 0 and getattr(r, "refunds", 0) < 2 and r.dialogue
+                and r.dialogue[-1][0] == "user"):
+            r.asked -= 1
+            r.refunds = getattr(r, "refunds", 0) + 1
+        seen.add(sig)
 
     def _distrusted(self, r) -> Optional[str]:
         """Why the English of the user's latest words (the instruction, else the last answer) cannot be trusted
@@ -1733,10 +1791,16 @@ class AssistLoop(SearchHooks, ClosedLoop):
                 or getattr(r, "force_readback", False)):
             return _DONE, None
         # two read-backs; a third only after a correction the robot has not read back yet (a misheard
-        # correction made the second read-back repeat the first; fixer rerun of m5)
-        if r.confirms >= 2 and not (r.confirms < 3 and getattr(r, "corrected", 0) >= r.confirms):
+        # correction made the second read-back repeat the first; fixer rerun of m5). Each reading that differs
+        # from every earlier one is progress and earns one more read-back (two at most): the cap counts the
+        # read-backs that gained nothing (R4b item 2).
+        readings = getattr(r, "readings", [])
+        cap = 2 + (min(2, max(0, len(set(readings)) - 1)) if self._converge() else 0)
+        if r.confirms >= cap and not (r.confirms < 3 and getattr(r, "corrected", 0) >= r.confirms):
             yield self._finish(r, "failed", msg="the user did not confirm the task"); return _STOP, None
         r.confirms += 1
+        sig = dialog_converge.goal_sig(r.goals)
+        r.readings = list(readings) + [sig]
         rb = self.summary(r.goals, r.places)
         cq = speech.LocalText("q_confirm", {"summary": rb}, text=f"{rb} Is that right?")
         if unsure:
@@ -1753,16 +1817,72 @@ class AssistLoop(SearchHooks, ClosedLoop):
         if ok_ is None:
             yield self._finish(r, "failed", msg=f"no answer to: {cq}"); return _STOP, None
         r.dialogue += [("robot", cq), ("user", ans)]
-        if not rest:                     # a bare "no": ask what instead
-            return None, speech.LocalText("q_what_do")
+        again = self._converge() and sig in getattr(r, "rejected", ())
+        r.rejected = list(getattr(r, "rejected", ())) + [sig]
+        if not rest:                     # a bare "no": ask what instead (as a choice when this reading was refused before)
+            return None, speech.LocalText("q_which_part" if again else "q_what_do")
         r.corrected = getattr(r, "corrected", 0) + 1
         r.memory.remember_answer(r.task, cq, ans)
-        k = r.places.ground(rest, rest)
-        if k and not re.search(r"\b(from|take|pick)\b", rest):
-            r.pin_to = k                 # the destination it read back is replaced (the coverage check drops it)
-            r.replaced = set(getattr(r, "replaced", ())) | {g["to"] for g in r.goals
-                                                            if g.get("type") in ("on", "in") and g.get("to") not in (None, "", k)}
+        edit, edits = self._correction_edit(r, rest)
+        if edit == "same":               # the goal it names already has that destination
+            yield r.ev("understand_check", issues=["correction restates a read-back goal"], correction="same")
+            if getattr(r, "same_used", False):
+                return None, speech.LocalText("q_which_part")       # twice: the fault is elsewhere, ask which part
+            r.same_used = True           # once: the correction may have been misheard; read the goals back again
+            r.patched, r.allow_repeat = [dict(g) for g in r.goals], True
+            return _NEXT, None
+        if edit == "edit":
+            patched = yield from self._patch_goals(r, rest, edits)
+            if patched is not None:
+                r.patched = patched      # these goals are read back next; no new understanding of the task
+                return _NEXT, None
+        elif edit is None:
+            k = r.places.ground(rest, rest)
+            if k and not re.search(r"\b(from|take|pick)\b", rest):
+                r.pin_to = k             # the destination it read back is replaced (the coverage check drops it)
+                r.replaced = set(getattr(r, "replaced", ())) | {g["to"] for g in r.goals
+                                                                if g.get("type") in ("on", "in") and g.get("to") not in (None, "", k)}
         return _NEXT, None
+
+    def _correction_texts(self, r, rest) -> list:
+        """The correction as said, and (for another language) its English."""
+        out = [rest]
+        if (getattr(r, "lang", None) or "en")[:2] != "en":
+            h = self.language.hear(rest)
+            if h.english:
+                out.append(h.english)
+        return out
+
+    def _correction_edit(self, r, rest):
+        """(``"edit"``, edits) | (``"same"``, []) | (None, []): what a correction after a "no" asks for
+        (``dialog_converge.correction_edit``); None = the correction names no single object, the old path stands."""
+        if not self._converge():
+            return None, []
+        kind, edits = dialog_converge.correction_edit(r.goals, self._correction_texts(r, rest), r.places)
+        return (None if kind == "none" else kind), edits
+
+    def _patch_goals(self, r, rest, edits):
+        """The read-back goals with the edited ones sent to their new destination, grounded again as any goal
+        (a person's hand-over, a surface beside them). None when the grounding has a question to ask. Only the
+        goals the person named change; the others keep what they were understood as."""
+        goals = [dict(g) for g in r.goals]
+        old_to = set()
+        for i, dest in edits:
+            g = goals[i]
+            old_to.add(g.get("to"))
+            for k in ("hand", "near_person", "user_at", "from_any"):
+                g.pop(k, None)
+            g["to"] = "me" if dest == "@speaker" else dest
+        text = " ".join([r.task] + [t for w_, t in r.dialogue if w_ == "user"])
+        done, q = self._ground_goals([goals[i] for i, _d in edits], r.places, r.memory, text, latest=rest)
+        if q or len(done) != len(edits):
+            return None
+        done, _k = goal_fix.kind_from_destination(done, text, r.places, "PutIn" in self.robot.plan_actions)
+        for (i, _d), g in zip(edits, done):
+            goals[i] = g
+        r.replaced = set(getattr(r, "replaced", ())) | {p for p in old_to if p}
+        yield r.ev("understand_check", issues=[], correction="patched", goals=[goals[i] for i, _d in edits])
+        return goals
 
     def _ask_yes_no(self, r, q):
         """A yes / no question (``interact.dialog.ask_yes_no``): an unclear answer ("yet", noise) is asked again
@@ -1825,10 +1945,13 @@ class AssistLoop(SearchHooks, ClosedLoop):
 
     @staticmethod
     def _fresh_question(r, q):
-        """A question already asked in this run (word for word) is not asked again: the person answered it, so
-        the answer did not settle it. Ask them to say the task in other words instead (once)."""
-        asked = {" ".join(str(t).lower().split()) for w_, t in r.dialogue if w_ == "robot"}
-        if " ".join(str(q).lower().split()) in asked and not getattr(r, "reworded", False):
+        """A question already asked in this run (word for word, or the same words with other politeness) is not
+        asked again: the person answered it, so the answer did not settle it. Ask them to say the task in other
+        words instead (once)."""
+        asked = [" ".join(str(t).lower().split()) for w_, t in r.dialogue if w_ == "robot"]
+        qq = " ".join(str(q).lower().split())
+        near = getattr(r, "converge", False) and any(dialog_converge.same_question(qq, a) for a in asked)
+        if (qq in asked or near) and not getattr(r, "reworded", False):
             r.reworded = True
             return speech.LocalText("q_unclear_task")
         return q

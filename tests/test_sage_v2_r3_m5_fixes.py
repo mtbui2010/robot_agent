@@ -370,7 +370,11 @@ def test_third_readback_after_two_corrections(make_assist, env):
     loop = make_assist(robot, llm, planner, confirm_task=True, goal_readback=False)
     d = done(run_task(loop, "Put the apple from the desk on the dining table."))
     assert d["status"] == "success", d
-    assert len([q for q in robot.asked if "Is that right?" in q]) == 3
+    # R4b item 2: the first reading (pear) came back unchanged after the correction; it is not read back a
+    # second time, the person is asked which part is wrong, and the third read-back is the corrected one
+    reads = [q for q in robot.asked if "Is that right?" in q]
+    assert len(reads) == 2 and "pear" in reads[0] and "apple" in reads[1]
+    assert sum("Which part is not right" in q for q in robot.asked) == 1
 
 
 # ── F6.3: one look is not proof of absence: the most likely places get a second look ──

@@ -125,3 +125,39 @@ The object-coverage check of `find_issues` reads the task's own words. After a f
 ("the chicken bring"), a clean answer that said the whole request again was understood, but the check still read the
 garbled original and re-asked. `AssistLoop._object_source` now reads the latest answer that restates the request
 (`_restates`: most of the original's words again) in place of the first hearing. Short answers do not replace it.
+
+### Dialogue convergence (R4b item 2, `core/planning/dialog_converge.py`)
+Failure class: clarify and read-back loops that end in "I could not confirm with you what to do". Causes found
+in the failing dialogues of a 50-task slice (not task ids):
+
+1. A correction after a "no" rewrote every goal. `pin_to` sent ALL move goals to the destination the correction
+   named, and the model, asked again with the correction in the dialogue, moved the other object too. The person
+   fixed one goal and broke another, again and again.
+2. A reading the person had refused was read back again (the request said again gave the same goals).
+3. The caps counted every read-back and every question, also those that changed the goals.
+4. A question reworded only in politeness passed the word-for-word check.
+
+What the loop does now (option `dialog_converge`, env `ROBOT_AGENT_DIALOG_CONVERGE`, default on; `0` = the earlier loop):
+
+- **A correction edits the goal it names.** `correction_edit` reads one object (the goals' own names, one letter off
+  allowed, the Korean names the loop attached by their head syllables) and one destination (an ENV place, or the
+  speaker) from the correction. Only that goal is grounded again (a person's hand-over, a surface beside them) and the
+  edited goals are read back next: no new understanding of the task, so one model call less. Several objects, no
+  destination, two places, or a speaker the ENV cannot place: the earlier path.
+- **A correction the goal already satisfies** ("the lamp on the shelf" when the lamp is going to the shelf) may be a
+  misheard "no": the goals are read back once more; the second time the person is asked a choice ("what I take,
+  where I put it, or who it is for"; phrase `q_which_part`).
+- **A refused reading is not read back again.** The goal set is keyed (`goal_sig`); a set that was refused earlier
+  gets the same choice question once, and the run ends as "not confirmed" if it comes back a third time. A bare
+  "no" to a reading refused before also asks the choice instead of "what should I do".
+- **The caps count what gained nothing.** Each read-back whose goals differ from every earlier one earns one more
+  read-back (two at most); a question whose answer gave goals not seen before gives its round back (twice at most).
+- **A near-duplicate question** (the same content words, other politeness) is reworded once, like a repeat.
+- The read-back no longer says "from the you" for a source that is a person.
+
+Not done: executing the goals the person never contradicted before the rest is confirmed. It needs the plan phase
+split in two with a reversibility rule for what may move before confirmation; the failing dialogues show wrong
+goals (a wrong object, place or recipient), not right goals left unconfirmed, so the gain is unmeasured.
+
+Generality: objects are the goals' names, places are the ENV, the speaker words are `persons.SPEAKER_FORMS`.
+The Korean phrase for `q_which_part` comes from the robot pack's i18n; a pack without it gets the translator.
