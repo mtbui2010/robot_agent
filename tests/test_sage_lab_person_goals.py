@@ -1,6 +1,7 @@
 """Solution lab round 1, proposal 1 (flag ``person_goals``, default OFF): a request that mixes go / say goals with
 moves keeps the template goals as the loop's own steps, a hand-over goes to the person its goal names, a repeated
 goal is dropped, an Open of what cannot be opened is removed. Synthetic ENV and sentences written for the test."""
+import re
 import types
 
 import pytest
@@ -172,3 +173,59 @@ def test_fixed_block_gets_no_llm_edit_and_is_not_emptied():
     subgoal_repair._repair_round(loop, rep, [fixed, other], {0: [subgoal_repair._NO_STEPS], 1: ["something"]},
                                  "t", "", "g", notes, budget=None)
     assert fixed.steps == [{"action": "Say", "object": "x"}] and len(calls) == 1
+
+
+# ── through the REAL construction path: AssistLoop -> GraceBackend -> SAGEPlanner (no stub with the attribute) ──
+# Round 1b: the loop asks ``r.planner`` for ``fixed_subgoals``; in a run that is the GraceBackend wrapper, which did not
+# pass the SAGEPlanner's attribute on, so the flag never built a fixed block while the stub-based tests above passed.
+def real_sage(expand_log):
+    import json
+    from embodiplan.sage import SAGEPlanner
+    from robot_agent.core.planning.backends.pyplanner_grace import GraceBackend
+
+    class Backend:
+        def chat(self, messages, temperature=None):
+            user = messages[-1]["content"]
+            expand_log.append(user)
+            return json.dumps({"steps": steps("MoveTo desk@study room", "Find apple", "Pick apple",
+                                              "MoveTo dining table@kitchen", "Place dining table@kitchen")}), 0, 0
+
+    p = SAGEPlanner(host="http://127.0.0.1:1", model="scripted", enable_memory=False,
+                    capabilities={"hands": 1, "find_reaches": False})
+    p._backend = Backend()
+    return GraceBackend.wrap(p)
+
+
+def test_grace_backend_passes_the_fixed_subgoals_capability_on():
+    from robot_agent.core.planning.backends.pyplanner_grace import GraceBackend
+    from robot_agent.observe.record import RecordingPlanner
+    assert real_sage([]).fixed_subgoals is True
+    assert RecordingPlanner(real_sage([])).fixed_subgoals is True                # the proxy the bench adapter adds
+    assert GraceBackend.wrap(OldPlanner()).fixed_subgoals is False               # a planner without it: off, no error
+
+
+def test_real_path_mixed_request_gets_fixed_blocks_with_the_exact_sentence(make_assist, env, monkeypatch):
+    from fakes import run_task
+    sentence = "Dinner is ready"
+    expand = []
+    llm = FakeLLM({"status": "clear", "reason": "", "question": "", "goals": [
+        {"type": "say", "object": sentence, "from": "", "to": "ben@kitchen"},
+        {"type": "on", "object": "apple", "from": "desk@study room", "to": "dining table@kitchen"}]})
+    env["ben@kitchen"] = {"person": True, "aliases": ["ben"], "loc": {"x": 3.2, "y": 1.0}}   # the fixture is per test
+    robot = FakeRobot(env, {"apple": "desk@study room"})
+    for on in (True, False):
+        expand.clear()
+        sage = real_sage(expand)
+        loop = make_assist(robot, llm, sage, person_goals=on)
+        # a robot with a Say skill (the fake one has none): the loop's own view of the plan vocabulary
+        monkeypatch.setattr(type(loop.robot), "plan_actions", property(lambda self: {"MoveTo", "Say", "Find", "Pick", "Place"}))
+        evs = run_task(loop, f"Tell Ben \"{sentence}\" and put the apple from the desk on the dining table.", plan_only=True)
+        plan = next(e for e in evs if e["event"] == "plan")["steps"]
+        blocks = sage._p.last_blocks
+        if on:
+            assert [b.fixed for b in blocks] == [True, False], [(b.name, b.fixed) for b in blocks]
+            assert {"action": "Say", "object": sentence} in [{k: s_[k] for k in ("action", "object")} for s_ in plan]
+            asked = {m for x in expand for m in re.findall(r"Current sub-goal: (.*)", x)}
+            assert asked == {"put the apple (it is at desk@study room) on dining table@kitchen"}, asked   # the move block only
+        else:
+            assert not any(b.fixed for b in blocks)

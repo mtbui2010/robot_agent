@@ -309,6 +309,13 @@ class GraceBackend:
         return self._p.edit_block(block, feedback, task=task, state=state, obs=obs,
                                   examples_block=self._examples[1])
 
+    # ── Optional capability: fixed sub-goals ─────────────────────────
+    @property
+    def fixed_subgoals(self) -> bool:
+        """True when the wrapped planner keeps a caller's own steps for a sub-goal given as ``(text, steps)``
+        (embodiplan >= 0.2.7). The loop asks the planner it holds, which is this wrapper, so it must say so."""
+        return bool(getattr(self._p, "fixed_subgoals", False))
+
     # ── Optional capability: ProgressReporting ───────────────────────
     @property
     def progress(self):
