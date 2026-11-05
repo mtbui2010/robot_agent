@@ -81,6 +81,19 @@ def is_template(goals: list) -> bool:
     return bool(goals) and all(g.get("type") in TEMPLATE_KINDS for g in goals)
 
 
+def dedupe(goals: list) -> list:
+    """The goals without an exact repeat (same type, object, from, to), the first one kept: a read-back patch that
+    puts the whole list in twice does not make the robot do everything twice."""
+    seen, out = set(), []
+    for g in goals:
+        k = tuple(str(g.get(f) or "") for f in ("type", "object", "from", "to"))
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(g)
+    return out
+
+
 def conflicts(goals: list, name=None) -> tuple:
     """(goals, question|None): the goal validator. Two destinations for one object is a question
     for the person; an open and a close of one container keep the last one (the final state). ``name``: how a
@@ -224,4 +237,4 @@ def _same_text(a, b) -> bool:
 
 
 __all__ = ["GoalKind", "GOAL_KINDS", "MANIPULATION", "TEMPLATE_KINDS", "missing_actions", "kinds_for",
-           "prompt_lines", "is_template", "conflicts", "SPEAKER_WORDS", "is_speaker", "speaker_slots", "describe", "subgoal_text", "summary", "compile_steps", "reached"]
+           "prompt_lines", "is_template", "dedupe", "conflicts", "SPEAKER_WORDS", "is_speaker", "speaker_slots", "describe", "subgoal_text", "summary", "compile_steps", "reached"]

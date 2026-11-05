@@ -84,6 +84,8 @@ def _repair_round(loop, rep, blocks, todo, task, obs, goal_txt, notes, budget=No
     blocks' steps are replaced in place. A needless block is emptied without a call."""
     from ..run_control import call_cancellable, is_cancel
     for k, items in sorted(todo.items()):
+        if getattr(blocks[k], "fixed", False):
+            continue                                  # the loop's own steps (person_goals): no LLM edit, never emptied
         if _needless(items):
             blocks[k].steps = []
             notes.append(f"sub-goal {k + 1} '{blocks[k].name}': emptied (the goals are reached before it)")
@@ -126,7 +128,7 @@ def repair_plan(loop, planner, task, obs, ground, world, places, goals, goal_txt
             break
         if not todo:
             break
-        calls = sum(1 for items in todo.values() if not _needless(items))
+        calls = sum(1 for k_, items in todo.items() if not _needless(items) and not getattr(blocks[k_], 'fixed', False))
         keep = min(edit_reserve(loop), budget.limit // 3) if budget is not None and budget.limit else 0
         if calls and budget is not None and budget.limit and 0 < budget.left() < calls + keep:
             notes.append(f"edits stopped: {calls} sub-goal edit(s) would leave less than {keep} "

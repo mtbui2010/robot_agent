@@ -23,6 +23,9 @@ makes a plan worse, and every kept edit is a note.
 5b. ``say``: an Announce of a say goal's sentence becomes Say, the goal's own action.
 6. ``complete`` (OFF by default, ``gate_complete``): a goal no step reaches gets its canonical segment at the end
    (fetch, deliver). It writes steps the planner did not, so it is counted apart (``completed_by_gate``).
+6b. ``recipient`` and ``unopenable`` (OFF by default, ``person_goals``): the hand-over of a hand goal goes to the
+   person the goal names, after a MoveTo to them (a hand-over to nobody or to another person is the planner's
+   slip); an Open / Close of something that cannot be opened and that no goal names is removed.
 7. ``finish`` (a replan's suffix only): a goal still to do that the suffix dropped (the held object put down on
    another surface) gets its delivery back, from the object in the hand.
 
@@ -39,7 +42,8 @@ from typing import Callable, Optional
 from . import action_model
 
 RELEASES = ("Place", "PutIn")
-OPS = ("hoist", "dedupe", "insert", "room", "putin", "fetch", "action", "say", "unclose", "complete", "finish")
+OPS = ("hoist", "dedupe", "insert", "room", "putin", "fetch", "action", "say", "unclose", "complete", "finish",
+       "recipient", "unopenable")
 
 
 def _st(a, o, **kw) -> dict:
@@ -262,6 +266,46 @@ def op_say(F, cx: _Ctx):
     return None
 
 
+def op_recipient(F, cx: _Ctx):
+    """A hand-over for a hand goal to a person goes to that person (the goal's ``to``), after a MoveTo to them.
+    The step's object may be empty ("the nearest person"), another person or a spot; the goal says who gets it."""
+    from . import persons
+    rel = tuple(cx.release)
+    if not rel:
+        return None
+    holding = cx.world.holding
+    for i, (owner, st) in enumerate(F):
+        a, o = st.get("action"), st.get("object")
+        if a == "Pick":
+            holding = o
+            continue
+        if a not in rel or not holding:
+            continue
+        g = cx.goal_of(holding)
+        holding = None
+        if g is None or g.get("type") != "on" or not cx.hand_goal(g) or not persons.is_person(cx.places, g.get("to")):
+            continue
+        to = g["to"]
+        if o == to:
+            continue
+        j = i - 1 if i and F[i - 1][1].get("action") == "MoveTo" else None
+        if j is not None and F[j][1].get("object") != to:
+            return F[:j] + [(F[j][0], _st("MoveTo", to, grounded=True)), (owner, dict(st, object=to))] + F[i + 1:]
+        pre = [] if j is not None else [(owner, _st("MoveTo", to, grounded=True))]
+        return F[:i] + pre + [(owner, dict(st, object=to))] + F[i + 1:]
+    return None
+
+
+def op_unopenable(F, cx: _Ctx):
+    """An Open / Close of a place the map says cannot be opened, which no goal names, is removed."""
+    named = {g.get("object") for g in cx.goals if g.get("type") in ("open", "close")}
+    for i, (_owner, st) in enumerate(F):
+        o = st.get("object")
+        if st.get("action") in ("Open", "Close") and o and o not in named and not cx.places.openable(o):
+            return F[:i] + F[i + 1:]
+    return None
+
+
 def op_complete(F, cx: _Ctx, reached: Callable):
     """The canonical segment of the first goal the plan does not reach (fetch, then deliver), at the end."""
     plan = [s for _o, s in F]
@@ -343,7 +387,7 @@ def write_back(blocks, F) -> None:
 
 def repair(steps: list, score: Callable, world, places, goals, *, caps=None, actions=(), release=(),
            hand_goal: Callable = lambda g: False, blocks=None, join=None, ground=None, complete: bool = False,
-           reached: Optional[Callable] = None, max_edits: int = 8, only=None) -> tuple:
+           person_goals: bool = False, reached: Optional[Callable] = None, max_edits: int = 8, only=None) -> tuple:
     """(steps, notes, counts): the plan after the operators, ``notes`` per kept edit, ``counts`` {op: n} (with
     ``completed_by_gate``). ``score(steps)``: the number of critical findings; an edit is kept only when it
     strictly lowers it. With ``blocks`` (+ ``join`` / ``ground``) the blocks are edited in place. ``only``: the
@@ -355,6 +399,8 @@ def repair(steps: list, score: Callable, world, places, goals, *, caps=None, act
     n, notes, counts = score([s for _o, s in F]), [], {}
     ops = [("hoist", op_hoist), ("dedupe", op_dedupe), ("insert", op_insert), ("room", op_room),
            ("putin", op_putin), ("fetch", op_fetch), ("action", op_action), ("say", op_say), ("unclose", op_unclose)]
+    if person_goals:
+        ops += [("recipient", op_recipient), ("unopenable", op_unopenable)]
     if complete and reached is not None:
         ops.append(("complete", lambda F_, c: op_complete(F_, c, reached)))
     if reached is not None and (only is not None and "finish" in only):
