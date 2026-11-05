@@ -17,6 +17,8 @@ makes a plan worse, and every kept edit is a note.
    that room, else it is removed.
 5. ``action``: the release fits the goal: Place -> PutIn into an ``in`` goal's container, PutIn -> Place onto an
    ``on`` goal's surface, Place on a person -> the robot's hand-over action when the goal is a hand delivery.
+5e. ``fetch``: a release with an empty hand where exactly one goal delivers gets that goal's Find / Pick before it.
+5d. ``putin``: a Place into a container an ``in`` goal names becomes PutIn, with the container opened first (hand empty).
 5c. ``unclose``: a Close of a container an ``open`` goal wants left open is removed.
 5b. ``say``: an Announce of a say goal's sentence becomes Say, the goal's own action.
 6. ``complete`` (OFF by default, ``gate_complete``): a goal no step reaches gets its canonical segment at the end
@@ -37,7 +39,7 @@ from typing import Callable, Optional
 from . import action_model
 
 RELEASES = ("Place", "PutIn")
-OPS = ("hoist", "dedupe", "insert", "room", "action", "say", "unclose", "complete", "finish")
+OPS = ("hoist", "dedupe", "insert", "room", "putin", "fetch", "action", "say", "unclose", "complete", "finish")
 
 
 def _st(a, o, **kw) -> dict:
@@ -185,6 +187,57 @@ def op_action(F, cx: _Ctx):
     return None
 
 
+def op_putin(F, cx: _Ctx):
+    """A Place into the container an ``in`` goal names becomes PutIn, and the container is opened with the hand
+    empty: ``MoveTo C, Open C`` goes before the run that fetched the held object (one edit: the PutIn alone would
+    need an Open the one hand cannot do while holding)."""
+    if not {"PutIn", "Open"} <= cx.actions:
+        return None
+    sim = cx.sim([s for _o, s in F])
+    holding, pick_i = cx.world.holding, None
+    for i, (owner, st) in enumerate(F):
+        a, o = st.get("action"), st.get("object")
+        if a == "Pick":
+            holding, pick_i = o, i
+            continue
+        if a != "Place" or not holding:
+            continue
+        g = cx.goal_of(holding)
+        if g is None or g.get("type") != "in" or g.get("to") != o or not cx.places.openable(o):
+            holding = None
+            continue
+        if o in sim[i][0].opened or pick_i is None:
+            holding = None                  # already open: the plain Place -> PutIn is the ``action`` operator's
+            continue
+        new = F[:i] + [(owner, dict(st, action="PutIn"))] + F[i + 1:]
+        s = _fetch_start(new, pick_i, g.get("from") or None)
+        return new[:s] + [(F[s][0], _st("MoveTo", o)), (F[s][0], _st("Open", o))] + new[s:]
+    return None
+
+
+def op_fetch(F, cx: _Ctx):
+    """A release (Place / PutIn / hand-over) with an empty hand, at the one place exactly one goal delivers to: the
+    planner wrote the delivery and left out its fetch. ``Find X, Pick X`` (after ``MoveTo`` the goal's source when it
+    names one) go before it. Only that orphan release is repaired, not a goal no step touches (``complete``)."""
+    sim = cx.sim([s for _o, s in F])
+    rel = RELEASES + tuple(cx.release)
+    for i, (owner, st) in enumerate(F):
+        if st.get("action") not in rel or sim[i][0].holding:
+            continue
+        gs = [g for g in cx.goals if g.get("type") in ("on", "in") and g.get("to") == st.get("object") and g.get("object")]
+        done = {s.get("object") for _o, s in F[:i] if s.get("action") in rel}
+        gs = [g for g in gs if g["object"] not in done]
+        if len(gs) != 1 or any(s.get("action") == "Pick" and s.get("object") == gs[0]["object"] for _o, s in F[i:]):
+            continue
+        g = gs[0]
+        steps = ([_st("MoveTo", g["from"])] if g.get("from") and sim[i][0].arrived != g["from"] else []) + \
+            [_st("Find", g["object"]), _st("Pick", g["object"])]
+        if g.get("from") and sim[i][0].arrived != g["from"]:
+            steps.append(_st("MoveTo", st.get("object")))
+        return F[:i] + [(owner, s) for s in steps] + F[i:]
+    return None
+
+
 def op_unclose(F, cx: _Ctx):
     """A Close of a container a goal wants open (an ``open`` goal and no ``close`` goal for it) is removed: the
     planner closed what the task says to leave open."""
@@ -301,7 +354,7 @@ def repair(steps: list, score: Callable, world, places, goals, *, caps=None, act
     F = owned_plan(blocks, join, ground) if blocks else [(0, dict(s)) for s in steps]
     n, notes, counts = score([s for _o, s in F]), [], {}
     ops = [("hoist", op_hoist), ("dedupe", op_dedupe), ("insert", op_insert), ("room", op_room),
-           ("action", op_action), ("say", op_say), ("unclose", op_unclose)]
+           ("putin", op_putin), ("fetch", op_fetch), ("action", op_action), ("say", op_say), ("unclose", op_unclose)]
     if complete and reached is not None:
         ops.append(("complete", lambda F_, c: op_complete(F_, c, reached)))
     if reached is not None and (only is not None and "finish" in only):
