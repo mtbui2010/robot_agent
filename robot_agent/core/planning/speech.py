@@ -24,6 +24,7 @@ CORE_PHRASES = {
     "q_which_place": "Which place do you mean: {options}?",
     "q_which_x": "Which {what} do you mean: {options}?",
     "q_which_one": "I see more than one {object} here: {text}. Which one do you mean?",
+    "q_which_known": "I know of more than one {object}: {text}. Which one do you mean?",
     "q_which_drawer": "Which drawer should I {verb}?",
     "q_where_go": "Where should I go?",
     "q_where_take": "Where should I take it?",

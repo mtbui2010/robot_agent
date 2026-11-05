@@ -253,5 +253,136 @@ def ko_object_issues(goals: list, text: str) -> list:
     return [x for k, x in enumerate(out) if x not in out[:k]]
 
 
-__all__ = ["shared_listener", "says_into", "kind_from_destination", "drop_empty", "drop_invented", "relay_check", "ko_object_issues",
+# ── grounding chain v2 (options go_steps, kind_anchor, name_canon; all default OFF) ──────────────────────────────
+def go_steps(goals: list, task: str, places) -> tuple:
+    """(goals, dropped): option ``go_steps``. A ``go`` goal that is a STEP toward another goal, not an end state, is
+    dropped when at least one non-``go`` goal remains. It is a step when its target is a person, the speaker, the
+    listener of a ``say`` goal, or the place the person named as the SOURCE of a move goal that comes AFTER it ("go
+    there first"). A final ``go`` (a dock, a room the person asked to reach) is kept. ENV flags and goal order only."""
+    from .persons import speaker_key
+    if not any(g.get("type") != "go" for g in goals):
+        return goals, []
+    sk = speaker_key(places)
+    listeners = {g.get("to") or g.get("person") for g in goals if g.get("type") == "say"} - {None, ""}
+
+    def later_sources(i):
+        out = set()
+        for g in goals[i + 1:]:
+            src = g.get("from") or ""
+            if g.get("type") in ("on", "in") and src in places.env and places.said(src, task):
+                out.add(src)
+        return out
+
+    keep, dropped = [], []
+    for i, g in enumerate(goals):
+        to = g.get("to")
+        if g.get("type") == "go" and to and (to in listeners or (sk and to == sk) or to in later_sources(i)
+                                              or (places.env.get(to) or {}).get("person")):
+            dropped.append(g)
+            continue
+        keep.append(g)
+    return keep, dropped
+
+
+OPEN_WORDS = {      # words that ask to OPEN something (a robot pack extends them with its i18n key ``open_words``)
+    "en": [r"\bopen"],
+    # 열다 is l-irregular: the l drops before n, p, s (연다, 엽니다, 여세요, 여는); 열쇠 (key) does not count
+    "ko": [r"(?<![가-힣])열(?:[어었고면려기게을은린]|$)", r"(?<![가-힣])(?:여(?:세요|십시오|시|는|니|라|네)|엽니|연다)"],
+    "vi": [r"\bmở\b"],
+}
+
+
+def kind_anchor_open(goals: list, text: str, places, robot=None) -> tuple:
+    """(goals, dropped): option ``kind_anchor``. An ``open`` goal the person's words carry no open verb for is an
+    end state nobody asked for (the plan gate still opens a container as a STEP when a put-in needs it). Dropped
+    only when another goal remains, and only for a robot with an Open skill (``plan_actions``)."""
+    acts = getattr(robot, "plan_actions", None)
+    if acts is not None and "Open" not in acts:
+        return goals, []
+    if not any(g.get("type") != "open" for g in goals) or not any(g.get("type") == "open" for g in goals):
+        return goals, []
+    if lexicon.has(OPEN_WORDS, text, robot, "open_words"):
+        return goals, []
+    return [g for g in goals if g.get("type") != "open"], [g for g in goals if g.get("type") == "open"]
+
+
+def _plain(s) -> str:
+    return re.sub(r"^(?:the|a|an|some|my|your)\s+", "", _norm(s)).replace("-", " ").strip()
+
+
+def _singular(w: str) -> str:
+    w = w.strip()
+    for suf, rep in (("ies", "y"), ("ches", "ch"), ("shes", "sh"), ("ses", "s"), ("xes", "x"), ("s", "")):
+        if w.endswith(suf) and len(w) > len(suf) + 2:
+            return w[: -len(suf)] + rep
+    return w
+
+
+def canon_names(goals: list, memory_objects: dict, places) -> tuple:
+    """(goals, which, notes): option ``name_canon``. The model's English object name of a move goal that is not in
+    the robot's object memory, a place or a person ("mugs", "red cup") is mapped onto a memory name (Latin script)
+    that equals it, its singular, or its head noun. The candidates are grouped by remembered place: one group
+    renames the object (the original stays in ``said``); several groups give ``which`` = (said, [one name per
+    group]) for a which-one question. Robot-side memory only, no benchmark vocabulary."""
+    names = {n: (v or {}).get("place") for n, v in (memory_objects or {}).items() if n and str(n).isascii()}
+    if not names:
+        return goals, None, []
+    used = {_plain(g.get("object")) for g in goals if _plain(g.get("object")) in names}
+    out, notes, which = [], [], None
+    for g in goals:
+        if g.get("type") not in ("on", "in"):
+            out.append(g)
+            continue
+        o = _plain(g.get("object"))
+        if not o or o in names or places.env.get(o) or places.candidates(o, ""):
+            out.append(g)
+            continue
+        so, head = _singular(o), _singular(o.split()[-1])
+        cand = [n for n in names if n not in used and (
+            _singular(n) == so or _singular(n.split()[-1]) == so or (len(o.split()) > 1 and _singular(n) == head))]
+        groups: dict = {}
+        for n in cand:
+            groups.setdefault(names[n], []).append(n)
+        if len(groups) == 1:
+            best = min(next(iter(groups.values())), key=len)
+            notes.append(f"object {g.get('object')} -> {best}: the robot's memory names it so")
+            g = {**g, "object": best, "said": g.get("said") or g.get("object")}
+        elif len(groups) > 1 and which is None:
+            which = (g.get("said") or g.get("object"), [min(v, key=len) for v in groups.values()])
+        out.append(g)
+    return out, which, notes
+
+
+# ── abstention audit (option reask_abstain, default OFF) ─────────────────────────────────────────────────────────
+# the model's own English question or reason asks where an OBJECT is now (a search can answer that), not where to PUT it
+_WHERE_NOW = re.compile(
+    r"where (?:is|are|was|were|can i find|could i find|do i find|would i find|might)\b|\blocation of\b|"
+    r"\b(?:is|are) (?:located|currently)\b|\bcurrent(?:ly)? (?:location|place)\b|"
+    r"(?:not|n't) (?:know|sure|specified|mentioned|clear|given|stated)\b[^.?]*\bwhere (?:the|it|they|this|that|those|these)\b|"
+    r"(?:location|whereabouts)[^.?]*(?:unknown|not (?:known|specified|mentioned|given|clear|stated|provided))", re.I)
+_WHERE_PUT = re.compile(r"where (?:should|shall|do you want|would you like|to|must)\b[^.?]*\b"
+                        r"(?:put|place|leave|bring|take|deliver|move|go|set)", re.I)
+_WHERE_OBJ = re.compile(r"where (?:is|are|was|were) (?:the |my |your |a |an |some )?([a-z][a-z -]*?)"
+                        r"(?: located| kept|\?| now| currently|,| and | or )", re.I)
+
+
+def abstains_on_location(u: dict):
+    """None, or the objects (maybe empty) the model's question named: ``u`` has no goals, a status of ambiguous /
+    infeasible, and its own question or reason asks where an object is now rather than where to put it."""
+    if not isinstance(u, dict) or u.get("goals") or u.get("status") not in ("ambiguous", "infeasible"):
+        return None
+    q, why = str(u.get("question") or ""), str(u.get("reason") or "")
+    if not _WHERE_NOW.search(q + " " + why) or _WHERE_PUT.search(q):
+        return None
+    return [_plain(m.group(1)) for m in _WHERE_OBJ.finditer(q + " " + why) if _plain(m.group(1))]
+
+
+def covers_objects(goals: list, objects: list) -> bool:
+    """Do the move goals' objects cover every named object (same singular, or the same head noun)? Vacuous without names."""
+    have = [_plain(g.get("object")) for g in goals if g.get("type") in ("on", "in")]
+    key = lambda w: (_singular(w), _singular(w.split()[-1]) if w else "")      # noqa: E731
+    return all(any(key(o)[0] == key(h)[0] or key(o)[1] == key(h)[1] for h in have) for o in objects)
+
+
+__all__ = ["abstains_on_location", "covers_objects", "shared_listener", "go_steps", "kind_anchor_open", "canon_names", "OPEN_WORDS", "says_into", "kind_from_destination", "drop_empty", "drop_invented", "relay_check", "ko_object_issues",
            "repair_destination", "unsaid_speaker"]

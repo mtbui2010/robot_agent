@@ -80,7 +80,8 @@ ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify
                 "reconcile", "search_habit_weight", "edit_reserve", "plan_tidy",
                 "goal_filter", "sage_subgoals", "translate_model", "translate_url", "translate_budget",
                 "gate_complete", "hazard_rules", "person_seat_m", "person_surface_m", "search_total",
-                "search_legs", "object_check", "detector_miss_rate", "person_goals", "accept_goals"}
+                "search_legs", "object_check", "detector_miss_rate", "person_goals", "accept_goals",
+                "go_steps", "kind_anchor", "name_canon", "reask_abstain"}
 _USER_WORDS = {"me", "user", "here", "you", "myself", "person"}
 
 
@@ -474,6 +475,14 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             # starts from the goals it is given (grounded on ENV, not filtered); no goals given = the usual understanding
             "accept_goals": str(overrides.get("accept_goals", env("ROBOT_AGENT_ACCEPT_GOALS", str(
                 self._manifest_planner("accept_goals", "0"))))).lower() in ("1", "true", "yes", "on"),
+            # solution-lab round 2 (all default OFF; off = the earlier grounding byte for byte):
+            #   go_steps      a go goal that is only a step (to a person, the speaker, a listener, the named source of a
+            #                 later move) is dropped from the end states
+            #   kind_anchor   an open goal the person's words carry no open verb for is dropped
+            #   name_canon    an English object name is mapped onto the robot's object memory (several places: asks which)
+            #   reask_abstain a goal-less "where is it" abstention is understood once more with the robot's Find stated
+            **{k: str(overrides.get(k, env("ROBOT_AGENT_" + k.upper(), str(self._manifest_planner(k, "0"))))).lower()
+               in ("1", "true", "yes", "on") for k in ("go_steps", "kind_anchor", "name_canon", "reask_abstain")},
         }
 
     def _converge(self) -> bool:
@@ -1578,8 +1587,38 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             u = self._understand(r.task, r.places, r.memory, r.world, r.dialogue, budget=r.llm_budget)
         except (LLMUnavailable, LLMBudgetExceeded) as e:
             yield self._llm_failed(r, e); return _STOP
+        if self.cfg.get("reask_abstain") and not getattr(r, "reasked", False):
+            u = yield from self._reask_abstention(r, u)
+            if u is _STOP:
+                return _STOP
         r.goals, q = self._ground_understood(r, u)
         return u, q
+
+    _FIND_NOTE = ("Note: this robot finds objects itself ({find}). Where an object is now is not a reason for "
+                  "giving no goals: give the goals for ALL of the task and leave `from` empty for an object whose "
+                  "place the person did not name.")
+
+    def _reask_abstention(self, r, u):
+        """Option ``reask_abstain``: a reading with no goals whose own question asks where an object is (the robot
+        searches, it does not need to be told) is understood once more with that stated. The new reading replaces the
+        first when it has goals, covers the objects the question named and is not ``unsafe``; else today's question
+        stays. One extra call, once per run, only for a robot with a Find skill. _STOP when the LLM failed."""
+        finds = sorted(a for a in self.robot.plan_actions if a.lower() == "find")
+        objs = goal_fix.abstains_on_location(u) if finds else None
+        if objs is None:
+            return u
+        r.reasked = True
+        try:
+            u2 = self._understand(r.task, r.places, r.memory, r.world, r.dialogue, budget=r.llm_budget,
+                                  note=self._FIND_NOTE.format(find=", ".join(finds)))
+        except LLMBudgetExceeded:
+            return u
+        except LLMUnavailable as e:
+            yield self._llm_failed(r, e); return _STOP
+        took = bool(u2["goals"]) and u2["status"] != "unsafe" and goal_fix.covers_objects(u2["goals"], objs)
+        yield r.ev("understand_check", issues=["abstained on where an object is: " + "; ".join(objs or ["?"])],
+                   reask=True, reask_taken=took)
+        return u2 if took else u
 
     def _refused_reading(self, r):
         """The goals equal a reading the person refused in a read-back: reading it back again only gets the same
@@ -1679,9 +1718,34 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         goals, rq = goal_fix.relay_check(goals, r.task, r.places)           # F4.6
         goals, shared = goal_fix.shared_listener(goals, words_, r.places)    # a listener is not also the recipient
         r.filtered += shared
+        goals, q = self._ground_v2(r, goals, q, words_)
         q = q or (speech.LocalText("q_what_say") if rq else None)
         if not goals and empty and not q:
             q = speech.LocalText("q_what_bring")
+        return goals, q
+
+    def _ground_v2(self, r, goals, q, words_):
+        """Solution-lab round 2, grounding chain v2 (options ``go_steps``, ``kind_anchor``, ``name_canon``; each default
+        OFF, all off = no change): deterministic fixes of the grounded goals, no LLM call. Returns (goals, question)."""
+        c = self.cfg
+        if c.get("go_steps"):
+            goals, gone = goal_fix.go_steps(goals, r.task, r.places)
+            r.filtered += gone
+        if c.get("kind_anchor"):
+            goals, gone = goal_fix.kind_anchor_open(goals, words_, r.places, self.robot)
+            r.filtered += gone
+        if c.get("name_canon"):
+            goals, which, _notes = goal_fix.canon_names(goals, r.memory.data.get("objects"), r.places)
+            for g in goals:                                   # a renamed object: the sighting names where it is
+                if g.get("said") and g.get("type") in ("on", "in") and not g.get("from") and not g.get("from_any"):
+                    g["from"] = self._remembered(r.memory, g["object"]) or ""
+                    if g["from"] and g["from"] == g.get("to"):
+                        g["from"] = ""
+            if which and not q:
+                said, names = which
+                text = " or ".join(f"the {n}" for n in names)
+                q = speech.LocalText("q_which_known", {"object": said, "text": text},
+                                     text=f"I know of more than one {said}: {text}. Which one do you mean?")
         return goals, q
 
     def _issues(self, r, goals) -> list:
