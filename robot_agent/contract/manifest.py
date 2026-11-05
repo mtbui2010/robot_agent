@@ -43,10 +43,11 @@ _TOP_KEYS = {"robot", "version", "language", "capabilities", "geometry", "planne
 #   own cap per run), input_pivot (none | translate | both: how a non-English user's words reach the understand prompt)
 #   search_legs (SAGE-v2 search: the belief's next look without a replan; go on after "I don't know"), search_total,
 #   person_goals (0 | 1, default 0: mixed go / say requests planned with the loop's own steps for the template goals),
+#   accept_goals (0 | 1, default 0: a caller may hand the run its goals, which skips the understand step),
 #   detector_miss_rate (0 to 0.9, default 0.1: the chance that a look at the right place does not see the object;
 #   one miss is then weak evidence and the search looks again at the places the belief still holds probable)
 PLANNER_KEYS = {"seed_memory", "notes", "llm_budget", "translate_model", "translate_url", "translate_budget",
-                "search_legs", "search_total", "input_pivot", "detector_miss_rate", "person_goals"}
+                "search_legs", "search_total", "input_pivot", "detector_miss_rate", "person_goals", "accept_goals"}
 # keys of the optional `limits:` section (what the body can carry; checked against the ENV object estimates)
 LIMIT_KEYS = {"payload_kg", "max_object_size_m"}
 # planner.notes: short lines for the direct planner's prompt (docs/direct_prompt.md)

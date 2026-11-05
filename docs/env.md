@@ -44,6 +44,7 @@ person; the words asking for the hand ("hand me", 손에, 건네) make it the on
 | `planner.detector_miss_rate` | the detector's false-negative rate, 0 to 0.9, default 0.1: after a miss at a place the object is still probable there (docs/search.md) |
 | `planner.search_legs`, `planner.search_total` | SAGE-v2 search: the belief's next look replaces a failed Find without a replan; after "I don't know" the likely places are searched, up to `search_total` looks |
 | `planner.person_goals` | `0` (default) or `1`: a request that mixes go / say goals with moves is planned with the template goals as the loop's own fixed steps (the planner expands the moves only), a hand-over goes to the person its goal names, a repeated goal is dropped, an Open of what cannot be opened is removed. Option `person_goals` > `$ROBOT_AGENT_PERSON_GOALS` > manifest. Needs a planner with `fixed_subgoals` (embodiplan >= 0.2.7) for the fixed steps; the other parts do not |
+| `planner.accept_goals` | `0` (default) or `1`: the caller may hand a run its goals (`AssistLoop.run_blocking(task, lang, goals=[{type, object, from, to}, ...])`); the understand step is then skipped (no LLM call, no question, no read-back, no refusal) and the run starts from those goals, grounded on the ENV (a place name to its key, the speaker, the remembered source) and not filtered. Without goals, or with the option off (goals passed in are ignored), the usual understanding runs and nothing changes. Option `accept_goals` > `$ROBOT_AGENT_ACCEPT_GOALS` > manifest. A caller that knows the answer (a test of the later phases, a planner of a higher layer) uses it; the `understand` event then has the reason `goals given by the caller` |
 | `limits.payload_kg`, `limits.max_object_size_m`, `limits.objects` | what the body can carry, and the robot's own object-class estimates `{name: {weight_kg, size_m}}`; a goal over a limit is refused |
 | `safety.hazards` | robot-pack hazard rules `[{objects: [regex], places: [class or regex], say}]`, added to the core rules |
 
@@ -51,7 +52,7 @@ person; the words asking for the hand ("hand me", 손에, 건네) make it the on
 
 `sage_subgoals` (goals | model), `gate_complete` (0 | 1), `hazard_rules` (core | pack | off), `person_seat_m`
 (1.0, a priori), `person_surface_m` (1.2, a priori), `search_legs`, `search_total`, `detector_miss_rate`, `translate_model`,
-`translate_url`, `translate_budget`, `input_pivot`, `person_goals` (0 | 1).
+`translate_url`, `translate_budget`, `input_pivot`, `person_goals` (0 | 1), `accept_goals` (0 | 1).
 
 ## What the robot says
 

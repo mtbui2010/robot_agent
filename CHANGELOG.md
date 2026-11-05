@@ -5,6 +5,12 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+### Accept goals from the caller (option `accept_goals`, env `ROBOT_AGENT_ACCEPT_GOALS`, manifest `planner.accept_goals`; default off)
+- With the option on, `AssistLoop.run_blocking(task, lang, goals=[...])` skips the understand step and starts from the
+  goals it is given (`{type, object, from, to}`), grounded on the ENV and not filtered. An `understand` event with the
+  reason `goals given by the caller` is emitted. No goals given, or the option off: the usual understanding, byte-identical
+  events (test `tests/test_accept_goals.py`).
+
 ### Person goals (option `person_goals`, env `ROBOT_AGENT_PERSON_GOALS`, manifest `planner.person_goals`; default off)
 - A mixed request (go / say goals and moves) gives the planner the template goals as fixed sub-goals with the
   loop's own steps (`goals.compile_steps`); the planner expands the moves only (embodiplan 0.2.7

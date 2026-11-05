@@ -80,7 +80,7 @@ ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify
                 "reconcile", "search_habit_weight", "edit_reserve", "plan_tidy",
                 "goal_filter", "sage_subgoals", "translate_model", "translate_url", "translate_budget",
                 "gate_complete", "hazard_rules", "person_seat_m", "person_surface_m", "search_total",
-                "search_legs", "object_check", "detector_miss_rate", "person_goals"}
+                "search_legs", "object_check", "detector_miss_rate", "person_goals", "accept_goals"}
 _USER_WORDS = {"me", "user", "here", "you", "myself", "person"}
 
 
@@ -470,6 +470,10 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             # goes to the person its goal names, a duplicated goal is dropped, an Open of what cannot be opened goes
             "person_goals": str(overrides.get("person_goals", env("ROBOT_AGENT_PERSON_GOALS", str(
                 self._manifest_planner("person_goals", "0"))))).lower() in ("1", "true", "yes", "on"),
+            # accept goals from the caller (default OFF): run_blocking(task, goals=[...]) skips the understand step and
+            # starts from the goals it is given (grounded on ENV, not filtered); no goals given = the usual understanding
+            "accept_goals": str(overrides.get("accept_goals", env("ROBOT_AGENT_ACCEPT_GOALS", str(
+                self._manifest_planner("accept_goals", "0"))))).lower() in ("1", "true", "yes", "on"),
         }
 
     def _converge(self) -> bool:
@@ -1334,8 +1338,9 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         return None
 
     # ── main: the phases of one run ───────────────────────────────────────
-    def run_blocking(self, task: str, lang: str = "en", plan_only: bool = False) -> Iterator[dict]:
+    def run_blocking(self, task: str, lang: str = "en", plan_only: bool = False, goals=None) -> Iterator[dict]:
         r = self._open_run(task, lang, plan_only, "sage+assist")
+        r.given_goals = [dict(g) for g in goals if isinstance(g, dict)] if self.cfg.get("accept_goals") and goals else None
         fixed = self._reconcile(r, "start")              # adapter.reconcile + the declared sensors
         from robot_agent.skill_configs import ENV
         r.places = Places(dict(ENV), openable=r.robot.openable)
@@ -1459,12 +1464,25 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         r.readings, r.rejected, r.patched, r.seen_sigs, r.refunds, r.part_asked = [], [], None, set(), 0, False
         r.same_used = r.allow_repeat = False
         r.converge = self._converge()
+        if getattr(r, "given_goals", None):
+            return (yield from self._take_given_goals(r))
         while True:
             out = yield from self._understand_round(r)
             if out is _STOP:
                 return True
             if out is _DONE:
                 break
+        r.run.obs = "goals: " + json.dumps(r.goals, ensure_ascii=False)
+        return False
+
+    def _take_given_goals(self, r):
+        """Option ``accept_goals``: the caller's goals replace the understand step (no LLM call, no question, no read-back,
+        no refusal). They are grounded on ENV (a place name to its key, the speaker, the remembered source) and not
+        filtered. A question the grounding would have asked is only recorded in the event. False: go on to planning."""
+        r.filtered = []
+        r.goals, q = self._ground_goals(r.given_goals, r.places, r.memory, " ".join([r.task, self.original or ""]))
+        yield r.ev("understand", status="clear", reason="goals given by the caller", goals=r.goals,
+                   question=None, **({"unasked": str(q)} if q else {}))
         r.run.obs = "goals: " + json.dumps(r.goals, ensure_ascii=False)
         return False
 
