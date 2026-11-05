@@ -220,12 +220,12 @@ def test_real_path_mixed_request_gets_fixed_blocks_with_the_exact_sentence(make_
         # a robot with a Say skill (the fake one has none): the loop's own view of the plan vocabulary
         monkeypatch.setattr(type(loop.robot), "plan_actions", property(lambda self: {"MoveTo", "Say", "Find", "Pick", "Place"}))
         evs = run_task(loop, f"Tell Ben \"{sentence}\" and put the apple from the desk on the dining table.", plan_only=True)
-        plan = next(e for e in evs if e["event"] == "plan")["steps"]
         blocks = sage._p.last_blocks
         if on:
             assert [b.fixed for b in blocks] == [True, False], [(b.name, b.fixed) for b in blocks]
+            plan = next(e for e in evs if e["event"] == "plan")["steps"]
             assert {"action": "Say", "object": sentence} in [{k: s_[k] for k in ("action", "object")} for s_ in plan]
             asked = {m for x in expand for m in re.findall(r"Current sub-goal: (.*)", x)}
             assert asked == {"put the apple (it is at desk@study room) on dining table@kitchen"}, asked   # the move block only
         else:
-            assert not any(b.fixed for b in blocks)
+            assert not any(b.fixed for b in blocks or [])      # flag off: no fixed block
