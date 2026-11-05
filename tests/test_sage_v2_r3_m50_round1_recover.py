@@ -162,3 +162,19 @@ def test_a_release_the_skill_reported_is_not_failed_by_one_noisy_full_reading(ma
                    "Bring the apple from the desk to the dining table.")
     assert done(evs)["status"] == "success"
     assert [t[0] for t in robot.trace].count("place") == 1
+
+
+def test_a_move_that_ends_away_from_its_target_has_its_own_retry(make_assist, env):
+    """Blocked twice (retry, then the person is asked and says yes), then a move that reports success but stops
+    a metre away (the pose check): that is another failure, retried once, and the run gets there."""
+    from fakes import FakeLLM, FakeRobot, ScriptedPlanner, done, run_task, steps
+    ds, dt = "desk@study room", "dining table@kitchen"
+    robot = FakeRobot(env, {"apple": ds}, answers=["yes"], faults=[
+        {"skill": "move", "obj": dt, "nth": [1, 2], "kind": "fail", "msg": "path blocked"},
+        {"skill": "move", "obj": dt, "nth": 3, "kind": "wrong_pose"}])
+    llm = FakeLLM({"status": "clear", "reason": "", "question": "",
+                   "goals": [{"type": "on", "object": "apple", "from": "desk", "to": "dining table"}]})
+    plan = steps(f"MoveTo {ds}", "Find apple", "Pick apple", f"MoveTo {dt}", f"Place {dt}")
+    evs = run_task(make_assist(robot, llm, ScriptedPlanner(plan), max_replans=0), "Bring the apple from the desk to the dining table.")
+    assert done(evs)["status"] == "success", done(evs)
+    assert [t[0] for t in robot.trace].count("move") == 5

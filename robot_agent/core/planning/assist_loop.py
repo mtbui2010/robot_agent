@@ -2702,6 +2702,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
             yield self._finish(r, "failed", msg=f"{a} {o} failed again the same way: {reason}"); return _STOP
         # ── skill-level retry in place / ask the person (not planning) ──
         # only a sensor check disagrees with the skill's own success (the layers before it passed)
+        r.failed_layers = {v.layer for v in rec.verifies if not v.ok}
         r.sensor_only = bool(rec.verifies) and all(v.ok for v in rec.verifies if v.layer != "sensor") \
             and any(v.layer == "sensor" and not v.ok for v in rec.verifies)
         no = refuted(rec.verifies)                     # the VLM / its Find said it did not happen: replan
@@ -2984,8 +2985,11 @@ class AssistLoop(SearchHooks, ClosedLoop):
     def _recover_move(self, r, st, reason, rule):
         """Move again once, then ask the person to clear the way; else stop."""
         o = st["object"]
-        r.move_tries[o] = r.move_tries.get(o, 0) + 1
-        if r.move_tries[o] <= 1:
+        # a move that ended away from its target (the pose check) is another failure than a blocked path: it
+        # has its own retry, after the path retry and the person's help were used
+        key = (o, "arrival") if "localization" in getattr(r, "failed_layers", ()) else o
+        r.move_tries[key] = r.move_tries.get(key, 0) + 1
+        if r.move_tries[key] <= 1:
             yield r.ev("recover", at_index=r.i, kind="retry", msg=f"move to {o} again")
             return _NEXT, ""
         if self.cfg["ask_help"] and ("move", o) not in r.helped:
