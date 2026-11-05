@@ -5,6 +5,12 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+### Grounding chain v2 and abstention re-ask (options `go_steps`, `kind_anchor`, `name_canon`, `reask_abstain`; env `ROBOT_AGENT_<NAME>`, manifest `planner.<name>`; all default off)
+- `go_steps`, `kind_anchor`, `name_canon`: three deterministic steps in `_ground_understood` after `shared_listener`
+  (`goal_fix.go_steps`, `kind_anchor_open`, `canon_names`; `lexicon`-style `OPEN_WORDS`). `reask_abstain`: one directed
+  re-understand of a goal-less "where is it" reading (`goal_fix.abstains_on_location`, `AssistLoop._reask_abstention`).
+  New phrase `q_which_known`. Off: byte-identical events (tests `tests/test_sage_lab_r2_grounding.py`).
+
 ### Accept goals from the caller (option `accept_goals`, env `ROBOT_AGENT_ACCEPT_GOALS`, manifest `planner.accept_goals`; default off)
 - With the option on, `AssistLoop.run_blocking(task, lang, goals=[...])` skips the understand step and starts from the
   goals it is given (`{type, object, from, to}`), grounded on the ENV and not filtered. An `understand` event with the
