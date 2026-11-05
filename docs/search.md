@@ -84,6 +84,13 @@ still counts in the prior, so a place where the object was seen a minute ago sta
 
 Misses survive `unsearch` (the count is for the whole run) and `to_dict` / `load`.
 
+**A phantom pick.** A Pick that fails with code `absent` right after a Find saw the object has nothing to
+grasp: the Find was a false positive, or the detection at the pick missed a real object. It is not a grasp
+failure: there are no grasp retries and no "move it closer" request. The first time at a place the robot looks
+once more in place; the second time the search state from before the Find (`restore_search`) is back and the
+place is a miss, then the search goes on exactly as for a Find that saw nothing (next leg, second look, ask where,
+give up). This needs `search_legs`; without it the Pick recovery is as before.
+
 ## Searched places are a hard constraint
 
 Kept on the run context: they survive every replan, a pause / resume and a task-stack resume of

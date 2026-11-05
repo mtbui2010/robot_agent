@@ -3058,10 +3058,36 @@ class AssistLoop(SearchHooks, ClosedLoop):
             return _NEXT, ""
         return None, f"; it is not at {r.world.arrived}. Look next at {leg.text()}"
 
+    def _recover_phantom(self, r, st, reason, rule):
+        """A Pick found nothing at the place where a Find had just seen the object (failure code ABSENT). The
+        detector's false-positive rate says this happens, so it is not a grasp failure. The first time at a place
+        the robot looks once more in place (a detection at the pick can miss a real object, the false-negative
+        rate); the second time the Find counts as a false positive: the search state from before it is back
+        and the place is a miss, so the search goes on over the other places, asks where it is, or gives up as
+        for any Find that saw nothing."""
+        o, world = st["object"], r.world
+        here = world.arrived
+        n = r.__dict__.setdefault("phantoms", {})
+        n[(o, here)] = n.get((o, here), 0) + 1
+        world.found = None; r.seen_at.pop(o, None)
+        find = {"action": "Find", "object": o}
+        r.steps[r.i:r.i] = [find]
+        if n[(o, here)] == 1:
+            yield r.ev("recover", at_index=r.i, kind="relook", msg=f"the {o} was not there to pick up; looking again")
+            return _NEXT, ""
+        r.search.restore_search(o)
+        yield r.ev("recover", at_index=r.i, kind="phantom", msg=f"the {o} is not at {here}: it was a false detection")
+        return (yield from self._recover_find(r, find, reason, rule))
+
     def _recover_pick(self, r, st, reason, rule):
         """Look + grasp again in place (pick_retries, not when out of lateral reach), then ask the person
         to move it closer. Returns (outcome or None, replan hint)."""
         o, world = st["object"], r.world
+        if (r.failures and r.failures[-1]["code"] == FailureCode.ABSENT.value and getattr(r, "search", None) is not None
+                and self.cfg.get("search_legs") and not getattr(r, "sensor_only", False)):
+            # nothing there to grasp: the Find that sent the robot here saw a phantom (or the detector missed at the
+            # pick), which is a search miss and not a grasp failure (no grasp retries, no "move it closer")
+            return (yield from self._recover_phantom(r, st, reason, rule))
         votes = None
         if getattr(r, "sensor_only", False):
             # the skill reported success and only the check after it read an empty gripper: two more readings
