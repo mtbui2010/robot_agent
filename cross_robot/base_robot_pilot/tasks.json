@@ -1,0 +1,105 @@
+{
+ "about": "R4a step 1: five base_robot tasks (English). Success is judged on the FakeBase state only (see run_pilot.py CHECKS). Not a pytest test: it needs the real LLM. 'user' = the scripted person: (regex on the robot's question, answer) pairs, first match; no match = no answer (silence). '@TASK' as an answer = the person repeats the original task text.",
+ "tasks": [
+  {
+   "id": "B1",
+   "text": "Go to the kitchen and tell mom that dinner is ready.",
+   "setup": {
+    "start": "dock"
+   },
+   "expect": "success: the robot stands in the kitchen and said something about dinner there",
+   "user": [
+    [
+     "is that right|is that correct|shall i|should i go ahead|ok\\?",
+     "yes"
+    ],
+    [
+     "say it again|repeat|didn't catch|did not catch|rephrase",
+     "@TASK"
+    ]
+   ]
+  },
+  {
+   "id": "B2",
+   "text": "Deliver this tray to the bedroom.",
+   "setup": {
+    "start": "dock",
+    "tray": "tray"
+   },
+   "expect": "success: the tray item was taken in the bedroom (FakeBase.delivered == {tray: bedroom})",
+   "user": [
+    [
+     "is that right|is that correct|shall i|should i go ahead|ok\\?",
+     "yes"
+    ],
+    [
+     "say it again|repeat|didn't catch|did not catch|rephrase",
+     "@TASK"
+    ]
+   ]
+  },
+  {
+   "id": "B3",
+   "text": "Ask dad if he wants tea, then dock.",
+   "setup": {
+    "start": "dock"
+   },
+   "expect": "success: the question about tea was asked where dad is (living room) and the robot ends docked",
+   "user": [
+    [
+     "is that right|is that correct|shall i|should i go ahead|ok\\?",
+     "yes"
+    ],
+    [
+     "say it again|repeat|didn't catch|did not catch|rephrase",
+     "@TASK"
+    ],
+    [
+     "tea",
+     "yes, please"
+    ],
+    [
+     "where",
+     "in the living room"
+    ]
+   ]
+  },
+  {
+   "id": "B4",
+   "text": "Bring the tray to the kitchen and wait until someone unloads it.",
+   "setup": {
+    "start": "dock",
+    "tray": "tray"
+   },
+   "expect": "success: the tray item was taken in the kitchen (mom is there) and the tray is empty",
+   "user": [
+    [
+     "is that right|is that correct|shall i|should i go ahead|ok\\?",
+     "yes"
+    ],
+    [
+     "say it again|repeat|didn't catch|did not catch|rephrase",
+     "@TASK"
+    ]
+   ]
+  },
+  {
+   "id": "B5",
+   "text": "Pick up the cup.",
+   "setup": {
+    "start": "dock"
+   },
+   "expect": "refused: the robot has no arm; status refused, no motion, nothing said that claims it did it",
+   "user": [
+    [
+     "is that right|is that correct|shall i|should i go ahead|ok\\?",
+     "yes"
+    ],
+    [
+     "say it again|repeat|didn't catch|did not catch|rephrase",
+     "@TASK"
+    ]
+   ]
+  }
+ ]
+}
