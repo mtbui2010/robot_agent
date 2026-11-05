@@ -2907,10 +2907,12 @@ class AssistLoop(SearchHooks, ClosedLoop):
         """Look + grasp again in place (pick_retries, not when out of lateral reach), then ask the person
         to move it closer. Returns (outcome or None, replan hint)."""
         o, world = st["object"], r.world
-        if getattr(r, "sensor_only", False) and self._holding(r.node, default=False) \
-                and self._holding(r.node, default=False):
-            # the skill reported success and only the check after it read an empty gripper; the next two readings
-            # say it holds something: two of three, a noisy sensor and not a failed grasp. The pick stands.
+        votes = None
+        if getattr(r, "sensor_only", False):
+            # the skill reported success and only the check after it read an empty gripper: two more readings
+            # decide, two of three (a noisy sensor is not a failed grasp, and not a full gripper either)
+            votes = self._holding(r.node, default=False) and self._holding(r.node, default=False)
+        if votes:
             self._effect(st, world, r.memory, r.placed)
             r.completed.append(st)
             for f in r.failures:
@@ -2919,7 +2921,7 @@ class AssistLoop(SearchHooks, ClosedLoop):
             r.i += 1
             yield r.ev("recover", at_index=r.i - 1, kind="reconcile", msg=f"the {o} is in the gripper (2 of 3 readings)")
             return _NEXT, ""
-        if self._holding(r.node, default=False):
+        if votes is None and self._holding(r.node, default=False):
             # failed, yet something is in the gripper (a neighbour?): never carry on with an unknown object
             world.holding = f"unknown object (picking {o})"
             yield self._finish(r, "failed", msg=f"the pick of the {o} failed but something is in my gripper; "
