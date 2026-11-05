@@ -2627,6 +2627,14 @@ class AssistLoop(SearchHooks, ClosedLoop):
             # the release's own empty-gripper check fired right after letting go; looked once more
             vres = [VerifyResult("isdone", True, f"{skill}: second look, gripper empty"),
                     VerifyResult("recheck", True, f"first check: {vres[0].detail}")]
+        if (a in ("Place", "PutIn") or a in self.robot.model_capabilities().release_actions) and vres \
+                and vres[0].ok and any(v.layer == "sensor" and not v.ok for v in vres) \
+                and all(v.ok for v in vres if v.layer != "sensor") and r.world.holding \
+                and not self._holding(r.node, default=True) and not self._holding(r.node, default=True):
+            # the release reported success and only the gripper check read "full"; two more readings read empty:
+            # two of three, a noisy sensor and not a failed release
+            vres = [v for v in vres if v.layer != "sensor"] + [
+                VerifyResult("sensor", True, f"{skill}: two second readings, gripper empty", unknown=False)]
         if a == "Find" and vres and vres[0].ok:
             p3 = self._found_point(rec.result, o)
             r.seen_at[o] = p3

@@ -136,3 +136,29 @@ def test_the_goal_check_looks_twice_where_the_robot_put_the_object(make_assist, 
         evs = run_task(make_assist(robot, llm, ScriptedPlanner(plan), max_replans=0, ask_help=False),
                        "Bring the apple from the desk to the dining table.")
         assert done(evs)["status"] == want, (nth, done(evs))
+
+
+def test_a_release_the_skill_reported_is_not_failed_by_one_noisy_full_reading(make_assist, env):
+    """Place succeeded (the gripper is empty); the check right after it reads 'full' once. Two more readings read
+    empty, so the release stands: no replan, no second Place."""
+    from fakes import FakeLLM, FakeRobot, ScriptedPlanner, done, run_task, steps
+    ds, dt = "desk@study room", "dining table@kitchen"
+    robot = FakeRobot(env, {"apple": ds})
+    state = {"wrong": 1}
+    real = robot._exec
+
+    def exec_(skill, o, params):
+        out = real(skill, o, params)
+        if skill == "grasp_succeed" and robot.holding is None and robot.obj.get("apple") == dt and state["wrong"]:
+            state["wrong"] -= 1
+            return {"isdone": True}                      # the one wrong reading: the check after the release
+        return out
+
+    robot._exec = exec_
+    llm = FakeLLM({"status": "clear", "reason": "", "question": "",
+                   "goals": [{"type": "on", "object": "apple", "from": "desk", "to": "dining table"}]})
+    plan = steps(f"MoveTo {ds}", "Find apple", "Pick apple", f"MoveTo {dt}", f"Place {dt}")
+    evs = run_task(make_assist(robot, llm, ScriptedPlanner(plan), max_replans=0, ask_help=False),
+                   "Bring the apple from the desk to the dining table.")
+    assert done(evs)["status"] == "success"
+    assert [t[0] for t in robot.trace].count("place") == 1
