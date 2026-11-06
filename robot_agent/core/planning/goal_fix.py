@@ -230,6 +230,26 @@ def relay_check(goals: list, task: str, places) -> tuple:
     return out, q
 
 
+def drop_echo_say(goals: list, task: str, places) -> tuple:
+    """(goals, dropped): option ``understand_give_kind``. A ``say`` goal addressed to the SPEAKER (a speaker word, or the
+    speaker's ENV entry) whose text is the request itself (``_is_request``: high overlap with the instruction, a tell /
+    ask verb) is the model reading the request back at the person, not a message to pass on: it is dropped instead of
+    asking "What should I say?". A message to anyone else, or to the speaker with words of its own, is kept. ENV flags and
+    the language data only."""
+    from .persons import speaker_key
+    from . import goals as goal_kinds
+    me = speaker_key(places)
+    out, dropped = [], []
+    for g in goals:
+        to = g.get("to") or g.get("person") or ""
+        if g.get("type") == "say" and to and (goal_kinds.is_speaker(to) or (me is not None and to == me)) \
+                and _is_request(g.get("object"), task, []):
+            dropped.append(f"say to the speaker dropped: it repeats the request ({str(g.get('object') or '')[:40]})")
+            continue
+        out.append(g)
+    return (out, dropped) if dropped else (goals, [])
+
+
 _KO_ACC = re.compile(r"([\uac00-\ud7a3][\uac00-\ud7a3 ]*?[\uac00-\ud7a3])(?:을|를)(?=\s|$|[.,!?])")
 _KO_AND = re.compile(r"\s*(?:과|와|하고|이랑|랑|,)\s*")
 

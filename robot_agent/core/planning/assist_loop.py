@@ -84,7 +84,9 @@ ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify
                 "go_steps", "kind_anchor", "name_canon", "reask_abstain",
                 "exec_integrity", "gate_strict", "endstate_check", "reset_container", "wait_on_robot", "inventory_ask",
                 "dialog_unstick", "kind_anchor_ask", "reask_anchor", "no_shared_listener", "understand_views",
-                  "understand_goals_first"}
+                  "understand_goals_first", "understand_model", "understand_url", "understand_model_lang",
+                "understand_max_tokens", "understand_max_goals", "understand_schema_strict", "understand_give_kind",
+                "understand_verify_verdict"}
 _USER_WORDS = {"me", "user", "here", "you", "myself", "person"}
 
 
@@ -427,7 +429,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             "generator": self.cfg["planner"],
             "planner": "sage",
         })
-        self.cfg.update(self._v2_cfg(overrides))
+        self.cfg.update(self._v2_cfg(overrides), **self._um_cfg(overrides))
         self._reaches = lambda steps, world, goals, loop=None: AssistLoop._reaches(steps, world, goals, self)
 
     def _v2_cfg(self, overrides) -> dict:
@@ -511,6 +513,43 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
                 self._manifest_planner("kind_anchor_ask", "0"))))).lower() in ("1", "true", "yes", "on"),
         }
 
+    def _um_cfg(self, overrides) -> dict:
+        """Lab round 7 (docs/env.md; every key fails open to today's behaviour): the model that reads the request
+        (``understand_model`` / ``understand_url`` / ``understand_model_lang``), the runaway guard of a model other than the
+        planner (``understand_max_tokens`` / ``understand_max_goals``; absent = no cap) and three schema / prompt flags
+        (``understand_schema_strict``, ``understand_give_kind``, ``understand_verify_verdict``; default off)."""
+        env = os.environ.get
+
+        def pick(k, default=None):                # option > $ROBOT_AGENT_<KEY> > the manifest's planner.<key> > default
+            return overrides.get(k, env("ROBOT_AGENT_" + k.upper(), self._manifest_planner(k, default)))
+
+        def on(k):
+            return str(pick(k, "0")).lower() in ("1", "true", "yes", "on")
+
+        def count(k):
+            try:
+                n = int(pick(k, None))
+            except (TypeError, ValueError):
+                return None
+            return n if n > 0 else None
+        langs = pick("understand_model_lang", None)
+        if isinstance(langs, str):
+            try:
+                langs = json.loads(langs)
+            except ValueError:
+                langs = None
+        return {
+            "understand_model": str(pick("understand_model", "") or "").strip(),
+            "understand_url": pick("understand_url", None) or None,
+            "understand_model_lang": {str(k).strip().lower(): str(v).strip() for k, v in langs.items()
+                                      if str(k).strip() and str(v or "").strip()} if isinstance(langs, dict) else {},
+            "understand_max_tokens": count("understand_max_tokens"),
+            "understand_max_goals": count("understand_max_goals"),
+            "understand_schema_strict": on("understand_schema_strict"),
+            "understand_give_kind": on("understand_give_kind"),
+            "understand_verify_verdict": on("understand_verify_verdict"),
+        }
+
     def _r3_cfg(self, overrides) -> dict:
         def on(k):
             return str(overrides.get(k, os.environ.get("ROBOT_AGENT_" + k.upper(), str(self._manifest_planner(k, "0"))))
@@ -560,9 +599,9 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         # the language layer (input_pivot): the task and the user's answers as the model reads them
         task_text, pivot_orig, dlines = self.language.understand_view(
             task, dialogue, lambda t, en: f"Robot: {t if en else self._heard_as(t)}", pivot=pivot)
-        prompt = UNDERSTAND_PROMPT.format(
+        prompt = self._flag_prompt(UNDERSTAND_PROMPT).format(
             abilities=self.robot.robot_description(), cannot=self._cannot_line(),
-            goal_kinds=goal_kinds.prompt_lines(goal_kinds.kinds_for(self.robot.plan_actions)),
+            goal_kinds=goal_kinds.prompt_lines(self._kinds()),
             # no object memory here: a 7B model refused / asked about every object it did not list
             # (the memory grounds `from` after this call instead)
             places=places.describe(), answers=memory.answers_text(),
@@ -577,12 +616,17 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             + pivot_orig + (f"\n{note}" if note else ""))
         from ..run_control import call_cancellable, is_cancel
         try:                                     # every call (repairs too) cancellable: a stop does not wait
-            d = ask_json(self._llm(), prompt, self._understand_schema(), budget=budget, retries=self.cfg["understand_retries"],
-                         call=call_cancellable, passthrough=is_cancel, options=self._sampling(sample))
+            if self._um_for(getattr(self, "_run_lang", "en")):
+                d = self._ask_understand_routed(prompt, budget, sample, call_cancellable, is_cancel)
+            else:
+                d = ask_json(self._llm(), prompt, self._understand_schema(), budget=budget, retries=self.cfg["understand_retries"],
+                             call=call_cancellable, passthrough=is_cancel, options=self._sampling(sample))
         except LLMBadOutput:
             d = {"unparsed": True}
         d.setdefault("status", "clear"); d.setdefault("question", "")
         d["goals"] = [g for g in d.get("goals") or [] if isinstance(g, dict)] if isinstance(d.get("goals"), list) else []
+        if self.cfg.get("understand_give_kind"):
+            d["goals"] = goal_kinds.canonical(d["goals"])           # give -> on (to = the person)
         for g in d["goals"]:
             # a sentence to say stays as said; object names are normalised
             g["object"] = (str(g.get("object") or "").strip() if g.get("type") == "say"
@@ -590,7 +634,138 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             for k in ("from", "to"):
                 g[k] = str(g.get(k) or "").strip()
         d["goals"] = goal_kinds.speaker_slots(d["goals"])     # "me" only as a destination (FROM_ME)
+        if self.cfg.get("understand_verify_verdict"):
+            self._verify_verdict(d)
         return d
+
+    # ── lab round 7: the model that reads the request ─────────────────────
+    def _planner_model(self) -> str:
+        return str((self._llm_cfg or {}).get("model") or "")
+
+    def _um_for(self, lang) -> str:
+        """The understand model of a run in ``lang`` when it is NOT the planner's: ``understand_model_lang[lang[:2]]``, else
+        ``understand_model``, else "" (the planner reads the request). An unknown or missing language takes the default."""
+        c = self.cfg
+        m = c.get("understand_model_lang") or {}
+        lg = str(lang or "en").strip().lower()[:2]
+        cand = str(m.get(lg) or c.get("understand_model") or "").strip()
+        return "" if not cand or cand == self._planner_model() else cand
+
+    def _understand_llm(self):
+        """The client that reads the request (mirrors ``LanguageAdapter.translator``): the planner's own when the model for
+        this run is the planner's, else a client of the understand model (role ``understand``) on ``understand_url``,
+        else ``translate_url``, else the planner's server."""
+        um = self._um_for(getattr(self, "_run_lang", "en"))
+        if not um:
+            return self._llm()
+        clients = self.__dict__.setdefault("_um_clients", {})
+        if um not in clients:
+            from ...connect.llm import init_llm_client
+            url = self.cfg.get("understand_url") or self.cfg.get("translate_url") or (self._llm_cfg or {}).get("url")
+            clients[um] = init_llm_client(cfg=dict(self._llm_cfg or {}, model=um, url=url, role="understand"))
+        return clients[um]
+
+    @staticmethod
+    def runaway(d: dict, max_goals) -> str:
+        """Why an understanding is a runaway ("goals": more goals than ``max_goals``; "repeat": three identical goals in a
+        row), else ""."""
+        goals = [g for g in (d.get("goals") if isinstance(d.get("goals"), list) else []) if isinstance(g, dict)]
+        if max_goals and len(goals) > int(max_goals):
+            return "goals"
+        key = [json.dumps(g, sort_keys=True, ensure_ascii=False) for g in goals]
+        if any(key[k] == key[k + 1] == key[k + 2] for k in range(len(key) - 2)):
+            return "repeat"
+        return ""
+
+    def _ask_understand_routed(self, prompt, budget, sample, call, passthrough) -> dict:
+        """The understand call when another model than the planner's reads the request (guarded): no quoting repair, a
+        runaway (no JSON, too many goals, three identical goals in a row) or an unavailable model is answered by ONE call to
+        the planner with the same prompt, with an ``understand_fallback`` event. Raises as ``ask_json`` does."""
+        um = self._um_for(getattr(self, "_run_lang", "en"))
+        schema, opts, reason = self._understand_schema(), dict(self._sampling(sample)), ""
+        if self.cfg.get("understand_max_tokens"):
+            opts["num_predict"] = int(self.cfg["understand_max_tokens"])
+        try:
+            client = self._understand_llm()
+            d = ask_json(client, prompt, schema, budget=budget, retries=0, call=call, passthrough=passthrough,
+                         options=opts)
+            reason = self.runaway(d, self.cfg.get("understand_max_goals"))
+        except LLMBadOutput:
+            reason = "non_json"
+        except LLMUnavailable as e:
+            reason = "unavailable"
+            self._lab("understand_model", unavailable=str(e)[:120])
+        except LLMBudgetExceeded:
+            raise
+        except Exception as e:                        # noqa: BLE001 - a client that cannot even be built: the planner reads it
+            if passthrough is not None and passthrough(e):
+                raise
+            reason = "unavailable"
+        if not reason:
+            self.um_last = {"model": um, "fallback": None}
+            return d
+        self.um_last = {"model": self._planner_model(), "fallback": reason, "tried": um}
+        self.__dict__.setdefault("um_fallbacks", []).append(reason)
+        self.__dict__.setdefault("_um_pending", []).append({"reason": reason, "model": um})
+        return ask_json(self._llm(), prompt, schema, budget=budget, retries=self.cfg["understand_retries"], call=call,
+                        passthrough=passthrough, options=self._sampling(sample))
+
+    def run_blocking(self, task: str, lang: str = "en", plan_only: bool = False, goals=None) -> Iterator[dict]:
+        gen = self._run_blocking(task, lang, plan_only, goals)
+        if not self._um_for(lang):
+            return gen                                        # today's generator, untouched
+        return self._with_understand_events(gen)
+
+    def _with_understand_events(self, gen):
+        """The run's events plus ``understand_fallback{reason}`` (set by ``_ask_understand_routed``), each placed before the
+        event the run yields next."""
+        try:
+            for ev in gen:
+                pend, self._um_pending = self.__dict__.get("_um_pending") or [], []
+                r = getattr(self, "_ctx", None)
+                for f in pend:
+                    yield r.ev("understand_fallback", **f) if r is not None else {"event": "understand_fallback", **f}
+                yield ev
+        finally:
+            gen.close()
+
+    def _kinds(self) -> list:
+        return goal_kinds.kinds_for(self.robot.plan_actions, ("give",) if self.cfg.get("understand_give_kind") else ())
+
+    def _lacking(self) -> list:
+        """The abstract actions the goal tables name that this robot does not have (the missing_action enum)."""
+        have = set(self.robot.plan_actions or ())
+        return [a for a in goal_kinds.domain_actions() if a not in have]
+
+    def _flag_prompt(self, text: str) -> str:
+        """UNDERSTAND_PROMPT with the lines of the switched-on schema flags (none on = the text itself)."""
+        c = self.cfg
+        if c.get("understand_schema_strict"):
+            text = text.replace("for \"say\", \"content\": only the message to pass on, in the user's words.",
+                                "for \"say\", \"content\": only the message to pass on, in the user's words. "
+                                "Write \"said\" and \"content\" in every goal (an empty string when there is none).")
+        if c.get("understand_verify_verdict"):
+            text = text.replace("- question: when ambiguous,",
+                                "- missing_action: for \"infeasible\" the one action this robot lacks (an infeasible answer "
+                                "without one is dropped); else \"\". A task the abilities above cover is never infeasible; "
+                                "an object whose place is unknown is \"clear\" (reason_type \"location_unknown\").\n"
+                                "- question: when ambiguous,")
+        return text
+
+    def _verify_verdict(self, d: dict) -> None:
+        """Option ``understand_verify_verdict``: an "infeasible" verdict stands only when it names, in ``missing_action``, an
+        action this robot lacks; one that does not, on goals the contract covers (no action missing, within the limits), is
+        dropped (status clear). ``reason_type`` "location_unknown" on a reading with goals is "clear" (the plan searches)."""
+        st, rt = d.get("status"), str(d.get("reason_type") or "")
+        if not d.get("goals"):
+            return
+        if rt == "location_unknown" and st in ("infeasible", "ambiguous"):
+            d["status"], d["question"] = "clear", ""
+            self._lab("understand_verify_verdict", part="location_unknown")
+        elif st == "infeasible" and str(d.get("missing_action") or "").strip() not in self._lacking():
+            if not self._cannot_do(d["goals"]) and not self._over_limits(d["goals"]):
+                d["status"], d["question"] = "clear", ""
+                self._lab("understand_verify_verdict", part="dropped")
 
     # "doors" are room doors: an appliance's / cabinet's door is the place itself, which Open covers (a model
     # refused "open the microwave door" as "cannot open doors")
@@ -693,8 +868,19 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
     def _understand_schema(self) -> dict:
         """UNDERSTAND_SCHEMA with the goal kinds this robot may be given (``goals.kinds_for``)."""
         schema = json.loads(json.dumps(UNDERSTAND_SCHEMA))
-        schema["properties"]["goals"]["items"]["properties"]["type"]["enum"] = \
-            goal_kinds.kinds_for(self.robot.plan_actions)
+        schema["properties"]["goals"]["items"]["properties"]["type"]["enum"] = self._kinds()
+        if self.cfg.get("understand_schema_strict"):      # `said` and `content` are written in every goal (empty allowed)
+            schema["properties"]["goals"]["items"]["required"] = ["type", "object", "said", "content", "from", "to"]
+        if self.cfg.get("understand_verify_verdict"):     # an infeasible verdict names the action the robot lacks
+            props = schema["properties"]
+            props["reason_type"]["enum"] = list(props["reason_type"]["enum"]) + ["location_unknown"]
+            new = {}
+            for k, v in props.items():
+                new[k] = v
+                if k == "reason_type":
+                    new["missing_action"] = {"type": "string", "enum": [""] + self._lacking()}
+            schema["properties"] = new
+            schema["required"] = list(schema["required"]) + ["missing_action"]
         if self.cfg.get("understand_goals_first"):       # the goals are written before the verdict (key order binds
             first = ("goals",)                           # where the backend decodes in schema order)
             schema["properties"] = {k: schema["properties"][k] for k in
@@ -1401,8 +1587,9 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         return None
 
     # ── main: the phases of one run ───────────────────────────────────────
-    def run_blocking(self, task: str, lang: str = "en", plan_only: bool = False, goals=None) -> Iterator[dict]:
-        r = self._open_run(task, lang, plan_only, "sage+assist")
+    def _run_blocking(self, task: str, lang: str, plan_only: bool, goals) -> Iterator[dict]:
+        r = self._ctx = self._open_run(task, lang, plan_only, "sage+assist")
+        self.um_fallbacks, self._um_pending, self.um_last = [], [], None     # lab round 7: this run's understand-model log
         r.given_goals = [dict(g) for g in goals if isinstance(g, dict)] if self.cfg.get("accept_goals") and goals else None
         fixed = self._reconcile(r, "start")              # adapter.reconcile + the declared sensors
         from robot_agent.skill_configs import ENV
@@ -1879,6 +2066,9 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         goals, _kinds = goal_fix.kind_from_destination(goals, words_, r.places, "PutIn" in self.robot.plan_actions)
         goals, invented = goal_fix.drop_invented(goals, words_, r.places)    # F4.4
         r.filtered += invented
+        if self.cfg.get("understand_give_kind"):                # a say to the speaker that repeats the request is no message
+            goals, echo = goal_fix.drop_echo_say(goals, r.task, r.places)
+            r.filtered += echo
         goals, rq = goal_fix.relay_check(goals, r.task, r.places)           # F4.6
         if not self.cfg.get("no_shared_listener"):
             goals, shared = goal_fix.shared_listener(goals, words_, r.places)    # a listener is not also the recipient

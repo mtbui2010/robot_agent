@@ -10,6 +10,9 @@ manifest format, the event schema). See `docs/contract.md`.
 - `no_shared_listener`: switches the `shared_listener` rule off.
 - `understand_views`: original and translator pivot read separately; agree = act, differ = one "which one?" question.
 - `understand_goals_first`: schema key order, goals before the verdict.
+- `understand_model` / `understand_url` / `understand_model_lang`: another model (per language, as data) reads the request; the
+  runaway guard `understand_max_tokens` / `understand_max_goals` falls back to the planner (event `understand_fallback`, no
+  quoting repair). Flags `understand_schema_strict`, `understand_give_kind`, `understand_verify_verdict`. All off / empty = unchanged.
 
 ### Generalisation: language and robot facts are data (lab round 6)
 - Language packs `core/planning/lang/<code>.json` (`langdata.py`) hold the word lists (`lexicon` tables, `open_words`, the

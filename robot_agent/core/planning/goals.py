@@ -45,6 +45,13 @@ GOAL_KINDS: dict = {
                         '(or ""), from "", to = the place.'),
 }
 TEMPLATE_KINDS = ("go", "say", "deliver")
+# Optional kinds of the understand schema (option ``understand_give_kind``): not part of the table above, so the default
+# schema and prompt do not change. A ``give`` goal is an ``on`` goal whose destination is a person (``canonical``).
+OPTIONAL_KINDS: dict = {
+    "give": GoalKind("give", ("Pick", "Place"),
+                     '"give" = hand an object to a person: object = the item, from = where it is now or "", to = the '
+                     'person ("me" when the speaker receives it). Not for putting an object on a place.'),
+}
 
 
 def missing_actions(goal: dict, actions: Iterable[str]) -> list:
@@ -64,16 +71,34 @@ def missing_actions(goal: dict, actions: Iterable[str]) -> list:
     return out
 
 
-def kinds_for(actions: Iterable[str]) -> list:
+def kinds_for(actions: Iterable[str], optional: Iterable[str] = ()) -> list:
     """The goal kinds the understand step may use for a robot with `actions`: the manipulation
     kinds always (so a request the robot cannot do is understood, then refused with a reason),
-    the others only when the robot has their actions."""
+    the others only when the robot has their actions. ``optional``: names from ``OPTIONAL_KINDS`` the caller switched on,
+    added (as the manipulation kinds are) at the end."""
     acts = set(actions)
-    return list(MANIPULATION) + [k for k in TEMPLATE_KINDS if not missing_actions({"type": k}, acts)]
+    return list(MANIPULATION) + [k for k in TEMPLATE_KINDS if not missing_actions({"type": k}, acts)] \
+        + [k for k in optional if k in OPTIONAL_KINDS]
+
+
+def domain_actions() -> list:
+    """Every abstract action the goal tables name (sorted): the vocabulary a refusal may say a robot lacks."""
+    out = set()
+    for kind in list(GOAL_KINDS.values()) + list(OPTIONAL_KINDS.values()):
+        for need in kind.needs:
+            out.update(need if isinstance(need, tuple) else (need,))
+    return sorted(out)
+
+
+def canonical(goals: list) -> list:
+    """The goals with the optional kinds mapped onto the table's: ``give`` -> ``on`` (its destination is the person, the
+    path of "bring me X" / a hand-over). Other goals are passed on unchanged."""
+    return [{**g, "type": "on"} if g.get("type") == "give" else g for g in goals]
 
 
 def prompt_lines(kinds: Iterable[str]) -> str:
-    lines = [GOAL_KINDS[k].prompt for k in kinds if k in GOAL_KINDS and GOAL_KINDS[k].prompt]
+    table = {**GOAL_KINDS, **OPTIONAL_KINDS}
+    lines = [table[k].prompt for k in kinds if k in table and table[k].prompt]
     return "".join(f"\n  {line}" for line in lines)
 
 
