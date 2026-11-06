@@ -59,7 +59,7 @@ from . import search as search_belief
 from .search_hooks import SearchHooks
 from .which_one import WhichOne
 from . import goals as goal_kinds
-from . import dialog_converge, exec_integrity, goal_filter, goal_fix, language, persons, plan_tidy, speech
+from . import dialog_converge, dialog_unstick, exec_integrity, goal_filter, goal_fix, language, persons, plan_tidy, speech
 from . import reconcile as sensed
 from .robot import run_skill
 from .verify import symbolic_check, verdict
@@ -82,7 +82,8 @@ ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify
                 "gate_complete", "hazard_rules", "person_seat_m", "person_surface_m", "search_total",
                 "search_legs", "object_check", "detector_miss_rate", "person_goals", "accept_goals",
                 "go_steps", "kind_anchor", "name_canon", "reask_abstain",
-                "exec_integrity", "gate_strict", "endstate_check", "reset_container", "wait_on_robot", "inventory_ask"}
+                "exec_integrity", "gate_strict", "endstate_check", "reset_container", "wait_on_robot", "inventory_ask",
+                "dialog_unstick"}
 _USER_WORDS = {"me", "user", "here", "you", "myself", "person"}
 
 
@@ -488,6 +489,11 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             # ``exec_integrity`` sets the four execution options; ``inventory_ask`` asks which of the robot's own
             # remembered instances (name_canon made general: canonical language and plural folding are pack data)
             **self._r3_cfg(overrides),
+            # solution-lab round 4 (default OFF, dialog_unstick.py): a restatement that gives the refused reading again is
+            # read back once more instead of ending the run; a "not sure" answer to a where-is question is a cue to
+            # search; a question with its own apology is not asked again behind the silence apology
+            "dialog_unstick": str(overrides.get("dialog_unstick", env("ROBOT_AGENT_DIALOG_UNSTICK", str(
+                self._manifest_planner("dialog_unstick", "0"))))).lower() in ("1", "true", "yes", "on"),
         }
 
     def _r3_cfg(self, overrides) -> dict:
@@ -932,6 +938,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
     def _ask_heard(self, question, node, log_fn, lang):
         """Ask; on silence ask again (`silence_retries`). Returns (answer, n_asked)."""
         from ..run_control import ask_person
+        if self.cfg.get("dialog_unstick"):
+            question = speech.calm(question)          # an apology of its own is not stacked behind "I didn't hear you"
         ans, n = ask_person(question, lambda q: self._ask_io(q, node, log_fn, lang),
                             silence_retries=self.cfg["silence_retries"])
         self._answer_source = ans.source
@@ -1617,6 +1625,10 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             u = yield from self._reask_abstention(r, u)
             if u is _STOP:
                 return _STOP
+        if self.cfg.get("dialog_unstick") and not getattr(r, "unsure_reasked", False):
+            u = yield from self._search_when_unsure(r, u)
+            if u is _STOP:
+                return _STOP
         r.goals, q = self._ground_understood(r, u)
         return u, q
 
@@ -1647,6 +1659,33 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
                    reask=True, reask_taken=took)
         return u2 if took else u
 
+    _UNSURE_NOTE = ("Note: the person does not know where the object is. This robot finds objects itself ({find}). Do "
+                    "not ask where it is: give the goals for ALL of the task and leave `from` empty for an object whose "
+                    "place nobody named.")
+
+    def _search_when_unsure(self, r, u):
+        """Option ``dialog_unstick``: the person answered a where-is question with "I don't know" and the model abstains
+        on location again. The robot searches, so the task is understood once more with that stated; the new reading is
+        taken when it has goals, covers the named objects and is not ``unsafe``. Once per run. _STOP when the LLM failed."""
+        finds = sorted(a for a in self.robot.plan_actions if a.lower() == "find")
+        objs = goal_fix.abstains_on_location(u) if finds and r.dialogue and r.dialogue[-1][0] == "user" else None
+        if objs is None or not dialog_unstick.unsure_answer(
+                r.dialogue[-1][1], r.places, getattr(getattr(self.robot, "i18n", None), "phrases", None), r.lang):
+            return u
+        r.unsure_reasked = True
+        try:
+            u2 = self._understand(r.task, r.places, r.memory, r.world, r.dialogue, budget=r.llm_budget,
+                                  note=self._UNSURE_NOTE.format(find=", ".join(finds)))
+        except LLMBudgetExceeded:
+            return u
+        except LLMUnavailable as e:
+            yield self._llm_failed(r, e); return _STOP
+        took = bool(u2["goals"]) and u2["status"] != "unsafe" and goal_fix.covers_objects(u2["goals"], objs)
+        self._lab("dialog_unstick", part="unsure_search", taken=took)
+        yield r.ev("understand_check", issues=["not sure where an object is: the robot searches: " + "; ".join(objs or ["?"])],
+                   reask=True, reask_taken=took)
+        return u2 if took else u
+
     def _refused_reading(self, r):
         """The goals equal a reading the person refused in a read-back: reading it back again only gets the same
         "no". Ask once which part is wrong (a choice); a second time stop. None = read it back as usual."""
@@ -1654,11 +1693,22 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         if repeat_ok or not self._converge() or not r.goals \
                 or dialog_converge.goal_sig(r.goals) not in getattr(r, "rejected", ()):
             return None
+        if self.cfg.get("dialog_unstick") and not getattr(r, "restate_taken", False) and self._restated_by_person(r):
+            # the person said the whole request again and it reads the same: one more read-back, said as such
+            r.restate_taken = r.restate_readback = True
+            self._lab("dialog_unstick", part="restated_reading", confirms=r.confirms)
+            yield r.ev("understand_check", issues=["a restatement gave the refused reading again"], correction="restated")
+            return None
         if not getattr(r, "part_asked", False):
             r.part_asked = True
             yield r.ev("understand_check", issues=["a refused reading again"], correction="repeat")
             return (yield from self._ask_clarify(r, speech.LocalText("q_which_part")))
         yield self._finish(r, "failed", msg="the user did not confirm the task"); return _STOP
+
+    def _restated_by_person(self, r) -> bool:
+        """Did the person's latest answer say the request again (``dialog_unstick.restates``)?"""
+        said = [t for w_, t in r.dialogue if w_ == "user"]
+        return bool(said) and dialog_unstick.restates(self.original or r.task, said[-1])
 
     def _progress(self, r) -> None:
         """A question whose answer gave a goal set not seen before has gained something: its round is given
@@ -1942,7 +1992,11 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         r.readings = list(readings) + [sig]
         rb = self.summary(r.goals, r.places)
         cq = speech.LocalText("q_confirm", {"summary": rb}, text=f"{rb} Is that right?")
-        if unsure:
+        if getattr(r, "restate_readback", False):
+            r.restate_readback = False
+            cq = speech.LocalText("q_confirm_restated", {"summary": rb},
+                                  text=f"I understood it the same way again. {rb} Is that right?")
+        elif unsure:
             cq = speech.LocalText.join(
                 speech.LocalText("rb_unsure", {"issues": speech.LocalText.seq(unsure, "sep_semi")},
                                  text=f"I am not sure I understood ({'; '.join(unsure)})."), cq)

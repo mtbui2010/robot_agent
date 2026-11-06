@@ -1,0 +1,77 @@
+"""Dialogue unstick (solution-lab round 4, option ``dialog_unstick``; default OFF, off = the earlier behaviour byte for byte).
+
+Three ways a dialogue ended or went round in circles although the robot could have gone on (evidence: the cached
+episodes of the 100-task dev slice, clarify / read-back loops that give up):
+
+* **A restatement that gives the refused reading again.** The person said "no" to a read-back, then said the whole
+  request again, and the model read it the same way. Asking "which part is wrong?" and stopping at the next "no" throws
+  away the one new fact: the person's own second wording led to the same reading. The reading is read back once more,
+  said as a confirmation of what they just repeated (``restates`` tells that an answer says the request again).
+* **A "not sure" answer to a where-is question.** The robot can find objects itself; "I don't know where it is" is
+  the cue to search, not to ask the same question again (``unsure_answer``).
+* **Stacked apologies.** A question that opens with its own "Sorry" (``speech.APOLOGY_KEYS``) was asked again after
+  silence as "Sorry, I didn't hear you. Sorry. ...". It is asked again as it is (``speech.calm``).
+
+Language- and robot-agnostic. What counts as "not sure" is data: the core English phrases below, plus the pack's
+i18n key ``answer_unsure`` ({lang: [phrases]}, matched as substrings of the casefolded answer, so a language without
+word breaks works too). Without data for the answer's language, a structural fallback applies: a short answer that
+names no place of the ENV cannot be used as a location, so the robot searches. No benchmark text.
+"""
+
+from __future__ import annotations
+
+import re
+
+# the core's English phrases (a robot pack adds its languages under the i18n key ``answer_unsure``)
+CORE_UNSURE = {"en": ("don't know", "dont know", "do not know", "not sure", "no idea", "dunno", "can't remember",
+                      "cannot remember", "can't say", "no clue")}
+KEY = "answer_unsure"
+MAX_FALLBACK_WORDS = 5
+
+
+def _fold(text) -> str:
+    return " ".join(re.findall(r"[^\W_]+(?:['’][^\W_]+)*", str(text or "").casefold()))
+
+
+def unsure_phrases(phrases, lang: str) -> tuple:
+    """The phrases that say "I don't know" in ``lang``: the core's (English) and the pack's i18n data."""
+    lg = (lang or "en")[:2]
+    by = ((phrases or {}).get(KEY) or {}) if isinstance(phrases, dict) else {}
+    out = list(CORE_UNSURE.get(lg, ())) + [str(p) for p in (by.get(lg) or ()) if str(p).strip()]
+    return tuple(_fold(p) for p in out if _fold(p))
+
+
+def unsure_answer(answer, places, phrases=None, lang: str = "en") -> bool:
+    """Is ``answer`` a "not sure" to a where-question? Data first (core + pack phrases for the language), then the
+    fallback for a language without data: at most ``MAX_FALLBACK_WORDS`` words and no place of the ENV named, so the
+    answer cannot be used as a location. An empty answer is no answer, not a "not sure"."""
+    text = _fold(answer)
+    if not text:
+        return False
+    data = unsure_phrases(phrases, lang)
+    if any(p in text for p in data):
+        return True
+    if len(text.split()) > MAX_FALLBACK_WORDS and len(text) > 24:
+        return False
+    named = [k for k in (places.candidates(str(answer), str(answer)) if places is not None else []) if not str(k).startswith("@")]
+    return not named
+
+
+def _bigrams(text) -> set:
+    t = "".join(re.findall(r"[^\W_]+", str(text or "").casefold()))
+    return {t[i:i + 2] for i in range(len(t) - 1)}
+
+
+def restates(original, answer, frac: float = 0.6) -> bool:
+    """Does ``answer`` say the request ``original`` again? Words of three letters or more when the request has at least
+    four of them, else (a short request, or a script without word breaks) character pairs; ``frac`` of the request's
+    units must come back."""
+    words = lambda t: {w for w in re.findall(r"\w+", str(t or "").lower()) if len(w) > 2}      # noqa: E731
+    base = words(original)
+    if len(base) >= 4:
+        return len(base & words(answer)) >= frac * len(base)
+    b = _bigrams(original)
+    return len(b) >= 6 and len(b & _bigrams(answer)) >= frac * len(b)
+
+
+__all__ = ["CORE_UNSURE", "KEY", "unsure_phrases", "unsure_answer", "restates"]

@@ -46,7 +46,7 @@ _TOP_KEYS = {"robot", "version", "language", "capabilities", "geometry", "planne
 #   accept_goals (0 | 1, default 0: a caller may hand the run its goals, which skips the understand step),
 #   go_steps, kind_anchor, name_canon, reask_abstain (0 | 1, default 0: grounding chain v2 and the abstention re-ask, docs/env.md),
 #   exec_integrity (family) / gate_strict / endstate_check / reset_container / wait_on_robot, inventory_ask (0 | 1, default 0:
-#   solution-lab round 3, docs/env.md), canonical_lang (en | none | <code>: the language of the core's object labels),
+#   solution-lab round 3, docs/env.md), dialog_unstick (0 | 1, default 0: round 4, docs/env.md), canonical_lang (en | none | <code>: the language of the core's object labels),
 #   label_tokens (words | none), recovery.wait ({action, schedule_s: [...]}: the wait skill WAIT_HEALTH may run),
 #   detector_miss_rate (0 to 0.9, default 0.1: the chance that a look at the right place does not see the object;
 #   one miss is then weak evidence and the search looks again at the places the belief still holds probable)
@@ -54,7 +54,7 @@ PLANNER_KEYS = {"seed_memory", "notes", "llm_budget", "translate_model", "transl
                 "search_legs", "search_total", "input_pivot", "detector_miss_rate", "person_goals", "accept_goals",
                 "go_steps", "kind_anchor", "name_canon", "reask_abstain",
                 "exec_integrity", "gate_strict", "endstate_check", "reset_container", "wait_on_robot", "inventory_ask",
-                "canonical_lang", "label_tokens", "recovery"}
+                "dialog_unstick", "canonical_lang", "label_tokens", "recovery"}
 # keys of the optional `limits:` section (what the body can carry; checked against the ENV object estimates)
 LIMIT_KEYS = {"payload_kg", "max_object_size_m"}
 # planner.notes: short lines for the direct planner's prompt (docs/direct_prompt.md)

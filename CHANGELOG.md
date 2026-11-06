@@ -5,6 +5,9 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+### Dialogue unstick (option `dialog_unstick`; env `ROBOT_AGENT_DIALOG_UNSTICK`, manifest `planner.dialog_unstick`; default off)
+- A restatement that reproduces the refused reading is read back once more (`q_confirm_restated`) instead of ending the run; a not-sure answer to a where-is question makes the robot search (one more understand call with its Find stated; "not sure" = core English phrases + pack i18n `answer_unsure` + a structural fallback); a question with its own apology is not prefixed with the silence apology when asked again. Helpers: `core/planning/dialog_unstick.py`, `speech.calm`. Tests: `tests/test_sage_lab_r4_unstick.py`.
+
 ### Lab log (`AssistLoop.lab_log`)
 - Each opt-in lab option (go_steps, kind_anchor, name_canon / inventory_ask, reask_abstain, gate_strict, endstate_check, reset_container, wait_on_robot) appends `{"flag": name, ...}` to `loop.lab_log` when it acts in a run (reset at the start of `run_blocking`). Not part of the event stream; options off never write to it. Tests: `tests/test_sage_lab_log.py`, `tests/test_sage_lab_log_ground.py`.
 

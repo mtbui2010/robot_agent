@@ -37,6 +37,7 @@ CORE_PHRASES = {
     "q_did_you_mean": "Did you mean the {object}?",
     "q_what_bring": "What should I bring?",
     "q_confirm": "{summary} Is that right?",
+    "q_confirm_restated": "I understood it the same way again. {summary} Is that right?",
     "rb_on": "put the {object} on the {place}",
     "rb_on_from": "put the {object} from the {source} on the {place}",
     "sep_then": ", then ",
@@ -72,6 +73,10 @@ CORE_PHRASES = {
     "say_untranslated": "Sorry, I cannot say that in your language right now.",
     "safety_partial": "I won't {what}: {why}.",
 }
+
+# phrases that open with an apology of their own: asked again after silence they are not prefixed with q_silence
+# ("Sorry, I didn't hear you. Sorry. ...", option dialog_unstick). Keys, so it holds in every language of the pack.
+APOLOGY_KEYS = frozenset({"q_repeat", "q_unclear_task", "q_what_do", "q_silence"})
 
 _HANGUL = re.compile(r"[가-힣]")
 _HAN_KANA = re.compile(r"[぀-ヿ㐀-䶿一-鿿]")
@@ -151,6 +156,24 @@ class LocalText(str):
         sep = CORE_PHRASES.get(sep_key, " ")
         out = cls("_seq", {"sep": sep_key}, text=sep.join(str(x) for x in items), parts=tuple(items))
         return out
+
+
+class _Calm(LocalText):
+    """A question that opens with its own apology: asked again after silence it is said as it is."""
+
+    def again(self) -> "LocalText":
+        return self
+
+
+def calm(q):
+    """``q`` as a question that is not prefixed with the silence apology when it is asked again, when it opens with an
+    apology of its own (``APOLOGY_KEYS``); else ``q`` itself."""
+    if not isinstance(q, LocalText) or isinstance(q, _Calm):
+        return q
+    if q.key in APOLOGY_KEYS or any(isinstance(p, LocalText) and p.key in APOLOGY_KEYS for p in q.parts[:1]):
+        out = _Calm.__new__(_Calm, q.key, q.slots, text=str(q), parts=q.parts)
+        return out
+    return q
 
 
 def _fmt(s: str, slots: dict) -> str:
@@ -241,4 +264,4 @@ def guard(text: str, lang: str, keep=()) -> Optional[str]:
     return None
 
 
-__all__ = ["CORE_PHRASES", "LocalText", "say_name", "phrase", "render", "guard"]
+__all__ = ["CORE_PHRASES", "APOLOGY_KEYS", "calm", "LocalText", "say_name", "phrase", "render", "guard"]
