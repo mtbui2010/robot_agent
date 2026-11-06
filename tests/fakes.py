@@ -18,7 +18,7 @@ DATA = Path(__file__).resolve().parent / "data"
 
 
 def load_env() -> dict:
-    """The sim_house ENV (13 places, aliases in ko / vi) used by the SAGE bench."""
+    """The sim_house ENV (13 places, aliases in ko) used by the SAGE bench."""
     return json.loads((DATA / "env_sim_house.json").read_text())
 
 

@@ -43,7 +43,6 @@ _HALLUCINATIONS = {
     '감사합니다', '시청해주셔서감사합니다', '다음영상에서만나요', '구독과좋아요부탁드립니다',
     '구독과좋아요', '시청해주셔서고맙습니다', '좋아요와구독부탁드립니다',
     'thankyou', 'thanksforwatching', 'thankyouforwatching', 'pleasesubscribe', 'bye',
-    'cảmơncácbạnđãxemvideo', 'hẹngặplạicácbạn',
 }
 _NORM = re.compile(r'[\W_]+', re.UNICODE)
 

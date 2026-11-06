@@ -4,7 +4,7 @@ The optional ENV contract (docs/env.md): an entry may carry
 
 * ``person: <id>``: the entry is a person, not a place;
 * ``speaker: true``: the person who gives the task (without it: the person entry whose aliases contain a
-  speaker word, "me" / 나한테 / tôi);
+  speaker word, "me" / 나한테);
 * ``seat: <place key>``: where the person sits or lies, when the robot's perception knows it;
 * ``spot: <place key> | null``: a reachable support surface beside the person; ``null`` = the robot looked and
   found none (a hand-over then); ABSENT = the robot pack has no such perception (the nearest support place
@@ -26,9 +26,9 @@ from typing import Optional
 
 from . import lexicon
 
-# the speaker's own words for themself as a destination (EN, KO, VI), compared after normalising
+# the speaker's own words for themself as a destination (EN, KO), compared after normalising
 SPEAKER_FORMS = {"me", "myself", "here", "user", "the user", "you", "person", "나", "저", "나한테", "저한테", "나에게",
-                 "저에게", "내게", "제게", "여기", "여기로", "tôi", "mình", "đây", "cho tôi"}
+                 "저에게", "내게", "제게", "여기", "여기로"}
 PERSON_SEAT_M = 1.0          # a priori: one arm's length from where the person sits / stands (not tuned)
 
 

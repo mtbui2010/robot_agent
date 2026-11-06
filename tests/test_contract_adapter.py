@@ -73,14 +73,14 @@ def test_bind_uses_build_params_like_closed_loop():
 
 
 def test_manifest_skill_names_and_geometry_win():
-    m = Manifest.from_dict({"robot": "toy", "language": "vi",
+    m = Manifest.from_dict({"robot": "toy", "language": "qq",
                             "geometry": {"arrive_tol_m": 0.5, "reach_m": 0.6},
                             "skills": [{"name": "nav", "action": "MoveTo"}]})
     a = NamemapAdapter(fake_namemap(), m)
     assert a.bind({"action": "MoveTo", "object": "Kitchen"})[0] == "nav"
     assert a.bind({"action": "Find", "object": "Cup"})[0] == "look"         # not in the manifest: namemap's
     assert a.geometry == Geometry(arrive_tol_m=0.5, reach_m=0.6)
-    assert a.i18n.language == "vi"
+    assert a.i18n.language == "qq"
 
 
 def test_hooks_and_fallbacks():

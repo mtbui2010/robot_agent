@@ -6,10 +6,10 @@ ANSWER. The router only decides; :meth:`RunManager.inject` acts.
 Order, cheapest and safest first:
 
   1. STOP / PAUSE / RESUME by keyword, never through an LLM, so a stop is
-     recognised in microseconds and also when the LLM server is down. English,
-     Korean and Vietnamese. A keyword counts only in a short utterance (a
+     recognised in microseconds and also when the LLM server is down. English
+     and Korean. A keyword counts only in a short utterance (a
      command, not a sentence that mentions "stop"), as a whole word, and not
-     under a negation ("don't stop", "멈추지 마", "đừng dừng");
+     under a negation ("don't stop", "멈추지 마");
   2. ANSWER when the run is waiting on a question;
   3. otherwise the injectable LLM classifier, ``llm(text, context) -> str |
      dict | IntentDecision``; when it is missing, raises, or returns something
@@ -53,22 +53,18 @@ class IntentDecision:
 # A control keyword is honoured only in an utterance at most this many words long.
 MAX_CONTROL_WORDS = 4
 
-# Whole phrases (lowercase, accents kept for Vietnamese). After the polite /
+# Whole phrases (lowercase). After the polite /
 # vocative fillers around it are dropped, the utterance must BE the phrase,
 # optionally followed by one of _TAIL ("stop now", "wait a second"). "bus stop",
-# "stop at the door" or "đi thôi" (let's go) are therefore not commands.
+# "stop at the door" are therefore not commands.
 _STOP = ['stop', 'halt', 'abort', 'cancel', 'freeze', 'emergency stop', 'stop the robot',
-         'enough', 'that is enough', "that's enough",
-         'dừng', 'dừng lại', 'ngừng', 'ngừng lại', 'thôi', 'huỷ', 'hủy']
+         'enough', 'that is enough', "that's enough"]
 _PAUSE = ['pause', 'wait', 'hold on', 'hang on', 'one moment', 'just a moment',
-          'wait a moment', 'wait a second', 'wait a minute', 'one second',
-          'tạm dừng', 'chờ', 'chờ đã', 'chờ chút', 'đợi', 'đợi đã', 'đợi chút', 'khoan', 'khoan đã']
-_RESUME = ['resume', 'continue', 'go on', 'carry on', 'keep going', 'go ahead', 'proceed',
-           'tiếp tục', 'làm tiếp', 'tiếp đi', 'đi tiếp']
+          'wait a moment', 'wait a second', 'wait a minute', 'one second']
+_RESUME = ['resume', 'continue', 'go on', 'carry on', 'keep going', 'go ahead', 'proceed']
 _TAIL = {'now', 'it', 'that', 'everything', 'right now', 'immediately', 'moving', 'please',
-         'robot', 'ngay', 'ngay lập tức', 'đi', 'nhé', 'ạ', 'lại'}
-_HEAD = ['please', 'robot', 'ok', 'okay', 'hey', 'oh', 'ah', 'um', 'uh', 'just',
-         'làm ơn', 'robot ơi', 'này', 'ơi']
+         'robot'}
+_HEAD = ['please', 'robot', 'ok', 'okay', 'hey', 'oh', 'ah', 'um', 'uh', 'just']
 # Korean: a token starting with the word ("멈춰요", "멈춰줘") — endings attach.
 _STOP_KO = ['멈춰', '멈춰라', '멈추세요', '그만', '정지', '스톱', '중지', '취소', '서']
 _PAUSE_KO = ['잠깐', '잠시만', '잠시', '기다려', '일시정지', '일시 정지', '멈춰 봐', '멈춰봐']
@@ -76,25 +72,20 @@ _RESUME_KO = ['계속', '다시 시작', '진행해', '재개']
 _FILLER_KO = {'제발', '좀', '이제', '로봇', '야', '로봇아', '빨리', '당장'}
 
 _NEG_EN = {"don't", 'dont', 'do not', 'never', 'not', 'no need to', "doesn't", "won't"}
-_NEG_VI = ['đừng', 'không được', 'không cần', 'chưa']
 _NEG_KO = ['지 마', '지마', '지 말', '지말', '말고', '않']
 
 # Fallback keywords for the LLM kinds (substring, lowercase).
 _FALLBACK = [
     (Intent.STATUS, ['what are you doing', 'status', 'where are you', 'how is it going',
                      'are you done', 'progress', 'what is happening',
-                     '뭐 해', '뭐해', '뭐 하고', '어디야', '어디 있', '다 했', '진행 상황',
-                     'đang làm gì', 'xong chưa', 'đến đâu rồi', 'ở đâu']),
+                     '뭐 해', '뭐해', '뭐 하고', '어디야', '어디 있', '다 했', '진행 상황']),
     (Intent.DROP, ['forget', 'skip', 'never mind the', "don't bring", 'do not bring', 'leave out',
                    'no longer need', "don't need", 'drop the',
-                   '빼', '안 가져와도', '필요 없', '하지 말고',
-                   'bỏ', 'không cần', 'khỏi']),
+                   '빼', '안 가져와도', '필요 없', '하지 말고']),
     (Intent.MODIFY, ['instead', 'actually', 'not the', 'change', 'rather', 'i meant',
-                     '대신', '말고', '아니라', '바꿔',
-                     'thay vì', 'đổi', 'không phải', 'thay bằng']),
+                     '대신', '말고', '아니라', '바꿔']),
     (Intent.ADD, ['also', 'as well', 'too', 'and then', 'after that', 'one more',
-                  '그리고', '도 ', '하나 더', '그 다음',
-                  'thêm', 'nữa', 'sau đó', 'cũng']),
+                  '그리고', '도 ', '하나 더', '그 다음']),
 ]
 
 _PUNCT = re.compile(r"[^\w\s']", re.UNICODE)
@@ -113,8 +104,6 @@ def _hangul(t: str) -> bool:
 def _negated(t: str) -> bool:
     words = t.split()
     if any(w in _NEG_EN for w in words) or 'do not' in t or 'no need' in t:
-        return True
-    if any(n in t for n in _NEG_VI):
         return True
     return _hangul(t) and any(n in t for n in _NEG_KO)
 
@@ -138,7 +127,7 @@ def _match_phrases(t: str, phrases: list[str]) -> Optional[str]:
     for ph in sorted(phrases, key=len, reverse=True):
         if t == ph:
             return ph
-        # "stop now", "stop please", "dừng lại đi nhé": only tail words may follow
+        # "stop now", "stop please": only tail words may follow
         rest = t[len(ph) + 1:].split() if t.startswith(ph + ' ') else None
         if rest and all(w in _TAIL for w in rest):
             return ph
@@ -167,7 +156,7 @@ def _control(t: str) -> Optional[tuple[Intent, str]]:
     if not t or len(t.split()) > MAX_CONTROL_WORDS or _negated(t):
         return None
     t = _strip_fillers(t)
-    # PAUSE before STOP: "tạm dừng" holds "dừng", "일시정지" holds "정지".
+    # PAUSE before STOP: "일시정지" holds "정지".
     for intent, phrases, ko in ((Intent.PAUSE, _PAUSE, _PAUSE_KO),
                                 (Intent.STOP, _STOP, _STOP_KO),
                                 (Intent.RESUME, _RESUME, _RESUME_KO)):

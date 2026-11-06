@@ -14,7 +14,7 @@ remaining gaps are marked **TODO**.
 Decisions (locked): layered verify **incl. VLM (toggleable)** · TaskRecord
 **in-memory + JSONL per run** · voice **backend (robot speaker) + frontend
 (dashboard)** · announce **milestones + failures, language follows `lang`
-(vi/ko/en)**.
+(ko/en)**.
 
 > Constraint preserved: `pyplanner/`, `paper_grace/` untouched; kcare **skills not
 > edited** (skill TTS is *muted via a flag*, not removed); plan-level concerns live
@@ -123,7 +123,7 @@ class RunLogger:
   → the JSONL is a replay of exactly what the UI saw + the final `TaskRecord`
   snapshot (written in the driver's `finally`).
 - In-memory `TaskRecord` is the live object the driver mutates and streams from.
-- Lines are written with `ensure_ascii=False` (so vi/ko text stays readable) and
+- Lines are written with `ensure_ascii=False` (so ko text stays readable) and
   appended under a fresh `open('a')` per line — durable, no buffering surprises.
 - (History/query across runs is out of scope per the chosen option; the per-run
   files already make later indexing trivial if wanted.)
@@ -244,31 +244,30 @@ class Announcer:
     def announce(self, kind: str, **ctx) -> str:   # compute; if speak_backend, speak; return text
 ```
 
-- **Phrasebook** `PHRASES[lang][kind]` ships `{vi, ko, en}` templates. Phrase
+- **Phrasebook** `PHRASES[lang][kind]` ships English templates (a robot adds its languages). Phrase
   **kinds actually present**: `task_start`, `step_start`, `step_success`,
   `step_fail`, `replan`, `done_success`, `done_fail`, `plan_ready`,
   `unsupported`. Templates use `{verb}`, `{object}`, and (for `step_fail`)
   `{reason}`. Examples:
-  - vi: `step_start → "Đang {verb} {object}"`, `step_fail → "Lỗi khi {verb} {object}. {reason}"`, `plan_ready → "Đã tạo kế hoạch"`
   - ko: `step_start → "{object} {verb}를 진행합니다"`, `done_success → "작업을 완료했습니다"`, `plan_ready → "계획을 생성했습니다"`
   - en: `step_start → "I will {verb} {object}"`, `done_fail → "Task failed"`, `plan_ready → "Plan ready"`
 - **Per-action `VERBS` table** (`VERBS[lang][action]`) injects `{verb}` from the
   step's `action` (only when `ctx` doesn't already carry `verb` and does carry
   `action`). Covered actions (with synonyms folded to one verb):
 
-  | action(s) | vi | ko | en |
-  |---|---|---|---|
-  | `MoveTo`/`GoTo`/`Navigate` | đi tới | 이동 | move to |
-  | `Find`/`Search`/`Detect` | tìm | 찾기 | find |
-  | `Pick`/`PickUp`/`Grasp` | lấy | 집기 | pick |
-  | `Place`/`PlaceAt`/`PutDown`/`PutIn` | đặt | 놓기 | place |
-  | `Open` | mở | 열기 | open |
-  | `Close` | đóng | 닫기 | close |
+  | action(s) | ko | en |
+  |---|---|---|
+  | `MoveTo`/`GoTo`/`Navigate` | 이동 | move to |
+  | `Find`/`Search`/`Detect` | 찾기 | find |
+  | `Pick`/`PickUp`/`Grasp` | 집기 | pick |
+  | `Place`/`PlaceAt`/`PutDown`/`PutIn` | 놓기 | place |
+  | `Open` | 열기 | open |
+  | `Close` | 닫기 | close |
 
   Unknown action → `action.lower()` as the verb.
 - **Resolution robustness**: unknown `lang` falls back to `en`; a missing `kind`
   falls back to the `en` template, then to a per-language `_GENERIC` phrase
-  (`vi: "Đang thực hiện"`, `ko: "진행 중입니다"`, `en: "Working"`). Missing format
+  (`en: "Working"`). Missing format
   keys render as `''` via a `_BlankDict` mapping (so a `step_fail` with no
   `reason` still produces a clean phrase); any format error falls back to the raw
   template.
@@ -276,13 +275,13 @@ class Announcer:
   **daemon thread** that calls `robot_agent.utils.text2voice(text, lang=code,
   force=True)` (gTTS). `force=True` bypasses the skill mute flag so the plan-level
   Announcer owns speech. Speech is fully isolated — any exception in the thread is
-  swallowed so it never breaks the control loop. `_GTTS_CODE` maps `{vi, ko, en}`
+  swallowed so it never breaks the control loop. `_GTTS_CODE` maps `{en}`
   → gTTS codes.
 - **Frontend (dashboard speaks)**: `useVoiceOutput({ enabled, lang })`
   ([`robotapp/frontend/lib/useVoiceOutput.ts`](../../robotapp/frontend/lib/useVoiceOutput.ts))
   returns `{ speak, supported }`. `speak(event.say)` builds a
   `SpeechSynthesisUtterance`, sets `utterance.lang` via a local `langToBcp47`
-  (`en→en-US`, `ko→ko-KR`, `vi→vi-VN`), and calls `window.speechSynthesis.speak`.
+  (`en→en-US`, `ko→ko-KR`), and calls `window.speechSynthesis.speak`.
   It no-ops when disabled/unsupported or on empty text, and cancels queued/in-flight
   utterances when toggled off or on unmount. `speak` has stable identity (safe in
   effect deps); latest `enabled`/`lang` are read through refs. **Shipped wiring:**
@@ -310,11 +309,7 @@ def text2voice(text, lang=None, run_thread=True, slow=False, force=False):
   its `finally`; the Announcer passes `force=True` to bypass the flag.
 - **No skill edits** — `text2voice` simply honors the flag.
 
-**TODO (vi backend voice):** `text2voice` currently normalizes language with
-`lang = 'en' if lang != 'ko' else lang`, so a `vi` request **falls back to `en`**
-on the robot speaker even though gTTS supports `vi`. The frontend already speaks
-`vi-VN`. To make backend `vi` real, relax this clamp (and/or add the offline
-**viettts** path). Until then, backend voice is effectively ko/en only.
+Backend voice is ko/en only: `text2voice` falls back to `en` for any other language.
 
 ---
 
@@ -407,7 +402,7 @@ full success best-effort calls `planner.record_episode(task, completed)`.
 ### ✎ MODIFIED
 | File | Change | Status |
 |---|---|---|
-| `robot_agent/robot_agent/utils.py` | `set_skill_tts_muted`/`skill_tts_muted` flag; `text2voice(..., force=False)` honors it | ✅ done (vi clamp = **TODO**, see §4) |
+| `robot_agent/robot_agent/utils.py` | `set_skill_tts_muted`/`skill_tts_muted` flag; `text2voice(..., force=False)` honors it | ✅ done |
 | `robotapp/frontend/app/page.tsx` | wires events into `useVoiceOutput` (`speak(ev.say)`); header **🔊 voice** toggle; `voiceLang` follows run `lang` | ✅ done |
 | `kcare_robot/kcare_robot/configs/grace_namemap.py` | `VLM_ACTIONS` + robot `vlm_hook(step, node)` (Pick = `grasp_succeed`) | ✅ built (true *vision* check = **TODO**, §3) |
 
@@ -426,9 +421,6 @@ edited), `skill_registry.py`, `device_manager.py`.
   a dedicated VLM endpoint? The `vlm_hook` abstracts it; the `Pick` path falls back
   to the `grasp_succeed` depth check, while the other actions are a text-LLM
   heuristic until a true VLM frame check lands (**TODO**).
-- **viettts vs gTTS for `vi`**: gTTS needs internet; viettts (local env) is offline.
-  Backend `vi` is currently clamped to `en` (§4 TODO); frontend already speaks
-  `vi-VN`.
 - **Mute flag scope**: process-global (one run at a time per robot; concurrent
   UI+CLI on one robot is already documented as unsafe).
 - **run_id/timestamps**: generated in the driver (real runtime, `time.strftime` +

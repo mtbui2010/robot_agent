@@ -33,7 +33,7 @@ def test_budget_end_fields():
     d = budget_end(R(), b, "ko")
     assert d["code"] == "budget_exceeded" and d["device"] == "llm" and d["say"] == "중단합니다" and d["localized"]
     assert d["evidence"] == {"llm_calls": 20, "limit": 20}
-    assert budget_end(R(), b, "vi")["localized"] is False
+    assert budget_end(R(), b, "qq")["localized"] is False
 
 
 def test_budget_code_is_typed_and_never_retried():

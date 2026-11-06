@@ -9,7 +9,6 @@ from robot_agent.interact.intent_router import Intent, IntentDecision, IntentRou
     'stop', 'Stop!', 'STOP.', 'please stop', 'stop now', 'stop stop stop', 'robot, stop',
     'halt', 'cancel', 'cancel it', "that's enough",
     '멈춰', '멈춰요', '멈춰!', '그만', '그만해', '정지', '스톱', '로봇 멈춰', '제발 그만',
-    'dừng', 'dừng lại', 'dừng lại đi', 'ngừng lại', 'thôi', 'hủy',
 ])
 def test_stop_keywords(text):
     d = classify(text)
@@ -19,7 +18,7 @@ def test_stop_keywords(text):
 @pytest.mark.parametrize('text', [
     'shop', 'stopwatch', 'top', 'step', 'stomp', 'the bus stop', 'stop at the door',
     'bring the stop sign', "don't stop", 'do not stop', 'never stop',
-    '멈추지 마', '그만두지 말고 계속해', '서울로 가', 'đi thôi', 'đừng dừng', 'dừng ở bếp nhé rồi lấy cốc',
+    '멈추지 마', '그만두지 말고 계속해', '서울로 가',
     'where is the bus stop near the kitchen',
 ])
 def test_stop_like_not_matched(text):
@@ -29,9 +28,9 @@ def test_stop_like_not_matched(text):
 @pytest.mark.parametrize('text,intent', [
     ('pause', Intent.PAUSE), ('wait', Intent.PAUSE), ('hold on', Intent.PAUSE),
     ('wait a second', Intent.PAUSE), ('잠깐', Intent.PAUSE), ('잠깐만요', Intent.PAUSE),
-    ('일시정지', Intent.PAUSE), ('tạm dừng', Intent.PAUSE), ('chờ đã', Intent.PAUSE),
+    ('일시정지', Intent.PAUSE),
     ('resume', Intent.RESUME), ('continue', Intent.RESUME), ('go on', Intent.RESUME),
-    ('keep going', Intent.RESUME), ('계속해', Intent.RESUME), ('tiếp tục', Intent.RESUME),
+    ('keep going', Intent.RESUME), ('계속해', Intent.RESUME),
 ])
 def test_pause_resume_keywords(text, intent):
     d = classify(text)
@@ -48,10 +47,10 @@ def test_answer_when_awaiting():
 
 @pytest.mark.parametrize('text,intent', [
     ('bring the mug instead', Intent.MODIFY), ('actually the blue cup', Intent.MODIFY),
-    ('컵 말고 물병', Intent.MODIFY), ('thay vì cốc lấy chai', Intent.MODIFY),
-    ('also bring water', Intent.ADD), ('lấy thêm nước nữa', Intent.ADD),
-    ('forget the apple', Intent.DROP), ('사과는 빼', Intent.DROP), ('bỏ quả táo', Intent.DROP),
-    ('what are you doing', Intent.STATUS), ('뭐 해?', Intent.STATUS), ('xong chưa', Intent.STATUS),
+    ('컵 말고 물병', Intent.MODIFY),
+    ('also bring water', Intent.ADD),
+    ('forget the apple', Intent.DROP), ('사과는 빼', Intent.DROP),
+    ('what are you doing', Intent.STATUS), ('뭐 해?', Intent.STATUS),
     ('bring me the remote', Intent.NEW),
 ])
 def test_keyword_fallback(text, intent):

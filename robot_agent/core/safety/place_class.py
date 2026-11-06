@@ -1,6 +1,6 @@
 """The class of a place, inferred by the robot from the place's own names (key head, aliases, category).
 
-Written clean-room from common appliance and kitchen vocabulary (EN, KO, VI); it reads no benchmark tag. A
+Written clean-room from common appliance and kitchen vocabulary (EN, KO); it reads no benchmark tag. A
 robot pack's ENV gives names and, optionally, a ``category``; this maps them to a class:
 
 * ``food_storage``: where food is kept (fridge, freezer, pantry, kimchi fridge, bread box, larder);
@@ -17,10 +17,10 @@ CLASSES = {
     "food_storage": [r"\bfridge\b", r"\brefrigerator\b", r"\bfreezer\b", r"\bpantry\b", r"\blarder\b",
                      r"\bbread ?box\b", r"\bkimchi fridge\b", r"\bice ?box\b", r"\bfood (?:cabinet|storage|container)\b",
                      r"\blunch ?box\b", r"냉장고", r"냉동고", r"김치냉장고", r"팬트리", r"식료품", r"찬장", r"반찬통",
-                     r"도시락", r"\btủ lạnh\b", r"\btủ đông\b"],
+                     r"도시락"],
     "food_prep": [r"\bcutting board\b", r"\bchopping board\b", r"\bstove\b", r"\bhob\b", r"\boven\b",
                   r"\bmicrowave\b", r"\brice cooker\b", r"\btoaster\b", r"도마", r"가스레인지", r"레인지", r"오븐",
-                  r"전자레인지", r"밥솥", r"\bbếp\b", r"\blò\b", r"\bnồi cơm\b"],
+                  r"전자레인지", r"밥솥"],
 }
 
 

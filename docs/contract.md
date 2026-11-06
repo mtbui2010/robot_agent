@@ -108,7 +108,7 @@ An adapter may also define (read by `core/planning/robot.py` `RobotView`):
 |---|---|---|
 | `is_openable(key, entry)` | what an ENV place opens (plan checker, step guard) | the ENV entry's `openable` flag |
 | `quiet_skills` | skills whose steps are not narrated (they speak themselves) | `reply`, `ask`, `announce`, `wait` |
-| `i18n.phrases` | `{kind: {lang: text}}` narration (announcer kinds, `verb.<Action>`), `robot_description` (task-understanding prompt), `verify_failed.<Action>` | English / Vietnamese in the core |
+| `i18n.phrases` | `{kind: {lang: text}}` narration (announcer kinds, `verb.<Action>`), `robot_description` (task-understanding prompt), `verify_failed.<Action>` | English in the core |
 | `recovery_overrides` | per-code recovery rules | the table below |
 
 The robot's capabilities (`hands`, `find_reaches`, default one hand and

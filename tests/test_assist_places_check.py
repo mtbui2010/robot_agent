@@ -57,7 +57,6 @@ def test_words(raw, out):
     ("dining table", "", [DT]),
     ("the desk", "", [DS]),
     ("식탁", "", [DT]),                                   # alias (ko)
-    ("bàn ăn", "", [DT]),                                 # alias (vi)
     ("kitchen drawer", "", [DR]),
     ("drawer", "", [DR]),
     ("counter@kitchen", "", ["counter@kitchen"]),         # an ENV key as-is
@@ -80,7 +79,7 @@ def test_places_misc(places):
     assert places.said(DT, "put it on the 식탁") and places.said("shelf@kitchen", "the shelf")
     assert not places.said(DT, "the counter")
     assert places.in_room("bedroom") == ["chest@bedroom", "stool@bedroom"]
-    assert places.describe().splitlines()[0] == "- sofa@living room (also: 소파, ghế sofa)"
+    assert places.describe().splitlines()[0] == "- sofa@living room (also: 소파)"
     assert Places.head("shelf@restroom") == "shelf" and Places.room("shelf@restroom") == "restroom"
     assert Places({"a": {}, "junk": 3}).keys == ["a"]          # non-dict ENV entries are ignored
 
@@ -176,7 +175,7 @@ def test_ground_step(loop, places):
 
 
 @pytest.mark.parametrize("text, out", [
-    ("yes please", (True, "")), ("네", (True, "")), ("vâng", (True, "")),
+    ("yes please", (True, "")), ("네", (True, "")),
     ("no, the restroom one", (False, "the restroom one")), ("아니요", (False, "")),
     ("the restroom one", (False, "the restroom one")), ("", (None, "")),
 ])

@@ -61,11 +61,11 @@ from the CLI) the old process-global flag is used, as before.
 `IntentRouter(llm=None).classify(text, awaiting=None, goal='') -> IntentDecision(intent, text, source,
 confidence, reason)`. The order is:
 
-1. STOP / PAUSE / RESUME by keyword, never through the LLM. English, Korean and Vietnamese. The keyword
+1. STOP / PAUSE / RESUME by keyword, never through the LLM. English and Korean. The keyword
    counts only in a short utterance (at most 4 words) that, after fillers such as "please" or "robot" are
-   dropped, *is* the phrase, optionally followed by tail words ("now", "it", "đi", "nhé"). A negation
-   ("don't", "đừng", "-지 마") blocks it. So "bus stop", "stop at the door", "stopwatch", "đi thôi" and
-   "멈추지 마" are not stops. PAUSE is checked before STOP because "tạm dừng" and "일시정지" contain a
+   dropped, *is* the phrase, optionally followed by tail words ("now", "it"). A negation
+   ("don't", "-지 마") blocks it. So "bus stop", "stop at the door", "stopwatch" and
+   "멈추지 마" are not stops. PAUSE is checked before STOP because "일시정지" contains a
    stop word.
 2. ANSWER when the run is waiting on a question (`Run.ask()` / `Run.set_awaiting()`).
 3. MODIFY / ADD / DROP / NEW / STATUS from the injected `llm(text, {'goal': ...})` callable. It may

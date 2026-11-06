@@ -7,7 +7,7 @@ control loop. The driver attaches the returned text to streamed events as
 phrasebook, shared contract — no duplicated phrasing in TS + Python.
 
 Planner/robot-agnostic; lives under robot_agent.core.planning. The core
-ships English and Vietnamese; a robot adds its languages (and overrides any
+ships English; a robot adds its languages (and overrides any
 phrase) through its adapter's ``i18n``: ``{kind: {lang: template}}`` and
 ``{'verb.<action>': {lang: verb}}``.
 """
@@ -17,25 +17,12 @@ import threading
 
 
 # Map run language -> gTTS voice code (a two-letter code is used as is).
-_GTTS_CODE = {'vi': 'vi', 'en': 'en'}
+_GTTS_CODE = {'en': 'en'}
 
 # Per-action localized verbs (resolved into {verb} when ctx carries 'action').
 # Keys cover both GRACE actions (CamelCase) and the skill names used by the
 # direct/structured path (lowercase, e.g. ``find::apple``).
 VERBS: dict[str, dict[str, str]] = {
-    'vi': {
-        'MoveTo': 'đi tới', 'GoTo': 'đi tới', 'Navigate': 'đi tới',
-        'Find': 'tìm', 'Search': 'tìm', 'Detect': 'tìm',
-        'Pick': 'lấy', 'PickUp': 'lấy', 'Grasp': 'lấy',
-        'Place': 'đặt', 'PlaceAt': 'đặt', 'PutDown': 'đặt', 'PutIn': 'đặt',
-        'Open': 'mở', 'Close': 'đóng',
-        # direct-path skills
-        'navigate': 'đi tới', 'move': 'đi tới', 'moveto': 'đi tới',
-        'find': 'tìm', 'detect': 'tìm', 'detect_object': 'tìm',
-        'pick': 'lấy', 'grasp': 'lấy',
-        'place': 'đặt', 'put': 'đặt',
-        'open': 'mở', 'close': 'đóng',
-    },
     'en': {
         'MoveTo': 'move to', 'GoTo': 'move to', 'Navigate': 'move to',
         'Find': 'find', 'Search': 'find', 'Detect': 'find',
@@ -53,18 +40,6 @@ VERBS: dict[str, dict[str, str]] = {
 
 # Localized templates keyed by [lang][kind]. step_* use {verb} and {object}.
 PHRASES: dict[str, dict[str, str]] = {
-    'vi': {
-        'task_start':   'Bắt đầu nhiệm vụ',
-        'step_start':   'Đang {verb} {object}',
-        'step_success': 'Đã {verb} {object}',
-        'step_fail':    'Lỗi khi {verb} {object}. {reason}',
-        'replan':       'Đang lập lại kế hoạch',
-        'done_success': 'Đã hoàn thành nhiệm vụ',
-        'done_fail':    'Nhiệm vụ thất bại',
-        'plan_ready':   'Đã tạo kế hoạch',
-        'unsupported':  'Hành động không được hỗ trợ',
-        'llm_down':     'Tôi không kết nối được với mô hình ngôn ngữ, nên phải dừng nhiệm vụ này',
-    },
     'en': {
         'task_start':   'Starting the task',
         'step_start':   'I will {verb} {object}',
@@ -80,7 +55,7 @@ PHRASES: dict[str, dict[str, str]] = {
 }
 
 # Last-resort generic phrase per language (when a kind is missing everywhere).
-_GENERIC = {'vi': 'Đang thực hiện', 'en': 'Working'}
+_GENERIC = {'en': 'Working'}
 
 # Skills that speak to the user themselves (HRI reply / ask). Their steps are
 # not narrated: announcing "doing reply" talks over the skill's own question,

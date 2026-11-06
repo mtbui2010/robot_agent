@@ -14,8 +14,7 @@
   "dforward": -0.2,
   "dshift": 0.2,
   "aliases": [
-   "소파",
-   "ghế sofa"
+   "소파"
   ]
  },
  "side table@living room": {
@@ -34,8 +33,7 @@
   "dshift": 0.2,
   "aliases": [
    "사이드 테이블",
-   "소파 옆 테이블",
-   "bàn phụ"
+   "소파 옆 테이블"
   ]
  },
  "desk@study room": {
@@ -53,8 +51,7 @@
   "dforward": -0.2,
   "dshift": 0.2,
   "aliases": [
-   "책상",
-   "bàn làm việc"
+   "책상"
   ]
  },
  "drawer@kitchen": {
@@ -75,8 +72,7 @@
   "handle_height": 0.436,
   "aliases": [
    "drawer@living room",
-   "부엌 서랍",
-   "ngăn kéo bếp"
+   "부엌 서랍"
   ]
  },
  "counter@kitchen": {
@@ -94,8 +90,7 @@
   "dforward": -0.2,
   "dshift": 0.2,
   "aliases": [
-   "조리대",
-   "bàn bếp"
+   "조리대"
   ]
  },
  "shelf@kitchen": {
@@ -113,8 +108,7 @@
   "dforward": -0.2,
   "dshift": 0.2,
   "aliases": [
-   "부엌 선반",
-   "kệ bếp"
+   "부엌 선반"
   ]
  },
  "dining table@kitchen": {
@@ -132,8 +126,7 @@
   "dforward": -0.2,
   "dshift": 0.2,
   "aliases": [
-   "식탁",
-   "bàn ăn"
+   "식탁"
   ]
  },
  "washer@laundry room": {
@@ -151,8 +144,7 @@
   "dforward": -0.2,
   "dshift": 0.2,
   "aliases": [
-   "세탁기",
-   "máy giặt"
+   "세탁기"
   ]
  },
  "chest@bedroom": {
@@ -172,8 +164,7 @@
   "handle": "gold knob",
   "handle_height": 0.6,
   "aliases": [
-   "서랍장",
-   "tủ ngăn kéo"
+   "서랍장"
   ]
  },
  "stool@bedroom": {
@@ -191,8 +182,7 @@
   "dforward": -0.2,
   "dshift": 0.2,
   "aliases": [
-   "스툴",
-   "ghế đẩu"
+   "스툴"
   ]
  },
  "shelf@restroom": {
@@ -210,8 +200,7 @@
   "dforward": -0.2,
   "dshift": 0.2,
   "aliases": [
-   "화장실 선반",
-   "kệ nhà tắm"
+   "화장실 선반"
   ]
  },
  "shoe area@living room": {
@@ -238,8 +227,7 @@
   },
   "source": "map",
   "aliases": [
-   "현관",
-   "lối vào"
+   "현관"
   ]
  }
 }

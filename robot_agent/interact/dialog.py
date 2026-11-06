@@ -25,9 +25,9 @@ import threading
 from dataclasses import dataclass
 from typing import Callable, Optional
 
-# spoken yes / no (ko / vi / en) for read-backs
-YES = re.compile(r"\b(yes|yeah|yep|ok|okay|right|correct|sure|go ahead|네|예|응|맞아|맞아요|좋아|có|đúng|vâng|ừ)\b")
-NO = re.compile(r"\b(no|nope|not|wrong|아니|아니요|아뇨|không|sai)\b")
+# spoken yes / no (ko / en) for read-backs
+YES = re.compile(r"\b(yes|yeah|yep|ok|okay|right|correct|sure|go ahead|네|예|응|맞아|맞아요|좋아)\b")
+NO = re.compile(r"\b(no|nope|not|wrong|아니|아니요|아뇨)\b")
 
 SOURCE_ROBOT = 'robot'          # the robot's own I/O (its microphone, the dashboard listen, its screen)
 SOURCE_TYPED = 'typed'          # an ANSWER injected into the run by any client
@@ -126,7 +126,7 @@ def yes_no(text) -> tuple[Optional[bool], str]:
 # correction ("the one in the restroom") still is one: it has a word that is not a filler or a near-miss.
 _FILLERS = {"uh", "um", "umm", "er", "erm", "ah", "eh", "oh", "hm", "hmm", "mm", "mhm", "huh", "what", "sorry",
             "pardon", "well", "so", "the", "a", "an", "it", "is", "that", "this", "i", "noise", "inaudible", "unk",
-            "음", "어", "아", "에", "으", "흠", "뭐", "글쎄", "ờ", "à", "ừm", "hả"}
+            "음", "어", "아", "에", "으", "흠", "뭐", "글쎄"}
 _YN_WORDS = ("yes", "yeah", "yep", "okay", "no", "nope", "sure")
 _NEAR_KO = {"내", "녜", "네에", "예에", "니", "예스", "노"}
 

@@ -82,14 +82,14 @@ def skill_tts_muted() -> bool:
     return _SKILL_TTS_MUTED
 
 
-_TTS_LANGS = ('ko', 'en', 'vi')
+_TTS_LANGS = ('ko', 'en')
 
 
 def text2voice(text, lang=None, run_thread=True, slow=False, force=False):
     """Speak *text* through the local audio device via gTTS.
 
     Args:
-        lang: ``'ko'`` / ``'en'`` / ``'vi'``; auto-detected from *text* when
+        lang: ``'ko'`` / ``'en'``; auto-detected from *text* when
             None. Anything else is spoken with the English voice.
         run_thread: play in the background instead of blocking the caller.
         force: speak even while skill-level TTS is muted (announcer path).
@@ -330,7 +330,7 @@ def speech_to_text(audio, lang: str | None = None, prompt: str | None = None,
     connection (`stt` names one; default the first), else the legacy ``vlms``
     TCP server (samples only).
 
-    `lang` pins Whisper's language ('ko', 'en', 'vi', ...) instead of letting it
+    `lang` pins Whisper's language ('ko', 'en', ...) instead of letting it
     guess from a few seconds of audio, which it gets wrong on short answers;
     `prompt` lists words to expect. Returns the transcript stripped, '' when
     nothing was recognised.

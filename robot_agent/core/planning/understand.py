@@ -566,10 +566,9 @@ CAPABILITY, SAFETY, DECLINED = "capability", "safety", "declined"
 _MARK = {
     SAFETY: re.compile(r"\b(?:knife|knives|blade|scissors|razor|fire|flame|stove|burn|hot|boil|window|throw|"
                        r"hit|hurt|poison|bleach|medicine|pills?|child|baby|kid|outside)\b|칼|불|창문|던지|가위|독|약|"
-                       r"아이|dao|lửa|cửa sổ|ném|thuốc|trẻ", re.I),
+                       r"아이", re.I),
     CAPABILITY: re.compile(r"\b(?:throw|pour|cook|wash|washer|climb|window|door|tools?|turn on|switch on|lift|"
-                           r"furniture|sofa|bed|leave|outside|clean)\b|던지|붓|요리|씻|세탁|올라|창문|문을|켜|"
-                           r"ném|đổ|nấu|giặt|leo|bật", re.I),
+                           r"furniture|sofa|bed|leave|outside|clean)\b|던지|붓|요리|씻|세탁|올라|창문|문을|켜", re.I),
 }
 
 
