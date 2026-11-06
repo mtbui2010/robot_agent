@@ -47,7 +47,8 @@ def test_option_registered_and_off_by_default(make_assist, monkeypatch, env):
 
 
 # ── G1: a restatement that gives the refused reading again ──
-RESTATE = "I said: please put the red cup from the table onto the shelf in the hall."
+RESTATE = "I said: please put the red cup from the table onto the shelf in the hall, not on the sofa."
+BARE = "I said: please put the red cup from the table onto the shelf in the hall."
 
 
 def test_restated_reading_is_read_back_instead_of_a_stop(make_assist):
@@ -57,6 +58,20 @@ def test_restated_reading_is_read_back_instead_of_a_stop(make_assist):
     assert len(again) == 1 and again[0].endswith("Is that right?")
     assert not any("Which part is not right" in q for q in robot.asked)
     assert loop.lab_log == [{"flag": "dialog_unstick", "part": "restated_reading", "confirms": 1}]
+
+
+def test_a_bare_restatement_is_not_read_back_again(make_assist):
+    # the same words again add nothing a read-back can show: the targeted question comes instead
+    loop, robot, evs = play(make_assist, FakeLLM(default=READ), ["no", BARE, "it is what I said"], confirm_task=True,
+                            dialog_unstick="1")
+    assert not any("same way again" in q for q in robot.asked) and any("Which part is not right" in q for q in robot.asked)
+    assert loop.lab_log == []
+
+
+def test_adds_entity():
+    p = Places(ENV)
+    assert DU.adds_entity("put the cup on the shelf", "no, put it on the sofa", p)
+    assert not DU.adds_entity("put the cup on the shelf", "I said put the cup on the shelf", p)
 
 
 def test_without_the_option_the_same_dialogue_ends(make_assist):
@@ -127,13 +142,20 @@ def test_third_language_with_pack_data(make_assist):
 
 def test_a_named_place_is_an_answer_not_a_not_sure(make_assist):
     places = Places(ENV)
-    assert DU.unsure_answer("I don't know", places) and DU.unsure_answer("không biết", places)
-    assert not DU.unsure_answer("it is on the table", places) and not DU.unsure_answer("bàn", places)
+    assert DU.unsure_answer("I don't know", places) and DU.unsure_answer("không biết", places, None, "vi")
+    assert not DU.unsure_answer("it is on the table", places) and not DU.unsure_answer("bàn", places, None, "vi")
     assert not DU.unsure_answer("", places)
     long = "it should be somewhere around the back of the house near the old garden shed"
     assert not DU.unsure_answer(long, places)                      # a long answer is not guessed at
     assert DU.unsure_phrases({"answer_unsure": {"ko": ["모르겠"]}}, "ko") == ("모르겠",)
     assert DU.unsure_answer("글쎄 모르겠어요", places, {"answer_unsure": {"ko": ["모르겠"]}}, "ko")
+
+
+def test_english_has_data_so_no_structural_guess():
+    places = Places(ENV)
+    for a in ("Yes.", "The red one.", "No."):
+        assert not DU.unsure_answer(a, places, None, "en")
+    assert DU.unsure_answer("Yes.", places, None, "ko") and DU.unsure_answer("네, 맞아요.", places, None, "ko")    # no data: fallback
 
 
 def test_the_model_asking_something_else_is_left_alone(make_assist):

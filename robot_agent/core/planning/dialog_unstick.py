@@ -42,15 +42,15 @@ def unsure_phrases(phrases, lang: str) -> tuple:
 
 
 def unsure_answer(answer, places, phrases=None, lang: str = "en") -> bool:
-    """Is ``answer`` a "not sure" to a where-question? Data first (core + pack phrases for the language), then the
-    fallback for a language without data: at most ``MAX_FALLBACK_WORDS`` words and no place of the ENV named, so the
+    """Is ``answer`` a "not sure" to a where-question? Data decides when the language has any (core + pack phrases); only a
+    language WITHOUT data gets the structural fallback: at most ``MAX_FALLBACK_WORDS`` words and no place of the ENV named, so the
     answer cannot be used as a location. An empty answer is no answer, not a "not sure"."""
     text = _fold(answer)
     if not text:
         return False
     data = unsure_phrases(phrases, lang)
-    if any(p in text for p in data):
-        return True
+    if data:                       # this language has data (English always does): the phrases decide, nothing is guessed
+        return any(p in text for p in data)
     if len(text.split()) > MAX_FALLBACK_WORDS and len(text) > 24:
         return False
     named = [k for k in (places.candidates(str(answer), str(answer)) if places is not None else []) if not str(k).startswith("@")]
@@ -74,4 +74,17 @@ def restates(original, answer, frac: float = 0.6) -> bool:
     return len(b) >= 6 and len(b & _bigrams(answer)) >= frac * len(b)
 
 
-__all__ = ["CORE_UNSURE", "KEY", "unsure_phrases", "unsure_answer", "restates"]
+def _entities(text, places) -> set:
+    from .understand import _norm, place_mentions
+    return {k for m in place_mentions(_norm(str(text or "")), places) for k in m[3]} if places is not None else set()
+
+
+def adds_entity(original, answer, places) -> bool:
+    """Does ``answer`` name an ENV entity (place, container, person) the ``original`` request did not? Only then is a
+    restatement more than the same words again: the person's second wording holds a fact the read-back can show.
+    A bare restatement re-draws the same reading (and, with a noisy channel, the same noise): not a reason to ask
+    the same read-back again."""
+    return bool(_entities(answer, places) - _entities(original, places))
+
+
+__all__ = ["adds_entity", "CORE_UNSURE", "KEY", "unsure_phrases", "unsure_answer", "restates"]

@@ -19,8 +19,8 @@ ENV = {
 PLAN = steps("MoveTo table@kitchen")
 READ = {"status": "clear", "reason": "", "question": "",
         "goals": [{"type": "go", "object": "", "from": "", "to": "table@kitchen"}]}
-TASKS = {"ko": "주방에 있는 식탁으로 이동해 주세요", "vi": "Hãy đi tới cái bàn trong nhà bếp ngay bây giờ"}
-RESTATE = {"ko": "제가 말했잖아요 주방에 있는 식탁으로 이동해 주세요", "vi": "Tôi đã nói Hãy đi tới cái bàn trong nhà bếp ngay bây giờ"}
+TASKS = {"ko": "그쪽으로 바로 이동해 주세요", "vi": "Hãy đi tới đó ngay bây giờ nhé"}
+RESTATE = {"ko": "제가 말했잖아요 그쪽으로 바로 이동해 주세요 식탁으로", "vi": "Tôi đã nói Hãy đi tới đó ngay bây giờ nhé ở cái bàn"}
 PACK = {
     "ko": {"q_confirm": "{summary} 맞나요?", "rb_will": "{what}.", "sep_then": ", 그다음 ", "rb_go": "{place} 쪽으로 갈게요",
            "q_unclear_task": "죄송해요, 잘 이해하지 못했어요. 다른 말로 말씀해 주시겠어요?", "q_which_part": "어느 부분이 맞지 않나요?", "q_what_do": "죄송해요. 그럼 뭘 할까요?",
@@ -113,9 +113,9 @@ def test_readback_fallback_keeps_its_kind_in_the_language_layer():
 
 
 def test_english_run_is_unchanged(make_assist):
-    robot = FakeRobot(ENV, {}, answers=["no", "I said: please go to the table in the kitchen right now"])
+    robot = FakeRobot(ENV, {}, answers=["no", "I said: please go there right now, to the table"])
     loop = make_assist(robot, FakeLLM(default=READ), ScriptedPlanner(PLAN), health_wait_s=0, confirm_task=True, dialog_unstick="1")
-    evs = list(loop.run_blocking("Please go to the table in the kitchen right now"))
+    evs = list(loop.run_blocking("Please go there right now"))
     again = [q for q in robot.asked if "same way again" in q]
     assert len(again) == 1 and again[0].startswith("I understood it the same way again. I will go to") \
         and again[0].endswith("Is that right?")

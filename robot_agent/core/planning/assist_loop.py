@@ -1706,9 +1706,11 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         yield self._finish(r, "failed", msg="the user did not confirm the task"); return _STOP
 
     def _restated_by_person(self, r) -> bool:
-        """Did the person's latest answer say the request again (``dialog_unstick.restates``)?"""
+        """Did the person's latest answer say the request again (``dialog_unstick.restates``) AND add an ENV entity the
+        request did not name (``adds_entity``)? A bare restatement is not read back again: it only re-draws the reading."""
         said = [t for w_, t in r.dialogue if w_ == "user"]
-        return bool(said) and dialog_unstick.restates(self.original or r.task, said[-1])
+        orig = self.original or r.task
+        return bool(said) and dialog_unstick.restates(orig, said[-1]) and dialog_unstick.adds_entity(orig, said[-1], r.places)
 
     def _progress(self, r) -> None:
         """A question whose answer gave a goal set not seen before has gained something: its round is given
