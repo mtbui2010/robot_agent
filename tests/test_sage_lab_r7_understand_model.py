@@ -413,3 +413,21 @@ def test_verdict_off_changes_nothing_in_the_answer(make_assist):
 def done_status(evs):
     last = [e for e in evs if e["event"] in ("done", "error")][-1]
     return last.get("status")
+
+
+# ── a second robot's manifest (base-only delivery robot): the keys are data, nothing about it is built in ──
+def test_a_base_only_manifest_loads_and_a_loop_on_it_keeps_the_defaults(make_assist, monkeypatch):
+    base = pytest.importorskip("base_robot")
+    from robot_agent.contract import load_manifest
+    m = load_manifest("base_robot")
+    assert not set(m.planner or {}) & {"understand_model", "understand_model_lang", "understand_max_tokens"}
+    declared = Manifest.from_dict({"robot": "base_robot", "capabilities": {"base": True, "arms": 0, "hands": []},
+                                   "planner": {**(m.planner or {}), "understand_model": "m2",
+                                               "understand_model_lang": {"zz": "m3"}, "understand_max_goals": 6}})
+    assert declared.planner["understand_model_lang"] == {"zz": "m3"}
+    loop = make_assist(FakeRobot(ENV, {}), FakeLLM(), ScriptedPlanner([]))
+    loop.robot.manifest.planner = dict(declared.planner)
+    loop.cfg.update(loop._um_cfg({}))
+    assert loop._um_for("zz") == "m3" and loop._um_for("en") == "m2" and loop.cfg["understand_max_goals"] == 6
+    # like the manipulation kinds, `give` is offered to a robot without arms (understood, then refused with the missing action)
+    assert "give" in goal_kinds.kinds_for({"MoveTo", "Say"}, ("give",))
