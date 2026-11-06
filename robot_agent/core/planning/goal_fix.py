@@ -374,15 +374,70 @@ def _fold(w: str, rules: list) -> str:
     return w
 
 
-def canon_inventory(goals: list, memory_objects: dict, places, lang: str = "en", rules=None, english: str = "") -> tuple:
+def alias_groups(robot, lang: str) -> list:
+    """[[phrase, alias, ...]] the pack declares for objects of `lang` that are the same thing under two names: its i18n
+    key ``object_aliases`` (``{lang: ["mug|coffee mug", ...]}``, the first phrase is the canonical one). None declared:
+    no aliases."""
+    try:
+        by = (getattr(getattr(robot, "i18n", None), "phrases", None) or {}).get("object_aliases") or {}
+    except Exception:
+        return []
+    return [[_norm(x) for x in str(g).split("|") if _norm(x)] for g in (by.get(lang) or [])
+            if len([x for x in str(g).split("|") if _norm(x)]) > 1]
+
+
+def _alias_form(name: str, groups: list) -> str:
+    """`name` with every alias phrase of a group said as the group's canonical phrase (word boundaries):
+    "blue coffee mug" -> "blue mug" with the group ``mug|coffee mug``."""
+    n = _norm(name)
+    for g in groups:
+        for al in sorted(g[1:], key=len, reverse=True):
+            n = re.sub(rf"(?<!\w){re.escape(al)}(?!\w)", g[0], n)
+    return " ".join(n.split())
+
+
+def instances(names: list, memory_objects: dict, groups=None) -> list:
+    """[[name, ...]] the remembered instances behind `names`: names that refer to the same one are collapsed. Two names
+    are the same instance when their memory records carry the same instance id (``instance`` / ``id`` / ``sighting``
+    of the record: one sighting of one thing), or when they are equal after the pack's object aliases are said as
+    their canonical phrase. Each group lists its names shortest first; the groups keep the order of `names`."""
+    groups = groups or []
+    parent = {n: n for n in names}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+    ident, form = {}, {}
+    for n in names:
+        rec = (memory_objects or {}).get(n) or {}
+        i = next((rec[k] for k in ("instance", "id", "sighting") if rec.get(k) not in (None, "")), None)
+        for key, table in ((("id", str(i)) if i is not None else None, ident), (_alias_form(n, groups), form)):
+            if key is None:
+                continue
+            if key in table:
+                parent[find(n)] = find(table[key])
+            else:
+                table[key] = n
+    out: dict = {}
+    for n in names:
+        out.setdefault(find(n), []).append(n)
+    return [sorted(g, key=lambda n: (len(n), n)) for g in out.values()]
+
+
+def canon_inventory(goals: list, memory_objects: dict, places, lang: str = "en", rules=None, english: str = "",
+                    aliases=None) -> tuple:
     """(goals, which, notes): option ``inventory_ask``, ``name_canon`` made general. The model's object name of a move
     goal that is not in the robot's object memory, a place or a person is matched with the memory's names (equal after
-    plural folding, or the same head word). ONE match renames the goal (the original stays in ``said``); several
-    distinct instances are narrowed first by the user's own words (``english``: their English reading, when there is
-    one; a remembered name's extra words must all be said), and when more than one still fits the person is asked once
-    (``which`` = (said, [names])), wherever the instances are. ``lang`` is the language of the core's object labels
-    (pack data ``planner.canonical_lang``): ``en`` keeps Latin-script names only; ``none`` skips the rule; another code
-    uses the pack's ``plural_fold`` rules (none: exact or head-word match). Robot-side memory only."""
+    plural folding, or the same head word). Instances are counted, not names: names of one remembered instance (the
+    same record id, or related by the pack's ``aliases``, see :func:`instances`) are ONE candidate, listed by its
+    shortest name. ONE instance renames the goal (the original stays in ``said``); several are narrowed first by the
+    user's own words (``english``: their English reading, when there is one; a remembered name's extra words must all
+    be said), and when more than one still fits the person is asked once (``which`` = (said, [one name per
+    instance])), wherever the instances are. ``lang`` is the language of the core's object labels (pack data
+    ``planner.canonical_lang``): ``en`` keeps Latin-script names only; ``none`` skips the rule; another code uses the
+    pack's ``plural_fold`` rules (none: exact or head-word match). Robot-side memory only."""
     if lang in ("none", "off"):
         return goals, None, []
     rules = fold_rules(None, lang) if rules is None else rules
@@ -401,14 +456,18 @@ def canon_inventory(goals: list, memory_objects: dict, places, lang: str = "en",
         so, head = sing(o), sing(o.split()[-1])
         cand = [n for n in names if n not in used and (
             sing(n) == so or sing(n.split()[-1]) == so or (len(o.split()) > 1 and sing(n) == head))]
-        if len(cand) > 1 and said:                                                      # the user's words first
-            fit = [n for n in cand if {sing(t) for t in n.split()} - {so} <= said and {sing(t) for t in n.split()} - {so}]
-            cand = fit if len(fit) == 1 else cand
-        if len(cand) == 1:
-            notes.append(f"object {g.get('object')} -> {cand[0]}: the robot's memory names it so")
-            g = {**g, "object": cand[0], "said": g.get("said") or g.get("object")}
-        elif len(cand) > 1 and which is None:
-            which = (g.get("said") or g.get("object"), sorted(cand, key=lambda n: (len(n), n)))
+        inst = instances(cand, memory_objects, aliases)                                 # one entry per instance
+        if len(inst) > 1 and said:                                                      # the user's words first
+            def fits(grp):
+                return any({sing(t) for t in n.split()} - {so} <= said and {sing(t) for t in n.split()} - {so} for n in grp)
+            fit = [grp for grp in inst if fits(grp)]
+            inst = fit if len(fit) == 1 else inst
+        if len(inst) == 1:
+            best = inst[0][0]
+            notes.append(f"object {g.get('object')} -> {best}: the robot's memory names it so")
+            g = {**g, "object": best, "said": g.get("said") or g.get("object")}
+        elif len(inst) > 1 and which is None:
+            which = (g.get("said") or g.get("object"), sorted((grp[0] for grp in inst), key=lambda n: (len(n), n)))
         out.append(g)
     return out, which, notes
 
@@ -444,5 +503,5 @@ def covers_objects(goals: list, objects: list) -> bool:
     return all(any(key(o)[0] == key(h)[0] or key(o)[1] == key(h)[1] for h in have) for o in objects)
 
 
-__all__ = ["abstains_on_location", "covers_objects", "shared_listener", "go_steps", "kind_anchor_open", "canon_names", "canon_inventory", "fold_rules", "OPEN_WORDS", "says_into", "kind_from_destination", "drop_empty", "drop_invented", "relay_check", "ko_object_issues",
+__all__ = ["abstains_on_location", "covers_objects", "shared_listener", "go_steps", "kind_anchor_open", "canon_names", "canon_inventory", "alias_groups", "instances", "fold_rules", "OPEN_WORDS", "says_into", "kind_from_destination", "drop_empty", "drop_invented", "relay_check", "ko_object_issues",
            "repair_destination", "unsaid_speaker"]

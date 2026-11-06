@@ -5,8 +5,14 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+### Inventory ask counts instances (lab round 3)
+- `canon_inventory` collapses the memory names of one remembered instance (same record `instance` / `id` / `sighting`, or related by the pack's i18n key `object_aliases`, `{lang: ["mug|coffee mug"]}`) into one candidate and lists one name per instance; the which-question declares its kind (`speech.LocalText.ask`, `speech.declared_ask`: `qtype: which_object`, options). Tests: `tests/test_sage_lab_r5_inventory_instances.py`.
+
+### Language layer: a question keeps its kind (lab round 3)
+- The last resort of `LanguageAdapter` for a read-back (`q_confirm`) is never the "say the task in other words" question; a lead part of a joined text that cannot be said is left out instead of becoming that question; Vietnamese lines are recognised as localized at 25 % non-ASCII letters (`language.NON_ASCII_MIN`). Tests: `tests/test_sage_lab_r5_restated_readback.py`.
+
 ### Dialogue unstick (option `dialog_unstick`; env `ROBOT_AGENT_DIALOG_UNSTICK`, manifest `planner.dialog_unstick`; default off)
-- A restatement that reproduces the refused reading is read back once more (`q_confirm_restated`) instead of ending the run; a not-sure answer to a where-is question makes the robot search (one more understand call with its Find stated; "not sure" = core English phrases + pack i18n `answer_unsure` + a structural fallback); a question with its own apology is not prefixed with the silence apology when asked again. Helpers: `core/planning/dialog_unstick.py`, `speech.calm`. Tests: `tests/test_sage_lab_r4_unstick.py`.
+- A restatement that reproduces the refused reading is read back once more (a lead phrase `rb_restated` before the ordinary `q_confirm` read-back, so a pack that has `q_confirm` says the summary without a translator call) instead of ending the run; a not-sure answer to a where-is question makes the robot search (one more understand call with its Find stated; "not sure" = core English phrases + pack i18n `answer_unsure` + a structural fallback); a question with its own apology is not prefixed with the silence apology when asked again. Helpers: `core/planning/dialog_unstick.py`, `speech.calm`. Tests: `tests/test_sage_lab_r4_unstick.py`.
 
 ### Lab log (`AssistLoop.lab_log`)
 - Each opt-in lab option (go_steps, kind_anchor, name_canon / inventory_ask, reask_abstain, gate_strict, endstate_check, reset_container, wait_on_robot) appends `{"flag": name, ...}` to `loop.lab_log` when it acts in a run (reset at the start of `run_blocking`). Not part of the event stream; options off never write to it. Tests: `tests/test_sage_lab_log.py`, `tests/test_sage_lab_log_ground.py`.

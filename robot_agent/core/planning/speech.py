@@ -37,7 +37,7 @@ CORE_PHRASES = {
     "q_did_you_mean": "Did you mean the {object}?",
     "q_what_bring": "What should I bring?",
     "q_confirm": "{summary} Is that right?",
-    "q_confirm_restated": "I understood it the same way again. {summary} Is that right?",
+    "rb_restated": "I understood it the same way again.",
     "rb_on": "put the {object} on the {place}",
     "rb_on_from": "put the {object} from the {source} on the {place}",
     "sep_then": ", then ",
@@ -73,6 +73,21 @@ CORE_PHRASES = {
     "say_untranslated": "Sorry, I cannot say that in your language right now.",
     "safety_partial": "I won't {what}: {why}.",
 }
+
+# A question's kind survives the language layer's last resort (``language._fallback``): a read-back is never replaced by
+# "say the task in other words" (a different question). ``q_confirm_restated`` (a pack's whole-sentence phrase for a
+# restated read-back, if it has one) falls back to the plain ``q_confirm`` with the same summary.
+READBACK_KEYS = frozenset({"q_confirm", "q_confirm_restated"})
+READBACK_PLAIN = {"q_confirm_restated": "q_confirm"}
+
+
+def restated_readback(summary):
+    """The read-back of a reading the user already refused and gave again: a lead sentence (``rb_restated``) said
+    before the ordinary read-back (``q_confirm``) with its summary, so a pack that has ``q_confirm`` says the summary
+    without a translator call, and a language without the lead sentence still says the read-back."""
+    plain = LocalText("q_confirm", {"summary": summary}, text=f"{summary} Is that right?")
+    return LocalText.join(LocalText("rb_restated"), plain)
+
 
 # phrases that open with an apology of their own: asked again after silence they are not prefixed with q_silence
 # ("Sorry, I didn't hear you. Sorry. ...", option dialog_unstick). Keys, so it holds in every language of the pack.
@@ -129,12 +144,15 @@ class LocalText(str):
     key: str = ""
     slots: dict = {}
     parts: tuple = ()
+    ask: Optional[dict] = None           # what a question declares about itself: {"qtype": "which_object", "options": [...]}
 
-    def __new__(cls, key: str, slots: Optional[dict] = None, text: Optional[str] = None, parts=()):
+    def __new__(cls, key: str, slots: Optional[dict] = None, text: Optional[str] = None, parts=(),
+                ask: Optional[dict] = None):
         slots = dict(slots or {})
         en = text if text is not None else _fmt(CORE_PHRASES.get(key, key), slots)
         out = super().__new__(cls, en)
         out.key, out.slots, out.parts = key, slots, tuple(parts)
+        out.ask = dict(ask) if ask else None
         return out
 
     @classmethod
@@ -158,6 +176,19 @@ class LocalText(str):
         return out
 
 
+def declared_ask(question) -> Optional[dict]:
+    """What a question declares about its own kind (``LocalText.ask``: ``qtype`` and its slots), looking at the parts of
+    a joined text left to right; None for a question that declares nothing. A host that reads questions (a simulated
+    user, a log) uses it instead of guessing from the words."""
+    if getattr(question, "ask", None):
+        return dict(question.ask)
+    for p in getattr(question, "parts", ()) or ():
+        d = declared_ask(p)
+        if d:
+            return d
+    return None
+
+
 class _Calm(LocalText):
     """A question that opens with its own apology: asked again after silence it is said as it is."""
 
@@ -171,7 +202,7 @@ def calm(q):
     if not isinstance(q, LocalText) or isinstance(q, _Calm):
         return q
     if q.key in APOLOGY_KEYS or any(isinstance(p, LocalText) and p.key in APOLOGY_KEYS for p in q.parts[:1]):
-        out = _Calm.__new__(_Calm, q.key, q.slots, text=str(q), parts=q.parts)
+        out = _Calm.__new__(_Calm, q.key, q.slots, text=str(q), parts=q.parts, ask=q.ask)
         return out
     return q
 

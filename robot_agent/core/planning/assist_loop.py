@@ -1831,7 +1831,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
                 said, names = which
                 text = " or ".join(f"the {n}" for n in names)
                 q = speech.LocalText("q_which_known", {"object": said, "text": text},
-                                     text=f"I know of more than one {said}: {text}. Which one do you mean?")
+                                     text=f"I know of more than one {said}: {text}. Which one do you mean?",
+                                     ask={"qtype": "which_object", "options": list(names), "obj": said})
         return goals, q
 
     def _canon(self, r, goals) -> tuple:
@@ -1847,7 +1848,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         else:                                          # only a reading the language layer already holds (no new call)
             heard = getattr(self.language, "heard", {}).get(r.task)
             eng = heard.english if heard is not None and heard.trusted else ""
-        return goal_fix.canon_inventory(goals, mem, r.places, lang, goal_fix.fold_rules(self.robot, lang), eng)
+        return goal_fix.canon_inventory(goals, mem, r.places, lang, goal_fix.fold_rules(self.robot, lang), eng,
+                                        goal_fix.alias_groups(self.robot, lang))
 
     def _issues(self, r, goals) -> list:
         """understand.find_issues of `goals` against everything the person said (task, own words, answers)."""
@@ -1994,8 +1996,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         cq = speech.LocalText("q_confirm", {"summary": rb}, text=f"{rb} Is that right?")
         if getattr(r, "restate_readback", False):
             r.restate_readback = False
-            cq = speech.LocalText("q_confirm_restated", {"summary": rb},
-                                  text=f"I understood it the same way again. {rb} Is that right?")
+            cq = speech.restated_readback(rb)
         elif unsure:
             cq = speech.LocalText.join(
                 speech.LocalText("rb_unsure", {"issues": speech.LocalText.seq(unsure, "sep_semi")},

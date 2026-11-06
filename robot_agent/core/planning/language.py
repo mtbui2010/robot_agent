@@ -71,6 +71,11 @@ class Heard:
     lost: list = field(default_factory=list)      # ENV names in the original that the English does not carry
 
 
+# Share of non-ASCII letters that marks a text as written in the language. Vietnamese is a Latin script whose words carry
+# diacritics on about a third of the letters, so 0.5 (right for the non-Latin scripts) never accepts a Vietnamese line.
+NON_ASCII_MIN = {"vi": 0.25}
+
+
 def localized(text, lang: str) -> bool:
     """Is ``text`` already said in ``lang`` (mostly its script)? English is always 'localized'."""
     lg = (lang or "en")[:2]
@@ -82,7 +87,7 @@ def localized(text, lang: str) -> bool:
         return True                                  # digits / punctuation only
     if lg == "ko":
         return sum(1 for c in letters if _HANGUL.match(c)) / len(letters) >= 0.7 and not speech._HAN_KANA.search(t)
-    return sum(1 for c in letters if not c.isascii()) / len(letters) >= 0.5
+    return sum(1 for c in letters if not c.isascii()) / len(letters) >= NON_ASCII_MIN.get(lg, 0.5)
 
 
 class LanguageAdapter:
@@ -222,7 +227,7 @@ class LanguageAdapter:
         del self.spoken[:-400]
         return out
 
-    def _speak(self, text, lang, kind: str):
+    def _speak(self, text, lang, kind: str, strict: bool = False):
         lg = (lang or "en")[:2]
         if not text:
             return text
@@ -241,12 +246,15 @@ class LanguageAdapter:
             return done
         if isinstance(text, speech.LocalText) and text.key == "_join" and len(text.parts) > 1:
             # phrases said one after the other ("Sorry, I didn't hear you." + the question asked before): each part
-            # on its own, so the robot's own phrase needs no call and a part said before is cached
-            return " ".join(str(self._speak(p, lang, kind)) for p in text.parts)
+            # on its own, so the robot's own phrase needs no call and a part said before is cached. A lead part that
+            # cannot be said is left out (the last part, the question, keeps its kind: ``_fallback``).
+            last = len(text.parts) - 1
+            outs = [self._speak(p, lang, kind if i == last else "", strict=i != last) for i, p in enumerate(text.parts)]
+            return " ".join(str(o) for o in outs if o is not None)
         out = None if getattr(self.host, "_llm_unreachable", False) else self._speak_text(str(text), lg)
         if out is not None:
             return out
-        return self._fallback(text, lg, kind)
+        return None if strict else self._fallback(text, lg, kind)
 
     def _speak_text(self, text: str, lg: str) -> Optional[str]:
         """``text`` translated (cache, then the translator with its output guard), None when that fails."""
@@ -275,12 +283,21 @@ class LanguageAdapter:
         return None
 
     def _fallback(self, text, lg: str, kind: str) -> str:
-        """Nothing could say ``text`` in ``lg``: the pack's plain phrase in that language (a question: ask to put
-        the task in other words). The pack has none: the English text, counted in ``_say_not_in_lang``."""
+        """Nothing could say ``text`` in ``lg``: the pack's plain phrase in that language, of the SAME kind. A read-back
+        falls back to the plain read-back phrase (``q_confirm`` with its summary), a question to "say the task in other
+        words", anything else to the plain statement. A read-back never becomes "say the task in other words": that
+        asks for something else. The pack has none: the English text, counted in ``_say_not_in_lang``."""
         h = self.host
-        is_q = kind == "question" or (isinstance(text, speech.LocalText) and text.key.startswith("q_")) \
-            or str(text).rstrip().endswith("?")
-        for key in (("q_unclear_task",) if is_q else ()) + ("say_untranslated",):
+        lt = text if isinstance(text, speech.LocalText) else None
+        readback = lt is not None and lt.key in speech.READBACK_KEYS
+        if readback and lt.key in speech.READBACK_PLAIN:
+            plain = speech.LocalText(speech.READBACK_PLAIN[lt.key], lt.slots)
+            out = speech.render(plain, lg, h.robot, self._places(), slot_tr=self.local_slot)
+            if out is not None and localized(out, lg):
+                self.fallbacks += 1
+                return out
+        is_q = kind == "question" or (lt is not None and lt.key.startswith("q_")) or str(text).rstrip().endswith("?")
+        for key in (("q_unclear_task",) if is_q and not readback else ()) + ("say_untranslated",):
             p = speech.phrase(h.robot, key, lg)
             if p:
                 self.fallbacks += 1
