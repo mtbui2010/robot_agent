@@ -292,16 +292,40 @@ OPEN_WORDS = {      # words that ask to OPEN something (a robot pack extends the
 }
 
 
-def kind_anchor_open(goals: list, text: str, places, robot=None) -> tuple:
+def open_words_for(lang, robot=None) -> list:
+    """The regexes that say "open" in run language ``lang``, or None when there is no data for it. ``lang`` None: the
+    earlier behaviour (every core language plus the pack's words for them). English, Korean and Vietnamese have core
+    words; any other language only has what the pack declares (i18n ``open_words``, read for that language)."""
+    if lang is None:
+        return lexicon.patterns(OPEN_WORDS, robot, "open_words")
+    lg = str(lang or "en")[:2].lower()
+    if lg in OPEN_WORDS:
+        return lexicon.patterns(OPEN_WORDS, robot, "open_words")
+    out = lexicon.patterns({}, robot, "open_words", langs=(lg,))
+    return out or None
+
+
+def kind_anchor_open(goals: list, text: str, places, robot=None, lang=None, english: str = "") -> tuple:
     """(goals, dropped): option ``kind_anchor``. An ``open`` goal the person's words carry no open verb for is an
     end state nobody asked for (the plan gate still opens a container as a STEP when a put-in needs it). Dropped
-    only when another goal remains, and only for a robot with an Open skill (``plan_actions``)."""
+    only when another goal remains, and only for a robot with an Open skill (``plan_actions``).
+
+    ``lang`` is the run language. With no open-word data for it (not en / ko / vi, no pack ``open_words`` for it) the
+    words cannot show that nobody asked, so nothing is dropped, unless ``english`` is a trusted English reading that
+    differs from ``text``: then that reading is checked with the English words. Never a guess."""
     acts = getattr(robot, "plan_actions", None)
     if acts is not None and "Open" not in acts:
         return goals, []
     if not any(g.get("type") != "open" for g in goals) or not any(g.get("type") == "open" for g in goals):
         return goals, []
-    if lexicon.has(OPEN_WORDS, text, robot, "open_words"):
+    pats = open_words_for(lang, robot)
+    if pats is None:
+        eng = str(english or "")
+        if not eng or eng == text or not eng.isascii():
+            return goals, []
+        pats, text = lexicon.patterns(OPEN_WORDS, robot, "open_words", langs=("en",)), eng
+    t = " ".join(str(text or "").lower().split())
+    if any(re.search(p, t) for p in pats):
         return goals, []
     return [g for g in goals if g.get("type") != "open"], [g for g in goals if g.get("type") == "open"]
 

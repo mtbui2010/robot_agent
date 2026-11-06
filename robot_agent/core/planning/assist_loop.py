@@ -1813,7 +1813,9 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
                 self._lab("go_steps", dropped=len(gone))
             r.filtered += gone
         if c.get("kind_anchor"):
-            goals, gone = goal_fix.kind_anchor_open(goals, words_, r.places, self.robot)
+            heard = None if (getattr(r, "lang", None) or "en")[:2] == "en" else getattr(self.language, "heard", {}).get(r.task)
+            goals, gone = goal_fix.kind_anchor_open(goals, words_, r.places, self.robot, getattr(r, "lang", None) or "en",
+                                                    heard.english if heard is not None and heard.trusted else "")
             if gone:
                 self._lab("kind_anchor", dropped=len(gone))
             r.filtered += gone

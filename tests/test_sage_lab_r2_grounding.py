@@ -2,6 +2,7 @@
 abstention re-ask (``reask_abstain``), through the real AssistLoop.run_blocking against the symbolic FakeRobot and a
 scripted LLM. Synthetic ENV and requests written for these tests (no benchmark text). Off = the earlier events, byte for byte."""
 import json
+import types
 import time
 
 import pytest
@@ -134,6 +135,44 @@ def test_kind_anchor_off_keeps_the_open_goal(make_assist, tmp_path):
 def test_open_words(text, asked):
     from robot_agent.core.planning import lexicon
     assert lexicon.has(goal_fix.OPEN_WORDS, text) is asked
+
+
+def _lang_run(make_assist, tmp_path, task, lang, phrases=None):
+    robot = FakeRobot(ENV, dict(HOUSE))
+    loop = make_assist(robot, FakeLLM(default=OPEN_FRIDGE), ScriptedPlanner(steps("MoveTo table@kitchen", "Find cup")),
+                       kind_anchor="1", confirm_task=False)
+    if phrases:
+        loop.robot.i18n.phrases.update(phrases)
+    evs = [{k: v for k, v in e.items() if k not in ("world", "say_audio")} for e in loop.run_blocking(task, lang=lang)]
+    return [g["type"] for g in first_understand(evs)["goals"]]
+
+
+@pytest.mark.parametrize("task,lang", [("Nimm die Tasse vom Tisch ins Regal.", "de"), ("Toma la taza de la mesa al estante.", "es"),
+                                       ("テーブルのカップを棚に置いて。", "ja")])
+def test_kind_anchor_does_nothing_for_a_language_without_open_words(make_assist, tmp_path, task, lang):
+    assert "open" in _lang_run(make_assist, tmp_path, task, lang)
+
+
+def test_kind_anchor_reads_the_packs_open_words_for_the_run_language(make_assist, tmp_path):
+    pack = {"open_words": {"ja": "開け"}}
+    assert "open" in _lang_run(make_assist, tmp_path, "冷蔵庫を開けて、テーブルのカップを棚に置いて。", "ja", pack)
+    assert "open" not in _lang_run(make_assist, tmp_path, "テーブルのカップを棚に置いて。", "ja", pack)
+    assert "open" in _lang_run(make_assist, tmp_path, "Nimm die Tasse vom Tisch ins Regal.", "de", pack)    # no German data
+
+
+def test_open_words_for():
+    assert goal_fix.open_words_for("de") is None and goal_fix.open_words_for("ja") is None
+    assert goal_fix.open_words_for("en") and goal_fix.open_words_for("ko") and goal_fix.open_words_for(None)
+    robot = types.SimpleNamespace(i18n=types.SimpleNamespace(phrases={"open_words": {"de": "öffne|mach auf"}}))
+    assert len(goal_fix.open_words_for("de", robot)) == 2
+
+
+def test_kind_anchor_uses_a_trusted_english_reading_for_an_unlisted_language():
+    g = OPEN_FRIDGE["goals"]
+    assert goal_fix.kind_anchor_open(g, "Mach den Kuehlschrank auf.", Places(ENV), None, "de", "Open the fridge.")[1] == []
+    assert len(goal_fix.kind_anchor_open(g, "Stell die Tasse hin.", Places(ENV), None, "de", "Put the cup away.")[1]) == 1
+    assert goal_fix.kind_anchor_open(g, "Stell die Tasse hin.", Places(ENV), None, "de", "")[1] == []
+    assert goal_fix.kind_anchor_open(g, "Stell die Tasse hin.", Places(ENV), None, "de", "Stell die Tasse hin.")[1] == []
 
 
 def test_kind_anchor_lone_open_goal_is_kept():
