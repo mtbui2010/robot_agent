@@ -45,11 +45,16 @@ _TOP_KEYS = {"robot", "version", "language", "capabilities", "geometry", "planne
 #   person_goals (0 | 1, default 0: mixed go / say requests planned with the loop's own steps for the template goals),
 #   accept_goals (0 | 1, default 0: a caller may hand the run its goals, which skips the understand step),
 #   go_steps, kind_anchor, name_canon, reask_abstain (0 | 1, default 0: grounding chain v2 and the abstention re-ask, docs/env.md),
+#   exec_integrity (family) / gate_strict / endstate_check / reset_container / wait_on_robot, inventory_ask (0 | 1, default 0:
+#   solution-lab round 3, docs/env.md), canonical_lang (en | none | <code>: the language of the core's object labels),
+#   label_tokens (words | none), recovery.wait ({action, schedule_s: [...]}: the wait skill WAIT_HEALTH may run),
 #   detector_miss_rate (0 to 0.9, default 0.1: the chance that a look at the right place does not see the object;
 #   one miss is then weak evidence and the search looks again at the places the belief still holds probable)
 PLANNER_KEYS = {"seed_memory", "notes", "llm_budget", "translate_model", "translate_url", "translate_budget",
                 "search_legs", "search_total", "input_pivot", "detector_miss_rate", "person_goals", "accept_goals",
-                "go_steps", "kind_anchor", "name_canon", "reask_abstain"}
+                "go_steps", "kind_anchor", "name_canon", "reask_abstain",
+                "exec_integrity", "gate_strict", "endstate_check", "reset_container", "wait_on_robot", "inventory_ask",
+                "canonical_lang", "label_tokens", "recovery"}
 # keys of the optional `limits:` section (what the body can carry; checked against the ENV object estimates)
 LIMIT_KEYS = {"payload_kg", "max_object_size_m"}
 # planner.notes: short lines for the direct planner's prompt (docs/direct_prompt.md)
@@ -328,6 +333,19 @@ def _planner(v, errs) -> dict:
         x = v.get(k)
         if x is not None and (not isinstance(x, str) or not x.strip()):
             errs.append(f"planner.{k}: must be a non-empty string")
+    for k in ("canonical_lang", "label_tokens"):
+        x = v.get(k)
+        if x is not None and (not isinstance(x, str) or not x.strip()):
+            errs.append(f"planner.{k}: must be a non-empty string")
+    w = (v.get("recovery") or {}).get("wait") if isinstance(v.get("recovery"), dict) else None
+    if v.get("recovery") is not None and not isinstance(v.get("recovery"), dict):
+        errs.append("planner.recovery: must be a mapping (wait: {action, schedule_s})")
+    elif w is not None:
+        sched = w.get("schedule_s") if isinstance(w, dict) else None
+        if not (isinstance(w, dict) and isinstance(w.get("action"), str) and w["action"].strip()
+                and isinstance(sched, list) and sched
+                and all(isinstance(x, (int, float)) and not isinstance(x, bool) and x > 0 for x in sched)):
+            errs.append("planner.recovery.wait: must be {action: <name>, schedule_s: [seconds > 0, ...]}")
     notes = v.get("notes")
     if notes is not None:
         if not isinstance(notes, list):

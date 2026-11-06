@@ -59,7 +59,7 @@ from . import search as search_belief
 from .search_hooks import SearchHooks
 from .which_one import WhichOne
 from . import goals as goal_kinds
-from . import dialog_converge, goal_filter, goal_fix, language, persons, plan_tidy, speech
+from . import dialog_converge, exec_integrity, goal_filter, goal_fix, language, persons, plan_tidy, speech
 from . import reconcile as sensed
 from .robot import run_skill
 from .verify import symbolic_check, verdict
@@ -81,7 +81,8 @@ ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify
                 "goal_filter", "sage_subgoals", "translate_model", "translate_url", "translate_budget",
                 "gate_complete", "hazard_rules", "person_seat_m", "person_surface_m", "search_total",
                 "search_legs", "object_check", "detector_miss_rate", "person_goals", "accept_goals",
-                "go_steps", "kind_anchor", "name_canon", "reask_abstain"}
+                "go_steps", "kind_anchor", "name_canon", "reask_abstain",
+                "exec_integrity", "gate_strict", "endstate_check", "reset_container", "wait_on_robot", "inventory_ask"}
 _USER_WORDS = {"me", "user", "here", "you", "myself", "person"}
 
 
@@ -483,7 +484,18 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             #   reask_abstain a goal-less "where is it" abstention is understood once more with the robot's Find stated
             **{k: str(overrides.get(k, env("ROBOT_AGENT_" + k.upper(), str(self._manifest_planner(k, "0"))))).lower()
                in ("1", "true", "yes", "on") for k in ("go_steps", "kind_anchor", "name_canon", "reask_abstain")},
+            # solution-lab round 3 (all default OFF; off = the earlier behaviour byte for byte), exec_integrity.py:
+            # ``exec_integrity`` sets the four execution options; ``inventory_ask`` asks which of the robot's own
+            # remembered instances (name_canon made general: canonical language and plural folding are pack data)
+            **self._r3_cfg(overrides),
         }
+
+    def _r3_cfg(self, overrides) -> dict:
+        def on(k):
+            return str(overrides.get(k, os.environ.get("ROBOT_AGENT_" + k.upper(), str(self._manifest_planner(k, "0"))))
+                       ).lower() in ("1", "true", "yes", "on")
+        fam = on("exec_integrity")
+        return {**{k: fam or on(k) for k in exec_integrity.FLAGS}, "inventory_ask": on("inventory_ask")}
 
     def _converge(self) -> bool:
         return str(self.cfg.get("dialog_converge", "1")).lower() not in ("0", "false", "no", "off")
@@ -992,6 +1004,9 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             for g in goals:
                 if st["object"] and st["object"] != g["object"] and st["object"] in g["object"].split():
                     st["object"] = g["object"]
+            if getattr(self, "cfg", {}).get("gate_strict"):           # round 3: a token subset of exactly one goal object (any length)
+                st["object"] = exec_integrity.bind_subset(st["object"], [g.get("object") for g in goals],
+                                                          str(self._manifest_planner("label_tokens", "words")))
         return st
 
     def _check(self, steps, world, places, goals):
@@ -1734,8 +1749,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         if c.get("kind_anchor"):
             goals, gone = goal_fix.kind_anchor_open(goals, words_, r.places, self.robot)
             r.filtered += gone
-        if c.get("name_canon"):
-            goals, which, _notes = goal_fix.canon_names(goals, r.memory.data.get("objects"), r.places)
+        if c.get("name_canon") or c.get("inventory_ask"):
+            goals, which, _notes = self._canon(r, goals)
             for g in goals:                                   # a renamed object: the sighting names where it is
                 if g.get("said") and g.get("type") in ("on", "in") and not g.get("from") and not g.get("from_any"):
                     g["from"] = self._remembered(r.memory, g["object"]) or ""
@@ -1747,6 +1762,21 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
                 q = speech.LocalText("q_which_known", {"object": said, "text": text},
                                      text=f"I know of more than one {said}: {text}. Which one do you mean?")
         return goals, q
+
+    def _canon(self, r, goals) -> tuple:
+        """name_canon (English labels, place groups) or, with ``inventory_ask``, its general form: the pack's
+        ``planner.canonical_lang`` and ``plural_fold`` data, the user's words first, then one closed which-question."""
+        mem = r.memory.data.get("objects")
+        if not self.cfg.get("inventory_ask"):
+            return goal_fix.canon_names(goals, mem, r.places)
+        lang = str(self._manifest_planner("canonical_lang", "en")).lower()
+        eng = ""
+        if (getattr(r, "lang", None) or "en")[:2] == "en":
+            eng = " ".join([r.task] + [t for w_, t in r.dialogue if w_ == "user"])
+        else:                                          # only a reading the language layer already holds (no new call)
+            heard = getattr(self.language, "heard", {}).get(r.task)
+            eng = heard.english if heard is not None and heard.trusted else ""
+        return goal_fix.canon_inventory(goals, mem, r.places, lang, goal_fix.fold_rules(self.robot, lang), eng)
 
     def _issues(self, r, goals) -> list:
         """understand.find_issues of `goals` against everything the person said (task, own words, answers)."""
@@ -2225,6 +2255,38 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             return False
 
     def _gate_repair(self, r) -> list:
+        """The gate's symbolic repair of r.steps (plan_repair.py). Option ``gate_strict`` (round 3): when today's
+        repair leaves a critical finding, repeat it from the same start with a per-goal score and keep that result
+        only if it certifies the plan; otherwise today's result stands."""
+        if not self.cfg.get("gate_strict"):
+            return self._gate_repair_run(r)
+        from .base import subgoal_repair
+        rep = subgoal_repair(r.planner)
+        try:
+            blocks = rep.blocks() if rep is not None else None
+        except Exception:
+            blocks = None
+        snap = lambda: (list(r.steps), [list(b.steps) for b in (blocks or [])], dict(getattr(r, "repaired_by_op", {})))  # noqa: E731
+        pre = snap()
+        notes = self._gate_repair_run(r)
+        if not self._blocking(r, r.steps):
+            return notes
+        first = snap()
+        self._restore_repair(r, blocks, pre)
+        notes2 = self._gate_repair_run(r, per_goal=True)
+        if not self._blocking(r, r.steps):
+            return notes2 + ["per-goal repair certified the plan"]
+        self._restore_repair(r, blocks, first)
+        return notes
+
+    @staticmethod
+    def _restore_repair(r, blocks, sn) -> None:
+        r.steps = list(sn[0])
+        for b, st in zip(blocks or [], sn[1]):
+            b.steps = list(st)
+        r.repaired_by_op = dict(sn[2])
+
+    def _gate_repair_run(self, r, per_goal: bool = False) -> list:
         """The gate's symbolic repair of r.steps (plan_repair.py): operators proved by the checker, on the
         planner's sub-goal blocks when it has them. Returns the edit notes; counts go to r.repaired_by_op."""
         from . import plan_repair
@@ -2236,7 +2298,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             blocks = None
         caps = self.robot.model_capabilities()
         ground = lambda s: self._ground_all(r, s)                                        # noqa: E731
-        score = lambda s: len(self._blocking(r, self._tidy(r, ground(s))[0]))           # noqa: E731
+        score = lambda s: len(self._blocking(r, self._tidy(r, ground(s))[0], per_goal))  # noqa: E731
         steps, notes, counts = plan_repair.repair(
             r.steps, score, r.world, r.places, r.goals, caps=caps, actions=self.robot.plan_actions,
             release=sorted(caps.release_actions), hand_goal=lambda g: bool(g.get("hand")),
@@ -2283,13 +2345,17 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
                    openable=r.places.openable, containers=r.places.openable)
         return plan_tidy.tidy(steps, r.world, r.goals, self._reaches, ctx)
 
-    def _blocking(self, r, steps) -> list:
+    def _blocking(self, r, steps, per_goal: bool = False) -> list:
         """The findings that keep a plan from running (the certified gate): the checker's critical
-        ones on the plan as written, and steps the robot cannot bind."""
+        ones on the plan as written, and steps the robot cannot bind. ``per_goal`` (round 3, the repair's score
+        only): the joined 'does not achieve' finding counts once per unmet goal."""
         unt = self._untouched(r.goals, steps)
         goals = [g for g in r.goals if g not in unt] if unt and len(unt) < len(r.goals) else r.goals
         probs = [p_[1] for p_ in self._check(steps, r.world, r.places, goals) if p_[2]] if steps else []
-        return list(dict.fromkeys(probs + self._hard_findings(r, steps)))
+        out = list(dict.fromkeys(probs + self._hard_findings(r, steps)))
+        if per_goal and any(f.startswith(exec_integrity.MISSING_PREFIX) for f in out):
+            out = exec_integrity.per_goal_findings(out, len(self._missing(steps, r.world, goals)))
+        return out
 
     @staticmethod
     def _untouched(goals, steps) -> list:
@@ -2679,8 +2745,25 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
                               "evidence": {"goal": r.goal_checks[-1]["goal"], "observed": ev_}})
         last = r.goals[-1] if r.goals else {}
         if last.get("type") == "go" and last.get("to") and r.world.arrived != last["to"]:
-            self._look(r, {"action": "MoveTo", "object": last["to"]})    # back where the task ends ("go back and charge")
+            if self.cfg.get("endstate_check"):                          # round 3: a checked step, not a hope
+                unmet += self._return_to_end(r, last["to"])
+            else:
+                self._look(r, {"action": "MoveTo", "object": last["to"]})    # back where the task ends ("go back and charge")
         return unmet
+
+    def _return_to_end(self, r, place, tries: int = 3) -> list:
+        """Option ``endstate_check``: the check tour's return to the task's last ``go`` place, retried; if it still
+        fails the goal is unmet (one failure entry, coded by the adapter) and the run does not say done."""
+        res = None
+        for _ in range(tries):
+            res, _sk = self._look(r, {"action": "MoveTo", "object": place})
+            if res is not None and res.ok:
+                return []
+        if res is None:
+            return []                                                   # no MoveTo skill: nothing to check with
+        code = r.robot.failure_code(res, res.msg)
+        return [{"code": code.value, "device": res.device,
+                 "evidence": {"goal": f"go {place}", "observed": f"could not get back to {place}: {res.msg}"}}]
 
     def _observe_goal(self, r, g):
         """Look at one goal: (True | False | None = cannot tell, evidence text, device)."""
@@ -2929,6 +3012,10 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         if st.get("verify_goal"):
             r.world.found = None; r.i += 1              # not there: the goal does not hold yet (replan at the end)
             return _NEXT
+        if self.cfg.get("reset_container") and a == "PutIn":
+            out = yield from self._reset_container(r, st, res, reason)
+            if out is not None:
+                return out
         # ── stop at once: the recovery policy does not retry it (a skill bug, an e-stop), or the same
         # failure twice ──
         code = r.robot.failure_code(res, reason)
@@ -2962,6 +3049,25 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         # ── a new plan: the planner's suffix repair ──
         return (yield from self._replan_or_fail(r, st, f"{reason}{extra}",
                                                 f"{a} {o} failed: {reason} (replan budget used)"))
+
+    def _reset_container(self, r, st, res, reason):
+        """Option ``reset_container``: a PutIn that fails BLOCKED into a container the belief holds open, once per
+        container (and only for a robot whose action model has Close and Open): put the held object down where the
+        robot's own completed steps picked it, Close and Open the container, fetch it again, PutIn again. _NEXT or None."""
+        c, held = st["object"], r.world.holding
+        done = r.__dict__.setdefault("reset_done", set())
+        code = r.robot.failure_code(res, reason)
+        if (code is not FailureCode.BLOCKED or not held or c in done or c not in r.world.opened
+                or not {"Close", "Open"} <= set(self.robot.plan_actions)):
+            return None
+        src = exec_integrity.pick_source(r.completed, c, r.places.openable)
+        if not src:
+            return None
+        done.add(c)
+        self._note_failure(r, st, code, res.device, reason)
+        r.steps[r.i:r.i] = exec_integrity.reset_steps(c, held, src)
+        yield r.ev("recover", at_index=r.i, kind="reset_container", msg=f"{c}: put {held} down at {src}, close, open, again")
+        return _NEXT
 
     def _apply_policy(self, r, st, skill, code, rule, reason, device):
         """The recovery policy's own actions (contract.recovery, by FailureCode) before the per-action
@@ -2997,9 +3103,34 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
                    msg=f"{skill} could not run ({code.value}); waited for the robot, trying again")
         return _NEXT                                      # the same step again, in place (r.i unchanged)
 
+    def _wait_on_robot(self, r):
+        """Option ``wait_on_robot``: the pack's declared wait action (manifest planner.recovery.wait) runs once per
+        schedule entry, health() read after each; None when the pack declares none (today's poll then)."""
+        act, sched = exec_integrity.wait_schedule((self._manifest_planner("recovery", None) or {}).get("wait"))
+        if not act:
+            return None
+        try:
+            if self._bind({"action": act, "object": f"{sched[0]:g}"}, r.world) is None:
+                return None
+        except Unbindable:
+            return None
+        h = r.robot.health(r.node)
+        for secs in sched:
+            if h.get("ok") is True:
+                break
+            skill, params = self._bind({"action": act, "object": f"{secs:g}"}, r.world)
+            run_skill(self.sr, skill, params, r.node, log_fn=self._log_fn(r.i))
+            h = r.robot.health(r.node)
+        return h
+
     def _wait_health(self, r, wait_s):
         """The adapter's health(), polled up to `wait_s` until it reads ok (a cancel ends the wait)."""
         from ..run_control import cancel_requested
+        if self.cfg.get("wait_on_robot"):
+            waited = self._wait_on_robot(r)
+            if waited is not None:
+                yield r.ev("health", health=waited)
+                return waited
         t_end = time.time() + max(0.0, wait_s)
         while True:
             h = r.robot.health(r.node)

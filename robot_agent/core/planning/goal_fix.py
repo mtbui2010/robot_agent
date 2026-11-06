@@ -353,6 +353,66 @@ def canon_names(goals: list, memory_objects: dict, places) -> tuple:
     return out, which, notes
 
 
+def fold_rules(robot, lang: str) -> list:
+    """[(suffix, replacement)] the pack declares to fold a plural onto a singular label of `lang`: its i18n key
+    ``plural_fold`` (``"ies>y|ches>ch|s>"``). English has the core default. None declared: no folding."""
+    if lang == "en":
+        return [("ies", "y"), ("ches", "ch"), ("shes", "sh"), ("ses", "s"), ("xes", "x"), ("s", "")]
+    try:
+        phrases = (getattr(getattr(robot, "i18n", None), "phrases", None) or {}).get("plural_fold") or {}
+    except Exception:
+        return []
+    rules = [tuple(x.split(">", 1)) for x in str(phrases.get(lang) or "").split("|") if ">" in x]
+    return [(a, b) for a, b in rules if a]
+
+
+def _fold(w: str, rules: list) -> str:
+    w = w.strip()
+    for suf, rep in rules:
+        if w.endswith(suf) and len(w) > len(suf) + 2:
+            return w[: -len(suf)] + rep
+    return w
+
+
+def canon_inventory(goals: list, memory_objects: dict, places, lang: str = "en", rules=None, english: str = "") -> tuple:
+    """(goals, which, notes): option ``inventory_ask``, ``name_canon`` made general. The model's object name of a move
+    goal that is not in the robot's object memory, a place or a person is matched with the memory's names (equal after
+    plural folding, or the same head word). ONE match renames the goal (the original stays in ``said``); several
+    distinct instances are narrowed first by the user's own words (``english``: their English reading, when there is
+    one; a remembered name's extra words must all be said), and when more than one still fits the person is asked once
+    (``which`` = (said, [names])), wherever the instances are. ``lang`` is the language of the core's object labels
+    (pack data ``planner.canonical_lang``): ``en`` keeps Latin-script names only; ``none`` skips the rule; another code
+    uses the pack's ``plural_fold`` rules (none: exact or head-word match). Robot-side memory only."""
+    if lang in ("none", "off"):
+        return goals, None, []
+    rules = fold_rules(None, lang) if rules is None else rules
+    names = [n for n in (memory_objects or {}) if n and (lang != "en" or str(n).isascii())]
+    if not names:
+        return goals, None, []
+    sing = lambda w: _fold(w, rules)                                                    # noqa: E731
+    said = {sing(t) for t in _norm(english).split()}
+    used = {_plain(g.get("object")) for g in goals if _plain(g.get("object")) in names}
+    out, notes, which = [], [], None
+    for g in goals:
+        o = _plain(g.get("object"))
+        if g.get("type") not in ("on", "in") or not o or o in names or places.env.get(o) or places.candidates(o, ""):
+            out.append(g)
+            continue
+        so, head = sing(o), sing(o.split()[-1])
+        cand = [n for n in names if n not in used and (
+            sing(n) == so or sing(n.split()[-1]) == so or (len(o.split()) > 1 and sing(n) == head))]
+        if len(cand) > 1 and said:                                                      # the user's words first
+            fit = [n for n in cand if {sing(t) for t in n.split()} - {so} <= said and {sing(t) for t in n.split()} - {so}]
+            cand = fit if len(fit) == 1 else cand
+        if len(cand) == 1:
+            notes.append(f"object {g.get('object')} -> {cand[0]}: the robot's memory names it so")
+            g = {**g, "object": cand[0], "said": g.get("said") or g.get("object")}
+        elif len(cand) > 1 and which is None:
+            which = (g.get("said") or g.get("object"), sorted(cand, key=lambda n: (len(n), n)))
+        out.append(g)
+    return out, which, notes
+
+
 # ── abstention audit (option reask_abstain, default OFF) ─────────────────────────────────────────────────────────
 # the model's own English question or reason asks where an OBJECT is now (a search can answer that), not where to PUT it
 _WHERE_NOW = re.compile(
@@ -384,5 +444,5 @@ def covers_objects(goals: list, objects: list) -> bool:
     return all(any(key(o)[0] == key(h)[0] or key(o)[1] == key(h)[1] for h in have) for o in objects)
 
 
-__all__ = ["abstains_on_location", "covers_objects", "shared_listener", "go_steps", "kind_anchor_open", "canon_names", "OPEN_WORDS", "says_into", "kind_from_destination", "drop_empty", "drop_invented", "relay_check", "ko_object_issues",
+__all__ = ["abstains_on_location", "covers_objects", "shared_listener", "go_steps", "kind_anchor_open", "canon_names", "canon_inventory", "fold_rules", "OPEN_WORDS", "says_into", "kind_from_destination", "drop_empty", "drop_invented", "relay_check", "ko_object_issues",
            "repair_destination", "unsaid_speaker"]
