@@ -167,9 +167,11 @@ DRAWER_PLAN = steps(f"MoveTo {DT}", "Find orange", "Pick orange", f"MoveTo {DR}"
 BLOCKED = [{"skill": "place", "obj": DR, "kind": "fail", "nth": 1, "msg": "blocked: no free spot in the drawer"}]
 
 
-def _drawer(make_assist, env, faults=BLOCKED, **opts):
+def _drawer(make_assist, env, faults=BLOCKED, remedy=("Close", "Open"), **opts):
     robot = FakeRobot(env, HOUSE, faults=faults)
     loop = make_assist(robot, FakeLLM(IN_DRAWER), ScriptedPlanner(DRAWER_PLAN, replans=[[]]), health_wait_s=0, **opts)
+    if remedy is not None:                       # the pack's data: planner.recovery.blocked_putin
+        loop.robot.manifest.planner = dict(loop.robot.manifest.planner or {}, recovery={"blocked_putin": list(remedy)})
     return run_task(loop, "Put the orange in the kitchen drawer."), robot
 
 
@@ -179,6 +181,32 @@ def test_reset_container_puts_down_closes_opens_and_tries_again(make_assist, env
     assert [e["kind"] for e in evs if e["event"] == "recover"] == ["reset_container"]
     sk = [s for s, *_ in robot.trace]
     assert "close_drawer" in sk and sk.count("open_drawer") == 2 and sk.count("pick") == 2
+
+
+def test_reset_container_without_pack_data_does_nothing(make_assist, env):
+    evs, robot = _drawer(make_assist, env, remedy=None, reset_container="1")
+    assert "reset_container" not in [e.get("kind") for e in evs if e["event"] == "recover"]
+    assert "close_drawer" not in [s for s, *_ in robot.trace]
+
+
+def test_reset_container_remedy_is_the_packs(make_assist, env):
+    evs, robot = _drawer(make_assist, env, remedy=("Open",), reset_container="1")
+    sk = [s for s, *_ in robot.trace]
+    assert [e["kind"] for e in evs if e["event"] == "recover"] == ["reset_container"]
+    assert "close_drawer" not in sk
+
+
+def test_reset_container_needs_every_spliced_action(make_assist, env, monkeypatch):
+    from robot_agent.core.planning.robot import RobotView
+    monkeypatch.setattr(RobotView, "plan_actions", property(lambda self: {"MoveTo", "Find", "Pick", "Place", "PutIn", "Open"}))
+    evs, robot = _drawer(make_assist, env, reset_container="1")          # Close is missing
+    assert "reset_container" not in [e.get("kind") for e in evs if e["event"] == "recover"]
+
+
+def test_reset_steps_free_hand_skips_the_put_down():
+    assert [s["action"] for s in EI.reset_steps(DR, "orange", DT, ("Close", "Open"), put_down=False)] == ["MoveTo", "Close", "Open"]
+    assert [s["action"] for s in EI.reset_steps(DR, "orange", DT)] == ["MoveTo", "Place", "MoveTo", "Close", "Open", "MoveTo", "Find", "Pick", "MoveTo"]
+    assert EI.blocked_putin_remedy(None) == [] and EI.blocked_putin_remedy("Close") == []
 
 
 def test_reset_container_off_does_not_close_the_drawer(make_assist, env):

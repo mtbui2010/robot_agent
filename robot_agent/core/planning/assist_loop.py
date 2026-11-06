@@ -3137,17 +3137,22 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         c, held = st["object"], r.world.holding
         done = r.__dict__.setdefault("reset_done", set())
         code = r.robot.failure_code(res, reason)
-        if (code is not FailureCode.BLOCKED or not held or c in done or c not in r.world.opened
-                or not {"Close", "Open"} <= set(self.robot.plan_actions)):
+        remedy = exec_integrity.blocked_putin_remedy((self._manifest_planner("recovery", None) or {}).get("blocked_putin"))
+        try:
+            free_hand = len(self.robot.manifest.hands()) > 1       # another hand opens / closes while this one holds
+        except Exception:
+            free_hand = False
+        if (code is not FailureCode.BLOCKED or not held or c in done or c not in r.world.opened or not remedy
+                or not exec_integrity.reset_actions(remedy, not free_hand) <= set(self.robot.plan_actions)):
             return None
-        src = exec_integrity.pick_source(r.completed, c, r.places.openable)
+        src = exec_integrity.pick_source(r.completed, c, r.places.openable) if not free_hand else c
         if not src:
             return None
         done.add(c)
         self._note_failure(r, st, code, res.device, reason)
-        r.steps[r.i:r.i] = exec_integrity.reset_steps(c, held, src)
+        r.steps[r.i:r.i] = exec_integrity.reset_steps(c, held, src, remedy, not free_hand)
         self._lab("reset_container", container=c, held=held, source=src)
-        yield r.ev("recover", at_index=r.i, kind="reset_container", msg=f"{c}: put {held} down at {src}, close, open, again")
+        yield r.ev("recover", at_index=r.i, kind="reset_container", msg=f"{c}: " + (f"put {held} down at {src}, " if not free_hand else "") + ", ".join(a.lower() for a in remedy) + ", again")
         return _NEXT
 
     def _apply_policy(self, r, st, skill, code, rule, reason, device):

@@ -12,7 +12,9 @@ from the pack (action model, manifest ``planner.recovery.wait``), no text of the
 * ``endstate_check``: the check tour's return to the last ``go`` goal is a checked step (retried); if it still fails
   the goal is unmet and the run does not say done.
 * ``reset_container``: a PutIn that fails BLOCKED into a container the belief holds open, once per container: put the
-  held object down where it was picked, Close then Open the container, fetch the object again, PutIn again.
+  held object down where it was picked (only when no other hand is free), run the pack's declared remedy on the
+  container (manifest ``planner.recovery.blocked_putin``, e.g. ``[Close, Open]``), fetch the object again, PutIn
+  again. No declaration, or an action the robot does not have: nothing is done (the earlier recovery stands).
 * ``wait_on_robot``: WAIT_HEALTH runs the pack's declared wait action (manifest ``planner.recovery.wait``:
   ``{action: Wait, schedule_s: [2, 4, 8]}``) and reads health() after each wait. No declaration: today's poll.
 """
@@ -20,6 +22,7 @@ from __future__ import annotations
 
 FLAGS = ("gate_strict", "endstate_check", "reset_container", "wait_on_robot")
 MISSING_PREFIX = "the plan does not achieve: "
+DEFAULT_RETURN_TRIES = 3         # endstate_check: tries to re-achieve a go goal (manifest ``planner.recovery.return_tries``)
 
 
 def per_goal_findings(findings: list, n_missing: int) -> list:
@@ -54,12 +57,29 @@ def wait_schedule(declared) -> tuple:
     return (act, sched) if act and sched else (None, [])
 
 
-def reset_steps(container: str, held: str, source: str) -> list:
-    """The steps spliced before a failed PutIn: put `held` down at `source`, Close and Open `container`, fetch again."""
+def blocked_putin_remedy(declared) -> list:
+    """The actions the pack declares to run on a container after a BLOCKED PutIn (``planner.recovery.blocked_putin``,
+    a list of action names), or [] when it declares none (then ``reset_container`` does nothing)."""
+    if not isinstance(declared, (list, tuple)):
+        return []
+    return [str(a) for a in declared if str(a).strip()]
+
+
+def reset_steps(container: str, held: str, source: str, remedy=("Close", "Open"), put_down: bool = True) -> list:
+    """The steps spliced before a failed PutIn: put `held` down at `source` (when `put_down`), run the `remedy`
+    actions on `container`, fetch again (only after a put-down)."""
     mv = lambda p: {"action": "MoveTo", "object": p, "grounded": True}      # noqa: E731
-    return [mv(source), {"action": "Place", "object": source}, mv(container), {"action": "Close", "object": container},
-            {"action": "Open", "object": container}, mv(source), {"action": "Find", "object": held},
-            {"action": "Pick", "object": held}, mv(container)]
+    fix = [{"action": a, "object": container} for a in remedy]
+    if not put_down:
+        return [mv(container)] + fix
+    return [mv(source), {"action": "Place", "object": source}, mv(container)] + fix + [
+        mv(source), {"action": "Find", "object": held}, {"action": "Pick", "object": held}, mv(container)]
+
+
+def reset_actions(remedy, put_down: bool = True) -> set:
+    """Every action `reset_steps` uses (the loop needs the robot to have all of them)."""
+    base = {"MoveTo"} | set(remedy)
+    return base | ({"Place", "Find", "Pick"} if put_down else set())
 
 
 def pick_source(completed: list, container: str, openable) -> str:
