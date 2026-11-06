@@ -51,13 +51,15 @@ _TOP_KEYS = {"robot", "version", "language", "capabilities", "geometry", "planne
 #   recovery.return_tries (count >= 1: endstate_check tries), kind_anchor_ask (0 | 1, default 0: keep an unasked open goal and
 #   read it back as a doubt instead of dropping it), unstick (the numbers of dialog_unstick: fallback_words, fallback_chars,
 #   restate_frac, restate_word_len, restate_min_words, restate_min_bigrams; none declared = that part does nothing),
+#   reask_anchor, no_shared_listener, understand_views, understand_goals_first (0 | 1 each, default 0: lab round 6, docs/env.md),
 #   detector_miss_rate (0 to 0.9, default 0.1: the chance that a look at the right place does not see the object;
 #   one miss is then weak evidence and the search looks again at the places the belief still holds probable)
 PLANNER_KEYS = {"seed_memory", "notes", "llm_budget", "translate_model", "translate_url", "translate_budget",
                 "search_legs", "search_total", "input_pivot", "detector_miss_rate", "person_goals", "accept_goals",
                 "go_steps", "kind_anchor", "name_canon", "reask_abstain",
                 "exec_integrity", "gate_strict", "endstate_check", "reset_container", "wait_on_robot", "inventory_ask",
-                "dialog_unstick", "canonical_lang", "label_tokens", "recovery", "kind_anchor_ask", "unstick"}
+                "dialog_unstick", "canonical_lang", "label_tokens", "recovery", "kind_anchor_ask", "unstick",
+                "reask_anchor", "no_shared_listener", "understand_views", "understand_goals_first"}
 UNSTICK_KEYS = {"fallback_words", "fallback_chars", "restate_frac", "restate_word_len", "restate_min_words",
                 "restate_min_bigrams"}
 # keys of the optional `limits:` section (what the body can carry; checked against the ENV object estimates)

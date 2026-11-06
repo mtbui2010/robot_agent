@@ -5,6 +5,12 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+### Lab round 7: understanding recall (all opt-in, default off, defaults byte-identical)
+- `reask_anchor`: the abstention re-reading is taken only when every place in it is in the person's words (ENV aliases, any language).
+- `no_shared_listener`: switches the `shared_listener` rule off.
+- `understand_views`: original and translator pivot read separately; agree = act, differ = one "which one?" question.
+- `understand_goals_first`: schema key order, goals before the verdict.
+
 ### Generalisation: language and robot facts are data (lab round 6)
 - Language packs `core/planning/lang/<code>.json` (`langdata.py`) hold the word lists (`lexicon` tables, `open_words`, the
   model-question patterns of `reask_abstain`), `answer_unsure`, articles, plural rules, translate names, script data. English

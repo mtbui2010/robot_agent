@@ -527,6 +527,34 @@ def abstains_on_location(u: dict):
     return [_plain(m.group(1)) for m in obj.finditer(q + " " + why) if _plain(m.group(1))]
 
 
+def anchored(goals: list, text: str, places) -> bool:
+    """Is every PLACE the move goals name in the person's own words? A destination or source that is a place (not a person,
+    not the speaker, not empty) must be an ENV key one of the words' place mentions can mean (the ENV key head or one of its
+    aliases, matched as ``understand.place_mentions`` matches them: whole words, particles, substring for scripts without
+    spaces); a name that grounds on no place is not anchored. Nothing to check (no place in the goals): True. A places set
+    without names the words can match: no place is anchored, so the caller keeps today's question (fails safe)."""
+    from .persons import is_speaker_word
+    said = set().union(*(m[3] for m in place_mentions(text, places))) if text else set()
+    for g in goals:
+        if g.get("type") not in ("on", "in"):
+            continue
+        for slot in ("from", "to"):
+            v = str(g.get(slot) or "").strip()
+            if not v:
+                continue
+            key = v if v in places.env else places.ground(v, text)
+            if key is None:
+                if is_speaker_word(v):
+                    continue
+                return False
+            e = places.env.get(key) or {}
+            if e.get("person") or e.get("speaker"):
+                continue
+            if key not in said:
+                return False
+    return True
+
+
 def covers_objects(goals: list, objects: list) -> bool:
     """Do the move goals' objects cover every named object (same singular, or the same head noun)? Vacuous without names."""
     have = [_plain(g.get("object")) for g in goals if g.get("type") in ("on", "in")]
@@ -534,5 +562,5 @@ def covers_objects(goals: list, objects: list) -> bool:
     return all(any(key(o)[0] == key(h)[0] or key(o)[1] == key(h)[1] for h in have) for o in objects)
 
 
-__all__ = ["abstains_on_location", "covers_objects", "shared_listener", "go_steps", "kind_anchor_open", "canon_names", "canon_inventory", "alias_groups", "instances", "fold_rules", "OPEN_WORDS", "says_into", "kind_from_destination", "drop_empty", "drop_invented", "relay_check", "ko_object_issues",
+__all__ = ["abstains_on_location", "anchored", "covers_objects", "shared_listener", "go_steps", "kind_anchor_open", "canon_names", "canon_inventory", "alias_groups", "instances", "fold_rules", "OPEN_WORDS", "says_into", "kind_from_destination", "drop_empty", "drop_invented", "relay_check", "ko_object_issues",
            "repair_destination", "unsaid_speaker"]

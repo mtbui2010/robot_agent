@@ -68,7 +68,7 @@ from .budget import DEFAULT_LLM_BUDGET, budget_end
 from .sensor_health import arrival_check, find_precheck
 from .understand import (LLMBadOutput, LLMBudget, LLMBudgetExceeded, LLMUnavailable, ask_json, consensus,
                          describe, find_issues, vacuous_goal_issues, issue_question, misheard_question, sampling, typed_refusal, verb_lost,
-                         without_places)
+                         without_places, signature)
 
 _LOC_ACTIONS = {"MoveTo", "Place", "PutIn", "Open", "Close"}
 # per-run overrides accepted from /ws/agent `options`
@@ -83,7 +83,8 @@ ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify
                 "search_legs", "object_check", "detector_miss_rate", "person_goals", "accept_goals",
                 "go_steps", "kind_anchor", "name_canon", "reask_abstain",
                 "exec_integrity", "gate_strict", "endstate_check", "reset_container", "wait_on_robot", "inventory_ask",
-                "dialog_unstick", "kind_anchor_ask"}
+                "dialog_unstick", "kind_anchor_ask", "reask_anchor", "no_shared_listener", "understand_views",
+                  "understand_goals_first"}
 _USER_WORDS = {"me", "user", "here", "you", "myself", "person"}
 
 
@@ -489,6 +490,16 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             # ``exec_integrity`` sets the four execution options; ``inventory_ask`` asks which of the robot's own
             # remembered instances (name_canon made general: canonical language and plural folding are pack data)
             **self._r3_cfg(overrides),
+            # solution-lab round 6 (all default OFF; off = the earlier behaviour byte for byte), docs/env.md:
+            #   reask_anchor            the abstention re-ask (as reask_abstain) takes its new reading only when every place
+            #                           in it is named in the person's words
+            #   no_shared_listener      the recipient of a delivery is not moved to the speaker when the words name a person once
+            #   understand_views        a non-English request is read from the original and from the translator's pivot; the
+            #                           run acts when the two readings agree and asks "A or B?" when they differ
+            #   understand_goals_first  the understand schema asks for the goals before the verdict
+            **{k: str(overrides.get(k, env("ROBOT_AGENT_" + k.upper(), str(self._manifest_planner(k, "0"))))).lower()
+               in ("1", "true", "yes", "on") for k in ("reask_anchor", "no_shared_listener", "understand_views",
+                                                       "understand_goals_first")},
             # solution-lab round 4 (default OFF, dialog_unstick.py): a restatement that gives the refused reading again is
             # read back once more instead of ending the run; a "not sure" answer to a where-is question is a cue to
             # search; a question with its own apology is not asked again behind the silence apology
@@ -542,12 +553,13 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         seed = int(seed) + sample if str(seed).strip() not in ("", "none", "None") and int(seed) >= 0 else None
         return sampling(c["understand_sample_temperature"] if sample else c["understand_temperature"], seed)
 
-    def _understand(self, task, places, memory, world, dialogue, budget=None, sample: int = 0, note: str = "") -> dict:
+    def _understand(self, task, places, memory, world, dialogue, budget=None, sample: int = 0, note: str = "",
+                    pivot: Optional[str] = None) -> dict:
         """The understand call (understand.ask_json: one repair retry on a non-JSON answer). Raises
         LLMUnavailable / LLMBudgetExceeded; a model that still answers no JSON gives no goals (``unparsed``)."""
         # the language layer (input_pivot): the task and the user's answers as the model reads them
         task_text, pivot_orig, dlines = self.language.understand_view(
-            task, dialogue, lambda t, en: f"Robot: {t if en else self._heard_as(t)}")
+            task, dialogue, lambda t, en: f"Robot: {t if en else self._heard_as(t)}", pivot=pivot)
         prompt = UNDERSTAND_PROMPT.format(
             abilities=self.robot.robot_description(), cannot=self._cannot_line(),
             goal_kinds=goal_kinds.prompt_lines(goal_kinds.kinds_for(self.robot.plan_actions)),
@@ -683,6 +695,11 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         schema = json.loads(json.dumps(UNDERSTAND_SCHEMA))
         schema["properties"]["goals"]["items"]["properties"]["type"]["enum"] = \
             goal_kinds.kinds_for(self.robot.plan_actions)
+        if self.cfg.get("understand_goals_first"):       # the goals are written before the verdict (key order binds
+            first = ("goals",)                           # where the backend decodes in schema order)
+            schema["properties"] = {k: schema["properties"][k] for k in
+                                    list(first) + [k for k in schema["properties"] if k not in first]}
+            schema["required"] = list(first) + [k for k in schema["required"] if k not in first]
         return schema
 
     def _cannot_do(self, goals) -> Optional[str]:
@@ -1546,6 +1563,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         if took is _STOP:
             return _STOP
         u, q = took
+        if getattr(r, "view_question", None) is not None:        # understand_views: the readings differ, the person chooses
+            return (yield from self._ask_views(r))
         self._progress(r)
         yield r.ev("understand", status=u["status"], reason=u.get("reason"), goals=r.goals,
                    question=u.get("question") or q, **({"filtered": r.filtered} if r.filtered else {}))
@@ -1625,7 +1644,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             u = self._understand(r.task, r.places, r.memory, r.world, r.dialogue, budget=r.llm_budget)
         except (LLMUnavailable, LLMBudgetExceeded) as e:
             yield self._llm_failed(r, e); return _STOP
-        if self.cfg.get("reask_abstain") and not getattr(r, "reasked", False):
+        if (self.cfg.get("reask_abstain") or self.cfg.get("reask_anchor")) and not getattr(r, "reasked", False):
             u = yield from self._reask_abstention(r, u)
             if u is _STOP:
                 return _STOP
@@ -1633,8 +1652,63 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             u = yield from self._search_when_unsure(r, u)
             if u is _STOP:
                 return _STOP
+        if self.cfg.get("understand_views") and not r.dialogue and not getattr(r, "views_done", False):
+            r.view_question = yield from self._compare_views(r, u)
+            if r.view_question is _STOP:
+                r.view_question = None
+                return _STOP
         r.goals, q = self._ground_understood(r, u)
         return u, q
+
+    def _ask_views(self, r):
+        """The "which one?" question of ``understand_views`` (set by ``_compare_views``): asked once."""
+        vq, r.view_question = r.view_question, None
+        yield r.ev("understand_check", issues=["the original and the translation were read differently"], views=True)
+        return (yield from self._ask_clarify(r, vq))
+
+    def _compare_views(self, r, u):
+        """Option ``understand_views``: a request in another language than the core's is read twice, from the person's
+        own words and from the translator's English (the run's ``input_pivot`` is one view, the other pivot setting is
+        the second). Both readings are grounded; when both have goals and the goal sets differ, and neither holds a goal
+        the robot's safety rules refuse, the question "which one?" with both readings is returned (the run asks it
+        instead of acting). Agreement, a reading without goals, no trusted translation, a spent budget or a failed second
+        call: None, today's path. Once per run. _STOP when the LLM failed."""
+        r.views_done = True
+        lg = (r.lang or "en")[:2]
+        if lg == "en" or lg not in language.LANGS or not u.get("goals") or u.get("status") not in ("clear", "ambiguous"):
+            return None
+        h = self.language.hear(r.task, pivot="translate")
+        if not h.english or not h.trusted:
+            return None
+        other = "translate" if self.language.pivot == "none" else "none"
+        try:
+            u2 = self._understand(r.task, r.places, r.memory, r.world, r.dialogue, budget=r.llm_budget, pivot=other)
+        except LLMBudgetExceeded:
+            return None
+        except LLMUnavailable as e:
+            yield self._llm_failed(r, e); return _STOP
+        if not u2["goals"] or u2["status"] not in ("clear", "ambiguous"):
+            return None
+        saved = (list(getattr(r, "filtered", None) or []), list(getattr(r, "repaired", [])))
+        try:
+            g1, q1 = self._ground_understood(r, {**u, "goals": [dict(g) for g in u["goals"]]})
+            g2, q2 = self._ground_understood(r, {**u2, "goals": [dict(g) for g in u2["goals"]]})
+        finally:
+            r.filtered, r.repaired = saved
+        if not g1 or not g2 or q1 or q2 or signature(g1) == signature(g2):
+            self._lab("understand_views", agreed=bool(g1 and g2 and signature(g1) == signature(g2)))
+            return None
+        from ..safety import check_goal
+        pack = (getattr(self.robot.manifest, "safety", None) or {}).get("hazards") or []
+        mode = str(self.cfg.get("hazard_rules", "core"))
+        if any(check_goal(g, r.places, pack, mode) for g in g1 + g2):
+            return None
+        nice = lambda k: speech.say_name(r.places, k, "en")                  # noqa: E731
+        a, b = (speech.LocalText.seq([self._goal_phrase(g, r.places, nice) for g in gs]) for gs in (g1, g2))
+        self._lab("understand_views", agreed=False, asked=True)
+        return speech.LocalText("q_which_reading", {"first": a, "second": b},
+                                text=f"I can read that two ways: I will {a}, or I will {b}. Which one do you mean?",
+                                ask={"intent": "choose", "options": [str(a), str(b)], "about": ""})
 
     _FIND_NOTE = ("Note: this robot finds objects itself ({find}). Where an object is now is not a reason for "
                   "giving no goals: give the goals for ALL of the task and leave `from` empty for an object whose "
@@ -1647,6 +1721,9 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         stays. One extra call, once per run, only for a robot with a Find skill. _STOP when the LLM failed."""
         finds = sorted(a for a in self.robot.plan_actions if a.lower() == "find")
         objs = goal_fix.abstains_on_location(u) if finds else None
+        anchor = bool(self.cfg.get("reask_anchor"))
+        if anchor and u.get("status") != "ambiguous" and str(self.cfg.get("hazard_rules", "core")) == "off":
+            objs = None                # no hazard gate after the re-reading: a first-reading refusal stands
         if objs is None:
             return u
         r.reasked = True
@@ -1658,7 +1735,10 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         except LLMUnavailable as e:
             yield self._llm_failed(r, e); return _STOP
         took = bool(u2["goals"]) and u2["status"] != "unsafe" and goal_fix.covers_objects(u2["goals"], objs)
-        self._lab("reask_abstain", taken=took)
+        if took and anchor:            # every place of the new reading is in the person's own words
+            said = " ".join([r.task, self.original or ""] + [t for w_, t in r.dialogue if w_ == "user"])
+            took = goal_fix.anchored(u2["goals"], said, r.places)
+        self._lab("reask_anchor" if anchor else "reask_abstain", taken=took)
         yield r.ev("understand_check", issues=["abstained on where an object is: " + "; ".join(objs or ["?"])],
                    reask=True, reask_taken=took)
         return u2 if took else u
@@ -1800,8 +1880,9 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         goals, invented = goal_fix.drop_invented(goals, words_, r.places)    # F4.4
         r.filtered += invented
         goals, rq = goal_fix.relay_check(goals, r.task, r.places)           # F4.6
-        goals, shared = goal_fix.shared_listener(goals, words_, r.places)    # a listener is not also the recipient
-        r.filtered += shared
+        if not self.cfg.get("no_shared_listener"):
+            goals, shared = goal_fix.shared_listener(goals, words_, r.places)    # a listener is not also the recipient
+            r.filtered += shared
         goals, q = self._ground_v2(r, goals, q, words_)
         q = q or (speech.LocalText("q_what_say") if rq else None)
         if not goals and empty and not q:

@@ -352,12 +352,14 @@ class LanguageAdapter:
         return str(text)
 
     # ── IN: what the user said ───────────────────────────────────────────
-    def hear(self, text, lang=None) -> Heard:
+    def hear(self, text, lang=None, pivot: Optional[str] = None) -> Heard:
         """The English of an utterance in the user's language, cached per text. An English run, an empty text or
-        a text without that language's script: no call. ``trusted`` False: ask the user to say it again."""
+        a text without that language's script: no call. ``trusted`` False: ask the user to say it again.
+        ``pivot``: the view asking (option ``understand_views``) instead of the run's ``input_pivot``."""
         lg = (lang or self.run_lang())[:2]
         t = str(text or "").strip()
-        if lg == "en" or lg not in LANGS or not t or self.pivot == "none" or not _NON_LATIN.search(t):
+        pv = pivot if pivot in PIVOTS else self.pivot
+        if lg == "en" or lg not in LANGS or not t or pv == "none" or not _NON_LATIN.search(t):
             return Heard(t, trusted=True)
         if t in self.heard:
             return self.heard[t]
@@ -399,29 +401,31 @@ class LanguageAdapter:
         h = self.hear(utterance)
         return None if h.trusted else (h.why or "untrusted")
 
-    def understand_view(self, task: str, dialogue: list, robot_line) -> tuple:
+    def understand_view(self, task: str, dialogue: list, robot_line, pivot: Optional[str] = None) -> tuple:
         """(task text, original line or "", dialogue lines) for the understand prompt, by ``input_pivot``:
         ``none``: as is; ``translate``: the English translation is the task and the user's lines (the original
         follows only as the source of each goal's ``said``); ``both``: the original and its translation.
         ``dialogue``: [(who, text)]; ``robot_line(text, english)``: the loop's rendering of a robot line (as the user
-        heard it, or the English text)."""
+        heard it, or the English text). ``pivot``: this view's own setting (option ``understand_views``), else the
+        run's ``input_pivot``."""
         lg = self.run_lang()
-        if lg == "en" or self.pivot == "none":
+        pivot = pivot if pivot in PIVOTS else self.pivot
+        if lg == "en" or pivot == "none":
             return task, "", [robot_line(t, False) if w == "robot" else f"User: {t}" for w, t in dialogue]
-        h = self.hear(task)
+        h = self.hear(task, pivot=pivot)
         task_text, orig = task, ""
         if h.english:
-            if self.pivot == "translate":
+            if pivot == "translate":
                 task_text, orig = h.english, f"\n(the user's own words, for \"said\" only: {task})"
             else:
                 task_text = f"{task}\n(English: {h.english})"
         lines = []
         for w, t in dialogue:
             if w != "user":
-                lines.append(robot_line(t, self.pivot == "translate"))
+                lines.append(robot_line(t, pivot == "translate"))
                 continue
-            e = self.hear(t).english
-            lines.append(f"User: {e}" if e and self.pivot == "translate" else
+            e = self.hear(t, pivot=pivot).english
+            lines.append(f"User: {e}" if e and pivot == "translate" else
                          (f"User: {t} (English: {e})" if e else f"User: {t}"))
         return task_text, orig, lines
 
