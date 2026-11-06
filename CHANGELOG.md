@@ -5,6 +5,9 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+### Lab log (`AssistLoop.lab_log`)
+- Each opt-in lab option (go_steps, kind_anchor, name_canon / inventory_ask, reask_abstain, gate_strict, endstate_check, reset_container, wait_on_robot) appends `{"flag": name, ...}` to `loop.lab_log` when it acts in a run (reset at the start of `run_blocking`). Not part of the event stream; options off never write to it. Tests: `tests/test_sage_lab_log.py`, `tests/test_sage_lab_log_ground.py`.
+
 ### Execution integrity and inventory ask (options `exec_integrity` family = `gate_strict`, `endstate_check`, `reset_container`, `wait_on_robot`; and `inventory_ask`; env `ROBOT_AGENT_<NAME>`, manifest `planner.<name>`; all default off)
 - `gate_strict`: the gate's symbolic repair is repeated with a per-goal score only when it left a critical finding, and kept only if it certifies; plan objects bind to the one goal object whose word tokens strictly contain theirs (`planner.label_tokens: none` = exact match). `endstate_check`: the check tour's return to the last `go` goal is a retried, checked step. `reset_container`: a BLOCKED PutIn into a believed-open container puts the object down at its pick place, Close, Open, fetch, PutIn (once per container). `wait_on_robot`: WAIT_HEALTH runs the pack's `planner.recovery.wait: {action, schedule_s}`; no declaration = the old poll. Helpers: `core/planning/exec_integrity.py`.
 - `inventory_ask`: `name_canon` made general (`goal_fix.canon_inventory`): `planner.canonical_lang` (`en` default, `none` skips, other codes use the pack's i18n `plural_fold` `suffix>replacement|...`), the user's own words narrow the remembered instances first, otherwise ONE closed which-question (also when the instances share a place).

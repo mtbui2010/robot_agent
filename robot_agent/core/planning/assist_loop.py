@@ -500,6 +500,13 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
     def _converge(self) -> bool:
         return str(self.cfg.get("dialog_converge", "1")).lower() not in ("0", "false", "no", "off")
 
+    def _lab(self, flag: str, **info) -> None:
+        """Record that an opt-in lab option acted in this run (``self.lab_log``: [{"flag": name, ...}]). Read by a
+        harness after the run; never part of the event stream, never read by the loop. Off options never call it."""
+        log = self.__dict__.setdefault("lab_log", [])
+        if len(log) < 50:
+            log.append({"flag": flag, **info})
+
     def _manifest_planner(self, key, default=None):
         """The robot's manifest ``planner.<key>`` (robot-pack planner data), else ``default``."""
         v = (getattr(self.robot.manifest, "planner", None) or {}).get(key)
@@ -1005,8 +1012,11 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
                 if st["object"] and st["object"] != g["object"] and st["object"] in g["object"].split():
                     st["object"] = g["object"]
             if getattr(self, "cfg", {}).get("gate_strict"):           # round 3: a token subset of exactly one goal object (any length)
-                st["object"] = exec_integrity.bind_subset(st["object"], [g.get("object") for g in goals],
-                                                          str(self._manifest_planner("label_tokens", "words")))
+                bound = exec_integrity.bind_subset(st["object"], [g.get("object") for g in goals],
+                                                   str(self._manifest_planner("label_tokens", "words")))
+                if bound != st["object"]:
+                    self._lab("gate_strict", part="bind_subset", frm=st["object"], to=bound)
+                st["object"] = bound
         return st
 
     def _check(self, steps, world, places, goals):
@@ -1375,6 +1385,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         self._person_at = {}                          # {person: place they said they are at} (this run)
         self._where_asked = None                      # the person "Where are you?" was asked about (this run)
         self._handed = set()                          # objects this run handed over (release actions)
+        self.lab_log = []                             # what the opt-in lab options did this run (see _lab)
         self._tr_budget = LLMBudget(self.cfg["translate_budget"])   # translation calls: their own cap (F5.3)
         self._say_not_in_lang, self._run_lang, self._said_as = 0, lang, {}
         self.language.reset()
@@ -1631,6 +1642,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         except LLMUnavailable as e:
             yield self._llm_failed(r, e); return _STOP
         took = bool(u2["goals"]) and u2["status"] != "unsafe" and goal_fix.covers_objects(u2["goals"], objs)
+        self._lab("reask_abstain", taken=took)
         yield r.ev("understand_check", issues=["abstained on where an object is: " + "; ".join(objs or ["?"])],
                    reask=True, reask_taken=took)
         return u2 if took else u
@@ -1745,12 +1757,21 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         c = self.cfg
         if c.get("go_steps"):
             goals, gone = goal_fix.go_steps(goals, r.task, r.places)
+            if gone:
+                self._lab("go_steps", dropped=len(gone))
             r.filtered += gone
         if c.get("kind_anchor"):
             goals, gone = goal_fix.kind_anchor_open(goals, words_, r.places, self.robot)
+            if gone:
+                self._lab("kind_anchor", dropped=len(gone))
             r.filtered += gone
         if c.get("name_canon") or c.get("inventory_ask"):
+            before = [g.get("object") for g in goals]
             goals, which, _notes = self._canon(r, goals)
+            after = [g.get("object") for g in goals]
+            if which or before != after:
+                self._lab("inventory_ask" if self.cfg.get("inventory_ask") else "name_canon",
+                          renamed=sum(a != b for a, b in zip(before, after)), asked_which=bool(which))
             for g in goals:                                   # a renamed object: the sighting names where it is
                 if g.get("said") and g.get("type") in ("on", "in") and not g.get("from") and not g.get("from_any"):
                     g["from"] = self._remembered(r.memory, g["object"]) or ""
@@ -2275,8 +2296,10 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         self._restore_repair(r, blocks, pre)
         notes2 = self._gate_repair_run(r, per_goal=True)
         if not self._blocking(r, r.steps):
+            self._lab("gate_strict", part="per_goal_repair", kept=True)
             return notes2 + ["per-goal repair certified the plan"]
         self._restore_repair(r, blocks, first)
+        self._lab("gate_strict", part="per_goal_repair", kept=False)
         return notes
 
     @staticmethod
@@ -2755,12 +2778,14 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         """Option ``endstate_check``: the check tour's return to the task's last ``go`` place, retried; if it still
         fails the goal is unmet (one failure entry, coded by the adapter) and the run does not say done."""
         res = None
-        for _ in range(tries):
+        for n in range(tries):
             res, _sk = self._look(r, {"action": "MoveTo", "object": place})
             if res is not None and res.ok:
+                self._lab("endstate_check", place=place, ok=True, tries=n + 1)
                 return []
         if res is None:
             return []                                                   # no MoveTo skill: nothing to check with
+        self._lab("endstate_check", place=place, ok=False, tries=tries)
         code = r.robot.failure_code(res, res.msg)
         return [{"code": code.value, "device": res.device,
                  "evidence": {"goal": f"go {place}", "observed": f"could not get back to {place}: {res.msg}"}}]
@@ -3066,6 +3091,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         done.add(c)
         self._note_failure(r, st, code, res.device, reason)
         r.steps[r.i:r.i] = exec_integrity.reset_steps(c, held, src)
+        self._lab("reset_container", container=c, held=held, source=src)
         yield r.ev("recover", at_index=r.i, kind="reset_container", msg=f"{c}: put {held} down at {src}, close, open, again")
         return _NEXT
 
@@ -3115,12 +3141,15 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         except Unbindable:
             return None
         h = r.robot.health(r.node)
+        waited = []
         for secs in sched:
             if h.get("ok") is True:
                 break
             skill, params = self._bind({"action": act, "object": f"{secs:g}"}, r.world)
             run_skill(self.sr, skill, params, r.node, log_fn=self._log_fn(r.i))
+            waited.append(secs)
             h = r.robot.health(r.node)
+        self._lab("wait_on_robot", action=act, schedule_s=sched, waited_s=waited, health_ok=h.get("ok"))
         return h
 
     def _wait_health(self, r, wait_s):
