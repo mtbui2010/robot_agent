@@ -2829,17 +2829,40 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
                 self._look(r, {"action": "MoveTo", "object": last["to"]})    # back where the task ends ("go back and charge")
         return unmet
 
-    def _return_to_end(self, r, place, tries: int = 3) -> list:
-        """Option ``endstate_check``: the check tour's return to the task's last ``go`` place, retried; if it still
-        fails the goal is unmet (one failure entry, coded by the adapter) and the run does not say done."""
+    def _end_action(self, r, place) -> str:
+        """The action that achieved the go goal at `place` in the completed plan (its manifest effects name ``arrived``
+        or ``docked``, e.g. the pack's Dock), else MoveTo."""
+        for st in reversed(r.completed):
+            if st.get("object") != place:
+                continue
+            spec = r.robot.spec(st.get("action"))
+            fx = " ".join(str(e) for e in (getattr(spec, "effects", None) or []) if not str(e).strip().startswith("not "))
+            if st.get("action") != "MoveTo" and ("docked(" in fx or "arrived(" in fx):
+                return st["action"]
+        return "MoveTo"
+
+    def _return_to_end(self, r, place, tries=None) -> list:
+        """Option ``endstate_check``: the check tour's return to the task's last ``go`` place, retried (the pack's
+        ``planner.recovery.return_tries``, default 3); the action that achieved the goal in the plan (MoveTo, or the
+        pack's Dock after a MoveTo) is run again. If it still fails the goal is unmet (one failure entry, coded by
+        the adapter) and the run does not say done."""
+        try:
+            tries = int(tries if tries is not None else (self._manifest_planner("recovery", None) or {}).get(
+                "return_tries", exec_integrity.DEFAULT_RETURN_TRIES))
+        except (TypeError, ValueError):
+            tries = exec_integrity.DEFAULT_RETURN_TRIES
+        tries = max(tries, 1)
+        act = self._end_action(r, place)
         res = None
         for n in range(tries):
             res, _sk = self._look(r, {"action": "MoveTo", "object": place})
+            if res is not None and res.ok and act != "MoveTo":
+                res, _sk = self._look(r, {"action": act, "object": place})
             if res is not None and res.ok:
                 self._lab("endstate_check", place=place, ok=True, tries=n + 1)
                 return []
         if res is None:
-            return []                                                   # no MoveTo skill: nothing to check with
+            return []                                                   # no skill to check with
         self._lab("endstate_check", place=place, ok=False, tries=tries)
         code = r.robot.failure_code(res, res.msg)
         return [{"code": code.value, "device": res.device,

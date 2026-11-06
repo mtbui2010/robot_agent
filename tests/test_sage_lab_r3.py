@@ -161,6 +161,26 @@ def test_endstate_check_a_return_that_keeps_failing_is_not_done(make_assist, env
     assert done(evs)["status"] != "success" and [s for s, *_ in robot.trace].count("move") == 7
 
 
+def test_endstate_check_tries_come_from_the_pack(make_assist, env):
+    fault = [{"skill": "move", "obj": DS, "kind": "fail", "nth": [3, 4], "msg": "move failed: motor stalled"}]
+    for tries, ok in ((2, False), (3, True)):
+        robot = FakeRobot(env, HOUSE, faults=fault)
+        loop = make_assist(robot, FakeLLM(APPLE_BACK), ScriptedPlanner(BACK_PLAN, replans=[[]]), health_wait_s=0, endstate_check="1")
+        loop.robot.manifest.planner = dict(loop.robot.manifest.planner or {}, recovery={"return_tries": tries})
+        evs = run_task(loop, "Bring the apple from the desk to the dining table, then go back to the desk.")
+        assert (done(evs)["status"] == "success") is ok
+
+
+def test_endstate_check_reruns_the_action_that_achieved_the_go_goal(make_assist, env):
+    loop = make_assist(FakeRobot(env, HOUSE), FakeLLM(), ScriptedPlanner([]))
+    spec = types.SimpleNamespace(effects=["docked()", "arrived(?inputs)"])
+    loop.robot.spec = lambda a: spec if a == "Dock" else None
+    r = types.SimpleNamespace(completed=[{"action": "MoveTo", "object": DS}, {"action": "Dock", "object": DS}], robot=loop.robot)
+    assert loop._end_action(r, DS) == "Dock"
+    r.completed = [{"action": "MoveTo", "object": DS}]
+    assert loop._end_action(r, DS) == "MoveTo"
+
+
 # ── reset_container ──
 IN_DRAWER = U(("in", "orange", "dining table", "kitchen drawer"))
 DRAWER_PLAN = steps(f"MoveTo {DT}", "Find orange", "Pick orange", f"MoveTo {DR}", f"Open {DR}", f"PutIn {DR}")
