@@ -14,8 +14,9 @@ def flags(loop):
     return [e["flag"] for e in loop.lab_log]
 
 
-def play(make_assist, robot, llm, plan, task, recovery=None, **opts):
+def play(make_assist, robot, llm, plan, task, recovery=None, tries=3, **opts):
     loop = make_assist(robot, llm, plan, health_wait_s=0, **opts)
+    recovery = dict(recovery or {}, **({"return_tries": tries} if tries else {}))
     if recovery:                                 # the pack's planner.recovery data
         loop.robot.manifest.planner = dict(loop.robot.manifest.planner or {}, recovery=recovery)
     return loop, run_task(loop, task)

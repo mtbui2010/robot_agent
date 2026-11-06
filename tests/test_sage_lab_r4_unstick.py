@@ -1,6 +1,6 @@
 """Solution lab round 4 (option ``dialog_unstick``, default OFF), through the real AssistLoop.run_blocking against the
 symbolic FakeRobot and a scripted LLM: a restatement that reproduces the refused reading, a "not sure" answer to a
-where-is question (English, and Vietnamese as a third language), and the stacked apology. Synthetic requests written for
+where-is question (English, and a made-up third language with and without data), and the stacked apology. Synthetic requests written for
 these tests (no benchmark text). Off = the earlier events."""
 import types
 
@@ -13,8 +13,8 @@ from robot_agent.core.planning.assist_loop import ASSIST_OPTIONS, Places
 
 ENV = {
     "sofa@living room": {"aliases": ["sofa"], "loc": {"x": 1.0, "y": 1.0}},
-    "table@kitchen": {"aliases": ["table", "bàn"], "loc": {"x": 3.0, "y": 1.0}},
-    "shelf@hall": {"aliases": ["shelf", "kệ"], "loc": {"x": 6.0, "y": 1.0}},
+    "table@kitchen": {"aliases": ["table", "tavo"], "loc": {"x": 3.0, "y": 1.0}},
+    "shelf@hall": {"aliases": ["shelf", "kele"], "loc": {"x": 6.0, "y": 1.0}},
 }
 HOUSE = {"cup": "table@kitchen"}
 PLAN = steps("MoveTo table@kitchen", "Find cup", "Pick cup", "MoveTo shelf@hall", "Place shelf@hall")
@@ -23,6 +23,9 @@ READ = {"status": "clear", "reason": "", "question": "",
         "goals": [{"type": "on", "object": "cup", "from": "table@kitchen", "to": "shelf@hall"}]}
 ABSTAIN = {"status": "ambiguous", "reason": "", "question": "Where is the cup?", "goals": []}
 NOTE = r"does not know where the object is"
+# the numbers a robot pack declares (manifest planner.unstick); without them the numeric parts of dialog_unstick do nothing
+UNSTICK = {"fallback_words": 5, "fallback_chars": 24, "restate_frac": 0.6, "restate_word_len": 3, "restate_min_words": 4,
+           "restate_min_bigrams": 6}
 
 
 @pytest.fixture
@@ -30,9 +33,14 @@ def env():
     return ENV
 
 
-def play(make_assist, llm, answers, task=TASK, lang="en", phrases=None, **opts):
+def declare(loop, unstick=UNSTICK):
+    loop.robot.manifest.planner = dict(loop.robot.manifest.planner or {}, **({"unstick": unstick} if unstick else {}))
+    return loop
+
+
+def play(make_assist, llm, answers, task=TASK, lang="en", phrases=None, unstick=UNSTICK, **opts):
     robot = FakeRobot(ENV, dict(HOUSE), answers=answers)
-    loop = make_assist(robot, llm, ScriptedPlanner(PLAN), health_wait_s=0, **opts)
+    loop = declare(make_assist(robot, llm, ScriptedPlanner(PLAN), health_wait_s=0, **opts), unstick)
     if phrases:
         loop.robot.i18n.phrases.update(phrases)
     evs = [{k: v for k, v in e.items() if k not in ("world", "say_audio")} for e in loop.run_blocking(task, lang=lang)]
@@ -83,7 +91,7 @@ def test_a_restatement_that_is_refused_again_still_ends(make_assist):
     # the second read-back is also answered "no": the run ends, it does not loop
     llm = FakeLLM(default=READ)
     robot = FakeRobot(ENV, dict(HOUSE), answers=["no", RESTATE, "no", RESTATE, "no"])
-    loop = make_assist(robot, llm, ScriptedPlanner(PLAN), health_wait_s=0, confirm_task=True, dialog_unstick="1")
+    loop = declare(make_assist(robot, llm, ScriptedPlanner(PLAN), health_wait_s=0, confirm_task=True, dialog_unstick="1"))
     evs = list(loop.run_blocking(TASK))
     assert done([{k: v for k, v in e.items() if k != "world"} for e in evs])["status"] != "success"
     assert len(robot.asked) < 12
@@ -99,11 +107,22 @@ def test_a_short_answer_is_not_a_restatement(make_assist):
     ("Please put the red cup on the shelf.", "I said please put the red cup on the shelf", True),
     ("Please put the red cup on the shelf.", "the blue one", False),
     ("컵을 선반에 올려놔 주세요", "컵을 선반에 올려놔 주세요 제발", True),            # no word breaks inside a clause: character pairs
-    ("Hãy đặt cái cốc lên bàn", "Tôi nói hãy đặt cái cốc lên bàn", True),
-    ("Hãy đặt cái cốc lên bàn", "không phải", False),
 ])
 def test_restates(original, answer, yes):
-    assert DU.restates(original, answer) is yes
+    assert DU.restates(original, answer, UNSTICK) is yes
+
+
+def test_restates_needs_the_declared_numbers():
+    said = ("Please put the red cup on the shelf.", "I said please put the red cup on the shelf")
+    assert DU.restates(*said, UNSTICK) and not DU.restates(*said) and not DU.restates(*said, {})
+    assert not DU.restates(*said, {k: v for k, v in UNSTICK.items() if k != "restate_frac"})
+    assert not DU.restates(*said, {**UNSTICK, "restate_frac": 1.0 + 1e-9})            # numbers are read, not assumed
+
+
+def test_without_declared_numbers_a_restatement_is_not_read_back_again(make_assist):
+    loop, robot, evs = play(make_assist, FakeLLM(default=READ), ["no", RESTATE, "it is what I said"], confirm_task=True,
+                            dialog_unstick="1", unstick=None)
+    assert not any("same way again" in q for q in robot.asked) and loop.lab_log == []
 
 
 # ── G2: a not-sure answer to a where-is question is a cue to search ──
@@ -126,24 +145,31 @@ def test_without_the_option_the_question_comes_back(make_assist):
 
 
 def test_third_language_without_data_uses_the_structural_fallback(make_assist):
-    loop, robot, evs = play(make_assist, where_llm(), ["không biết"], task="Đặt cái cốc lên kệ", lang="vi",
+    # "qq" is made up: no language pack, no pack phrases; the manifest declares the two fallback numbers
+    loop, robot, evs = play(make_assist, where_llm(), ["nu sabi"], task="Pon qa tazu na kele", lang="qq",
                             confirm_task=False, confirm_answers=False, dialog_unstick="1")
     assert done(evs)["status"] == "success" and "find" in [s for s, *_ in robot.trace]
     assert [e.get("question") for e in evs if e["event"] == "clarify"] == ["Where is the cup?"]
 
 
+def test_third_language_without_data_and_without_numbers_does_nothing(make_assist):
+    loop, robot, evs = play(make_assist, FakeLLM(default=ABSTAIN), ["nu sabi", "nu sabi"], task="Pon qa tazu na kele", lang="qq",
+                            confirm_task=False, confirm_answers=False, dialog_unstick="1", unstick=None)
+    assert "find" not in [s for s, *_ in robot.trace] and loop.lab_log == []
+
+
 def test_third_language_with_pack_data(make_assist):
-    loop, robot, evs = play(make_assist, where_llm(), ["tôi thật sự không biết nó ở đâu cả nhé bạn ơi"],
-                            task="Đặt cái cốc lên kệ", lang="vi", confirm_task=False, confirm_answers=False, dialog_unstick="1",
-                            phrases={"answer_unsure": {"vi": ["không biết"]}})
+    loop, robot, evs = play(make_assist, where_llm(), ["nu sabi tava kele ki sa mi no ve ra to"],
+                            task="Pon qa tazu na kele", lang="zz", confirm_task=False, confirm_answers=False, dialog_unstick="1",
+                            phrases={"answer_unsure": {"zz": ["nu sabi"]}}, unstick=None)
     assert done(evs)["status"] == "success" and "find" in [s for s, *_ in robot.trace]
     assert loop.lab_log == [{"flag": "dialog_unstick", "part": "unsure_search", "taken": True}]
 
 
 def test_a_named_place_is_an_answer_not_a_not_sure(make_assist):
     places = Places(ENV)
-    assert DU.unsure_answer("I don't know", places) and DU.unsure_answer("không biết", places, None, "vi")
-    assert not DU.unsure_answer("it is on the table", places) and not DU.unsure_answer("bàn", places, None, "vi")
+    assert DU.unsure_answer("I don't know", places) and DU.unsure_answer("nu sabi", places, None, "qq", UNSTICK)
+    assert not DU.unsure_answer("it is on the table", places) and not DU.unsure_answer("tavo", places, None, "qq", UNSTICK)
     assert not DU.unsure_answer("", places)
     long = "it should be somewhere around the back of the house near the old garden shed"
     assert not DU.unsure_answer(long, places)                      # a long answer is not guessed at
@@ -154,8 +180,10 @@ def test_a_named_place_is_an_answer_not_a_not_sure(make_assist):
 def test_english_has_data_so_no_structural_guess():
     places = Places(ENV)
     for a in ("Yes.", "The red one.", "No."):
-        assert not DU.unsure_answer(a, places, None, "en")
-    assert DU.unsure_answer("Yes.", places, None, "ko") and DU.unsure_answer("네, 맞아요.", places, None, "ko")    # no data: fallback
+        assert not DU.unsure_answer(a, places, None, "en", UNSTICK)
+    # a language with no data: the fallback needs the declared numbers (none declared = no guess)
+    assert DU.unsure_answer("Yes.", places, None, "qq", UNSTICK) and not DU.unsure_answer("Yes.", places, None, "qq")
+    assert not DU.unsure_answer("Yes.", places, None, "qq", {"fallback_words": 5})
 
 
 def test_the_model_asking_something_else_is_left_alone(make_assist):
@@ -187,11 +215,11 @@ def test_silence_after_the_what_do_question_does_not_stack(make_assist):
 
 
 def test_pack_phrase_keys_carry_the_apology_per_language():
-    robot = types.SimpleNamespace(i18n=types.SimpleNamespace(phrases={"q_what_do": {"vi": "Xin lỗi. Tôi nên làm gì?"},
-                                                                       "q_silence": {"vi": "Xin lỗi, tôi không nghe thấy."}}))
+    robot = types.SimpleNamespace(i18n=types.SimpleNamespace(phrases={"q_what_do": {"qq": "Sa ri. Ka mi?"},
+                                                                       "q_silence": {"qq": "Sa ri, nu ka."}}))
     q = speech.LocalText("q_what_do")
-    assert speech.render(speech.calm(q).again(), "vi", robot) == "Xin lỗi. Tôi nên làm gì?"
-    assert speech.render(q.again(), "vi", robot) == "Xin lỗi, tôi không nghe thấy. Xin lỗi. Tôi nên làm gì?"
+    assert speech.render(speech.calm(q).again(), "qq", robot) == "Sa ri. Ka mi?"
+    assert speech.render(q.again(), "qq", robot) == "Sa ri, nu ka. Sa ri. Ka mi?"
 
 
 def test_option_on_changes_nothing_on_a_clean_run(make_assist):

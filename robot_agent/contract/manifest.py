@@ -48,13 +48,18 @@ _TOP_KEYS = {"robot", "version", "language", "capabilities", "geometry", "planne
 #   exec_integrity (family) / gate_strict / endstate_check / reset_container / wait_on_robot, inventory_ask (0 | 1, default 0:
 #   solution-lab round 3, docs/env.md), dialog_unstick (0 | 1, default 0: round 4, docs/env.md), canonical_lang (en | none | <code>: the language of the core's object labels),
 #   label_tokens (words | none), recovery.wait ({action, schedule_s: [...]}: the wait skill WAIT_HEALTH may run),
+#   recovery.return_tries (count >= 1: endstate_check tries), kind_anchor_ask (0 | 1, default 0: keep an unasked open goal and
+#   read it back as a doubt instead of dropping it), unstick (the numbers of dialog_unstick: fallback_words, fallback_chars,
+#   restate_frac, restate_word_len, restate_min_words, restate_min_bigrams; none declared = that part does nothing),
 #   detector_miss_rate (0 to 0.9, default 0.1: the chance that a look at the right place does not see the object;
 #   one miss is then weak evidence and the search looks again at the places the belief still holds probable)
 PLANNER_KEYS = {"seed_memory", "notes", "llm_budget", "translate_model", "translate_url", "translate_budget",
                 "search_legs", "search_total", "input_pivot", "detector_miss_rate", "person_goals", "accept_goals",
                 "go_steps", "kind_anchor", "name_canon", "reask_abstain",
                 "exec_integrity", "gate_strict", "endstate_check", "reset_container", "wait_on_robot", "inventory_ask",
-                "dialog_unstick", "canonical_lang", "label_tokens", "recovery"}
+                "dialog_unstick", "canonical_lang", "label_tokens", "recovery", "kind_anchor_ask", "unstick"}
+UNSTICK_KEYS = {"fallback_words", "fallback_chars", "restate_frac", "restate_word_len", "restate_min_words",
+                "restate_min_bigrams"}
 # keys of the optional `limits:` section (what the body can carry; checked against the ENV object estimates)
 LIMIT_KEYS = {"payload_kg", "max_object_size_m"}
 # planner.notes: short lines for the direct planner's prompt (docs/direct_prompt.md)
@@ -346,6 +351,18 @@ def _planner(v, errs) -> dict:
                 and isinstance(sched, list) and sched
                 and all(isinstance(x, (int, float)) and not isinstance(x, bool) and x > 0 for x in sched)):
             errs.append("planner.recovery.wait: must be {action: <name>, schedule_s: [seconds > 0, ...]}")
+    rt = (v.get("recovery") or {}).get("return_tries") if isinstance(v.get("recovery"), dict) else None
+    if rt is not None and not (isinstance(rt, int) and not isinstance(rt, bool) and rt >= 1):
+        errs.append(f"planner.recovery.return_tries: must be an integer >= 1, got {rt!r}")
+    un = v.get("unstick")
+    if un is not None:
+        if not isinstance(un, dict) or not all(isinstance(x, (int, float)) and not isinstance(x, bool) and x >= 0
+                                               for x in un.values()):
+            errs.append("planner.unstick: must be a mapping of non-negative numbers")
+        else:
+            bad = sorted(set(un) - UNSTICK_KEYS)
+            if bad:
+                errs.append(f"planner.unstick: unknown keys {bad} (allowed: {sorted(UNSTICK_KEYS)})")
     notes = v.get("notes")
     if notes is not None:
         if not isinstance(notes, list):

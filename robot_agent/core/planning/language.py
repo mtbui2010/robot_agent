@@ -36,20 +36,48 @@ import re
 from dataclasses import dataclass, field
 from typing import Optional
 
-from . import speech
+from . import langdata, speech
 from .understand import LLMBudgetExceeded
 
 PIVOTS = ("none", "translate", "both")
 
 _SNAKE = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b")
-LANGS = {"ko": "Korean", "vi": "Vietnamese", "ja": "Japanese", "zh": "Chinese"}
-REGISTER = {"ko": "polite spoken Korean, 해요체", "vi": "polite spoken Vietnamese", "ja": "polite spoken Japanese",
-            "zh": "polite spoken Chinese"}
+
+
+class _PackNames:
+    """``{code: value}`` read from the language packs (``name`` / ``register``): a language is a translate target only
+    when its pack names it. Data, not code: a language without a pack is not in it."""
+
+    def __init__(self, key: str) -> None:
+        self.key = key
+
+    def get(self, lang, default=None):
+        v = langdata.get(lang).get(self.key)
+        return v if isinstance(v, str) and v else default
+
+    def __getitem__(self, lang):
+        v = self.get(lang)
+        if v is None:
+            raise KeyError(lang)
+        return v
+
+    def __contains__(self, lang) -> bool:
+        return self.get(lang) is not None
+
+    def keys(self):
+        return [lg for lg in langdata.languages() if self.get(lg) is not None]
+
+    def items(self):
+        return [(lg, self[lg]) for lg in self.keys()]
+
+    __iter__ = lambda self: iter(self.keys())      # noqa: E731
+
+
+LANGS = _PackNames("name")              # the languages the robot can translate into / out of (language packs)
+REGISTER = _PackNames("register")
 
 UNCLEAR = "UNCLEAR"
-_HANGUL = re.compile(r"[가-힣]")
 _NON_LATIN = re.compile(r"[가-힣぀-ヿ㐀-䶿一-鿿Ѐ-ӿ]")
-_STRIP_AFTER = re.compile(r"(?:이|가|은|는|을|를|에|에서|으로|로|한테|에게|의|도|랑|이랑|와|과)$")
 
 _IN_PROMPT = ("Translate what this person said to their household robot, from {name} into plain English. Keep the "
               "meaning, names and numbers. Do not add anything and do not answer it.{names} If the text is not an "
@@ -71,28 +99,32 @@ class Heard:
     lost: list = field(default_factory=list)      # ENV names in the original that the English does not carry
 
 
-# Share of non-ASCII letters that marks a text as written in the language. Vietnamese is a Latin script whose words carry
-# diacritics on about a third of the letters, so 0.5 (right for the non-Latin scripts) never accepts a Vietnamese line.
-NON_ASCII_MIN = {"vi": 0.25}
 # The lab-round-3 language fixes (a lead part that cannot be said is left out of a joined question, a read-back keeps its
-# kind in the last resort, the Vietnamese threshold above) act only with one of these options on, so that with every lab
+# kind in the last resort, the per-language Latin-script threshold of the pack) act only with one of these options on, so that with every lab
 # option off a run is the earlier behaviour byte for byte.
 LAB_FIX_FLAGS = ("dialog_unstick", "inventory_ask")
 
 
-def localized(text, lang: str, mins=None) -> bool:
-    """Is ``text`` already said in ``lang`` (mostly its script)? English is always 'localized'. ``mins``: per-language
-    share of non-ASCII letters for a Latin-script language (default 0.5 for every language but Korean)."""
-    lg = (lang or "en")[:2]
-    t = str(text or "")
-    if lg == "en" or lg not in LANGS:
+def localized(text, lang: str, per_language: bool = False) -> bool:
+    """Is ``text`` already said in ``lang``? Language-pack data decides: a language whose pack declares ``script``
+    (``letters`` and ``min_share``, plus an ``other_script`` that must not occur) is checked by that script; any other
+    language with a pack by the share of non-ASCII letters (0.5, or the pack's ``non_ascii_min`` when ``per_language``).
+    A language without a pack (English included) is always 'localized': nothing can show it is not."""
+    lg = (lang or "")[:2]
+    if lg not in LANGS:
         return True
+    t = str(text or "")
     letters = [c for c in t if c.isalpha()]
     if not letters:
         return True                                  # digits / punctuation only
-    if lg == "ko":
-        return sum(1 for c in letters if _HANGUL.match(c)) / len(letters) >= 0.7 and not speech._HAN_KANA.search(t)
-    return sum(1 for c in letters if not c.isascii()) / len(letters) >= (mins or {}).get(lg, 0.5)
+    script = langdata.get(lg).get("script") or {}
+    if script.get("letters"):
+        mine = re.compile(script["letters"])
+        other = re.compile(script["other_script"]) if script.get("other_script") else None
+        return (sum(1 for c in letters if mine.match(c)) / len(letters) >= float(script.get("min_share", 0.5))
+                and not (other and other.search(t)))
+    floor = langdata.number(langdata.get(lg), "non_ascii_min", 0.5) if per_language else 0.5
+    return sum(1 for c in letters if not c.isascii()) / len(letters) >= floor
 
 
 class LanguageAdapter:
@@ -207,7 +239,7 @@ class LanguageAdapter:
         return any(bool(cfg.get(k)) for k in LAB_FIX_FLAGS)
 
     def _loc(self, text, lg: str) -> bool:
-        return localized(text, lg, NON_ASCII_MIN if self._fixes() else None)
+        return localized(text, lg, self._fixes())
 
     def _local_sentences(self, text: str, lg: str) -> str:
         """The sentences of ``text`` that are already in ``lg`` ("" when none or all)."""

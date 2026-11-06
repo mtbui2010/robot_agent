@@ -137,11 +137,13 @@ APPLE_BACK = U(("on", "apple", "desk", "dining table"), ("go", "", "", "desk"))
 BACK_PLAN = steps(f"MoveTo {DS}", "Find apple", "Pick apple", f"MoveTo {DT}", f"Place {DT}", f"MoveTo {DS}")
 
 
-def _back(make_assist, env, nth, **opts):
+def _back(make_assist, env, nth, tries=3, **opts):
     fault = [{"skill": "move", "obj": DS, "kind": "fail", "nth": nth, "msg": "move failed: motor stalled"}]
     robot = FakeRobot(env, HOUSE, faults=fault)
-    evs = run_task(make_assist(robot, FakeLLM(APPLE_BACK), ScriptedPlanner(BACK_PLAN, replans=[[]]), health_wait_s=0, **opts),
-                   "Bring the apple from the desk to the dining table, then go back to the desk.")
+    loop = make_assist(robot, FakeLLM(APPLE_BACK), ScriptedPlanner(BACK_PLAN, replans=[[]]), health_wait_s=0, **opts)
+    if tries:                                     # the pack's planner.recovery.return_tries
+        loop.robot.manifest.planner = dict(loop.robot.manifest.planner or {}, recovery={"return_tries": tries})
+    evs = run_task(loop, "Bring the apple from the desk to the dining table, then go back to the desk.")
     return evs, robot
 
 
@@ -149,6 +151,11 @@ def test_endstate_check_off_ignores_the_failed_return(make_assist, env):
     evs, robot = _back(make_assist, env, [3, 4, 5])
     assert done(evs)["status"] == "success"
     assert [s for s, *_ in robot.trace].count("move") == 5 and robot.at == DT         # the return was tried once, it failed
+
+
+def test_endstate_check_without_declared_tries_does_nothing(make_assist, env):
+    evs, robot = _back(make_assist, env, [3, 4, 5], tries=None, endstate_check="1")       # same as the option off
+    assert done(evs)["status"] == "success" and [s for s, *_ in robot.trace].count("move") == 5
 
 
 def test_endstate_check_retries_the_return_then_succeeds(make_assist, env):
@@ -336,7 +343,7 @@ def test_inventory_ask_off_is_the_earlier_reading(make_assist, env, tmp_path):
 
 
 def test_inventory_ask_for_a_request_in_a_third_language_asks(make_assist, env, tmp_path):
-    u = _inv(make_assist, env, tmp_path, "Đặt cái cốc lên bàn ăn", inventory_ask="1", confirm_task=False, answers=["cái màu xanh"])
+    u = _inv(make_assist, env, tmp_path, "Qa tazu na dining table", inventory_ask="1", confirm_task=False, answers=["the blue one"])
     assert "more than one mug" in u["question"]
 
 

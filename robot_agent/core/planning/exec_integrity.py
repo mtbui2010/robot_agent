@@ -22,7 +22,6 @@ from __future__ import annotations
 
 FLAGS = ("gate_strict", "endstate_check", "reset_container", "wait_on_robot")
 MISSING_PREFIX = "the plan does not achieve: "
-DEFAULT_RETURN_TRIES = 3         # endstate_check: tries to re-achieve a go goal (manifest ``planner.recovery.return_tries``)
 
 
 def per_goal_findings(findings: list, n_missing: int) -> list:
@@ -43,6 +42,11 @@ def bind_subset(obj: str, goal_objects, tokens: str = "words") -> str:
     tok = set(str(obj).split())
     fit = [n for n in names if tok and tok < set(n.split())]
     return fit[0] if len(fit) == 1 else obj
+
+
+def return_tries(declared) -> int:
+    """Tries to re-achieve a go goal (``planner.recovery.return_tries``: an integer >= 1), 0 when not declared / bad."""
+    return int(declared) if isinstance(declared, int) and not isinstance(declared, bool) and declared >= 1 else 0
 
 
 def wait_schedule(declared) -> tuple:

@@ -19,14 +19,13 @@ from __future__ import annotations
 
 import re
 
-from . import lexicon
+from . import langdata, lexicon
 from .understand import _norm, place_mentions
 
 _EN_INTO = re.compile(r"\b(?:in|into|inside)\s+(?:the\s+|my\s+|your\s+|a\s+|our\s+|her\s+|his\s+)?(?:[\w'-]+\s+){0,2}$")
 _EN_ONTOP = re.compile(r"\bon\s+top\s+of\s+(?:the\s+|my\s+|your\s+)?(?:[\w'-]+\s+){0,2}$|\bonto\s+(?:the\s+)?(?:[\w'-]+\s+){0,2}$")
 _KO_INTO = re.compile(r"^\s*(?:의\s*)?(?:안|속|안쪽)|^(?:에|에다|에다가)?\s*(?:\S+\s+){0,2}?\S*넣")
 _KO_ONTOP = re.compile(r"^\s*(?:의\s*)?위")
-_VI_INTO = re.compile(r"\b(?:vào|trong)\s+(?:\S+\s+){0,2}$")
 
 
 def _mentions_of(key: str, text: str, places) -> list:
@@ -41,7 +40,7 @@ def says_into(key: str, text: str, places) -> bool:
         before, after = t[max(0, s - 32):s], t[e:e + 16]
         if _EN_ONTOP.search(before) or _KO_ONTOP.search(after):
             continue
-        if _EN_INTO.search(before) or _VI_INTO.search(before) or _KO_INTO.search(after):
+        if _EN_INTO.search(before) or _KO_INTO.search(after):
             return True
     return False
 
@@ -80,8 +79,8 @@ def drop_empty(goals: list) -> tuple:
     return keep, [g for g in goals if g not in keep]
 
 
-_OPEN = re.compile(r"\bopen\b|열어|열어\s*줘|mở", re.I)
-_CLOSE = re.compile(r"\b(?:close|shut)\b|닫아|đóng", re.I)
+_OPEN = re.compile(r"\bopen\b|열어|열어\s*줘", re.I)
+_CLOSE = re.compile(r"\b(?:close|shut)\b|닫아", re.I)
 
 
 def drop_invented(goals: list, text: str, places) -> tuple:
@@ -284,62 +283,66 @@ def go_steps(goals: list, task: str, places) -> tuple:
     return keep, dropped
 
 
-OPEN_WORDS = {      # words that ask to OPEN something (a robot pack extends them with its i18n key ``open_words``)
-    "en": [r"\bopen"],
-    # 열다 is l-irregular: the l drops before n, p, s (연다, 엽니다, 여세요, 여는); 열쇠 (key) does not count
-    "ko": [r"(?<![가-힣])열(?:[어었고면려기게을은린지자까래도며나겠야렴]|\s+(?:수|거|것|때)|$)", r"(?<![가-힣])(?:여(?:세요|십시오|시|는|니|라|네)|엽니|연다)"],
-    "vi": [r"\bmở\b"],
-}
+OPEN_WORDS = lexicon.OPEN_WORDS     # words that ask to OPEN something: language-pack data (+ a robot pack's i18n ``open_words``)
 
 
 def open_words_for(lang, robot=None) -> list:
-    """The regexes that say "open" in run language ``lang``, or None when there is no data for it. ``lang`` None: the
-    earlier behaviour (every core language plus the pack's words for them). English, Korean and Vietnamese have core
-    words; any other language only has what the pack declares (i18n ``open_words``, read for that language)."""
+    """The regexes that say "open" in run language ``lang``, or None when there is no data for it. ``lang`` None: every
+    language with core data plus the pack's words. A language with core data uses all of it (a mixed utterance); any
+    other language only has what the pack declares (i18n ``open_words``, read for that language)."""
     if lang is None:
         return lexicon.patterns(OPEN_WORDS, robot, "open_words")
-    lg = str(lang or "en")[:2].lower()
+    lg = str(lang or "")[:2].lower()
     if lg in OPEN_WORDS:
         return lexicon.patterns(OPEN_WORDS, robot, "open_words")
-    out = lexicon.patterns({}, robot, "open_words", langs=(lg,))
+    out = lexicon.patterns(OPEN_WORDS, robot, "open_words", langs=(lg,))
     return out or None
 
 
-def kind_anchor_open(goals: list, text: str, places, robot=None, lang=None, english: str = "") -> tuple:
-    """(goals, dropped): option ``kind_anchor``. An ``open`` goal the person's words carry no open verb for is an
-    end state nobody asked for (the plan gate still opens a container as a STEP when a put-in needs it). Dropped
-    only when another goal remains, and only for a robot with an Open skill (``plan_actions``).
-
-    ``lang`` is the run language. With no open-word data for it (not en / ko / vi, no pack ``open_words`` for it) the
-    words cannot show that nobody asked, so nothing is dropped, unless ``english`` is a trusted English reading that
-    differs from ``text``: then that reading is checked with the English words. Never a guess."""
+def unrequested_open(goals: list, text: str, places, robot=None, lang=None, english: str = "") -> list:
+    """The ``open`` goals the person's words carry no open word for ([] when the check cannot say: no Open skill, no other
+    goal, no open-word data for ``lang``). ``english`` is a trusted English reading, checked with the English words only
+    when ``lang`` has no data. Never a guess."""
     acts = getattr(robot, "plan_actions", None)
     if acts is not None and "Open" not in acts:
-        return goals, []
+        return []
     if not any(g.get("type") != "open" for g in goals) or not any(g.get("type") == "open" for g in goals):
-        return goals, []
+        return []
     pats = open_words_for(lang, robot)
     if pats is None:
         eng = str(english or "")
-        if not eng or eng == text or not eng.isascii():
-            return goals, []
-        pats, text = lexicon.patterns(OPEN_WORDS, robot, "open_words", langs=("en",)), eng
+        pivot = langdata.PROMPT_LANG
+        if not eng or eng == text or not eng.isascii() or pivot not in OPEN_WORDS:
+            return []
+        pats, text = lexicon.patterns(OPEN_WORDS, robot, "open_words", langs=(pivot,)), eng
     t = " ".join(str(text or "").lower().split())
     if any(re.search(p, t) for p in pats):
-        return goals, []
-    return [g for g in goals if g.get("type") != "open"], [g for g in goals if g.get("type") == "open"]
+        return []
+    return [g for g in goals if g.get("type") == "open"]
 
 
-def _plain(s) -> str:
-    return re.sub(r"^(?:the|a|an|some|my|your)\s+", "", _norm(s)).replace("-", " ").strip()
+def kind_anchor_open(goals: list, text: str, places, robot=None, lang=None, english: str = "") -> tuple:
+    """(goals, dropped): option ``kind_anchor``. An ``open`` goal the person's words carry no open word for is an
+    end state nobody asked for (the plan gate still opens a container as a STEP when a put-in needs it). Dropped
+    only when another goal remains, and only for a robot with an Open skill (``plan_actions``).
+
+    ``lang`` is the run language. With no open-word data for it (no language pack words, no pack ``open_words`` for
+    it) the words cannot show that nobody asked, so nothing is dropped, unless ``english`` is a trusted English reading
+    that differs from ``text``: then that reading is checked with the English words. Never a guess."""
+    gone = unrequested_open(goals, text, places, robot, lang, english)
+    return ([g for g in goals if not any(g is x for x in gone)], gone) if gone else (goals, [])
 
 
-def _singular(w: str) -> str:
-    w = w.strip()
-    for suf, rep in (("ies", "y"), ("ches", "ch"), ("shes", "sh"), ("ses", "s"), ("xes", "x"), ("s", "")):
-        if w.endswith(suf) and len(w) > len(suf) + 2:
-            return w[: -len(suf)] + rep
-    return w
+def _plain(s, lang: str = langdata.PROMPT_LANG) -> str:
+    arts = langdata.phrases(lang, "articles")
+    out = _norm(s)
+    if arts:
+        out = re.sub(r"^(?:" + "|".join(re.escape(a) for a in arts) + r")\s+", "", out)
+    return out.replace("-", " ").strip()
+
+
+def _singular(w: str, lang: str = langdata.PROMPT_LANG) -> str:
+    return _fold(w, _data_rules(lang))
 
 
 def canon_names(goals: list, memory_objects: dict, places) -> tuple:
@@ -377,11 +380,17 @@ def canon_names(goals: list, memory_objects: dict, places) -> tuple:
     return out, which, notes
 
 
+def _data_rules(lang) -> list:
+    """The singular rules of ``lang``'s language pack (``plural_rules``: [[suffix, replacement], ...])."""
+    return [(str(r[0]), str(r[1])) for r in (langdata.value(lang, "plural_rules", []) or []) if isinstance(r, list) and len(r) == 2 and r[0]]
+
+
 def fold_rules(robot, lang: str) -> list:
-    """[(suffix, replacement)] the pack declares to fold a plural onto a singular label of `lang`: its i18n key
-    ``plural_fold`` (``"ies>y|ches>ch|s>"``). English has the core default. None declared: no folding."""
-    if lang == "en":
-        return [("ies", "y"), ("ches", "ch"), ("shes", "sh"), ("ses", "s"), ("xes", "x"), ("s", "")]
+    """[(suffix, replacement)] that fold a plural onto a singular label of `lang`: the language pack's ``plural_rules`` when
+    it has them, else the robot pack's i18n key ``plural_fold`` (``"ies>y|ches>ch|s>"``). None declared: no folding."""
+    core = _data_rules(lang)
+    if core:
+        return core
     try:
         phrases = (getattr(getattr(robot, "i18n", None), "phrases", None) or {}).get("plural_fold") or {}
     except Exception:
@@ -470,10 +479,10 @@ def canon_inventory(goals: list, memory_objects: dict, places, lang: str = "en",
         return goals, None, []
     sing = lambda w: _fold(w, rules)                                                    # noqa: E731
     said = {sing(t) for t in _norm(english).split()}
-    used = {_plain(g.get("object")) for g in goals if _plain(g.get("object")) in names}
+    used = {_plain(g.get("object"), lang) for g in goals if _plain(g.get("object"), lang) in names}
     out, notes, which = [], [], None
     for g in goals:
-        o = _plain(g.get("object"))
+        o = _plain(g.get("object"), lang)
         if g.get("type") not in ("on", "in") or not o or o in names or places.env.get(o) or places.candidates(o, ""):
             out.append(g)
             continue
@@ -498,15 +507,10 @@ def canon_inventory(goals: list, memory_objects: dict, places, lang: str = "en",
 
 # ── abstention audit (option reask_abstain, default OFF) ─────────────────────────────────────────────────────────
 # the model's own English question or reason asks where an OBJECT is now (a search can answer that), not where to PUT it
-_WHERE_NOW = re.compile(
-    r"where (?:is|are|was|were|can i find|could i find|do i find|would i find|might)\b|\blocation of\b|"
-    r"\b(?:is|are) (?:located|currently)\b|\bcurrent(?:ly)? (?:location|place)\b|"
-    r"(?:not|n't) (?:know|sure|specified|mentioned|clear|given|stated)\b[^.?]*\bwhere (?:the|it|they|this|that|those|these)\b|"
-    r"(?:location|whereabouts)[^.?]*(?:unknown|not (?:known|specified|mentioned|given|clear|stated|provided))", re.I)
-_WHERE_PUT = re.compile(r"where (?:should|shall|do you want|would you like|to|must)\b[^.?]*\b"
-                        r"(?:put|place|leave|bring|take|deliver|move|go|set)", re.I)
-_WHERE_OBJ = re.compile(r"where (?:is|are|was|were) (?:the |my |your |a |an |some )?([a-z][a-z -]*?)"
-                        r"(?: located| kept|\?| now| currently|,| and | or )", re.I)
+def _rx(key: str):
+    """The model-question pattern ``key`` of the prompt language's pack, compiled (None when the pack has none)."""
+    pats = langdata.words(langdata.PROMPT_LANG, key)
+    return re.compile("|".join(pats), re.I) if pats else None
 
 
 def abstains_on_location(u: dict):
@@ -515,9 +519,12 @@ def abstains_on_location(u: dict):
     if not isinstance(u, dict) or u.get("goals") or u.get("status") not in ("ambiguous", "infeasible"):
         return None
     q, why = str(u.get("question") or ""), str(u.get("reason") or "")
-    if not _WHERE_NOW.search(q + " " + why) or _WHERE_PUT.search(q):
+    now, put, obj = _rx("where_now"), _rx("where_put"), _rx("where_obj")
+    if now is None or obj is None:                    # no data for the prompt language: the check does nothing
         return None
-    return [_plain(m.group(1)) for m in _WHERE_OBJ.finditer(q + " " + why) if _plain(m.group(1))]
+    if not now.search(q + " " + why) or (put is not None and put.search(q)):
+        return None
+    return [_plain(m.group(1)) for m in obj.finditer(q + " " + why) if _plain(m.group(1))]
 
 
 def covers_objects(goals: list, objects: list) -> bool:

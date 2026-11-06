@@ -5,6 +5,15 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+### Generalisation: language and robot facts are data (lab round 6)
+- Language packs `core/planning/lang/<code>.json` (`langdata.py`) hold the word lists (`lexicon` tables, `open_words`, the
+  model-question patterns of `reask_abstain`), `answer_unsure`, articles, plural rules, translate names, script data. English
+  and Korean ship; a language without a pack is not guessed at (the flag does nothing for it). Vietnamese is removed everywhere
+  (core lists, router, announcer, TTS, tests, docs).
+- Manifest numbers: `planner.unstick.*` (dialog_unstick), `planner.recovery.return_tries` (endstate_check; none declared = the
+  option does nothing). `planner.kind_anchor_ask` (default 0): an unasked open goal is kept and read back as a doubt.
+- Defaults unchanged: a replay of cached EN and KO episodes (flags off and on) is byte-identical to the previous head.
+
 ### Audit fixes (lab options; defaults unchanged)
 - `kind_anchor` reads the open words of the run language (and the pack's `open_words` for any language); no data for a language = no drop.
 - `reset_container` needs the pack's `planner.recovery.blocked_putin` (no declaration = no-op), every spliced action in `plan_actions`, no put-down with a free hand. `endstate_check` re-runs the action that achieved the go goal; `planner.recovery.return_tries`.
@@ -15,7 +24,7 @@ manifest format, the event schema). See `docs/contract.md`.
 - `canon_inventory` collapses the memory names of one remembered instance (same record `instance` / `id` / `sighting`, or related by the pack's i18n key `object_aliases`, `{lang: ["mug|coffee mug"]}`) into one candidate and lists one name per instance; the which-question declares its kind (`speech.LocalText.ask`, `speech.declared_ask`: `qtype: which_object`, options). Tests: `tests/test_sage_lab_r5_inventory_instances.py`.
 
 ### Language layer: a question keeps its kind (lab round 3)
-- The last resort of `LanguageAdapter` for a read-back (`q_confirm`) is never the "say the task in other words" question; a lead part of a joined text that cannot be said is left out instead of becoming that question; Vietnamese lines are recognised as localized at 25 % non-ASCII letters (`language.NON_ASCII_MIN`). Tests: `tests/test_sage_lab_r5_restated_readback.py`.
+- The last resort of `LanguageAdapter` for a read-back (`q_confirm`) is never the "say the task in other words" question; a lead part of a joined text that cannot be said is left out instead of becoming that question. Tests: `tests/test_sage_lab_r5_restated_readback.py`.
 
 ### Dialogue unstick (option `dialog_unstick`; env `ROBOT_AGENT_DIALOG_UNSTICK`, manifest `planner.dialog_unstick`; default off)
 - A restatement that reproduces the refused reading is read back once more (a lead phrase `rb_restated` before the ordinary `q_confirm` read-back, so a pack that has `q_confirm` says the summary without a translator call) instead of ending the run; a not-sure answer to a where-is question makes the robot search (one more understand call with its Find stated; "not sure" = core English phrases + pack i18n `answer_unsure` + a structural fallback); a question with its own apology is not prefixed with the silence apology when asked again. Helpers: `core/planning/dialog_unstick.py`, `speech.calm`. Tests: `tests/test_sage_lab_r4_unstick.py`.

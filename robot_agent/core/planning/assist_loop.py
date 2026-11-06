@@ -83,7 +83,7 @@ ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify
                 "search_legs", "object_check", "detector_miss_rate", "person_goals", "accept_goals",
                 "go_steps", "kind_anchor", "name_canon", "reask_abstain",
                 "exec_integrity", "gate_strict", "endstate_check", "reset_container", "wait_on_robot", "inventory_ask",
-                "dialog_unstick"}
+                "dialog_unstick", "kind_anchor_ask"}
 _USER_WORDS = {"me", "user", "here", "you", "myself", "person"}
 
 
@@ -494,6 +494,10 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             # search; a question with its own apology is not asked again behind the silence apology
             "dialog_unstick": str(overrides.get("dialog_unstick", env("ROBOT_AGENT_DIALOG_UNSTICK", str(
                 self._manifest_planner("dialog_unstick", "0"))))).lower() in ("1", "true", "yes", "on"),
+            # kind_anchor_ask (default OFF; acts only with kind_anchor): an open goal the person's words carry no open word
+            # for is kept and read back as a doubt ("I am not sure ...") instead of being dropped silently
+            "kind_anchor_ask": str(overrides.get("kind_anchor_ask", env("ROBOT_AGENT_KIND_ANCHOR_ASK", str(
+                self._manifest_planner("kind_anchor_ask", "0"))))).lower() in ("1", "true", "yes", "on"),
         }
 
     def _r3_cfg(self, overrides) -> dict:
@@ -1670,7 +1674,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         finds = sorted(a for a in self.robot.plan_actions if a.lower() == "find")
         objs = goal_fix.abstains_on_location(u) if finds and r.dialogue and r.dialogue[-1][0] == "user" else None
         if objs is None or not dialog_unstick.unsure_answer(
-                r.dialogue[-1][1], r.places, getattr(getattr(self.robot, "i18n", None), "phrases", None), r.lang):
+                r.dialogue[-1][1], r.places, getattr(getattr(self.robot, "i18n", None), "phrases", None), r.lang,
+                self._manifest_planner("unstick", None)):
             return u
         r.unsure_reasked = True
         try:
@@ -1710,7 +1715,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         request did not name (``adds_entity``)? A bare restatement is not read back again: it only re-draws the reading."""
         said = [t for w_, t in r.dialogue if w_ == "user"]
         orig = self.original or r.task
-        return bool(said) and dialog_unstick.restates(orig, said[-1]) and dialog_unstick.adds_entity(orig, said[-1], r.places)
+        return bool(said) and dialog_unstick.restates(orig, said[-1], self._manifest_planner("unstick", None)) and dialog_unstick.adds_entity(orig, said[-1], r.places)
 
     def _progress(self, r) -> None:
         """A question whose answer gave a goal set not seen before has gained something: its round is given
@@ -1814,11 +1819,19 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             r.filtered += gone
         if c.get("kind_anchor"):
             heard = None if (getattr(r, "lang", None) or "en")[:2] == "en" else getattr(self.language, "heard", {}).get(r.task)
-            goals, gone = goal_fix.kind_anchor_open(goals, words_, r.places, self.robot, getattr(r, "lang", None) or "en",
-                                                    heard.english if heard is not None and heard.trusted else "")
-            if gone:
-                self._lab("kind_anchor", dropped=len(gone))
-            r.filtered += gone
+            args = (words_, r.places, self.robot, getattr(r, "lang", None) or "en",
+                    heard.english if heard is not None and heard.trusted else "")
+            if c.get("kind_anchor_ask"):               # keep the open goal; the read-back names the doubt
+                doubt = goal_fix.unrequested_open(goals, *args)
+                r.kind_doubts = [f"I am not sure you asked me to open the "
+                                 f"{str(g.get('object') or g.get('to') or 'it').replace('@', ' in the ')}" for g in doubt]
+                if doubt:
+                    self._lab("kind_anchor", asked=len(doubt))
+            else:
+                goals, gone = goal_fix.kind_anchor_open(goals, *args)
+                if gone:
+                    self._lab("kind_anchor", dropped=len(gone))
+                r.filtered += gone
         if c.get("name_canon") or c.get("inventory_ask"):
             before = [g.get("object") for g in goals]
             goals, which, _notes = self._canon(r, goals)
@@ -1891,7 +1904,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         (CLARA-style consistency). Else the person is asked an open question the first time (returned), and
         later the read-back names the doubt (r.unsure). _STOP when an LLM call failed."""
         issues = self._issues(r, r.goals)
-        r.unsure = [describe(i) for i in issues]
+        r.unsure = [describe(i) for i in issues] + list(getattr(r, "kind_doubts", None) or [])
+        r.kind_doubts = []                                  # a doubt is named once, in the first read-back
         if self._unverified_objects(r):
             r.force_readback = True                                                    # F4.8: read it back
         if issues and not getattr(r, "sampled", False) and self.cfg["understand_samples"] > 0:
@@ -2829,7 +2843,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
                               "evidence": {"goal": r.goal_checks[-1]["goal"], "observed": ev_}})
         last = r.goals[-1] if r.goals else {}
         if last.get("type") == "go" and last.get("to") and r.world.arrived != last["to"]:
-            if self.cfg.get("endstate_check"):                          # round 3: a checked step, not a hope
+            if self.cfg.get("endstate_check") and self._return_tries():  # round 3: a checked step, not a hope
                 unmet += self._return_to_end(r, last["to"])
             else:
                 self._look(r, {"action": "MoveTo", "object": last["to"]})    # back where the task ends ("go back and charge")
@@ -2847,17 +2861,17 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
                 return st["action"]
         return "MoveTo"
 
+    def _return_tries(self) -> int:
+        """The pack's declared ``planner.recovery.return_tries`` (a count >= 1), or 0 when it declares none (then
+        ``endstate_check`` does nothing: the return stays one plain MoveTo)."""
+        return exec_integrity.return_tries((self._manifest_planner("recovery", None) or {}).get("return_tries"))
+
     def _return_to_end(self, r, place, tries=None) -> list:
         """Option ``endstate_check``: the check tour's return to the task's last ``go`` place, retried (the pack's
-        ``planner.recovery.return_tries``, default 3); the action that achieved the goal in the plan (MoveTo, or the
+        ``planner.recovery.return_tries``); the action that achieved the goal in the plan (MoveTo, or the
         pack's Dock after a MoveTo) is run again. If it still fails the goal is unmet (one failure entry, coded by
         the adapter) and the run does not say done."""
-        try:
-            tries = int(tries if tries is not None else (self._manifest_planner("recovery", None) or {}).get(
-                "return_tries", exec_integrity.DEFAULT_RETURN_TRIES))
-        except (TypeError, ValueError):
-            tries = exec_integrity.DEFAULT_RETURN_TRIES
-        tries = max(tries, 1)
+        tries = max(int(tries if tries is not None else self._return_tries()), 1)
         act = self._end_action(r, place)
         res = None
         for n in range(tries):

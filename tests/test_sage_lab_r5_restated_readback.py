@@ -3,7 +3,7 @@ FakeRobot: the read-back of a restated reading is built from the ordinary read-b
 that has ``q_confirm`` says the summary without a translator call; and the language layer's last resort keeps a
 question's kind (a read-back never becomes "say the task in other words").
 
-Synthetic ENV / phrases / requests written for these tests (Korean, and Vietnamese as a third language)."""
+Synthetic ENV / phrases / requests written for these tests (Korean, and a made-up third language)."""
 import types
 
 import pytest
@@ -13,28 +13,30 @@ from robot_agent.core.planning import speech
 from robot_agent.core.planning.assist_loop import AssistLoop, Places
 
 ENV = {
-    "table@kitchen": {"aliases": ["bàn", "table", "식탁"], "loc": {"x": 3.0, "y": 1.0}},
-    "sofa@living room": {"aliases": ["ghế", "sofa", "소파"], "loc": {"x": 1.0, "y": 1.0}},
+    "table@kitchen": {"aliases": ["tavo", "table", "식탁"], "loc": {"x": 3.0, "y": 1.0}},
+    "sofa@living room": {"aliases": ["sofi", "sofa", "소파"], "loc": {"x": 1.0, "y": 1.0}},
 }
 PLAN = steps("MoveTo table@kitchen")
 READ = {"status": "clear", "reason": "", "question": "",
         "goals": [{"type": "go", "object": "", "from": "", "to": "table@kitchen"}]}
-TASKS = {"ko": "그쪽으로 바로 이동해 주세요", "vi": "Hãy đi tới đó ngay bây giờ nhé"}
-RESTATE = {"ko": "제가 말했잖아요 그쪽으로 바로 이동해 주세요 식탁으로", "vi": "Tôi đã nói Hãy đi tới đó ngay bây giờ nhé ở cái bàn"}
+TASKS = {"ko": "그쪽으로 바로 이동해 주세요", "qq": "Vá tù tá vé ní"}
+RESTATE = {"ko": "제가 말했잖아요 그쪽으로 바로 이동해 주세요 식탁으로", "qq": "Mì sá vá tù tá vé ní ká tavo"}
+UNSTICK = {"fallback_words": 5, "fallback_chars": 24, "restate_frac": 0.6, "restate_word_len": 3, "restate_min_words": 4,
+           "restate_min_bigrams": 6}
 PACK = {
     "ko": {"q_confirm": "{summary} 맞나요?", "rb_will": "{what}.", "sep_then": ", 그다음 ", "rb_go": "{place} 쪽으로 갈게요",
            "q_unclear_task": "죄송해요, 잘 이해하지 못했어요. 다른 말로 말씀해 주시겠어요?", "q_which_part": "어느 부분이 맞지 않나요?", "q_what_do": "죄송해요. 그럼 뭘 할까요?",
            "say_untranslated": "죄송해요, 지금은 그 말씀을 드리기 어려워요."},
-    "vi": {"q_confirm": "{summary} Đúng không?", "rb_will": "{what}.", "sep_then": ", rồi ", "rb_go": "đi tới {place}",
-           "q_unclear_task": "Xin lỗi, tôi chưa hiểu. Bạn nói lại bằng cách khác được không?", "q_which_part": "Phần nào chưa đúng?", "q_what_do": "Xin lỗi. Vậy tôi nên làm gì?",
-           "say_untranslated": "Xin lỗi, bây giờ tôi chưa nói được điều đó."},
+    "qq": {"q_confirm": "{summary} Ká sá?", "rb_will": "{what}.", "sep_then": ", rí ", "rb_go": "vá {place}",
+           "q_unclear_task": "Sá rí, nù tí. Ká mì?", "q_which_part": "Ká tí?", "q_what_do": "Sá rí. Ká mì vé?",
+           "say_untranslated": "Sá rí, nù ká."},
 }
-EXPECT = {"ko": "식탁 쪽으로 갈게요. 맞나요?", "vi": "đi tới bàn. Đúng không?"}
+EXPECT = {"ko": "식탁 쪽으로 갈게요. 맞나요?", "qq": "vá tavo. Ká sá?"}
 
 
 class EnglishTranslator(FakeLLM):
     """Understands the request (default answer) and 'translates' every robot line badly: Korean gets English words back
-    (the output guard rejects a non-Hangul line); Vietnamese (a Latin script, the guard cannot tell) gets a translator
+    (the output guard rejects a non-Hangul line); a language with no script of its own (the guard cannot tell) gets a translator
     that is down. Either way no line of the robot can be said by the model."""
 
     down = False
@@ -53,19 +55,29 @@ def env():
     return ENV
 
 
+@pytest.fixture(autouse=True)
+def made_up_language(monkeypatch):
+    """"qq" is made up. Its pack (language data) names it, so the language layer can translate to and from it, and gives the
+    share of non-ASCII letters that marks a line of this Latin-script language as said in it."""
+    from robot_agent.core.planning import langdata
+    monkeypatch.setitem(langdata._CACHE, "qq", {"lang": "qq", "name": "Qaqish", "register": "plain spoken Qaqish",
+                                                 "non_ascii_min": 0.25})
+
+
 def run(make_assist, lang, extra=None, **opts):
     phrases = {k: {lang: v} for k, v in PACK[lang].items()}
     phrases.update({k: {lang: v} for k, v in (extra or {}).items()})
     llm = EnglishTranslator(default=READ)
-    llm.down = lang == "vi"
+    llm.down = lang == "qq"
     robot = FakeRobot(ENV, {}, answers=["no", RESTATE[lang], "yes"])
     loop = make_assist(robot, llm, ScriptedPlanner(PLAN), health_wait_s=0, confirm_task=True, dialog_unstick="1", **opts)
     loop.robot.i18n.phrases.update(phrases)
+    loop.robot.manifest.planner = dict(loop.robot.manifest.planner or {}, unstick=UNSTICK)
     evs = [{k: v for k, v in e.items() if k not in ("world", "say_audio")} for e in loop.run_blocking(TASKS[lang], lang=lang)]
     return loop, robot, llm, evs
 
 
-@pytest.mark.parametrize("lang", ["ko", "vi"])
+@pytest.mark.parametrize("lang", ["ko", "qq"])
 def test_restated_readback_without_a_lead_phrase_is_the_plain_readback(make_assist, lang):
     loop, robot, llm, evs = run(make_assist, lang)
     readbacks = [q for q in robot.asked if EXPECT[lang].split(".")[0] in q]
@@ -82,9 +94,9 @@ def test_restated_readback_without_a_lead_phrase_is_the_plain_readback(make_assi
     assert done(evs)["status"] == "success"
 
 
-@pytest.mark.parametrize("lang", ["ko", "vi"])
+@pytest.mark.parametrize("lang", ["ko", "qq"])
 def test_restated_readback_with_a_lead_phrase_says_the_lead_then_the_readback(make_assist, lang):
-    lead = {"ko": "같은 뜻으로 다시 이해했어요.", "vi": "Tôi hiểu lại giống như vậy."}[lang]
+    lead = {"ko": "같은 뜻으로 다시 이해했어요.", "qq": "Mì vé sá tí."}[lang]
     loop, robot, llm, evs = run(make_assist, lang, extra={"rb_restated": lead})
     assert f"{lead} {EXPECT[lang]}" in robot.asked
     said = [p for p, _f in llm.calls if "Translate into natural" in p and ("go to the table" in p or "same way" in p)]
@@ -119,6 +131,7 @@ def test_readback_fallback_keeps_its_kind_in_the_language_layer():
 def test_english_run_is_unchanged(make_assist):
     robot = FakeRobot(ENV, {}, answers=["no", "I said: please go there right now, to the table"])
     loop = make_assist(robot, FakeLLM(default=READ), ScriptedPlanner(PLAN), health_wait_s=0, confirm_task=True, dialog_unstick="1")
+    loop.robot.manifest.planner = dict(loop.robot.manifest.planner or {}, unstick=UNSTICK)
     evs = list(loop.run_blocking("Please go there right now"))
     again = [q for q in robot.asked if "same way again" in q]
     assert len(again) == 1 and again[0].startswith("I understood it the same way again. I will go to") \

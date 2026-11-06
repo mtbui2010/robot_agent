@@ -130,7 +130,7 @@ def test_kind_anchor_off_keeps_the_open_goal(make_assist, tmp_path):
 @pytest.mark.parametrize("text,asked", [
     ("냉장고를 열어 주세요", True), ("냉장고 좀 열어줘", True), ("냉장고를 엽니다", True), ("문을 여세요", True),
     ("열쇠를 가져다 줘", False), ("컵을 식탁에 놔 주세요", False), ("Please open it", True), ("Put the cup away", False),
-    ("mở tủ lạnh", True), ("냉장고를 열 수 있어요?", True), ("문 열지 마", True), ("열까요?", True),
+    ("냉장고를 열 수 있어요?", True), ("문 열지 마", True), ("열까요?", True),
     ("서랍을 열래요", True), ("열심히 해 주세요", False), ("열매를 가져다 줘", False)])
 def test_open_words(text, asked):
     from robot_agent.core.planning import lexicon

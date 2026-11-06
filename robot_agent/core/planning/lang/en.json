@@ -1,0 +1,121 @@
+{
+ "lang": "en",
+ "words": {
+  "putin": [
+   "\\binto\\b",
+   "\\binside\\b",
+   "\\bin\\b"
+  ],
+  "on_top": [
+   "\\bon top of\\b",
+   "\\bonto\\b",
+   "\\bon\\b"
+  ],
+  "hand": [
+   "\\bhand (?:it |them |that |this )?(?:over )?(?:to )?(?:me|him|her|them)\\b",
+   "\\bhand me\\b",
+   "\\binto (?:my|his|her|their) hands?\\b",
+   "\\bin(?:to)? (?:my|his|her|their) hands?\\b",
+   "\\bpass (?:it |them )?(?:straight |directly )?(?:to )?me\\b",
+   "\\bdirectly to me\\b",
+   "\\bstraight to me\\b",
+   "\\bgive (?:it|them) to me directly\\b",
+   "\\bhand-?over\\b",
+   "\\bhand (?:it|them) over\\b",
+   "\\bhand (?:it|them|this|that|these|those)\\b",
+   "\\bpass me\\b",
+   "\\bpass (?:it|them) to me\\b",
+   "\\bhand (?:\\w+ ){0,2}(?:his|her|their) \\w+"
+  ],
+  "first_person": [
+   "\\bi\\b",
+   "\\bme\\b",
+   "\\bmy\\b",
+   "\\bmyself\\b",
+   "\\bmine\\b"
+  ],
+  "recipient": [
+   "\\bme\\b",
+   "\\bhere\\b",
+   "\\bbring\\b",
+   "\\bbrings\\b",
+   "\\bfetch\\b",
+   "\\bgive\\b",
+   "\\bhand\\b",
+   "\\bpass\\b",
+   "\\bdeliver\\b",
+   "\\bget me\\b",
+   "\\bmy way\\b",
+   "\\bus\\b"
+  ],
+  "tell": [
+   "\\btell\\b",
+   "\\blet \\w+(?: \\w+)? know\\b",
+   "\\bremind\\b",
+   "\\bask \\w+(?: \\w+)? to\\b",
+   "\\bsay to\\b",
+   "\\bpass on\\b",
+   "\\binform\\b",
+   "\\bwarn\\b"
+  ],
+  "open_words": [
+   "\\bopen"
+  ],
+  "where_now": [
+   "where (?:is|are|was|were|can i find|could i find|do i find|would i find|might)\\b|\\blocation of\\b|\\b(?:is|are) (?:located|currently)\\b|\\bcurrent(?:ly)? (?:location|place)\\b|(?:not|n't) (?:know|sure|specified|mentioned|clear|given|stated)\\b[^.?]*\\bwhere (?:the|it|they|this|that|those|these)\\b|(?:location|whereabouts)[^.?]*(?:unknown|not (?:known|specified|mentioned|given|clear|stated|provided))"
+  ],
+  "where_put": [
+   "where (?:should|shall|do you want|would you like|to|must)\\b[^.?]*\\b(?:put|place|leave|bring|take|deliver|move|go|set)"
+  ],
+  "where_obj": [
+   "where (?:is|are|was|were) (?:the |my |your |a |an |some )?([a-z][a-z -]*?)(?: located| kept|\\?| now| currently|,| and | or )"
+  ]
+ },
+ "answer_unsure": [
+  "don't know",
+  "dont know",
+  "do not know",
+  "not sure",
+  "no idea",
+  "dunno",
+  "can't remember",
+  "cannot remember",
+  "can't say",
+  "no clue"
+ ],
+ "articles": [
+  "the",
+  "a",
+  "an",
+  "some",
+  "my",
+  "your"
+ ],
+ "plural_rules": [
+  [
+   "ies",
+   "y"
+  ],
+  [
+   "ches",
+   "ch"
+  ],
+  [
+   "shes",
+   "sh"
+  ],
+  [
+   "ses",
+   "s"
+  ],
+  [
+   "xes",
+   "x"
+  ],
+  [
+   "s",
+   ""
+  ]
+ ],
+ "text_fallback": true
+}
