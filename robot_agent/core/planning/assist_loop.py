@@ -1834,9 +1834,11 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             if which and not q:
                 said, names = which
                 text = " or ".join(f"the {n}" for n in names)
-                q = speech.LocalText("q_which_known", {"object": said, "text": text},
+                # ``options`` is the list slot a localized phrase says with the pack's separator (``sep_or``); ``text`` is the
+                # English wording. The declared kind is the core's own neutral schema (docs/env.md), not a host's.
+                q = speech.LocalText("q_which_known", {"object": said, "text": text, "options": list(names)},
                                      text=f"I know of more than one {said}: {text}. Which one do you mean?",
-                                     ask={"qtype": "which_object", "options": list(names), "obj": said})
+                                     ask={"intent": "choose", "options": list(names), "about": said})
         return goals, q
 
     def _canon(self, r, goals) -> tuple:

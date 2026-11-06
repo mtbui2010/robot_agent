@@ -74,10 +74,15 @@ class Heard:
 # Share of non-ASCII letters that marks a text as written in the language. Vietnamese is a Latin script whose words carry
 # diacritics on about a third of the letters, so 0.5 (right for the non-Latin scripts) never accepts a Vietnamese line.
 NON_ASCII_MIN = {"vi": 0.25}
+# The lab-round-3 language fixes (a lead part that cannot be said is left out of a joined question, a read-back keeps its
+# kind in the last resort, the Vietnamese threshold above) act only with one of these options on, so that with every lab
+# option off a run is the earlier behaviour byte for byte.
+LAB_FIX_FLAGS = ("dialog_unstick", "inventory_ask")
 
 
-def localized(text, lang: str) -> bool:
-    """Is ``text`` already said in ``lang`` (mostly its script)? English is always 'localized'."""
+def localized(text, lang: str, mins=None) -> bool:
+    """Is ``text`` already said in ``lang`` (mostly its script)? English is always 'localized'. ``mins``: per-language
+    share of non-ASCII letters for a Latin-script language (default 0.5 for every language but Korean)."""
     lg = (lang or "en")[:2]
     t = str(text or "")
     if lg == "en" or lg not in LANGS:
@@ -87,7 +92,7 @@ def localized(text, lang: str) -> bool:
         return True                                  # digits / punctuation only
     if lg == "ko":
         return sum(1 for c in letters if _HANGUL.match(c)) / len(letters) >= 0.7 and not speech._HAN_KANA.search(t)
-    return sum(1 for c in letters if not c.isascii()) / len(letters) >= NON_ASCII_MIN.get(lg, 0.5)
+    return sum(1 for c in letters if not c.isascii()) / len(letters) >= (mins or {}).get(lg, 0.5)
 
 
 class LanguageAdapter:
@@ -196,11 +201,18 @@ class LanguageAdapter:
         text = self.names(text, "en")
         return _SNAKE.sub(lambda m: m.group(0).replace("_", " "), text)
 
-    @staticmethod
-    def _local_sentences(text: str, lg: str) -> str:
+    def _fixes(self) -> bool:
+        """Are the lab-round-3 language fixes on (one of ``LAB_FIX_FLAGS``)?"""
+        cfg = getattr(self.host, "cfg", None) or {}
+        return any(bool(cfg.get(k)) for k in LAB_FIX_FLAGS)
+
+    def _loc(self, text, lg: str) -> bool:
+        return localized(text, lg, NON_ASCII_MIN if self._fixes() else None)
+
+    def _local_sentences(self, text: str, lg: str) -> str:
         """The sentences of ``text`` that are already in ``lg`` ("" when none or all)."""
         parts = re.split(r"(?<=[.!?])\s+", text.strip())
-        kept = [p for p in parts if _NON_LATIN.search(p) and localized(p, lg)]
+        kept = [p for p in parts if _NON_LATIN.search(p) and self._loc(p, lg)]
         return " ".join(kept) if kept and len(kept) < len(parts) else ""
 
     def local_slot(self, text) -> Optional[str]:
@@ -214,10 +226,10 @@ class LanguageAdapter:
             for k in places.keys:
                 if " ".join(speech._words(k.split("@")[0]).lower().split()) == s.lower():
                     local = speech.say_name(places, k, lg)
-                    if local and localized(local, lg):
+                    if local and self._loc(local, lg):
                         return local
         out = self._speak_text(s, lg)
-        return out if out is not None and localized(out, lg) else None
+        return out if out is not None and self._loc(out, lg) else None
 
     # ── OUT: the one function every spoken text passes ───────────────────
     def speak(self, text, lang, kind: str = "") -> str:
@@ -236,18 +248,20 @@ class LanguageAdapter:
         if not isinstance(text, speech.LocalText):
             text = self.names(str(text), lg)             # no raw ENV key (kimchi_fridge@kitchen) reaches the user
             if _NON_LATIN.search(text):
-                if localized(text, lg):
+                if self._loc(text, lg):
                     return text                          # already said in the user's language
                 kept = self._local_sentences(text, lg)
                 if kept:
                     return kept                          # a pack line with an English reason after it: the line
         done = speech.render(text, lang, self.host.robot, self._places(), slot_tr=self.local_slot)
-        if done is not None and localized(done, lg):
+        if done is not None and self._loc(done, lg):
             return done
         if isinstance(text, speech.LocalText) and text.key == "_join" and len(text.parts) > 1:
             # phrases said one after the other ("Sorry, I didn't hear you." + the question asked before): each part
             # on its own, so the robot's own phrase needs no call and a part said before is cached. A lead part that
             # cannot be said is left out (the last part, the question, keeps its kind: ``_fallback``).
+            if not self._fixes():
+                return " ".join(str(self._speak(p, lang, kind)) for p in text.parts)
             last = len(text.parts) - 1
             outs = [self._speak(p, lang, kind if i == last else "", strict=i != last) for i, p in enumerate(text.parts)]
             return " ".join(str(o) for o in outs if o is not None)
@@ -289,11 +303,11 @@ class LanguageAdapter:
         asks for something else. The pack has none: the English text, counted in ``_say_not_in_lang``."""
         h = self.host
         lt = text if isinstance(text, speech.LocalText) else None
-        readback = lt is not None and lt.key in speech.READBACK_KEYS
+        readback = self._fixes() and lt is not None and lt.key in speech.READBACK_KEYS
         if readback and lt.key in speech.READBACK_PLAIN:
             plain = speech.LocalText(speech.READBACK_PLAIN[lt.key], lt.slots)
             out = speech.render(plain, lg, h.robot, self._places(), slot_tr=self.local_slot)
-            if out is not None and localized(out, lg):
+            if out is not None and self._loc(out, lg):
                 self.fallbacks += 1
                 return out
         is_q = kind == "question" or (lt is not None and lt.key.startswith("q_")) or str(text).rstrip().endswith("?")

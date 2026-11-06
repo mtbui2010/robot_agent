@@ -41,7 +41,7 @@ def test_two_mugs_each_under_two_names_ask_with_two_options(make_assist, env, tm
     u, asked = play(make_assist, env, tmp_path, mem, ALIASES, answers=["the red mug"])
     assert "the red mug or the blue mug" in u["question"] and "coffee" not in u["question"]
     ask = speech.declared_ask(asked[0])                                    # the question declares its kind and options
-    assert ask == {"qtype": "which_object", "options": ["red mug", "blue mug"], "obj": "mug"}
+    assert ask == {"intent": "choose", "options": ["red mug", "blue mug"], "about": "mug"}
 
 
 def test_two_mugs_under_ids_of_the_record_ask_with_two_options(make_assist, env, tmp_path):
@@ -77,6 +77,18 @@ def test_alias_groups_are_pack_data_per_language():
 
 
 def test_question_declaration_survives_calm_and_join():
-    q = speech.LocalText("q_which_known", {"object": "mug", "text": "x"}, ask={"qtype": "which_object", "options": ["a", "b"]})
+    q = speech.LocalText("q_which_known", {"object": "mug", "text": "x"}, ask={"intent": "choose", "options": ["a", "b"]})
     assert speech.declared_ask(speech.LocalText.join(speech.LocalText("q_silence"), q))["options"] == ["a", "b"]
     assert speech.declared_ask(speech.LocalText("q_where_go")) is None
+
+
+def test_which_question_options_are_a_list_slot_said_with_the_packs_separator():
+    import types
+    q = speech.LocalText("q_which_known", {"object": "mug", "text": "the red mug or the blue mug", "options": ["red mug", "blue mug"]},
+                         text="I know of more than one mug: the red mug or the blue mug. Which one do you mean?")
+    pack = {"q_which_known": {"de": "Ich kenne mehr als eine {object}: {options}. Welche meinst du?"}, "sep_or": {"de": " oder "}}
+    robot = types.SimpleNamespace(i18n=types.SimpleNamespace(phrases=pack))
+    assert speech.render(q, "de", robot) == "Ich kenne mehr als eine mug: red mug oder blue mug. Welche meinst du?"
+    robot.i18n.phrases.pop("sep_or")                                    # no pack separator: the earlier default
+    assert speech.render(q, "de", robot).endswith("red mug or blue mug. Welche meinst du?")
+    assert speech.render(q, "en") == str(q)

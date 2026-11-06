@@ -41,6 +41,7 @@ CORE_PHRASES = {
     "rb_on": "put the {object} on the {place}",
     "rb_on_from": "put the {object} from the {source} on the {place}",
     "sep_then": ", then ",
+    "sep_or": " or ",
     "rb_in": "put the {object} in the {place}",
     "rb_to_you": "bring you the {object}",
     "rb_on_near_you": "bring you the {object} and put it on the {place} next to you",
@@ -144,7 +145,8 @@ class LocalText(str):
     key: str = ""
     slots: dict = {}
     parts: tuple = ()
-    ask: Optional[dict] = None           # what a question declares about itself: {"qtype": "which_object", "options": [...]}
+    ask: Optional[dict] = None           # what a question declares about itself, the core's own schema: {"intent": "choose",
+    #                                      "options": [...], "about": "<the thing asked about>"} (a host maps it onto its own kinds)
 
     def __new__(cls, key: str, slots: Optional[dict] = None, text: Optional[str] = None, parts=(),
                 ask: Optional[dict] = None):
@@ -177,7 +179,7 @@ class LocalText(str):
 
 
 def declared_ask(question) -> Optional[dict]:
-    """What a question declares about its own kind (``LocalText.ask``: ``qtype`` and its slots), looking at the parts of
+    """What a question declares about its own kind (``LocalText.ask``: ``intent`` and its slots), looking at the parts of
     a joined text left to right; None for a question that declares nothing. A host that reads questions (a simulated
     user, a log) uses it instead of guessing from the words."""
     if getattr(question, "ask", None):
@@ -255,7 +257,7 @@ def render(text, lang: str, robot=None, places=None, name_slots=("place", "perso
             names = [say_name(places, x, lg) if places is not None else str(x) for x in v]
             if not all(names):
                 return None
-            v = (" 아니면 " if lg == "ko" else " or ").join(names)
+            v = (phrase(robot, "sep_or", lg) or (" 아니면 " if lg == "ko" else " or ")).join(names)
         elif k in ("object", "text", "what", "why", "summary", "first", "rest") and lg != "en" and \
                 v and not _in_script(str(v), lg):
             v = slot_tr(str(v)) if slot_tr is not None else None   # an English slot in a Korean phrase: say it alone

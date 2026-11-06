@@ -95,13 +95,17 @@ def test_readback_fallback_keeps_its_kind_in_the_language_layer():
     """The last resort for a read-back is never q_unclear_task, even when its summary cannot be said."""
     from robot_agent.core.planning.language import LanguageAdapter
     robot = types.SimpleNamespace(i18n=types.SimpleNamespace(phrases={k: {"ko": v} for k, v in PACK["ko"].items()}))
-    host = types.SimpleNamespace(robot=robot, cfg={}, _env_places=Places(ENV), _llm_unreachable=True,
+    host = types.SimpleNamespace(robot=robot, cfg={"dialog_unstick": True}, _env_places=Places(ENV), _llm_unreachable=True,
                                  _run_lang="ko", _llm_cfg={})
     lang = LanguageAdapter(host)
     rb = speech.LocalText("rb_will", {"what": "x"}, text="I will fetch the unknown thing.")
     cq = speech.LocalText("q_confirm", {"summary": rb}, text=f"{rb} Is that right?")      # summary slot has no phrase
     out = lang.speak(cq, "ko", "question")
     assert out != PACK["ko"]["q_unclear_task"] and out == PACK["ko"]["say_untranslated"]
+    # with every lab option off, the earlier last resort stands (the read-back becomes "say it in other words")
+    host.cfg = {}
+    assert LanguageAdapter(host).speak(cq, "ko", "question") == PACK["ko"]["q_unclear_task"]
+    host.cfg = {"dialog_unstick": True}
     # a question of another kind still falls back to "say it in other words"
     other = lang.speak(speech.LocalText("q_where_put", {"object": "x"}), "ko", "question")
     assert other == PACK["ko"]["q_unclear_task"]

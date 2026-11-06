@@ -14,8 +14,10 @@ def flags(loop):
     return [e["flag"] for e in loop.lab_log]
 
 
-def play(make_assist, robot, llm, plan, task, **opts):
+def play(make_assist, robot, llm, plan, task, recovery=None, **opts):
     loop = make_assist(robot, llm, plan, health_wait_s=0, **opts)
+    if recovery:                                 # the pack's planner.recovery data
+        loop.robot.manifest.planner = dict(loop.robot.manifest.planner or {}, recovery=recovery)
     return loop, run_task(loop, task)
 
 
@@ -53,7 +55,8 @@ def test_reset_container_logs_the_reset(make_assist, env):
     plan = steps(f"MoveTo {DT}", "Find orange", "Pick orange", f"MoveTo {DR}", f"Open {DR}", f"PutIn {DR}")
     loop, evs = play(make_assist, FakeRobot(env, {"orange": DT}, faults=blocked),
                      FakeLLM(U(("in", "orange", "dining table", "kitchen drawer"))), ScriptedPlanner(plan, replans=[[]]),
-                     "Put the orange in the kitchen drawer.", reset_container="1")
+                     "Put the orange in the kitchen drawer.", recovery={"blocked_putin": ["Close", "Open"]},
+                     reset_container="1")
     assert loop.lab_log == [{"flag": "reset_container", "container": DR, "held": "orange", "source": DT}]
 
 
