@@ -5,6 +5,12 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+### Audit fixes (lab options; defaults unchanged)
+- `kind_anchor` reads the open words of the run language (and the pack's `open_words` for any language); no data for a language = no drop.
+- `reset_container` needs the pack's `planner.recovery.blocked_putin` (no declaration = no-op), every spliced action in `plan_actions`, no put-down with a free hand. `endstate_check` re-runs the action that achieved the go goal; `planner.recovery.return_tries`.
+- `dialog_unstick`: a restatement is read back again only when it adds an ENV entity; the structural not-sure fallback is for languages without data only.
+- `inventory_ask` declares `{intent, options, about}`; `options` list slot with `sep_or`. Round-3 language-layer fixes are gated on `dialog_unstick` / `inventory_ask`.
+
 ### Inventory ask counts instances (lab round 3)
 - `canon_inventory` collapses the memory names of one remembered instance (same record `instance` / `id` / `sighting`, or related by the pack's i18n key `object_aliases`, `{lang: ["mug|coffee mug"]}`) into one candidate and lists one name per instance; the which-question declares its kind (`speech.LocalText.ask`, `speech.declared_ask`: `qtype: which_object`, options). Tests: `tests/test_sage_lab_r5_inventory_instances.py`.
 
