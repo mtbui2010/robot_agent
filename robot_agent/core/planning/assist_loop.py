@@ -3152,8 +3152,10 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             return None                                 # the person declined: nothing is claimed beyond that
         r.dialogue += [("robot", q), ("user", ans)]
         if (yield from self._goal_edit(r, {"intent": "add", "text": part})) is not _NEXT:
-            yield self._finish(r, "failed", msg=f"part of the request was not done: {part}")
-            return _STOP
+            # the part could not become a goal: the goals held before the question, so the run claims done as before
+            # (never a give-up made by this option on an episode whose goals hold)
+            self._lab("request_coverage_not_added", part=part)
+            return None
         return (yield from self._repair_goals(r, part))
 
     def _look_at_untouched(self, r) -> bool:

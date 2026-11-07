@@ -497,3 +497,13 @@ def test_coverage_without_the_phrase_in_the_users_language_asks_nothing(make_ass
     evs, robot, loop = coverage_run(make_assist, llm, task=KO_TASK, lang="ko", request_coverage="1")
     assert robot.asked == [] and done(evs)["status"] == "success"
     assert any(e["flag"] == "request_coverage_no_phrase" for e in loop.lab_log)
+
+
+def test_coverage_a_yes_whose_part_cannot_become_a_goal_claims_done_as_before(make_assist):
+    """The goals held before the question: a yes that cannot be turned into a goal is no reason to give up."""
+    vague = {"unserved": [{"part": "Put", "why": "no_goal"}]}
+    llm = FakeLLM(CUP, ("about to say it is done", vague), default=CUP)
+    evs, robot, loop = coverage_run(make_assist, llm, answers=["yes"], request_coverage="1")
+    assert robot.asked and [e.get("applied") for e in evs if e["event"] == "goal_change"] == [False]
+    assert done(evs)["status"] == "success"
+    assert any(e["flag"] == "request_coverage_not_added" for e in loop.lab_log)
