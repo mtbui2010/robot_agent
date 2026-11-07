@@ -36,7 +36,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Optional
 
-from . import langdata, speech
+from . import langdata, role_models, speech
 from .understand import LLMBudgetExceeded
 
 PIVOTS = ("none", "translate", "both")
@@ -168,6 +168,43 @@ class LanguageAdapter:
 
     def _model(self) -> str:
         return str((self.host.cfg or {}).get("translate_model") or "")
+
+    # ── lab round 8: a model that writes the robot's words in the user's language (role_models.py) ──
+    def dialog_model(self, lg) -> str:
+        """The model that writes the robot's words in ``lg``: ``dialog_model_lang[lg]``, else ``dialog_model``, else "" (the
+        translator writes them). The translator's own model counts as "" too."""
+        c = self.host.cfg or {}
+        cand = str((c.get("dialog_model_lang") or {}).get(str(lg or "")[:2].lower()) or c.get("dialog_model") or "").strip()
+        own = self._model() or str((self.host._llm_cfg or {}).get("model") or "")
+        return "" if not cand or cand == own else cand
+
+    def chat_out(self, lg, prompt, ok=None) -> str:
+        """One generation in ``lg``. With no dialog model for ``lg`` it is the translator's call, exactly as before. With one:
+        its answer when it is not a runaway (``role_models.runaway``) and ``ok(answer)`` holds, else ONE call of the translator
+        (``role_models`` documents the guard; the fallback takes a translate-budget unit, and an answer with no unit left
+        is returned as it is)."""
+        dm = self.dialog_model(lg)
+        if not dm:
+            return str(self.translator().chat(prompt=prompt, temperature=0, seed=0))
+        h = self.host
+        cap = (h.cfg or {}).get("dialog_max_tokens")
+        out, why = "", ""
+        try:
+            kw = {"num_predict": int(cap)} if cap else {}
+            out = str(role_models.role_client(h, "dialog", dm, h.cfg.get("dialog_url"), h.cfg.get("dialog_think"))
+                      .chat(prompt=prompt, temperature=0, seed=0, **kw))
+            why = role_models.runaway(out, cap) or ("" if ok is None or ok(out.strip().strip('"')) else "rejected")
+        except Exception as e:                       # noqa: BLE001 - a model that cannot answer: the translator writes it
+            from ..run_control import is_cancel
+            if is_cancel(e):
+                raise
+            why = "unavailable"
+        if not why:
+            return out
+        h._lab("dialog_model", fallback=why, model=dm, lang=lg)
+        if not self._take():
+            return out
+        return str(self.translator().chat(prompt=prompt, temperature=0, seed=0))
 
     def _take(self, keep: int = 0) -> bool:
         """One translation call from the translate budget, leaving ``keep`` calls; False when there is none."""
@@ -304,7 +341,8 @@ class LanguageAdapter:
 
     def _speak_text(self, text: str, lg: str) -> Optional[str]:
         """``text`` translated (cache, then the translator with its output guard), None when that fails."""
-        key = ("out", text, lg, self._model())
+        dm = self.dialog_model(lg)
+        key = ("out", text, lg, self._model() + (f"|{dm}" if dm else ""))
         if key not in self.cache:
             self.cache[key] = self._translate_out(text, lg, LANGS[lg])
         return self.cache[key]
@@ -320,7 +358,8 @@ class LanguageAdapter:
                 if not self._take():
                     break
                 prompt = base if why is None else base.replace(" Output only", f" (Your last answer was wrong: {why}.) Output only")
-                out = str(self.translator().chat(prompt=f"{prompt}\n{text}", temperature=0, seed=0)).strip().strip('"')
+                out = self.chat_out(lg, f"{prompt}\n{text}",
+                                    ok=lambda o: speech.guard(o, lg, keep=list(gl.values())) is None).strip().strip('"')
             except Exception:
                 break
             why = speech.guard(out, lg, keep=list(gl.values()))

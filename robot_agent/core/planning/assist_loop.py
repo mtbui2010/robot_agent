@@ -39,6 +39,7 @@ or ``ROBOT_AGENT_PLANNER=sage``; ``'grace'`` is the plain ``ClosedLoop`` around 
 
 from __future__ import annotations
 
+import contextlib
 import json
 import math
 import os
@@ -59,7 +60,8 @@ from . import search as search_belief
 from .search_hooks import SearchHooks
 from .which_one import WhichOne
 from . import goals as goal_kinds
-from . import dialog_converge, dialog_unstick, exec_integrity, goal_filter, goal_fix, language, persons, plan_tidy, speech
+from . import (dialog_converge, dialog_unstick, exec_integrity, goal_filter, goal_fix, language, persons, plan_tidy,
+               request_coverage, role_models, speech)
 from . import reconcile as sensed
 from .robot import run_skill
 from .verify import symbolic_check, verdict
@@ -86,7 +88,9 @@ ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify
                 "dialog_unstick", "kind_anchor_ask", "reask_anchor", "no_shared_listener", "understand_views",
                   "understand_goals_first", "understand_model", "understand_url", "understand_model_lang",
                 "understand_max_tokens", "understand_max_goals", "understand_schema_strict", "understand_give_kind",
-                "understand_verify_verdict"}
+                "understand_verify_verdict", "understand_think", "repair_model", "repair_url", "repair_max_tokens",
+                "repair_think", "dialog_model", "dialog_model_lang", "dialog_url", "dialog_max_tokens", "dialog_think",
+                "request_coverage"}
 _USER_WORDS = {"me", "user", "here", "you", "myself", "person"}
 
 
@@ -429,7 +433,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             "generator": self.cfg["planner"],
             "planner": "sage",
         })
-        self.cfg.update(self._v2_cfg(overrides), **self._um_cfg(overrides))
+        self.cfg.update(self._v2_cfg(overrides), **self._um_cfg(overrides), **self._rm_cfg(overrides))
         self._reaches = lambda steps, world, goals, loop=None: AssistLoop._reaches(steps, world, goals, self)
 
     def _v2_cfg(self, overrides) -> dict:
@@ -550,6 +554,17 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             "understand_verify_verdict": on("understand_verify_verdict"),
         }
 
+    def _rm_cfg(self, overrides) -> dict:
+        """Lab round 8 (role_models.py, docs/env.md; every key fails open to today's behaviour): a model per role (plan-gate
+        repair, the robot's words in the user's language), the ``think`` switch of the role clients, and the flag
+        ``request_coverage`` (default off)."""
+        env = os.environ.get
+
+        def pick(k, default=None):
+            return overrides.get(k, env("ROBOT_AGENT_" + k.upper(), self._manifest_planner(k, default)))
+        return {**role_models.config(pick),
+                "request_coverage": str(pick("request_coverage", "0")).lower() in ("1", "true", "yes", "on")}
+
     def _r3_cfg(self, overrides) -> dict:
         def on(k):
             return str(overrides.get(k, os.environ.get("ROBOT_AGENT_" + k.upper(), str(self._manifest_planner(k, "0"))))
@@ -662,7 +677,10 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         if um not in clients:
             from ...connect.llm import init_llm_client
             url = self.cfg.get("understand_url") or self.cfg.get("translate_url") or (self._llm_cfg or {}).get("url")
-            clients[um] = init_llm_client(cfg=dict(self._llm_cfg or {}, model=um, url=url, role="understand"))
+            cfg = dict(self._llm_cfg or {}, model=um, url=url, role="understand")
+            if self.cfg.get("understand_think") is not None:
+                cfg["think"] = self.cfg["understand_think"]
+            clients[um] = init_llm_client(cfg=cfg)
         return clients[um]
 
     @staticmethod
@@ -1363,7 +1381,16 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         checker's findings: subgoal_repair.repair_plan. Returns (plan, [edit notes]); (None, []) for a planner
         without it. Each repair call takes one unit of ``budget`` (LLMBudgetExceeded past it)."""
         from .subgoal_repair import repair_plan
-        return repair_plan(self, planner, task, obs, ground, world, places, goals, goal_txt, budget=budget)
+        with self._repair_scope(planner, budget):
+            return repair_plan(self, planner, task, obs, ground, world, places, goals, goal_txt, budget=budget)
+
+    def _repair_scope(self, planner, budget=None):
+        """Option ``repair_model``: the planner's LLM calls inside the ``with`` go to the repair model (guarded, one fallback
+        call to the planner's own model). Nothing changes when the option is off or the planner has no ``chat_override``."""
+        fn = role_models.repair_chat(self, budget)
+        from .base import chat_override
+        co = chat_override(planner) if fn is not None else None
+        return co(fn) if co is not None else contextlib.nullcontext()
 
     _sage_edit = _repair_plan            # pre-v2 name
 
@@ -2229,16 +2256,16 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
     def _local_names(self, objs) -> dict:
         """{object: its Korean name} from the translator (one call, cached; {} when it fails or is over budget)."""
         cache = self.__dict__.setdefault("_tr_cache", {})
-        key = ("names", tuple(objs), str(self.cfg.get("translate_model") or ""))
+        lg = "ko"                                               # the Hangul names the check reads
+        dm = self.language.dialog_model(lg)
+        key = ("names", tuple(objs), str(self.cfg.get("translate_model") or "") + (f"|{dm}" if dm else ""))
         if key not in cache:
             out = {}
             try:
                 if not self.language._take():
                     raise LLMBudgetExceeded("translate budget")
-                txt = str(self._translator().chat(prompt=self._NAMES_PROMPT + "\n" + "\n".join(objs), temperature=0,
-                                                  seed=0))
+                txt = self.language.chat_out(lg, self._NAMES_PROMPT + "\n" + "\n".join(objs))
                 lines = [re.sub(r"^\s*(?:\d+[.)]|[-*])\s*", "", x).strip() for x in txt.splitlines() if x.strip()]
-                lg = "ko"                                       # the Hangul names the check reads
                 if len(lines) == len(objs):
                     out = {o: n for o, n in zip(objs, lines) if speech.guard(n, lg) is None}
             except Exception:
@@ -2760,8 +2787,9 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         obs = self._obs(r) + "\nA checker rejected the previous plan:\n" + "\n".join(f"- {t}" for t in findings)
         from ..run_control import call_cancellable, is_cancel
         try:
-            raw, _m = self._plan_call(r, "generate_plan", r.restated, obs, [], what="plan refinement",
-                                      subgoals=self._subgoals(r))
+            with self._repair_scope(r.planner, r.llm_budget):
+                raw, _m = self._plan_call(r, "generate_plan", r.restated, obs, [], what="plan refinement",
+                                          subgoals=self._subgoals(r))
         except LLMBudgetExceeded as e:
             r.plan_error, raw = e, []
         except Exception as e:
@@ -3055,6 +3083,10 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             if unmet is None:
                 return _STOP                                     # cancelled while looking
             if not unmet:
+                if self.cfg.get("request_coverage"):
+                    out = yield from self._coverage_gap(r)
+                    if out is not None:
+                        return out
                 return _DONE
         elif self._look_at_untouched(r):
             yield r.ev("status", msg="checking the goals the plan did not touch")
@@ -3072,6 +3104,49 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             yield self._finish(r, "failed", msg=msg, say=(why if unmet else None), **fail); return _STOP
         yield e_
         return _NEXT
+
+    def _coverage_gap(self, r):
+        """Option ``request_coverage`` (once per run, request_coverage.py): before the run claims it is done, one LLM call
+        names the parts of the request with no goal or no executed step. None = claim as before (nothing found, an error,
+        a declined part); else the next outcome of the execute loop (_NEXT: the part was added as a goal, or _STOP)."""
+        from ..run_control import call_cancellable, is_cancel
+        if getattr(r, "coverage_checked", False):
+            return None
+        r.coverage_checked = True
+        said = [t for w_, t in r.dialogue if w_ == "user"]
+        request = " ".join([r.task, self.original or ""] + said)
+        steps = [f"{s_.get('action')} {s_.get('object')}" for s_ in r.completed]
+        try:
+            d = ask_json(self._llm(), request_coverage.prompt(" ".join([self.original or r.task] + said),
+                                                              self._goal_text(r.goals), steps),
+                         request_coverage.SCHEMA, budget=r.llm_budget, retries=0, where="request coverage",
+                         call=call_cancellable, passthrough=is_cancel, options=self._sampling(0))
+        except Exception as e:                          # noqa: BLE001 - fail open: the run says done as before
+            if is_cancel(e):
+                raise
+            return None
+        missing = request_coverage.parts(d, request)
+        self._lab("request_coverage", parts=missing)
+        if not missing:
+            return None
+        part = missing[0]
+        q = f"You also asked me for this, but I have not done it: {part}. Should I do it now?"
+        yield r.ev("clarify", question=q, round=r.confirms, kind="coverage")
+        ans, ok_, _rest = self._ask_yes_no(r, q)
+        stop = self._cancelled(r)
+        if stop:
+            yield stop
+            return _STOP
+        if ok_ is None:
+            yield self._finish(r, "failed", msg=f"no answer to: {q}")
+            return _STOP
+        if ok_ is not True:
+            return None                                 # the person declined: nothing is claimed beyond that
+        r.dialogue += [("robot", q), ("user", ans)]
+        if (yield from self._goal_edit(r, {"intent": "add", "text": part})) is not _NEXT:
+            yield self._finish(r, "failed", msg=f"part of the request was not done: {part}")
+            return _STOP
+        return (yield from self._repair_goals(r, part))
 
     def _look_at_untouched(self, r) -> bool:
         """Append a MoveTo + Find at the destination of every unmet goal the run never moved (once each);

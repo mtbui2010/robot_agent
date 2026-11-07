@@ -56,6 +56,10 @@ _TOP_KEYS = {"robot", "version", "language", "capabilities", "geometry", "planne
 #   translate_url, then the planner's), understand_model_lang ({language code: model}), understand_max_tokens /
 #   understand_max_goals (the runaway guard of a model other than the planner's; absent = no cap), understand_schema_strict,
 #   understand_give_kind, understand_verify_verdict (0 | 1 each, default 0: lab round 7, docs/env.md),
+#   repair_model / repair_url / repair_max_tokens (the model of the plan gate's repair prompts and its guard),
+#   dialog_model / dialog_model_lang ({language code: model}) / dialog_url / dialog_max_tokens (the model that writes the
+#   robot's words in the user's language), understand_think / repair_think / dialog_think (the role client's Ollama `think`
+#   switch), request_coverage (0 | 1, default 0): lab round 8, docs/env.md,
 #   detector_miss_rate (0 to 0.9, default 0.1: the chance that a look at the right place does not see the object;
 #   one miss is then weak evidence and the search looks again at the places the belief still holds probable)
 PLANNER_KEYS = {"seed_memory", "notes", "llm_budget", "translate_model", "translate_url", "translate_budget",
@@ -65,7 +69,9 @@ PLANNER_KEYS = {"seed_memory", "notes", "llm_budget", "translate_model", "transl
                 "dialog_unstick", "canonical_lang", "label_tokens", "recovery", "kind_anchor_ask", "unstick",
                 "reask_anchor", "no_shared_listener", "understand_views", "understand_goals_first",
                 "understand_model", "understand_url", "understand_model_lang", "understand_max_tokens",
-                "understand_max_goals", "understand_schema_strict", "understand_give_kind", "understand_verify_verdict"}
+                "understand_max_goals", "understand_schema_strict", "understand_give_kind", "understand_verify_verdict",
+                "repair_model", "repair_url", "repair_max_tokens", "repair_think", "dialog_model", "dialog_model_lang",
+                "dialog_url", "dialog_max_tokens", "dialog_think", "understand_think", "request_coverage"}
 UNSTICK_KEYS = {"fallback_words", "fallback_chars", "restate_frac", "restate_word_len", "restate_min_words",
                 "restate_min_bigrams"}
 # keys of the optional `limits:` section (what the body can carry; checked against the ENV object estimates)
@@ -339,18 +345,20 @@ def _planner(v, errs) -> dict:
         x = v.get(k)
         if x is not None and not (isinstance(x, int) and not isinstance(x, bool) and x >= 0):
             errs.append(f"planner.{k}: must be a count of LLM calls (0 = no cap), got {x!r}")
-    for k in ("understand_max_tokens", "understand_max_goals"):
+    for k in ("understand_max_tokens", "understand_max_goals", "repair_max_tokens", "dialog_max_tokens"):
         x = v.get(k)
         if x is not None and not (isinstance(x, int) and not isinstance(x, bool) and x >= 1):
             errs.append(f"planner.{k}: must be a count >= 1, got {x!r}")
-    ml = v.get("understand_model_lang")
-    if ml is not None and (not isinstance(ml, dict) or not all(isinstance(a, str) and a.strip() and isinstance(b, str)
-                                                                and b.strip() for a, b in ml.items())):
-        errs.append("planner.understand_model_lang: must map a language code to a model name (non-empty strings)")
+    for key in ("understand_model_lang", "dialog_model_lang"):
+        ml = v.get(key)
+        if ml is not None and (not isinstance(ml, dict) or not all(isinstance(a, str) and a.strip() and isinstance(b, str)
+                                                                    and b.strip() for a, b in ml.items())):
+            errs.append(f"planner.{key}: must map a language code to a model name (non-empty strings)")
     pv = v.get("input_pivot")
     if pv is not None and pv not in ("none", "translate", "both"):
         errs.append(f"planner.input_pivot: must be none, translate or both, got {pv!r}")
-    for k in ("translate_model", "translate_url", "understand_model", "understand_url"):
+    for k in ("translate_model", "translate_url", "understand_model", "understand_url", "repair_model", "repair_url",
+              "dialog_model", "dialog_url"):
         x = v.get(k)
         if x is not None and (not isinstance(x, str) or not x.strip()):
             errs.append(f"planner.{k}: must be a non-empty string")

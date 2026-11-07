@@ -5,6 +5,15 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+### Lab round 8: a model per role (all opt-in, default off, defaults byte-identical)
+- `repair_model` / `repair_url` / `repair_max_tokens`: another model answers the plan gate's repair prompts (sub-goal edit and the
+  one refinement); a runaway falls back to the planner's model once (`planner.chat_override`, implemented by `GraceBackend`).
+- `dialog_model` / `dialog_model_lang` / `dialog_url` / `dialog_max_tokens`: another model writes what the robot says in the
+  user's language (per language, as data); a guard failure falls back to the translator once.
+- `understand_think` / `repair_think` / `dialog_think`: Ollama `think` for the role client (`LLamaClient(think=)`, sent only when set).
+- `request_coverage`: one LLM call before the run says done; a named part of the request with no goal or no executed step is
+  asked about (yes = added as a goal and carried on). No word lists.
+
 ### Lab round 7: understanding recall (all opt-in, default off, defaults byte-identical)
 - `reask_anchor`: the abstention re-reading is taken only when every place in it is in the person's words (ENV aliases, any language).
 - `no_shared_listener`: switches the `shared_listener` rule off.

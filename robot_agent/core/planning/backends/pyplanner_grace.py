@@ -21,6 +21,7 @@ place that knows those SAGE names.
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import inspect
 import logging
@@ -308,6 +309,25 @@ class GraceBackend:
             self._examples = (task, self._p.retrieve_examples(task)[1])
         return self._p.edit_block(block, feedback, task=task, state=state, obs=obs,
                                   examples_block=self._examples[1])
+
+    # ── Optional capability: ChatOverride (a model of its own for some calls) ──
+    @contextlib.contextmanager
+    def chat_override(self, fn):
+        """Inside the ``with``, every LLM call of the wrapped planner is answered by ``fn(planner_chat, messages,
+        temperature)`` (``(text, in_tokens, out_tokens)``; ``planner_chat`` is the planner's own chat, for a fallback).
+        A planner without a ``_chat`` seam is left alone (the ``with`` changes nothing)."""
+        own = getattr(self._p, "_chat", None)
+        if not callable(own):
+            yield
+            return
+
+        def routed(messages, temperature=0.2):
+            return fn(own, messages, temperature)
+        self._p._chat = routed
+        try:
+            yield
+        finally:
+            self._p.__dict__.pop("_chat", None)           # back to the class's method
 
     # ── Optional capability: fixed sub-goals ─────────────────────────
     @property

@@ -354,6 +354,20 @@ def subgoal_repair(planner) -> Optional[SubgoalRepair]:
     return planner if _has_methods(planner, _CAPABILITY_MEMBERS["subgoal_repair"]) else None
 
 
+def chat_override(planner):
+    """The planner's optional ``chat_override(fn)`` context manager (a model of its own for its LLM calls; role_models.py),
+    else None. Transparent proxies (``_inner``) are looked through."""
+    p = planner
+    for _ in range(6):
+        if callable(getattr(p, "chat_override", None)):
+            return p.chat_override
+        try:
+            p = object.__getattribute__(p, "_inner")
+        except AttributeError:
+            break
+    return None
+
+
 def planner_capabilities(planner) -> set[str]:
     """The optional capabilities ``planner`` offers: a subset of
     ``{"subgoal_repair", "progress", "episode_memory"}`` (for logs, tests and
