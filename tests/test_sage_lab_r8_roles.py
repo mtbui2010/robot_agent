@@ -377,17 +377,21 @@ def test_coverage_parts_are_quotations_of_the_request():
 
 
 CUP = U(G("on", "cup", "table@kitchen", "shelf@hall"))
-MUG = U(G("on", "mug", "table@kitchen", "shelf@hall"))
-TASK = "Put the cup on the shelf and the mug on the shelf."
+MUG = U(G("on", "mug", "table@kitchen", "sofa@living room"))
+BOTH = U(G("on", "cup", "", "shelf@hall"), G("on", "mug", "", "sofa@living room"))
+TASK = "Put the cup on the shelf and the mug on the sofa."
+GAP = {"unserved": [{"part": "the mug on the sofa", "why": "no_goal"}]}
 
 
-def coverage_run(make_assist, llm, answers=(), **opts):
+def coverage_run(make_assist, llm, answers=(), task=TASK, lang="en", pack=None, **opts):
     robot = FakeRobot(ENV, {"cup": "table@kitchen", "mug": "table@kitchen"}, answers=list(answers))
     planner = ScriptedPlanner(steps("MoveTo table@kitchen", "Find cup", "Pick cup", "MoveTo shelf@hall", "Place shelf@hall"),
-                              replans=[steps("MoveTo table@kitchen", "Find mug", "Pick mug", "MoveTo shelf@hall",
-                                             "Place shelf@hall")])
+                              replans=[steps("MoveTo table@kitchen", "Find mug", "Pick mug", "MoveTo sofa@living room",
+                                             "Place sofa@living room")])
     loop = make_assist(robot, llm, planner, confirm_task=False, goal_readback=False, **opts)
-    return [e for e in loop.run_blocking(TASK)], robot, loop
+    if pack:
+        loop.robot.i18n.phrases.update({k: {lang: v} for k, v in pack.items()})
+    return [e for e in loop.run_blocking(task, lang=lang)], robot, loop
 
 
 def test_coverage_is_off_by_default_and_makes_no_call(make_assist):
@@ -406,20 +410,18 @@ def test_coverage_nothing_missing_claims_done_after_one_call(make_assist):
 
 
 def test_coverage_asks_and_a_yes_carries_on_instead_of_claiming(make_assist):
-    gap = {"unserved": [{"part": "the mug on the shelf", "why": "no_goal"}]}
-    llm = FakeLLM(CUP, ("about to say it is done", gap), ("find|object", MUG), default=U(G("on", "cup", "", "shelf@hall"), G("on", "mug", "", "shelf@hall")))
+    llm = FakeLLM(CUP, ("about to say it is done", GAP), ("find|object", MUG), default=BOTH)
     evs, robot, loop = coverage_run(make_assist, llm, answers=["yes"], request_coverage="1")
     q = [e for e in evs if e["event"] == "clarify" and e.get("kind") == "coverage"]
-    assert len(q) == 1 and "the mug on the shelf" in str(q[0]["question"])
-    assert robot.asked and "the mug on the shelf" in str(robot.asked[0])
+    assert len(q) == 1 and "the mug on the sofa" in str(q[0]["question"])
+    assert robot.asked and "the mug on the sofa" in str(robot.asked[0])
     assert any(e["event"] == "goal_change" for e in evs)
-    assert done(evs)["status"] == "success" and robot.obj == {"cup": "shelf@hall", "mug": "shelf@hall"}   # the mug was done
-    assert [e for e in loop.lab_log if e["flag"] == "request_coverage"][0]["parts"] == ["the mug on the shelf"]
+    assert done(evs)["status"] == "success" and robot.obj == {"cup": "shelf@hall", "mug": "sofa@living room"}   # the mug was done
+    assert [e for e in loop.lab_log if e["flag"] == "request_coverage"][0]["parts"] == ["the mug on the sofa"]
 
 
 def test_coverage_a_no_claims_as_before_and_a_made_up_part_is_dropped(make_assist):
-    gap = {"unserved": [{"part": "the mug on the shelf", "why": "no_goal"}]}
-    llm = FakeLLM(CUP, ("about to say it is done", gap), default=CUP)
+    llm = FakeLLM(CUP, ("about to say it is done", GAP), default=CUP)
     evs, robot, _l = coverage_run(make_assist, llm, answers=["no"], request_coverage="1")
     assert done(evs)["status"] == "success" and robot.asked and robot.obj["mug"] == "table@kitchen"
     made_up = {"unserved": [{"part": "water the plants", "why": "no_goal"}]}
@@ -433,3 +435,65 @@ def test_coverage_fails_open_on_a_bad_answer_and_runs_once(make_assist):
     evs, _r, loop = coverage_run(make_assist, llm, request_coverage="1")
     assert done(evs)["status"] == "success"
     assert sum("about to say it is done" in p for p, _f in llm.calls) == 1
+
+
+# ── request_coverage: the deterministic pre-filter, the fail-open answer, the pack phrase, the first survivor ──
+def test_coverage_names_come_from_the_goals_the_steps_and_the_env_aliases():
+    names = request_coverage.covered_names([G("on", "cup", "", "shelf@hall", said="the blue cup"), G("go", "", "", "ben@kitchen")],
+                                           [{"action": "MoveTo", "object": "table@kitchen"}, {"action": "Find", "object": "cup"}],
+                                           Places(ENV))
+    assert {"cup", "the blue cup", "shelf", "선반", "ben", "table", "식탁"} <= set(names)
+    assert "me" not in names and "anna" not in names               # the speaker's own words never count
+    assert request_coverage.names_any("Put the cup away", names) and not request_coverage.names_any("water the plants", names)
+    assert request_coverage.names_any("선반에 올려 주세요", names) and not request_coverage.names_any("the cupboard", names)
+
+
+def test_coverage_part_naming_a_held_place_is_dropped_before_the_question(make_assist):
+    held = {"unserved": [{"part": "the cup on the shelf", "why": "not_touched"}]}
+    llm = FakeLLM(CUP, ("about to say it is done", held), default=CUP)
+    evs, robot, loop = coverage_run(make_assist, llm, request_coverage="1", task="Put the cup on the shelf and the mug on the sofa.")
+    assert done(evs)["status"] == "success" and robot.asked == []
+    lab = [e for e in loop.lab_log if e["flag"] == "request_coverage"][0]
+    assert lab["parts"] == [] and lab["dropped"] == 1
+
+
+def test_coverage_asks_about_the_first_part_that_survives(make_assist):
+    two = {"unserved": [{"part": "the cup on the shelf", "why": "not_touched"}, {"part": "the mug on the sofa", "why": "no_goal"}]}
+    llm = FakeLLM(CUP, ("about to say it is done", two), ("find|object", MUG), default=BOTH)
+    evs, robot, _l = coverage_run(make_assist, llm, answers=["yes"], request_coverage="1")
+    assert robot.asked and "the mug on the sofa" in str(robot.asked[0]) and "cup" not in str(robot.asked[0])
+
+
+@pytest.mark.parametrize("answers", [[], ["maybe", "perhaps", "hmm"]])
+def test_coverage_no_answer_or_not_understood_claims_done_as_before(make_assist, answers):
+    llm = FakeLLM(CUP, ("about to say it is done", GAP), default=CUP)
+    evs, robot, loop = coverage_run(make_assist, llm, answers=answers, request_coverage="1")
+    assert robot.asked, "the question was asked"
+    assert done(evs)["status"] == "success"                         # not "failed: no answer to ..."
+    if not answers:
+        assert any(e["flag"] == "request_coverage_unanswered" for e in loop.lab_log)
+
+
+KO_TASK = "컵을 선반에 놓고 머그컵을 소파에 놓아 주세요."
+KO_GAP = {"unserved": [{"part": "머그컵을 소파에 놓아 주세요", "why": "no_goal"}]}
+KO_PACK = {"q_coverage": "\"{what}\"도 부탁하셨는데 아직 못 했어요. 지금 할까요?"}
+
+
+def test_coverage_question_is_the_packs_phrase_with_the_part_in_the_users_words(make_assist):
+    class Trace(FakeLLM):
+        def chat(self, prompt="", format=None, **kw):
+            if "Translate into natural" in prompt and "You also asked me" in prompt:
+                self.calls.append((prompt, format))
+                raise AssertionError("the translator must not see the coverage question: " + prompt)
+            return super().chat(prompt=prompt, format=format, **kw)
+    llm = Trace(CUP, ("about to say it is done", KO_GAP), default=CUP)
+    evs, robot, _l = coverage_run(make_assist, llm, answers=["아니요"], task=KO_TASK, lang="ko", pack=KO_PACK, request_coverage="1")
+    assert robot.asked and robot.asked[0] == '"머그컵을 소파에 놓아 주세요"도 부탁하셨는데 아직 못 했어요. 지금 할까요?'
+    assert done(evs)["status"] == "success"
+
+
+def test_coverage_without_the_phrase_in_the_users_language_asks_nothing(make_assist):
+    llm = FakeLLM(CUP, ("about to say it is done", KO_GAP), default=CUP)
+    evs, robot, loop = coverage_run(make_assist, llm, task=KO_TASK, lang="ko", request_coverage="1")
+    assert robot.asked == [] and done(evs)["status"] == "success"
+    assert any(e["flag"] == "request_coverage_no_phrase" for e in loop.lab_log)

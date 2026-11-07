@@ -273,12 +273,21 @@ def ko_object_issues(goals: list, text: str) -> list:
 
 
 # ── grounding chain v2 (options go_steps, kind_anchor, name_canon; all default OFF) ──────────────────────────────
-def go_steps(goals: list, task: str, places) -> tuple:
+def go_steps(goals: list, task: str, places, converted: "list | None" = None) -> tuple:
     """(goals, dropped): option ``go_steps``. A ``go`` goal that is a STEP toward another goal, not an end state, is
     dropped when at least one non-``go`` goal remains. It is a step when its target is a person, the speaker, the
     listener of a ``say`` goal, or the place the person named as the SOURCE of a move goal that comes AFTER it ("go
-    there first"). A final ``go`` (a dock, a room the person asked to reach) is kept. ENV flags and goal order only."""
+    there first"). A final ``go`` (a dock, a room the person asked to reach) is kept. ENV flags and goal order only.
+
+    A ``go`` goal that carries an object ("go to Ben with the cup": the model used ``go`` for a delivery) is not a step
+    and is not dropped: it becomes the delivery it says, an ``on`` goal of that object to the same destination (a person
+    entry stays the person entry, resolved as usual downstream). Such goals are appended to ``converted`` when given."""
     from .persons import speaker_key
+    deliveries = [g for g in goals if g.get("type") == "go" and str(g.get("object") or "").strip() and g.get("to")]
+    if deliveries:
+        goals = [{**g, "type": "on"} if any(g is d for d in deliveries) else g for g in goals]
+        if converted is not None:
+            converted.extend(deliveries)
     if not any(g.get("type") != "go" for g in goals):
         return goals, []
     sk = speaker_key(places)

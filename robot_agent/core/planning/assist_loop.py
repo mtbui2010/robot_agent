@@ -2111,9 +2111,10 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         OFF, all off = no change): deterministic fixes of the grounded goals, no LLM call. Returns (goals, question)."""
         c = self.cfg
         if c.get("go_steps"):
-            goals, gone = goal_fix.go_steps(goals, r.task, r.places)
-            if gone:
-                self._lab("go_steps", dropped=len(gone))
+            made = []
+            goals, gone = goal_fix.go_steps(goals, r.task, r.places, made)
+            if gone or made:
+                self._lab("go_steps", dropped=len(gone), delivery=len(made))
             r.filtered += gone
         if c.get("kind_anchor"):
             heard = None if (getattr(r, "lang", None) or "en")[:2] == "en" else getattr(self.language, "heard", {}).get(r.task)
@@ -3125,12 +3126,18 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             if is_cancel(e):
                 raise
             return None
-        missing = request_coverage.parts(d, request)
-        self._lab("request_coverage", parts=missing)
+        covered = request_coverage.covered_names(r.goals, r.completed, r.places)
+        missing = request_coverage.parts(d, request, covered)
+        self._lab("request_coverage", parts=missing, dropped=len(request_coverage.parts(d, request)) - len(missing))
         if not missing:
             return None
-        part = missing[0]
-        q = f"You also asked me for this, but I have not done it: {part}. Should I do it now?"
+        part = missing[0]                               # the first part that survived the filter
+        # the robot's own fixed phrase with the part in the person's own words (no English sentence with a
+        # foreign-script part reaches the translator); a pack without the phrase in the person's language: no question
+        if (r.lang or "en")[:2] != "en" and speech.phrase(r.robot, "q_coverage", r.lang) is None:
+            self._lab("request_coverage_no_phrase", lang=r.lang)
+            return None
+        q = speech.LocalText("q_coverage", {"what": part})
         yield r.ev("clarify", question=q, round=r.confirms, kind="coverage")
         ans, ok_, _rest = self._ask_yes_no(r, q)
         stop = self._cancelled(r)
@@ -3138,8 +3145,9 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             yield stop
             return _STOP
         if ok_ is None:
-            yield self._finish(r, "failed", msg=f"no answer to: {q}")
-            return _STOP
+            # no answer or not understood: the goals were observed to hold, so the run claims done as before
+            self._lab("request_coverage_unanswered", part=part)
+            return None
         if ok_ is not True:
             return None                                 # the person declined: nothing is claimed beyond that
         r.dialogue += [("robot", q), ("user", ans)]

@@ -100,6 +100,33 @@ def test_go_steps_off_keeps_the_go_goal(make_assist, tmp_path):
     assert ("go", "", "ben@kitchen") in shape(first_understand(evs)["goals"])
 
 
+# a go goal that carries an object is a delivery the model wrote as "go": it is not dropped
+GO_WITH_OBJECT = U(G("go", "cup", "table@kitchen", "ben@kitchen"))
+GO_WITH_OBJECT_AND_SAY = U(G("go", "cup", "", "ben@kitchen"), G("say", "dinner is ready", "", "ben@kitchen"))
+
+
+@pytest.mark.parametrize("reading,task,kept", [
+    (GO_WITH_OBJECT, "Take the cup to Ben.", [("on", "cup", "ben@kitchen")]),
+    (GO_WITH_OBJECT_AND_SAY, "Take the cup to Ben and tell him dinner is ready.",
+     [("on", "cup", "ben@kitchen"), ("say", "dinner is ready", "ben@kitchen")]),
+])
+def test_go_steps_turns_a_go_with_an_object_into_a_delivery(make_assist, tmp_path, reading, task, kept):
+    evs, _ = run(make_assist, task, FakeLLM(reading), tmp_path, go_steps="1", confirm_task=False)
+    assert shape(first_understand(evs)["goals"]) == kept
+
+
+def test_go_steps_delivery_to_the_speaker_and_to_a_place_and_the_pure_function():
+    me = G("go", "cup", "", "anna@living room")
+    out, gone = goal_fix.go_steps([me, G("on", "mug", "", "shelf@hall")], "Bring me the cup.", Places(ENV))
+    assert gone == [] and [(g["type"], g["object"], g["to"]) for g in out] == [("on", "cup", "anna@living room"),
+                                                                              ("on", "mug", "shelf@hall")]
+    made = []
+    out, gone = goal_fix.go_steps([G("go", "cup", "", "shelf@hall")], "x", Places(ENV), made)
+    assert out[0]["type"] == "on" and made and gone == []
+    # no object: still a step (dropped) or a final go (kept), as before
+    assert goal_fix.go_steps([G("go", "", "", "ben@kitchen"), G("on", "cup", "", "shelf@hall")], "x", Places(ENV))[1] != []
+
+
 def test_go_steps_never_empties_the_goal_set():
     goals = [G("go", "", "", "ben@kitchen")]
     assert goal_fix.go_steps(goals, "Go to Ben.", Places(ENV)) == (goals, [])

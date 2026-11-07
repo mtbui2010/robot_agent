@@ -37,6 +37,7 @@ CORE_PHRASES = {
     "q_silence": "Sorry, I didn't hear you.",
     "q_did_you_mean": "Did you mean the {object}?",
     "q_what_bring": "What should I bring?",
+    "q_coverage": "You also asked me for this, but I have not done it: {what}. Should I do it now?",
     "q_confirm": "{summary} Is that right?",
     "rb_restated": "I understood it the same way again.",
     "rb_on": "put the {object} on the {place}",
