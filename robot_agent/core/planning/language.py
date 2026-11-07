@@ -32,6 +32,7 @@ benchmark.
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 from typing import Optional
@@ -87,6 +88,11 @@ _OUT_PROMPT = ("Translate into natural {register} ({name}). Keep the meaning, th
                "do not add anything.{names} Output only the translation:")
 
 
+_NAME_PROMPT = ("Translate into natural {register} ({name}) the name of this household object, as the short noun a person "
+                "would say in a sentence such as \"Please bring the <name>.\" A noun only: no sentence, no greeting, no "
+                "apology. Output only the name:\n{en}")
+
+
 @dataclass
 class Heard:
     """One user utterance: the original words, their English (``""`` when none), and whether the translation can
@@ -139,6 +145,7 @@ class LanguageAdapter:
         self.spoken: list = []                        # everything ``speak`` returned (last 400)
         self.fallbacks = 0                            # texts replaced by the pack's plain phrase
         self.heard: dict = {}                         # original -> Heard (this run)
+        self.names_cache: dict = {}                   # (English name, lang) -> its validated name, or None (this run)
 
     # ── configuration ────────────────────────────────────────────────────
     @property
@@ -151,7 +158,7 @@ class LanguageAdapter:
 
     def reset(self) -> None:
         """A new run: its own spoken log and heard texts (the translation cache is kept: same text, same words)."""
-        self.spoken, self.fallbacks, self.heard = [], 0, {}
+        self.spoken, self.fallbacks, self.heard, self.names_cache = [], 0, {}, {}
 
     def translator(self):
         """The client that translates (option / $ROBOT_AGENT_TRANSLATE_MODEL / the manifest's
@@ -284,9 +291,11 @@ class LanguageAdapter:
         kept = [p for p in parts if _NON_LATIN.search(p) and self._loc(p, lg)]
         return " ".join(kept) if kept and len(kept) < len(parts) else ""
 
-    def local_slot(self, text) -> Optional[str]:
+    def local_slot(self, text, slot: str = "") -> Optional[str]:
         """An English slot ("kimchi fridge") in the user's language: the ENV entry whose head it is (its alias),
-        else one short translation (cached). None when neither works."""
+        else one short translation (cached). None when neither works. ``slot`` "object": the slot is a bare NAME,
+        said through ``local_name`` (declared name, else a constrained, guarded translation, else the English name
+        itself inside the phrase), never sent alone as free text."""
         lg = self.run_lang()
         places, s = self._places(), " ".join(str(text or "").split())
         if not s or lg == "en":
@@ -297,8 +306,101 @@ class LanguageAdapter:
                     local = speech.say_name(places, k, lg)
                     if local and self._loc(local, lg):
                         return local
+        if slot == "object":
+            return self.local_name(s, lg) or s
         out = self._speak_text(s, lg)
         return out if out is not None and self._loc(out, lg) else None
+
+    # ── a bare object / place name in the user's language (never sent to the translator alone) ──
+    def declared_name(self, en: str, lg: str) -> Optional[str]:
+        """The name ``en`` has in ``lg`` in DECLARED data, no model: the robot pack's i18n ``names``
+        (``{lang: {english name: local name}}``), else an ENV entry that carries ``en`` (its head, or an English
+        alias) and an alias in ``lg``. None when nothing declares it (or ``lg`` has no data)."""
+        key = " ".join(speech._words(en).lower().split())
+        if not key or lg == "en":
+            return None
+        by = ((getattr(getattr(self.host.robot, "i18n", None), "phrases", None) or {}).get("names") or {}).get(lg)
+        if isinstance(by, dict):
+            for k, v in by.items():
+                if " ".join(speech._words(k).lower().split()) == key and isinstance(v, str) and v.strip():
+                    return v.strip()
+        places = self._places()
+        if places is not None:
+            for k in places.keys:
+                e = places.env.get(k) or {}
+                if e.get("speaker"):
+                    continue
+                heads = {" ".join(speech._words(k.split("@")[0]).lower().split())}
+                heads |= {" ".join(a.lower().split()) for a in e.get("aliases") or [] if a.isascii()}
+                if key in heads:
+                    local = speech.say_name(places, k, lg)
+                    if local and self._loc(local, lg):
+                        return local
+        return None
+
+    def _stock_tokens(self, lg: str) -> list:
+        """The word lists of every sentence the pack says in ``lg`` (the robot pack's i18n phrases with their slots cut
+        out, the language pack's ``answer_unsure``): what a name must not be (an apology, a greeting, a question)."""
+        out, texts = [], []
+        ph = getattr(getattr(self.host.robot, "i18n", None), "phrases", None) or {}
+        for by in ph.values():
+            v = by.get(lg) if isinstance(by, dict) else None
+            texts += [v] if isinstance(v, str) else [x for x in (v if isinstance(v, list) else []) if isinstance(x, str)]
+        texts += langdata.phrases(lg, "answer_unsure")
+        for t in texts:
+            w = [x for x in re.findall(r"\w+", re.sub(r"\{[^}]*\}", " ", t)) if len(x) >= 2]
+            if w:
+                out.append(w)
+        return out
+
+    def plausible_name(self, name: str, en: str, lg: str) -> Optional[str]:
+        """Why ``name`` cannot be the ``lg`` name of the object ``en`` (None: it can). Script (``speech.guard``), no
+        sentence punctuation, a length near the English name's (one word more, 8 letters a word), and not a stock
+        phrase of the pack (a word of it, or a word sharing its first syllables)."""
+        n = " ".join(str(name or "").split())
+        why = speech.guard(n, lg)
+        if why:
+            return why
+        if re.search(r"[.!?,;:\n]", n):
+            return "a sentence, not a name"
+        nw = max(1, len(speech._words(en).split()))
+        if len(n.split()) > nw + 1 or len(n) > 8 * nw:
+            return "too long for a name"
+        stock = self._stock_tokens(lg)
+        for c in re.findall(r"\w+", n):
+            if len(c) < 2:
+                continue
+            for toks in stock:
+                for p in toks:
+                    cp = len(os.path.commonprefix([c, p]))
+                    if cp >= 2 and cp >= 0.5 * min(len(c), len(p)):
+                        return "a stock phrase of the robot"
+        return None
+
+    def local_name(self, en: str, lg: str) -> Optional[str]:
+        """The name of the object / place ``en`` in ``lg`` (cached for the run): declared data first; else ONE
+        constrained translation (the name is asked as a noun for a sentence, not translated alone as free text) that
+        ``plausible_name`` must accept; None when none works (the caller keeps the English name inside the sentence)."""
+        if lg == "en" or lg not in LANGS:
+            return None
+        s = " ".join(str(en or "").split())
+        key = (s.lower(), lg)
+        if key in self.names_cache:
+            return self.names_cache[key]
+        out = self.declared_name(s, lg)
+        if out is None and not getattr(self.host, "_llm_unreachable", False) and self._take():
+            prompt = _NAME_PROMPT.format(register=REGISTER.get(lg, LANGS[lg]), name=LANGS[lg], en=s)
+            try:
+                cand = str(self.chat_out(lg, prompt, ok=lambda o: self.plausible_name(o.strip().strip('"'), s, lg) is None))
+                cand = cand.strip().strip('"')
+                out = cand if self.plausible_name(cand, s, lg) is None else None
+            except Exception as e:                       # noqa: BLE001 - no name: the English one stays in the sentence
+                from ..run_control import is_cancel
+                if is_cancel(e):
+                    raise
+                out = None
+        self.names_cache[key] = out
+        return out
 
     # ── OUT: the one function every spoken text passes ───────────────────
     def speak(self, text, lang, kind: str = "") -> str:

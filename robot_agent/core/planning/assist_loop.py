@@ -2262,15 +2262,22 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         key = ("names", tuple(objs), str(self.cfg.get("translate_model") or "") + (f"|{dm}" if dm else ""))
         if key not in cache:
             out = {}
-            try:
-                if not self.language._take():
-                    raise LLMBudgetExceeded("translate budget")
-                txt = self.language.chat_out(lg, self._NAMES_PROMPT + "\n" + "\n".join(objs))
-                lines = [re.sub(r"^\s*(?:\d+[.)]|[-*])\s*", "", x).strip() for x in txt.splitlines() if x.strip()]
-                if len(lines) == len(objs):
-                    out = {o: n for o, n in zip(objs, lines) if speech.guard(n, lg) is None}
-            except Exception:
-                out = {}
+            lang = self.language
+            for o in objs:                                      # a declared name needs no model (pack i18n / ENV)
+                d = lang.declared_name(o, lg)
+                if d:
+                    out[o] = d
+            rest = [o for o in objs if o not in out]
+            if rest:
+                try:
+                    if not lang._take():
+                        raise LLMBudgetExceeded("translate budget")
+                    txt = lang.chat_out(lg, self._NAMES_PROMPT + "\n" + "\n".join(rest))
+                    lines = [re.sub(r"^\s*(?:\d+[.)]|[-*])\s*", "", x).strip() for x in txt.splitlines() if x.strip()]
+                    if len(lines) == len(rest):
+                        out.update({o: n for o, n in zip(rest, lines) if lang.plausible_name(n, o, lg) is None})
+                except Exception:
+                    pass
             cache[key] = out
         return cache[key]
 

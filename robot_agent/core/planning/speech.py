@@ -262,11 +262,18 @@ def render(text, lang: str, robot=None, places=None, name_slots=("place", "perso
             v = (phrase(robot, "sep_or", lg) or (" 아니면 " if lg == "ko" else " or ")).join(names)
         elif k in ("object", "text", "what", "why", "summary", "first", "rest") and lg != "en" and \
                 v and not _in_script(str(v), lg):
-            v = slot_tr(str(v)) if slot_tr is not None else None   # an English slot in a Korean phrase: say it alone
+            v = _slot(slot_tr, str(v), k) if slot_tr is not None else None   # an English slot in a Korean phrase: say it alone
             if v is None:
                 return None                           # (or translate the whole)
         slots[k] = v
     return _fmt(tpl, slots)
+
+
+def _slot(slot_tr, v: str, k: str):
+    try:
+        return slot_tr(v, k)
+    except TypeError:                                 # a one-argument callback
+        return slot_tr(v)
 
 
 def _in_script(s: str, lg: str) -> bool:
