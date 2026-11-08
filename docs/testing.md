@@ -11,6 +11,8 @@
   on purpose with `UPDATE_GOLDEN=1 make test`, then review the diff.
 - `make lint-core`: robot names in `core/` / `interact/` / `contract/` (strict;
   `LINT_STRICT=0` only reports). See [rules.md](rules.md) rule 1.
+- `make lint-core` also runs `tools/lint_arch.py` (layers, size, option wiring; baseline `tools/arch_baseline.json`, shrink it with
+  `python tools/lint_arch.py --update`); `tests/test_architecture.py` runs the same checks and tests the linter. See [architecture.md](architecture.md).
 - `tests/test_wiring_function_size.py`: no function over 80 lines in
   `core/planning` (rule 10).
 - `make test-smoke`: import smoke test of an installed package.

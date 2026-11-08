@@ -214,6 +214,7 @@ LINT_CORE_PATTERNS ?= grasp_succeed mobile_pose kcare kaair MOBILE_HEIGHT
 LINT_CORE_DIRS ?= core interact contract
 LINT_STRICT ?= 1
 lint-core:
+	@$(ENV_PY) $(ROOT)/tools/lint_arch.py || { [ "$(LINT_STRICT)" != "1" ]; }
 	@total=0; dirs="$(addprefix $(ROOT)/robot_agent/,$(LINT_CORE_DIRS))"; \
 	echo "[robot_agent] robot-specific names in robot_agent/{$(LINT_CORE_DIRS)}:"; \
 	for p in $(LINT_CORE_PATTERNS); do \

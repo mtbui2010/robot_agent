@@ -17,24 +17,24 @@ Full rule text and reasons: [docs/rules.md](docs/rules.md). Docs index: [docs/RE
 10. Keep every function in `core/planning` at most 80 lines.
 11. Use the contract types (`SkillSpec`, `SkillResult`, `FailureCode`) at the core / robot boundary.
 12. Keep this file short: one-line rules and links; details go in `docs/*.md`.
+13. Layers: `contract` <- engine (`core`) <- options (`robot_agent/options`); the engine never imports an option, options never import each other ([architecture](docs/architecture.md)).
+14. No domain facts in the engine or in options (names, words of a language, hazard rules, tuned thresholds): they are robot-profile or language-pack data; missing data = the feature does nothing.
+15. An option is a registered module (`OptionSpec`: keys, hooks, order), not `if self.cfg` branches in the loop; old code may not grow ([options](docs/options.md), `tools/lint_arch.py`).
 
 ## Test
 
-`make test` (pytest, < 30 s, no ROS / network) and `make lint-core`. Details: [docs/testing.md](docs/testing.md).
+`make test` (pytest, < 30 s, no ROS / network) and `make lint-core` (robot names, layers, size, option wiring). Details: [docs/testing.md](docs/testing.md).
 
 ## Docs
 
 - [docs/rules.md](docs/rules.md): full rules with reasons
 - [docs/testing.md](docs/testing.md): test commands, fakes, golden tests
 - [docs/contract.md](docs/contract.md): adapter, manifest, contract types
+- [docs/architecture.md](docs/architecture.md): layers, size limits, what is enforced; [docs/options.md](docs/options.md): the option interface
 - [docs/run_manager.md](docs/run_manager.md): runs, cancel / pause, intent router
 - [docs/dialog.md](docs/dialog.md): dialog, yes/no answers, typed refusals, understand sampling
 - [docs/planners.md](docs/planners.md): planner interface, plug-ins by module:Class / entry point
 - [docs/memory.md](docs/memory.md): planner memory (seed pool, recording, cleaning)
-- [docs/direct_prompt.md](docs/direct_prompt.md): the direct planner's prompt, built from the manifest, places, memory
 - [docs/verify.md](docs/verify.md): verification layers, VLM verify, sensor health, LLM-call budget
-- [docs/search.md](docs/search.md): object search with a belief
-- [docs/guard.md](docs/guard.md): precondition layers, reconcile with sensors, provenance
 - [docs/observe.md](docs/observe.md): RunRecord, metrics, replay, event schema
-- [docs/action_model_divergence.md](docs/action_model_divergence.md): the one action model
 - Planning-layer specs: [closed loop](docs/CLOSED_LOOP_ARCHITECTURE.md), [action mapper](docs/ACTION_MAPPER_SPEC.md), [records / verify / voice](docs/TRACKING_VERIFY_VOICE.md)

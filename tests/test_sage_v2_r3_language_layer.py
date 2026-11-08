@@ -17,6 +17,7 @@ from fakes import FakeLLM, FakeRobot, ScriptedPlanner, done, run_task, steps
 from robot_agent.core.planning import language, speech
 from robot_agent.core.planning.assist_loop import AssistLoop, Places
 from robot_agent.core.planning.understand import LLMBudget
+from robot_agent.options.hazard import support_goals
 
 DR, DT, DS = "drawer@kitchen", "dining table@kitchen", "desk@study room"
 ENV = {
@@ -241,9 +242,9 @@ def test_open_goal_that_only_served_a_refused_put_is_refused_with_it():
     put = {"type": "in", "object": "x", "from": "", "to": "box"}
     open_ = {"type": "open", "object": "box", "from": "", "to": "box"}
     other = {"type": "on", "object": "y", "from": "", "to": "box"}
-    assert AssistLoop._support_goals([open_, put], [put]) == [open_]
-    assert AssistLoop._support_goals([open_, put, other], [put]) == []   # a kept goal still uses the box
-    assert AssistLoop._support_goals([put, {"type": "open", "object": "lid", "from": "", "to": ""}], [put]) == []
+    assert support_goals([open_, put], [put]) == [open_]
+    assert support_goals([open_, put, other], [put]) == []   # a kept goal still uses the box
+    assert support_goals([put, {"type": "open", "object": "lid", "from": "", "to": ""}], [put]) == []
 
 
 def test_pack_line_with_raw_keys_and_an_english_reason():

@@ -46,6 +46,7 @@ import os
 import re
 import threading
 import time
+import types
 import traceback
 from pathlib import Path
 from typing import Iterator, Optional
@@ -62,8 +63,10 @@ from .which_one import WhichOne
 from . import goals as goal_kinds
 from . import langdata
 from . import (action_roles, dialog_agree, dialog_converge, dialog_ext, dialog_unstick, exec_integrity, goal_filter, goal_fix, language, persons, plan_tidy,
-                reach_delivery,
                request_coverage, role_models, speech)
+from ..options import REGISTRY as _OPTIONS, Dispatcher
+from ..options.dispatch import NULL as _NO_OPTIONS
+from .option_services import LoopServices
 from . import reconcile as sensed
 from .robot import run_skill
 from .verify import symbolic_check, verdict
@@ -83,16 +86,17 @@ ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify
                 "yes_no_reasks", "search", "search_rank", "search_half_life_s", "vlm_verify", "sensor_health",
                 "reconcile", "search_habit_weight", "edit_reserve", "plan_tidy",
                 "goal_filter", "sage_subgoals", "translate_model", "translate_url", "translate_budget",
-                "gate_complete", "hazard_rules", "person_seat_m", "person_surface_m", "search_total",
+                "gate_complete", "person_seat_m", "person_surface_m", "search_total",
                 "search_legs", "object_check", "detector_miss_rate", "person_goals", "accept_goals",
                 "go_steps", "kind_anchor", "name_canon", "reask_abstain",
                 "exec_integrity", "gate_strict", "endstate_check", "reset_container", "wait_on_robot", "inventory_ask",
-                "dialog_unstick", "dialog_agree", "dialog_agree2", "relook", "reach_delivery", "unapplied_change", "hazard_receiver", "kind_anchor_ask", "prompt_lang", "reask_anchor", "no_shared_listener", "understand_views",
+                "dialog_unstick", "dialog_agree", "dialog_agree2", "relook", "kind_anchor_ask", "prompt_lang", "reask_anchor", "no_shared_listener", "understand_views",
                   "understand_goals_first", "understand_model", "understand_url", "understand_model_lang",
                 "understand_max_tokens", "understand_max_goals", "understand_schema_strict", "understand_give_kind",
                 "understand_verify_verdict", "understand_think", "repair_model", "repair_url", "repair_max_tokens",
                 "repair_think", "dialog_model", "dialog_model_lang", "dialog_url", "dialog_max_tokens", "dialog_think",
                 "request_coverage"}
+ASSIST_OPTIONS = frozenset(ASSIST_OPTIONS) | _OPTIONS.all_keys()      # + the registered options' keys (core/options)
 _USER_WORDS = {"me", "user", "here", "you", "myself", "person"}
 
 
@@ -359,6 +363,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
 
     _answer_source = "robot"          # where the last answer came from (interact.dialog: robot | typed | '')
     _verify_with_body = True          # F6.1: a successful Handover empties the hand in the post-step verify
+    options = _NO_OPTIONS             # the registered options of this loop (core/options): set in __init__
 
     def __init__(self, agent, emit=None, **overrides) -> None:
         overrides = dict(overrides)
@@ -438,8 +443,15 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             "generator": self.cfg["planner"],
             "planner": "sage",
         })
-        self.cfg.update(self._v2_cfg(overrides), **self._um_cfg(overrides), **self._rm_cfg(overrides))
+        self._resolve_options_cfg(overrides)
         self._reaches = lambda steps, world, goals, loop=None: AssistLoop._reaches(steps, world, goals, self)
+
+    def _resolve_options_cfg(self, overrides) -> None:
+        """The SAGE-v2, understand-model and role-model keys, then the registered options (``core/options``): their keys are
+        resolved by the options' own specs and mirrored into ``self.cfg`` by their legacy names."""
+        self.cfg.update(self._v2_cfg(overrides), **self._um_cfg(overrides), **self._rm_cfg(overrides))
+        self.options = Dispatcher(LoopServices(self), overrides, os.environ, getattr(self.robot.manifest, "planner", None))
+        self.cfg.update(self.options.mirror())
 
     def _v2_cfg(self, overrides) -> dict:
         """The SAGE-v2 options (docs/env.md): run option > environment > the robot's manifest > default. Round 14:
@@ -457,8 +469,6 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             "sage_subgoals": str(overrides.get("sage_subgoals", env("ROBOT_AGENT_SAGE_SUBGOALS", "goals"))),
             # plan_repair operator 6 (the gate writes a missing goal's segment): off; a separate ablation row
             "gate_complete": str(overrides.get("gate_complete", env("ROBOT_AGENT_GATE_COMPLETE", "0"))),
-            # the core safety layer (core/safety): core | pack (the robot pack's manifest rules only) | off
-            "hazard_rules": str(overrides.get("hazard_rules", env("ROBOT_AGENT_HAZARD_RULES", "core"))),
             # SAGE-v2 search (F6.1 the belief's next look spliced in place of a failed Find, no replan; F6.2 "I don't
             # know" continues over the likely places): option > env > manifest planner.search_legs > off
             "search_legs": str(overrides.get("search_legs", env("ROBOT_AGENT_SEARCH_LEGS", str(
@@ -517,7 +527,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             #   understand_goals_first  the understand schema asks for the goals before the verdict (dialog_agree: round 12, dialog_agree.py)
             **{k: str(overrides.get(k, env("ROBOT_AGENT_" + k.upper(), str(self._manifest_planner(k, "0"))))).lower()
                in ("1", "true", "yes", "on") for k in ("reask_anchor", "no_shared_listener", "understand_views",
-                                                       "understand_goals_first", "dialog_agree", "dialog_agree2", "relook", "reach_delivery", "unapplied_change", "hazard_receiver")},
+                                                       "understand_goals_first", "dialog_agree", "dialog_agree2", "relook")},
             # solution-lab round 4 (default OFF, dialog_unstick.py): a restatement that gives the refused reading again is
             # read back once more instead of ending the run; a "not sure" answer to a where-is question is a cue to
             # search; a question with its own apology is not asked again behind the silence apology
@@ -596,16 +606,6 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         log = self.__dict__.setdefault("lab_log", [])
         if len(log) < 50:
             log.append({"flag": flag, **info})
-
-    def _reach_cfg(self):
-        """Option ``reach_delivery`` with the pack's declaration (manifest ``planner.reach_delivery``): its config, else None
-        (option off, or no declaration: nothing changes)."""
-        if not self.cfg.get("reach_delivery"):
-            return None
-        try:
-            return reach_delivery.config(getattr(self.robot.manifest, "planner", None))
-        except Exception:                                  # noqa: BLE001 - no robot / manifest: as before
-            return None
 
     def _now(self) -> float:
         """Seconds on the clock of the host (``self.clock``, a callable a host with a simulated or robot clock sets), else wall time."""
@@ -900,59 +900,14 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             return None
         return "override" if rt in ("", "missing_skill", "other") else None
 
-    def _hazard_gate(self, r):
-        """Goals the robot's safety rules forbid (core/safety, option ``hazard_rules`` core | pack | off): all of
-        them -> a typed safety refusal (_STOP); some -> those are dropped and said at the end
-        (``r.refused_parts``); None."""
-        found = [(g, self._verdict(g, r.places)) for g in r.goals]
-        bad = [(g, v.say) for g, v in found if v]
-        if not bad:
-            return None
-        r.refusals = list(getattr(r, "refusals", []))
-        r.refusals += [x for x in (self._refusal_record(g, v) for g, v in found if v) if x not in r.refusals]
-        yield r.ev("understand_check", issues=[f"unsafe: {goal_kinds.describe(g)} ({w})" for g, w in bad], hazard=True)
-        support = self._support_goals(r.goals, [g for g, _w in bad])
-        if len(bad) + len(support) == len(r.goals):
-            g, why = bad[0]
-            yield self._finish(r, "refused", refusal="safety", msg=f"unsafe: {goal_kinds.describe(g)}: {why}",
-                               say=f"I won't do that: {why}.")
-            return _STOP
-        r.refused_parts = list(getattr(r, "refused_parts", [])) + bad
-        r.goals = [g for g in r.goals if all(g is not b for b, _w in bad) and all(g is not x for x in support)]
-        return None
-
     def _safety_profile(self):
+        """The robot's safety profile (``core/safety``): the refusal marks of a typed refusal come from it."""
         from ..safety import profile_of
         return profile_of(self.robot)
 
-    def _verdict(self, goal, places):
-        """The safety rule (robot's profile + legacy manifest list) that forbids ``goal``, as a ``Verdict``; None. The one place
-        that reads the hazard options: ``hazard_rules`` core | pack | off, ``hazard_receiver`` (turns on ``hazard.receivers`` rules)."""
-        from ..safety import find_rule
-        pack = (getattr(self.robot.manifest, "safety", None) or {}).get("hazards") or []
-        return find_rule(goal, places, self._safety_profile(), pack, str(self.cfg.get("hazard_rules", "core")),
-                         {"hazard.receivers"} if self.cfg.get("hazard_receiver") else ())
-
     def _forbids(self, goal, places):
-        """Why the robot's safety rules forbid ``goal`` (the sentence), None."""
-        v = self._verdict(goal, places)
-        return v.say if v else None
-
-    @staticmethod
-    def _refusal_record(goal, verdict) -> dict:
-        """One entry of the ``done`` event's ``refusals`` (docs/safety.md): the rule, the reason and the goal refused."""
-        return {"kind": "safety", "rule": verdict.rule, "why": verdict.say,
-                "goal": {k: str(goal.get(k) or "") for k in ("type", "object", "said", "from", "to", "near_person")}}
-
-    @staticmethod
-    def _support_goals(goals, refused) -> list:
-        """The open / close goals that only served the refused goals (the container a refused put goes into or
-        comes from) and that no kept goal uses: refused with them. Else the person would hear "I will open the
-        fridge" for a request that was a put, say no, and never reach a refusal."""
-        kept = [g for g in goals if all(g is not b for b in refused)]
-        uses = lambda k: any(h.get("type") in ("on", "in") and k in (h.get("to"), h.get("from")) for h in kept)
-        return [g for g in kept if g.get("type") in ("open", "close") and not uses(g.get("object"))
-                and any(g.get("object") in (b.get("to"), b.get("from")) for b in refused)]
+        """Why the robot's safety rules forbid ``goal`` (the sentence), None: the answer of the option that holds the rules."""
+        return self.options.query("forbids", goal, places)
 
     def _understand_schema(self) -> dict:
         """UNDERSTAND_SCHEMA with the goal kinds this robot may be given (``goals.kinds_for``)."""
@@ -1141,10 +1096,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             return None
         if persons.tracked(places, to):
             mode, where = persons.delivery(places, to, task, robot, radius)
-            if (mode == "place" and self._reach_cfg() is not None and not reach_delivery.has_spot_field(places, to)
-                    and self._hand_action()):
-                mode = "hand"                 # reach_delivery: no declared reachable surface, so a hand-over, not the nearest furniture
-                self._lab("reach_delivery", why="no_declared_spot", person=to)
+            mode = self.options.transform("on_ground", mode, places, to)         # e.g. reach_delivery: no declared surface, a hand-over
             if mode == "hand":
                 g["hand"] = True
             else:
@@ -1713,7 +1665,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         fixed = self._reconcile(r, "start")              # adapter.reconcile + the declared sensors
         from robot_agent.skill_configs import ENV
         r.places = Places(dict(ENV), openable=r.robot.openable)
-        r.reach_t0 = self._now()                      # the person entries of the ENV are as of now (option reach_delivery)
+        self.options.observe("on_start", r)           # the options' per-run state
         if self.cfg.get("dialog_agree2"):
             r.places.ext = dialog_ext.build(lang, r.places, getattr(self.robot.manifest, "planner", None))
         self._env_places = r.places
@@ -1770,8 +1722,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             say = self._say_of_msg(msg)
         if say and not localized:
             say = self._humanize(say)                         # no raw ENV key reaches the user (F5.1)
-        if getattr(r, "refusals", None) and "refusals" not in kw:
-            kw["refusals"] = list(r.refusals)              # the safety rules' refusals, on every final status (docs/safety.md)
+        self.options.observe("on_finish", r, kw)          # e.g. hazard: the safety refusals on every final status
         return r.ev("done", status=status, run_id=r.run_id, msg=msg,
                     say=(say if localized else self._in_lang(say, r.lang)) if say else r.announcer.announce(kind), world=r.world.to_dict(), **kw)
 
@@ -1915,7 +1866,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
                                msg=ref.msg if not ref.missing else f"{ref.msg}, needed for: "
                                    + "; ".join(goal_kinds.describe(g) for g in r.goals))
             return _STOP
-        out = yield from self._hazard_gate(r)                      # F4.3: the robot's own safety rules
+        out = yield from self.options.decide_flow("on_goals", r)       # F4.3: the robot's own safety rules (option hazard)
         if out is _STOP:
             return _STOP
         r.goals, q = self._two_places(r, q)
@@ -2041,7 +1992,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         finds = sorted(a for a in self.robot.plan_actions if a.lower() == "find")
         objs = goal_fix.abstains_on_location(u) if finds else None
         anchor = bool(self.cfg.get("reask_anchor"))
-        if anchor and u.get("status") != "ambiguous" and str(self.cfg.get("hazard_rules", "core")) == "off":
+        if anchor and u.get("status") != "ambiguous" and self.options.query("gate_off"):
             objs = None                # no hazard gate after the re-reading: a first-reading refusal stands
         if objs is None:
             return u
@@ -2355,7 +2306,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         answers = [t for w_, t in r.dialogue if w_ == "user"]
         # a place the person replaced in a read-back correction no longer counts as asked for (docs/dialog.md)
         said = without_places(" ".join([r.task, self.original or ""]), r.places, getattr(r, "replaced", ()))
-        goals = list(goals) + [g for g, _w in getattr(r, "refused_parts", [])]   # refused for safety: covered
+        goals = list(goals) + self.options.query("refused_goals", r, default=[])   # refused for safety: covered
         issues = find_issues(goals, " ".join([said] + answers), r.places,
                              english=self._object_source(r, answers), user_words=_USER_WORDS)   # objects: own words only
         if not answers and verb_lost(r.task):             # the request's verb was lost: the goals are a guess
@@ -2909,7 +2860,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             blocks=blocks or None, join=rep.join_blocks if blocks else None, ground=ground,
             complete=str(self.cfg.get("gate_complete", "0")) in ("1", "true", "True"),
             person_goals=bool(self.cfg.get("person_goals")), reached=self._reaches,
-            no_refetch=self._reach_cfg() is not None)
+            no_refetch=bool(self.options.query("no_refetch")))
         acc = r.__dict__.setdefault("repaired_by_op", {})
         for k, v in counts.items():
             acc[k] = acc.get(k, 0) + v
@@ -3105,24 +3056,14 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         intent, text = e.get("intent") or "modify", str(e.get("text") or "")
         ch = goal_change.read(text, intent, r.goals, r.places, r.world.holding,
                               reached=lambda g: self._goals_hold([g], r.world, r.placed, r.completed, r.world_at_start.arrived))
-        r.__dict__["change_question"] = ""
+        self.options.observe("on_goal_edit", r, text)
         ch = ch if ch is not None and not ch.empty else self._llm_goal_change(r, text)
-        q = r.__dict__.get("change_question") if (ch is None or ch.empty) and self.cfg.get("unapplied_change") else ""
-        if q:                                   # option unapplied_change: the understand step asked something; ask it once, read again
-            yield r.ev("clarify", question=q, round=r.asked + 1, kind="goal_change")
-            ans, _n = self._ask_heard(q, r.node, self._log_fn(-1), r.lang)
-            r.heard += self._answer_source == "robot"
-            r.asked += 1
-            stop = self._cancelled(r)
-            if stop:
-                yield stop
-                return _STOP
-            if ans:
-                r.dialogue += [("robot", q), ("user", ans)]
-                ch = self._llm_goal_change(r, text)
         if ch is None or ch.empty:
-            if self.cfg.get("unapplied_change"):
-                r.__dict__.setdefault("unapplied", []).append(text)
+            turn = types.SimpleNamespace(text=text, change=ch)         # e.g. unapplied_change: ask once, read again, remember
+            if (yield from self.options.decide_flow("on_goal_unapplied", r, turn)) is _STOP:
+                return _STOP
+            ch = turn.change
+        if ch is None or ch.empty:
             yield r.ev("goal_change", applied=False, intent=intent, text=text, goals=r.goals,
                        say=self._in_lang(f"Sorry, I could not apply that: {text}. I will carry on.", r.lang))
             return None
@@ -3145,8 +3086,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
                 raise
             return None
         goals, q = self._ground_goals(u["goals"], r.places, r.memory, " ".join([r.task, text]), latest=text)
-        if self.cfg.get("unapplied_change") and (q or u.get("status") != "clear" or not goals):
-            r.__dict__["change_question"] = str(u.get("question") or "")      # asked once by _goal_edit
+        self.options.observe("on_goal_reread", r, text, u, goals, q)
         if q or u.get("status") != "clear":
             return None
         key = lambda g: (g.get("type"), g.get("object"), g.get("to"))
@@ -3481,10 +3421,9 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             # F6.2: handed over by a release action of the contract (a Handover) that succeeded: the person holds
             # it, so a look at their spot cannot see it there; the hand-over's own success is the evidence
             return True, f"the {o} was handed over at the {nice} (the hand-over succeeded)", None
-        key_, put_at = (getattr(r, "reach_put", None) or {}).get(o, (None, None))
-        why_ = reach_delivery.left_spot(r.places, key_, put_at) if key_ and self._reach_cfg() is not None else None
-        if why_:                                         # reach_delivery: the person's entry says the object is out of reach now
-            return False, f"the {o} is not within reach of {key_}: {why_}", None
+        own = self.options.decide("on_goal_check", r, o)        # e.g. reach_delivery: the person's entry says it is out of reach now
+        if own is not None:
+            return own
         if r.places.openable(place) and place not in r.world.opened:
             return None, f"the {o} is inside the closed {nice}: not visible (belief)", None
         if r.world.arrived != place:
@@ -3612,10 +3551,9 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
     def _run_step(self, r, st):
         """Guard, bind, run and check one step: _NEXT, _DONE (goals reached) or _STOP."""
         a, o, started = st["action"], st["object"], time.time()
-        if self.cfg.get("reach_delivery") and a == self._role("put_down"):
-            st, ev_ = self._reach_step(r, st)
-            if ev_ is not None:
-                yield ev_
+        new = yield from self.options.decide_flow("on_step", r, st)      # e.g. reach_delivery: a stale put-down becomes a hand-over
+        if new is not None:
+            st = new
             a, o = st["action"], st["object"]
         out = yield from self._guard(r, st)
         if out is not None:
@@ -3658,67 +3596,6 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             return (yield from self._step_succeeded(r, st, rec))
         return (yield from self._step_failed(r, st, skill, rec, res, reason))
 
-    def _reach_step(self, r, st):
-        """Option ``reach_delivery``: a put-down for a person whose ENV snapshot is older than the pack's ``trust_s`` becomes the
-        robot's hand-over (the person may have left the spot; a hand-over reaches them wherever they are in the room).
-        (step, event | None); the plan keeps the new step."""
-        rc = self._reach_cfg()
-        key = reach_delivery.recipient(r.places, st, r.goals, self._role("put_down")) if rc is not None else None
-        if key is None:
-            return st, None
-        age = self._now() - getattr(r, "reach_t0", self._now())
-        if not reach_delivery.stale(rc, age):
-            return st, None
-        rel = self._hand_action()
-        if rel is None:
-            self._lab("reach_delivery", why="stale_no_handover", person=key, age_s=round(age))
-            return st, None
-        new = reach_delivery.hand_step(rel, key)
-        if r.i < len(r.steps) and r.steps[r.i] is st:
-            r.steps[r.i] = new
-        self._lab("reach_delivery", why="stale", person=key, age_s=round(age), spot=reach_delivery.spot_of(r.places, key))
-        return new, r.ev("recover", at_index=r.i, kind="reach_delivery",
-                         msg=f"{key} may have moved since I last saw them ({age:.0f} s): handing it over instead of putting it down")
-
-    def _reach_ask_where(self, r, st, reason):
-        """Option ``reach_delivery``: a hand-over that replaced a put-down (the person's snapshot was old) cannot reach the person.
-        Ask once where they are; the place they name (``persons.place_in_answer``) gets a MoveTo and the hand-over again. _NEXT,
-        or None (no question possible, no answer, no place in it: the failure goes the usual way)."""
-        key = st.get("object")
-        mv = self._role("move")
-        if mv is None or not persons.is_person(r.places, key):         # no declared move action: nowhere to go (fail open)
-            return None
-        where = r.__dict__.setdefault("reach_where", {})      # person key -> the place they answered
-        asked = r.__dict__.setdefault("reach_asked_keys", set())
-        known = where.get(key)
-        if known and r.world.arrived != known:                # asked before for this person: go there, no second question
-            r.steps[r.i:r.i + 1] = [{"action": mv, "object": known, "grounded": True}, dict(st)]
-            self._lab("reach_delivery", why="known_where", person=key, place=known)
-            return _NEXT
-        if key in asked:
-            return None
-        asked.add(key)
-        if (places_ := r.places).env.get(key, {}).get("speaker") or key == persons.speaker_key(places_):
-            q = speech.LocalText("q_where_are_you")
-        else:
-            q = speech.LocalText("q_where_is_person", {"person": key}, text=f"Where is {self._say_name(places_, key)}?")
-        yield r.ev("clarify", question=q, round=r.asked + 1, kind="reach_delivery")
-        ans, _n = self._ask_heard(q, r.node, self._log_fn(-1), r.lang)
-        r.heard += self._answer_source == "robot"
-        r.asked += 1
-        stop = self._cancelled(r)
-        if stop:
-            yield stop
-            return _STOP
-        at = persons.place_in_answer(places_, ans) if ans else None
-        self._lab("reach_delivery", why="asked_where", person=key, answered=bool(ans), place=at)
-        if not ans or not at or at.startswith("@"):
-            return None
-        r.dialogue += [("robot", q), ("user", ans)]
-        where[key] = at
-        r.steps[r.i:r.i + 1] = [{"action": mv, "object": at, "grounded": True}, dict(st)]
-        return _NEXT
-
     def _post_check(self, r, st, skill, res, params, rec) -> list:
         """After a reported success, the effects + the skill's VerifySpecs (manifest: Pick looked at again
         once the arm is folded, MoveTo measured against the ENV loc); a release looked at twice; a Find
@@ -3758,10 +3635,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         self._search_effect(r, st)                       # before the effect: where the robot did it
         held_ = r.world.holding
         self._effect(st, r.world, r.memory, r.placed)
-        if a == self._role("put_down") and held_ and self._reach_cfg() is not None:
-            key_ = reach_delivery.recipient(r.places, st, r.goals, self._role("put_down"))
-            if key_:                                     # the person's spot as it was when the object was put down
-                r.__dict__.setdefault("reach_put", {})[held_] = (key_, reach_delivery.spot_of(r.places, key_))
+        self.options.observe("on_step_done", r, st, held_)
         if a == "Find":
             yield from self._which_one(r, st, rec)      # two objects fit the words: which one?
         if a == "MoveTo":
@@ -3803,12 +3677,9 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         rule = r.robot.policy.rule_for(code)
         device = res.device or skill
         self._note_failure(r, st, code, device, reason)
-        if st.get("reach_hand") and code is FailureCode.UNREACHABLE and self.cfg.get("reach_delivery"):
-            out = yield from self._reach_ask_where(r, st, reason)    # the person left: ask where they are, then hand over there
-            if out is not None:
-                return out
-            if self.cfg.get("reach_delivery"):                       # no place to go: no same-step retries, the replan / give-up path
-                return (yield from self._replan_or_fail(r, st, reason, f"{a} {o} failed: {reason} (replan budget used)"))
+        out = yield from self.options.decide_flow("on_step_failed", r, st, code, reason, a, o)   # e.g. reach_delivery: the person left
+        if out is not None:
+            return out
         if not rule.retry_allowed:
             what = "internal error in" if code is FailureCode.SOFTWARE else f"{code.value} in"
             yield self._finish(r, "failed", msg=f"{what} the {skill} skill (not retried): {reason}", code=code,
@@ -4322,21 +4193,18 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
 
     # ── 4. done only when the goals hold ──────────────────────────────────
     def _final_check(self, r) -> dict:
-        if self.cfg.get("unapplied_change") and r.__dict__.get("unapplied"):
-            # a correction the robot could not apply: the goals it checks are not what the person now wants
-            return self._finish(r, "failed", msg="I could not apply your change: " + "; ".join(r.unapplied))
+        own = self.options.decide("on_final", r)          # e.g. unapplied_change: the goals checked are not what the person now wants
+        if own is not None:
+            return own
         if self._goals_hold(r.goals, r.world, r.placed, r.completed, r.world_at_start.arrived):
             if not getattr(r, "compiled", False):            # the planner's memory learns its own plans only
                 # ... and only when the goals were seen to hold (planning/episode_memory.py)
                 episode_memory.record_if_verified(r.planner, r.restated, r.completed, r.goals,
                                                   getattr(r, "goal_checks", []),
                                                   mode=self.cfg.get("memory_record"), run_id=r.run_id)
-            parts = getattr(r, "refused_parts", [])
-            if parts:
-                g, why = parts[0]
-                return self._finish(r, "success", say=self._in_lang(
-                    self._humanize(f"I did the rest, but I won't {str(self._goal_phrase(g, r.places, lambda k: speech.say_name(r.places, k, 'en')))}: {why}."), r.lang),
-                    localized=True, refused_parts=[goal_kinds.describe(x) for x, _w in parts])
+            own = self.options.decide("on_goals_met", r)         # e.g. hazard: "I did the rest, but I won't ..."
+            if own is not None:
+                return own
             return self._finish(r, "success")
         return self._finish(r, "failed", msg="plan finished but the goals do not hold: "
                             + json.dumps(r.goals, ensure_ascii=False))

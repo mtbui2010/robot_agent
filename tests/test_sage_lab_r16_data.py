@@ -6,7 +6,8 @@ import pytest
 
 from fakes import FakeLLM, ScriptedPlanner, done, run_task, steps
 from robot_agent.contract.manifest import PLANNER_KEYS, Manifest, ManifestError
-from robot_agent.core.planning import action_roles, dialog_ext as DX, reach_delivery, request_coverage
+from robot_agent.core.planning import action_roles, dialog_ext as DX, request_coverage
+from robot_agent.options import reach_delivery
 from robot_agent.core.planning.assist_loop import Places
 from test_sage_lab_r14_relook import FR, KC as KC14, MissRobot, understood as understood14
 from test_sage_lab_r14_relook import ENV as ENV14
