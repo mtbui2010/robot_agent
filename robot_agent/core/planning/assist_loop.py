@@ -86,7 +86,7 @@ ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify
                 "search_legs", "object_check", "detector_miss_rate", "person_goals", "accept_goals",
                 "go_steps", "kind_anchor", "name_canon", "reask_abstain",
                 "exec_integrity", "gate_strict", "endstate_check", "reset_container", "wait_on_robot", "inventory_ask",
-                "dialog_unstick", "dialog_agree", "dialog_agree2", "relook", "reach_delivery", "kind_anchor_ask", "reask_anchor", "no_shared_listener", "understand_views",
+                "dialog_unstick", "dialog_agree", "dialog_agree2", "relook", "reach_delivery", "unapplied_change", "kind_anchor_ask", "reask_anchor", "no_shared_listener", "understand_views",
                   "understand_goals_first", "understand_model", "understand_url", "understand_model_lang",
                 "understand_max_tokens", "understand_max_goals", "understand_schema_strict", "understand_give_kind",
                 "understand_verify_verdict", "understand_think", "repair_model", "repair_url", "repair_max_tokens",
@@ -516,7 +516,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             #   understand_goals_first  the understand schema asks for the goals before the verdict (dialog_agree: round 12, dialog_agree.py)
             **{k: str(overrides.get(k, env("ROBOT_AGENT_" + k.upper(), str(self._manifest_planner(k, "0"))))).lower()
                in ("1", "true", "yes", "on") for k in ("reask_anchor", "no_shared_listener", "understand_views",
-                                                       "understand_goals_first", "dialog_agree", "dialog_agree2", "relook", "reach_delivery")},
+                                                       "understand_goals_first", "dialog_agree", "dialog_agree2", "relook", "reach_delivery", "unapplied_change")},
             # solution-lab round 4 (default OFF, dialog_unstick.py): a restatement that gives the refused reading again is
             # read back once more instead of ending the run; a "not sure" answer to a where-is question is a cue to
             # search; a question with its own apology is not asked again behind the silence apology
@@ -3064,8 +3064,24 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         intent, text = e.get("intent") or "modify", str(e.get("text") or "")
         ch = goal_change.read(text, intent, r.goals, r.places, r.world.holding,
                               reached=lambda g: self._goals_hold([g], r.world, r.placed, r.completed, r.world_at_start.arrived))
+        r.__dict__["change_question"] = ""
         ch = ch if ch is not None and not ch.empty else self._llm_goal_change(r, text)
+        q = r.__dict__.get("change_question") if (ch is None or ch.empty) and self.cfg.get("unapplied_change") else ""
+        if q:                                   # option unapplied_change: the understand step asked something; ask it once, read again
+            yield r.ev("clarify", question=q, round=r.asked + 1, kind="goal_change")
+            ans, _n = self._ask_heard(q, r.node, self._log_fn(-1), r.lang)
+            r.heard += self._answer_source == "robot"
+            r.asked += 1
+            stop = self._cancelled(r)
+            if stop:
+                yield stop
+                return _STOP
+            if ans:
+                r.dialogue += [("robot", q), ("user", ans)]
+                ch = self._llm_goal_change(r, text)
         if ch is None or ch.empty:
+            if self.cfg.get("unapplied_change"):
+                r.__dict__.setdefault("unapplied", []).append(text)
             yield r.ev("goal_change", applied=False, intent=intent, text=text, goals=r.goals,
                        say=self._in_lang(f"Sorry, I could not apply that: {text}. I will carry on.", r.lang))
             return None
@@ -3088,6 +3104,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
                 raise
             return None
         goals, q = self._ground_goals(u["goals"], r.places, r.memory, " ".join([r.task, text]), latest=text)
+        if self.cfg.get("unapplied_change") and (q or u.get("status") != "clear" or not goals):
+            r.__dict__["change_question"] = str(u.get("question") or "")      # asked once by _goal_edit
         if q or u.get("status") != "clear":
             return None
         key = lambda g: (g.get("type"), g.get("object"), g.get("to"))
@@ -4260,6 +4278,9 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
 
     # ── 4. done only when the goals hold ──────────────────────────────────
     def _final_check(self, r) -> dict:
+        if self.cfg.get("unapplied_change") and r.__dict__.get("unapplied"):
+            # a correction the robot could not apply: the goals it checks are not what the person now wants
+            return self._finish(r, "failed", msg="I could not apply your change: " + "; ".join(r.unapplied))
         if self._goals_hold(r.goals, r.world, r.placed, r.completed, r.world_at_start.arrived):
             if not getattr(r, "compiled", False):            # the planner's memory learns its own plans only
                 # ... and only when the goals were seen to hold (planning/episode_memory.py)

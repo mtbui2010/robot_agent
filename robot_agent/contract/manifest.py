@@ -67,13 +67,15 @@ _TOP_KEYS = {"robot", "version", "language", "capabilities", "geometry", "planne
 #   reach_delivery (0 | 1, default 0: round 15). With it, the pack's mapping ``person_snapshot: {trust_s: seconds}`` says how
 #   long a person's position in the ENV is trusted: later a put-down for them becomes the hand-over action, and the goal check
 #   reads their entry again; no mapping = the option does nothing)
+#   unapplied_change (0 | 1, default 0: round 15). A correction the robot cannot apply asks the understand step's own question once;
+#   if it still cannot be applied the run ends failed ("I could not apply your change") instead of claiming success),
 #   detector_miss_rate (0 to 0.9, default 0.1: the chance that a look at the right place does not see the object;
 #   one miss is then weak evidence and the search looks again at the places the belief still holds probable)
 PLANNER_KEYS = {"seed_memory", "notes", "llm_budget", "translate_model", "translate_url", "translate_budget",
                 "search_legs", "search_total", "input_pivot", "detector_miss_rate", "person_goals", "accept_goals",
                 "go_steps", "kind_anchor", "name_canon", "reask_abstain",
                 "exec_integrity", "gate_strict", "endstate_check", "reset_container", "wait_on_robot", "inventory_ask",
-                "dialog_unstick", "dialog_agree", "dialog_agree2", "relook", "reach_delivery", "person_snapshot", "agree_guard", "room_names", "canonical_lang", "label_tokens", "recovery", "kind_anchor_ask", "unstick",
+                "dialog_unstick", "dialog_agree", "dialog_agree2", "relook", "reach_delivery", "unapplied_change", "person_snapshot", "agree_guard", "room_names", "canonical_lang", "label_tokens", "recovery", "kind_anchor_ask", "unstick",
                 "reask_anchor", "no_shared_listener", "understand_views", "understand_goals_first",
                 "understand_model", "understand_url", "understand_model_lang", "understand_max_tokens",
                 "understand_max_goals", "understand_schema_strict", "understand_give_kind", "understand_verify_verdict",
