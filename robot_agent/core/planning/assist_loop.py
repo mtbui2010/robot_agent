@@ -2008,7 +2008,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         objs = goal_fix.abstains_on_location(u) if finds and r.dialogue and r.dialogue[-1][0] == "user" else None
         if objs is None or not dialog_unstick.unsure_answer(
                 r.dialogue[-1][1], r.places, self._unsure_data(r), r.lang,
-                self._manifest_planner("unstick", None)):
+                self._manifest_planner("unstick", None), fallback_too=bool(self.cfg.get("dialog_agree2"))):
             return u
         r.unsure_reasked = True
         try:
@@ -2461,7 +2461,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             self._agree_state(r)["refusals"].append({
                 "sig": sig, "ans": ans, "rest": rest,
                 "unsure": dialog_unstick.unsure_answer(ans, r.places, self._unsure_data(r),
-                                                       r.lang, self._manifest_planner("unstick", None))})
+                                                       r.lang, self._manifest_planner("unstick", None),
+                                                       fallback_too=bool(self.cfg.get("dialog_agree2")))})
         again = self._converge() and sig in getattr(r, "rejected", ())
         r.rejected = list(getattr(r, "rejected", ())) + [sig]
         if not rest:                     # a bare "no": ask what instead (as a choice when this reading was refused before)

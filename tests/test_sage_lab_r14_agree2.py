@@ -159,9 +159,10 @@ class KoLLM(FakeLLM):
         return super().chat(prompt=prompt, format=format, **kw)
 
 
-def ko_play(make_assist, answers, planner=None, **opts):
+def ko_play(make_assist, answers, planner=None, extra=None, **opts):
     return play(make_assist, KoLLM(KO_READ, default=KO_READ), answers, task=KO_TASK, env=KO_ENV, house={"blue book": "desk@study"},
-                lang="ko", phrases={k: {"ko": v} for k, v in KO_PACK.items()}, plan=KO_PLAN, planner=planner, **opts)
+                lang="ko", phrases={**{k: {"ko": v} for k, v in KO_PACK.items()}, **(extra or {})}, plan=KO_PLAN, planner=planner,
+                **opts)
 
 
 @uses(KO_ENV)
@@ -289,3 +290,66 @@ def test_option_off_is_the_earlier_events(make_assist):
     l1, r1, e1 = play(make_assist, FakeLLM(default=READ), list(ans), dialog_unstick="1", dialog_agree="1")
     l2, r2, e2 = play(make_assist, FakeLLM(default=READ), list(ans), dialog_unstick="1", dialog_agree="1", dialog_agree2="0")
     assert [{k: v for k, v in e.items() if k != "run_id"} for e in e1] == [{k: v for k, v in e.items() if k != "run_id"} for e in e2] and r1.asked == r2.asked and l2._ctx.places.ext is None
+
+
+# ── round 14 fixes: pack words are never garbled; the structural not-sure test also runs where phrases exist ─────────────
+KO_ENV13 = {**KO_ENV, "wife@kitchen": {"person": True, "aliases": ["wife", "아내"], "loc": {"x": 3.5, "y": 1.0}}}
+
+
+def ko13_play(make_assist, answers):
+    return play(make_assist, KoLLM(KO_READ, default=KO_READ), answers, task=KO_TASK, env=KO_ENV13, house={"blue book": "desk@study"},
+                lang="ko", phrases={k: {"ko": v} for k, v in KO_PACK.items()}, plan=KO_PLAN, planner={"agree_guard": GUARD}, **B2)
+
+
+@uses(KO_ENV13)
+def test_013_ko_the_refusal_word_of_the_pack_is_not_garbled(make_assist):
+    """KO 013 shape: a bare 아니요 and the request said twice. The guard read the pack's own refusal word as a garble
+    and asked again; the person answered "not sure" and the run gave up."""
+    answers = ["아니요.", KO_TASK, KO_TASK]
+    loop, robot, evs = ko13_play(make_assist, list(answers))
+    log = lab(loop)[-1]
+    assert len(agreed(evs)) == 1 and "reask" not in log and not log.get("garbled") and not gave_up(evs)
+
+
+@uses(KO_ENV13)
+def test_013_ko_with_asr_noise_in_the_request(make_assist):
+    """The same shape under ASR: noise inside the request words (not the pack's words) does not hide the agreement."""
+    answers = ["아니요.", KO_TASK, "파란책을 소파에 놔 주세요."]
+    loop, robot, evs = ko13_play(make_assist, list(answers))
+    assert len(agreed(evs)) == 1 and not gave_up(evs)
+    noisy = ["아니요.", KO_TASK, "파란책을 소파에 놔 주세요, 아니요 아니에요."]       # a refusal word again inside the answer
+    loop, robot, evs = ko13_play(make_assist, noisy)
+    assert not [g for g in (lab(loop)[-1].get("garbled") or []) if g.startswith("아니")]
+
+
+@uses(KO_ENV)
+def test_097_ko_a_polite_not_sure_that_no_phrase_declares_is_still_a_not_sure(make_assist):
+    """The language declares not-sure phrases; this answer matches none. Under dialog_agree2 the structural test (short, names
+    no place) still reads it as a not-sure, so the refusal is not a correction."""
+    answers = ["잠깐만요.", KO_TASK, "소파요."]
+    from robot_agent.core.planning import dialog_unstick as DU
+    declared = {DU.KEY: {"ko": ["절대 모르겠"]}}
+    loop, robot, evs = ko_play(make_assist, list(answers), extra=declared, **B2)
+    assert loop._agree_state(loop._ctx)["refusals"][0]["unsure"] is True
+    _l, _r, _e = ko_play(make_assist, list(answers), extra=declared, dialog_unstick="1", dialog_agree="1")
+    assert _l._agree_state(_l._ctx)["refusals"][0]["unsure"] is False         # without the option: today's phrases-only rule
+
+
+def test_unsure_answer_fallback_too_flag():
+    from robot_agent.core.planning import dialog_unstick as DU
+    pl = Places(KO_ENV)
+    ph = {DU.KEY: {"ko": ["잘 모르겠"]}}
+    assert DU.unsure_answer("잠깐만요.", pl, ph, "ko", UNSTICK) is False
+    assert DU.unsure_answer("잠깐만요.", pl, ph, "ko", UNSTICK, fallback_too=True) is True
+    assert DU.unsure_answer("소파요.", pl, ph, "ko", UNSTICK, fallback_too=True) is False      # names an ENV place: an answer
+    assert DU.unsure_answer("잘 모르겠어요", pl, ph, "ko", UNSTICK) is True
+
+
+def test_guard_skips_the_packs_own_words_and_their_stems():
+    pl = Places(KO_ENV)
+    g = DX.Guard("ko", pl, KO_READ["goals"], 0.6, DX.build("ko", pl))
+    known = g._pack_words()
+    assert known and "아니요" in known or any(w.startswith("아니") for w in known)
+    assert g.garbled(["아니요", "아니에요", "아니요요"]) == []
+    assert g.garbled(["할아버지한태"]) == ["할아버지한태"]                  # a garbled name still is
+    assert DX.Guard("zz", pl, [], 0.6, None)._pack_words() == set()        # no pack: no words, nothing skipped

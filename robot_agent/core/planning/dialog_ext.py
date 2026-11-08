@@ -188,14 +188,32 @@ class Guard:
                 return True
         return False
 
+    def _pack_words(self) -> set:
+        """Every token of every string the run language's pack declares: the language's own known words."""
+        words, todo = set(), [langdata.get(self.lang)]
+        while todo:
+            o = todo.pop()
+            if isinstance(o, str):
+                words.update(_tokens(o))
+            elif isinstance(o, dict):
+                todo.extend(o.values())
+            elif isinstance(o, (list, tuple)):
+                todo.extend(o)
+        return words
+
     def garbled(self, texts) -> list:
         """The tokens of ``texts`` that are not names but come close to one. Only words in the language's own script are
         judged (the pack's ``script.letters``): a language with no such data has none garbled (fail open)."""
         out = []
+        known = self._pack_words()
         for t in texts:
             for tok in _tokens(t):
                 if not self._own(tok) or self._exact(tok):
                     continue
+                if tok in known or any(
+                        tok[:len(tok) - k] in known for k in range(1, min(3, len(tok)))
+                        if self._tail is not None and self._tail.fullmatch(tok[len(tok) - k:])):
+                    continue        # a word of the language's own pack (or one with a declared tail): not garbled
                 if self._bad_tail(tok):
                     out.append(tok)
                     continue

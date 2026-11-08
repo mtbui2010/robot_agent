@@ -42,7 +42,8 @@ def unsure_phrases(phrases, lang: str) -> tuple:
     return tuple(_fold(p) for p in out if _fold(p))
 
 
-def unsure_answer(answer, places, phrases=None, lang: str = "en", params=None) -> bool:
+def unsure_answer(answer, places, phrases=None, lang: str = "en", params=None,
+                  fallback_too: bool = False) -> bool:
     """Is ``answer`` a "not sure" to a where-question? Data decides when the language has any (language pack + robot pack
     phrases); only a language WITHOUT data gets the structural fallback, and only when ``params`` (the manifest's
     ``planner.unstick``) declares ``fallback_words`` and ``fallback_chars``: more than both means a real answer; else no
@@ -52,7 +53,10 @@ def unsure_answer(answer, places, phrases=None, lang: str = "en", params=None) -
         return False
     data = unsure_phrases(phrases, lang)
     if data:                       # this language has data: the phrases decide, nothing is guessed
-        return any(p in text for p in data)
+        if any(p in text for p in data):
+            return True
+        if not fallback_too:       # option dialog_agree2 (fallback_too): no phrase matched, the structural test decides too
+            return False
     fw, fc = langdata.number(params, "fallback_words"), langdata.number(params, "fallback_chars")
     if fw is None or fc is None:   # no numbers declared: no fallback
         return False
