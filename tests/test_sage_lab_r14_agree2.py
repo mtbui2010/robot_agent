@@ -124,7 +124,7 @@ def test_a_self_correction_markers_are_pack_data_and_english_is_unchanged():
     pe = Places(ENV)
     pe.ext = DX.build("en", pe)
     for s in ("put it on the stool... no wait, on the sofa", "on the sofa, actually the dresser", "I mean the fridge", "plain text"):
-        assert [m.span() for m in U._corr_of(pe).finditer(s)] == [m.span() for m in U._CORR.finditer(s)]
+        assert [m.span() for m in U._corr_of(pe).finditer(s)] == [m.span() for m in U.default_corr().finditer(s)]
 
 
 def test_a_a_language_without_data_gets_nothing(monkeypatch):
@@ -132,7 +132,7 @@ def test_a_a_language_without_data_gets_nothing(monkeypatch):
     pl = Places(ENV)
     assert DX.build("qq", pl) is None and DX.build("zz", pl) is None
     assert DX.build("qq", pl, {"room_names": {"ko": {"kitchen": ["주방"]}}}) is None       # another language's names: not used
-    assert U._corr_of(pl) is U._CORR and getattr(pl, "ext", None) is None
+    assert U._corr_of(pl) is U.default_corr() and getattr(pl, "ext", None) is None
 
 
 # ── (b) 008 / 015 KO: the data gaps, through the real loop ──────────────────────────────────────────────────────────────

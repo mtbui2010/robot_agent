@@ -2,5 +2,6 @@
  "lang": "ja",
  "name": "Japanese",
  "register": "polite spoken Japanese",
- "non_ascii_min": 0.5
+ "non_ascii_min": 0.5,
+ "detect_marks": "[぀-ヿ㐀-䶿一-鿿]"
 }

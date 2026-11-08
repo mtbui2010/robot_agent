@@ -44,6 +44,8 @@ from typing import Optional
 from . import langdata, persons
 
 BLOCK = "dialogue_ext"
+_KNOWN_BLOCKS = frozenset({"lang", "name", "register", "words", "particles", "script", "dialogue_ext", "answer_unsure",
+                           "articles", "plural_rules", "text_fallback", "non_ascii_min"})
 _END = r"(?=$|[\s.,!?;:)\]\"'~])"            # a polite ending closes the word
 
 
@@ -101,8 +103,8 @@ def build(lang, places, planner: Optional[dict] = None) -> Optional[Ext]:
     if not _block(lg) and not isinstance(declared, dict):
         return None                                     # nothing declared for this language: the flag does nothing
     blocks = [_block(lg)]
-    if lg != langdata.PROMPT_LANG:
-        blocks.append(_block(langdata.PROMPT_LANG))      # the held English of a translated answer is read too
+    if lg != langdata.prompt_lang():
+        blocks.append(_block(langdata.prompt_lang()))      # the held English of a translated answer is read too
     blocks = [b for b in blocks if b]
     endings = _strs(_block(lg).get("polite_endings"))
     marks = [m for b in blocks for m in _strs(b.get("self_correction"))]
@@ -189,8 +191,12 @@ class Guard:
         return False
 
     def _pack_words(self) -> set:
-        """Every token of every string the run language's pack declares: the language's own known words."""
-        words, todo = set(), [langdata.get(self.lang)]
+        """Every token of every string of the run language's pack blocks that held the language's words when the guard was
+        written (``_KNOWN_BLOCKS``): the language's own known words. The blocks added later (``patterns``, ``grammar``,
+        ``dialogue``, ``guard`` ...) are left out on purpose, so that moving a literal into the pack does not change what the
+        guard calls garbled; widening the set is a change of its own, to be measured."""
+        pack = langdata.get(self.lang)
+        words, todo = set(), [{k: v for k, v in pack.items() if k in _KNOWN_BLOCKS}]
         while todo:
             o = todo.pop()
             if isinstance(o, str):

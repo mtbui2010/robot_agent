@@ -24,11 +24,15 @@ import math
 import re
 from typing import Optional
 
-from . import lexicon
+from . import langdata, lexicon
 
-# the speaker's own words for themself as a destination (EN, KO), compared after normalising
-SPEAKER_FORMS = {"me", "myself", "here", "user", "the user", "you", "person", "나", "저", "나한테", "저한테", "나에게",
-                 "저에게", "내게", "제게", "여기", "여기로"}
+# the speaker's own words for themself as a destination, compared after normalising: language-pack data
+# (``grammar.speaker_forms`` of every pack). A set read once; ``speaker_forms()`` reads the packs again.
+def speaker_forms() -> frozenset:
+    return frozenset(langdata.grammar_all("speaker_forms"))
+
+
+SPEAKER_FORMS = speaker_forms()
 PERSON_SEAT_M = 1.0          # a priori: one arm's length from where the person sits / stands (not tuned)
 
 

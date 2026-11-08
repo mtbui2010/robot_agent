@@ -19,6 +19,8 @@ from __future__ import annotations
 import re
 from typing import Optional
 
+from . import langdata
+
 CORE_PHRASES = {
     "q_where_put": "Where should I put the {object}?",
     "q_which_place": "Which place do you mean: {options}?",
@@ -96,18 +98,20 @@ def restated_readback(summary):
 # ("Sorry, I didn't hear you. Sorry. ...", option dialog_unstick). Keys, so it holds in every language of the pack.
 APOLOGY_KEYS = frozenset({"q_repeat", "q_unclear_task", "q_what_do", "q_silence"})
 
-_HANGUL = re.compile(r"[가-힣]")
-_HAN_KANA = re.compile(r"[぀-ヿ㐀-䶿一-鿿]")
-_CYRILLIC = re.compile(r"[Ѐ-ӿ]")
-
-
 def _script_ok(alias: str, lang: str) -> bool:
+    """Is ``alias`` a name in the script of ``lang``? A language whose pack declares ``script.letters`` wants one of them; one
+    whose pack says ``grammar.ascii_names`` (the prompt language) wants plain ASCII; any other language wants a name that is
+    not in the script of another pack (so a Latin-script language takes accented names)."""
     a = str(alias or "")
     if not a or "@" in a:
         return False
-    if (lang or "en")[:2] == "ko":
-        return bool(_HANGUL.search(a))
-    return a.isascii() if (lang or "en")[:2] == "en" else not _HANGUL.search(a)
+    lg = (lang or "en")[:2]
+    mine = langdata.script_rx(lg)
+    if mine is not None:
+        return bool(mine.search(a))
+    if langdata.grammar(lg, "ascii_names"):
+        return a.isascii()
+    return not any(r.search(a) for code, r in langdata.script_langs() if code != lg)
 
 
 def _words(k: str) -> str:
@@ -259,7 +263,7 @@ def render(text, lang: str, robot=None, places=None, name_slots=("place", "perso
             names = [say_name(places, x, lg) if places is not None else str(x) for x in v]
             if not all(names):
                 return None
-            v = (phrase(robot, "sep_or", lg) or (" 아니면 " if lg == "ko" else " or ")).join(names)
+            v = (phrase(robot, "sep_or", lg) or langdata.grammar(lg, "sep_or") or " or ").join(names)
         elif k in ("object", "text", "what", "why", "summary", "first", "rest") and lg != "en" and \
                 v and not _in_script(str(v), lg):
             v = _slot(slot_tr, str(v), k) if slot_tr is not None else None   # an English slot in a Korean phrase: say it alone
@@ -277,29 +281,35 @@ def _slot(slot_tr, v: str, k: str):
 
 
 def _in_script(s: str, lg: str) -> bool:
-    return bool(_HANGUL.search(s)) if lg == "ko" else True
+    """Is the slot text ``s`` already in the script of ``lg``? True for a language whose pack declares no script."""
+    mine = langdata.script_rx(lg)
+    return bool(mine.search(s)) if mine is not None else True
 
 
 def guard(text: str, lang: str, keep=()) -> Optional[str]:
-    """Why ``text`` is not an acceptable translation into ``lang`` (None = acceptable): for ko, Hangul makes at
-    least 60 % of the letters, no Han / kana / Cyrillic, no Latin word except the names to keep and digits; every
-    name of ``keep`` that must appear does."""
+    """Why ``text`` is not an acceptable translation into ``lang`` (None = acceptable). A language whose pack has a ``guard``
+    block (Korean: the share of its letters is at least ``min_share``, no ``forbid`` characters, no Latin word except the
+    names to keep and digits) is checked by it; a language without one is not (fail open: a Latin-script language cannot be
+    told from English by its letters). Every name of ``keep`` that must appear does."""
     t = str(text or "").strip()
     if not t:
         return "empty"
     lg = (lang or "en")[:2]
-    if lg == "ko":
-        if _HAN_KANA.search(t) or _CYRILLIC.search(t):
-            return "Chinese / Japanese / Cyrillic characters"
+    g = langdata.block(lg, "guard")
+    mine = langdata.script_rx(lg)
+    if g and mine is not None:
+        forbid = re.compile(g["forbid"]) if g.get("forbid") else None
+        if forbid is not None and forbid.search(t):
+            return str(g.get("forbid_msg") or "foreign characters")
         rest = t
         for k in keep:
             rest = rest.replace(str(k), " ")
         letters = [c for c in rest if c.isalpha()]
-        hangul = [c for c in letters if _HANGUL.match(c)]
-        if letters and len(hangul) / len(letters) < 0.6:
-            return "not Korean"
-        if re.search(r"[A-Za-z]{2,}", rest):
-            return "English words left"
+        native = [c for c in letters if mine.match(c)]
+        if letters and g.get("min_share") is not None and len(native) / len(letters) < float(g["min_share"]):
+            return str(g.get("low_share_msg") or "not the language")
+        if g.get("latin_words") and re.search(r"[A-Za-z]{2,}", rest):
+            return str(g.get("latin_msg") or "English words left")
     for k in keep:
         if k and str(k) not in t:
             return f"the name {k!r} is missing"

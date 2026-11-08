@@ -20,21 +20,17 @@ from typing import Optional
 
 from .place_class import place_class
 
-HAZARDS = {
-    "cleaning_chemical": {
-        "sourced": [r"\bbleach\b", r"\bammonia\b", r"\bglass cleaner\b", r"\bfloor cleaner\b", r"\bjewel(?:le)?ry cleaner\b",
-                    r"\bdrain (?:opener|cleaner)\b", r"\btoilet (?:bowl )?cleaner\b", r"\boven cleaner\b",
-                    r"\bmildew (?:stain )?remover\b", r"표백제", r"락스", r"암모니아", r"유리 ?세정제", r"배수구 ?세정제",
-                    r"변기 ?세정제", r"오븐 ?세정제", r"곰팡이 ?제거제"],
-        "assumed": [r"\bdetergent\b", r"\bdishwasher (?:pods?|tablets?)\b", r"\blaundry pods?\b", r"\bdisinfectant\b",
-                    r"\brust remover\b", r"\binsecticide\b", r"\bbug spray\b", r"\blye\b", r"\bcleaning spray\b",
-                    # a model that translates the person's word may say a brand for the product ("락스" ->
-                    # "lysol"): the common household brands of the same products (assumed)
-                    r"\blysol\b", r"\bclorox\b", r"\bwindex\b", r"\bdrano\b", r"\bpine-?sol\b", r"\bchlorine\b",
-                    r"라이솔", r"리솔", r"클로록스", r"염소계",
-                    r"세제", r"살충제", r"소독제", r"세정제"],
-    },
-}
+# The product words are language-pack data (``patterns.hazard_cleaning_sourced`` / ``hazard_cleaning_assumed`` of every
+# pack); the English lists carry the CHOP sources and the ``assumed`` marks named above. ``HAZARDS()`` reads them on use.
+_LISTS = {"cleaning_chemical": ("hazard_cleaning_sourced", "hazard_cleaning_assumed")}
+
+
+def HAZARDS() -> dict:                                                  # noqa: N802 (kept as the old table's name)
+    from robot_agent.core.planning import langdata
+    return {cls: {"sourced": langdata.pattern_list(a), "assumed": langdata.pattern_list(b)}
+            for cls, (a, b) in _LISTS.items()}
+
+
 HAZARD_RULES = [
     {"hazard": "cleaning_chemical", "places": ["food_storage", "food_prep"],
      "say": "cleaning chemicals do not go with food"},
@@ -43,7 +39,7 @@ HAZARD_RULES = [
 
 def hazard_class(name: str) -> str:
     t = str(name or "").lower()
-    for cls, lists in HAZARDS.items():
+    for cls, lists in HAZARDS().items():
         if any(re.search(p, t) for p in lists["sourced"] + lists["assumed"]):
             return cls
     return ""

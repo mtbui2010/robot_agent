@@ -83,8 +83,8 @@ def test_object_check_names_are_guarded_and_declared_ones_skip_the_call():
     lp = pack(loop_with(llm), q_silence="미안해요, 못 들었어요.")
     lp.robot.i18n.phrases["names"] = {"ko": {"scissors": "가위"}}
     lp.__dict__.pop("_tr_cache", None)
-    assert lp._local_names(["scissors"]) == {"scissors": "가위"} and llm.calls == []
-    assert lp._local_names(["mug", "scissors"]) == {"scissors": "가위"}     # the apology is no name: left out (fail open)
+    assert lp._local_names(["scissors"], "ko") == {"scissors": "가위"} and llm.calls == []
+    assert lp._local_names(["mug", "scissors"], "ko") == {"scissors": "가위"}     # the apology is no name: left out (fail open)
     assert len(llm.calls) == 1
 
 

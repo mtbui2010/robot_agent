@@ -339,10 +339,10 @@ def test_korean_object_names_use_the_dialog_model_too(built):
     tr, dm = KwLLM(default="사과\n컵"), KwLLM(default="사과\n컵")
     built.clients["dm"] = dm
     lp = loop_with(tr, dialog_model_lang={"ko": "dm"})
-    assert lp._local_names(["apple", "cup"]) == {"apple": "사과", "cup": "컵"}
+    assert lp._local_names(["apple", "cup"], "ko") == {"apple": "사과", "cup": "컵"}
     assert tr.calls == [] and len(dm.calls) == 1
     off = loop_with(tr)
-    assert off._local_names(["apple", "cup"]) == {"apple": "사과", "cup": "컵"} and len(tr.calls) == 1
+    assert off._local_names(["apple", "cup"], "ko") == {"apple": "사과", "cup": "컵"} and len(tr.calls) == 1
 
 
 def test_reading_the_users_words_stays_with_the_translator(built):

@@ -68,6 +68,9 @@ def lang_of(text: str) -> str:
         rx = (pack.get("script") or {}).get("letters")
         if rx and re.search(rx, t):
             return lg
+        marks = langdata.marks_rx(lg) if pack.get("latin_script") else None
+        if marks is not None and marks.search(t):            # a Latin-script language: the letters only it uses
+            return lg
         if pack.get("text_fallback"):
             fallback = lg
     return fallback

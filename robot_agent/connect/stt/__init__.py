@@ -36,14 +36,13 @@ def _wav_bytes(samples, samplerate: int = 16000) -> bytes:
     return buf.getvalue()
 
 
-# What Whisper says over silence or room noise (learnt from video subtitles):
-# a transcript that is only one of these is dropped. Compared without
-# punctuation / spaces.
-_HALLUCINATIONS = {
-    '감사합니다', '시청해주셔서감사합니다', '다음영상에서만나요', '구독과좋아요부탁드립니다',
-    '구독과좋아요', '시청해주셔서고맙습니다', '좋아요와구독부탁드립니다',
-    'thankyou', 'thanksforwatching', 'thankyouforwatching', 'pleasesubscribe', 'bye',
-}
+# What Whisper says over silence or room noise (learnt from video subtitles): a transcript that is only one of these is
+# dropped. Compared without punctuation / spaces. The phrases are language-pack data (``grammar.asr_hallucinations``).
+def _hallucinations() -> frozenset:
+    from robot_agent.core.planning import langdata        # lazily: the pack files are plain data
+    return frozenset(langdata.grammar_all('asr_hallucinations'))
+
+
 _NORM = re.compile(r'[\W_]+', re.UNICODE)
 
 
@@ -58,7 +57,7 @@ def _repetitive(text: str) -> bool:
 def clean_transcript(text: str) -> str:
     """'' for a known hallucination or a repetition loop, else `text`."""
     t = (text or '').strip()
-    if not t or _NORM.sub('', t.lower()) in _HALLUCINATIONS or _repetitive(t):
+    if not t or _NORM.sub('', t.lower()) in _hallucinations() or _repetitive(t):
         return ''
     return t
 
