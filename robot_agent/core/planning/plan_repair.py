@@ -306,8 +306,22 @@ def op_unopenable(F, cx: _Ctx):
     return None
 
 
+def _held_at_end(F, cx: _Ctx):
+    """The object the plan holds after its last step (the belief's, then Pick / a release), or None."""
+    held, rel = cx.world.holding, set(cx.release) | set(RELEASES)
+    for _o, s in F:
+        a = s.get("action")
+        if a == "Pick":
+            held = s.get("object")
+        elif a in rel:
+            held = None
+    return held
+
+
 def op_complete(F, cx: _Ctx, reached: Callable):
-    """The canonical segment of the first goal the plan does not reach (fetch, then deliver), at the end."""
+    """The canonical segment of the first goal the plan does not reach (fetch, then deliver), at the end. With
+    ``cx.no_refetch`` (option ``reach_delivery``) an object the plan already holds at the end is not fetched again
+    (the fetch steps were removed afterwards as no-ops, and the walk to the source stayed)."""
     plan = [s for _o, s in F]
     owner = F[-1][0] if F else 0
     for g in cx.goals:
@@ -319,8 +333,9 @@ def op_complete(F, cx: _Ctx, reached: Callable):
         to, add = g["to"], []
         if g["type"] == "in" and cx.places.openable(to):
             add += [_st("MoveTo", to, grounded=True), _st("Open", to)]
-        add += [_st("MoveTo", src, grounded=True), _st("Find", g["object"]), _st("Pick", g["object"]),
-                _st("MoveTo", to, grounded=True),
+        if not getattr(cx, "no_refetch", False) or _held_at_end(F, cx) != g["object"]:
+            add += [_st("MoveTo", src, grounded=True), _st("Find", g["object"]), _st("Pick", g["object"])]
+        add += [_st("MoveTo", to, grounded=True),
                 _st("PutIn" if g["type"] == "in" else (next(iter(cx.release)) if cx.hand_goal(g) and cx.release
                                                        else "Place"), to)]
         return F + [(owner, s) for s in add]
@@ -387,7 +402,8 @@ def write_back(blocks, F) -> None:
 
 def repair(steps: list, score: Callable, world, places, goals, *, caps=None, actions=(), release=(),
            hand_goal: Callable = lambda g: False, blocks=None, join=None, ground=None, complete: bool = False,
-           person_goals: bool = False, reached: Optional[Callable] = None, max_edits: int = 8, only=None) -> tuple:
+           person_goals: bool = False, reached: Optional[Callable] = None, max_edits: int = 8, only=None,
+           no_refetch: bool = False) -> tuple:
     """(steps, notes, counts): the plan after the operators, ``notes`` per kept edit, ``counts`` {op: n} (with
     ``completed_by_gate``). ``score(steps)``: the number of critical findings; an edit is kept only when it
     strictly lowers it. With ``blocks`` (+ ``join`` / ``ground``) the blocks are edited in place. ``only``: the
@@ -395,6 +411,7 @@ def repair(steps: list, score: Callable, world, places, goals, *, caps=None, act
     holds after the object was not there)."""
     caps = action_model.Capabilities.from_any(caps) if not hasattr(caps, "hands") else caps
     cx = _Ctx(world, places, goals, caps, actions, tuple(release or ()), hand_goal)
+    cx.no_refetch = bool(no_refetch)
     F = owned_plan(blocks, join, ground) if blocks else [(0, dict(s)) for s in steps]
     n, notes, counts = score([s for _o, s in F]), [], {}
     ops = [("hoist", op_hoist), ("dedupe", op_dedupe), ("insert", op_insert), ("room", op_room),

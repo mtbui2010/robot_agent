@@ -5,6 +5,13 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+### Round 15: reach delivery (opt-in, default off, defaults byte-identical)
+- `reach_delivery` with the pack data `planner.person_snapshot.trust_s`: a person entry of the ENV is a snapshot; a put-down for a
+  person run after `trust_s` seconds becomes the robot's hand-over action, a hand-over that cannot reach the person asks where they
+  are and goes there, a position without a declared surface gets a hand-over, the goal check reads the person's entry again, and the
+  gate's completion no longer walks back to the source of an object the plan holds. New module `reach_delivery.py`; `AssistLoop.clock`
+  (a host clock, default wall time).
+
 ### Round 14: dialogue data and agreement guard, relook (opt-in, default off, defaults byte-identical)
 - `dialog_agree2` (includes `dialog_agree`): the Korean dialogue facts are language-pack data (`lang/*.json` block `dialogue_ext`:
   polite endings, self-correction markers, not-sure phrases, room names; robot pack `planner.room_names`); a guard

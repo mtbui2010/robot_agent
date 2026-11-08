@@ -61,6 +61,7 @@ from .search_hooks import SearchHooks
 from .which_one import WhichOne
 from . import goals as goal_kinds
 from . import (dialog_agree, dialog_converge, dialog_ext, dialog_unstick, exec_integrity, goal_filter, goal_fix, language, persons, plan_tidy,
+                reach_delivery,
                request_coverage, role_models, speech)
 from . import reconcile as sensed
 from .robot import run_skill
@@ -85,7 +86,7 @@ ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify
                 "search_legs", "object_check", "detector_miss_rate", "person_goals", "accept_goals",
                 "go_steps", "kind_anchor", "name_canon", "reask_abstain",
                 "exec_integrity", "gate_strict", "endstate_check", "reset_container", "wait_on_robot", "inventory_ask",
-                "dialog_unstick", "dialog_agree", "dialog_agree2", "relook", "kind_anchor_ask", "reask_anchor", "no_shared_listener", "understand_views",
+                "dialog_unstick", "dialog_agree", "dialog_agree2", "relook", "reach_delivery", "kind_anchor_ask", "reask_anchor", "no_shared_listener", "understand_views",
                   "understand_goals_first", "understand_model", "understand_url", "understand_model_lang",
                 "understand_max_tokens", "understand_max_goals", "understand_schema_strict", "understand_give_kind",
                 "understand_verify_verdict", "understand_think", "repair_model", "repair_url", "repair_max_tokens",
@@ -515,7 +516,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             #   understand_goals_first  the understand schema asks for the goals before the verdict (dialog_agree: round 12, dialog_agree.py)
             **{k: str(overrides.get(k, env("ROBOT_AGENT_" + k.upper(), str(self._manifest_planner(k, "0"))))).lower()
                in ("1", "true", "yes", "on") for k in ("reask_anchor", "no_shared_listener", "understand_views",
-                                                       "understand_goals_first", "dialog_agree", "dialog_agree2", "relook")},
+                                                       "understand_goals_first", "dialog_agree", "dialog_agree2", "relook", "reach_delivery")},
             # solution-lab round 4 (default OFF, dialog_unstick.py): a restatement that gives the refused reading again is
             # read back once more instead of ending the run; a "not sure" answer to a where-is question is a cue to
             # search; a question with its own apology is not asked again behind the silence apology
@@ -591,6 +592,29 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         log = self.__dict__.setdefault("lab_log", [])
         if len(log) < 50:
             log.append({"flag": flag, **info})
+
+    def _reach_cfg(self):
+        """Option ``reach_delivery`` with the pack's declaration (manifest ``planner.reach_delivery``): its config, else None
+        (option off, or no declaration: nothing changes)."""
+        if not self.cfg.get("reach_delivery"):
+            return None
+        try:
+            return reach_delivery.config(getattr(self.robot.manifest, "planner", None))
+        except Exception:                                  # noqa: BLE001 - no robot / manifest: as before
+            return None
+
+    def _now(self) -> float:
+        """Seconds on the clock of the host (``self.clock``, a callable a host with a simulated or robot clock sets), else wall time."""
+        c = self.__dict__.get("clock")
+        try:
+            return float(c()) if callable(c) else time.time()
+        except Exception:                                  # noqa: BLE001 - a broken host clock: wall time
+            return time.time()
+
+    def _hand_action(self):
+        """The robot's action that hands the held object to a person (its first release action other than Place), or None."""
+        rel = sorted(self._releases())
+        return rel[0] if rel else None
 
     def _manifest_planner(self, key, default=None):
         """The robot's manifest ``planner.<key>`` (robot-pack planner data), else ``default``."""
@@ -1080,6 +1104,10 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             return None
         if persons.tracked(places, to):
             mode, where = persons.delivery(places, to, task, robot, radius)
+            if (mode == "place" and self._reach_cfg() is not None and not reach_delivery.has_spot_field(places, to)
+                    and self._hand_action()):
+                mode = "hand"                 # reach_delivery: no declared reachable surface, so a hand-over, not the nearest furniture
+                self._lab("reach_delivery", why="no_declared_spot", person=to)
             if mode == "hand":
                 g["hand"] = True
             else:
@@ -1648,6 +1676,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         fixed = self._reconcile(r, "start")              # adapter.reconcile + the declared sensors
         from robot_agent.skill_configs import ENV
         r.places = Places(dict(ENV), openable=r.robot.openable)
+        r.reach_t0 = self._now()                      # the person entries of the ENV are as of now (option reach_delivery)
         if self.cfg.get("dialog_agree2"):
             r.places.ext = dialog_ext.build(lang, r.places, getattr(self.robot.manifest, "planner", None))
         self._env_places = r.places
@@ -2838,7 +2867,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             release=sorted(caps.release_actions), hand_goal=lambda g: bool(g.get("hand")),
             blocks=blocks or None, join=rep.join_blocks if blocks else None, ground=ground,
             complete=str(self.cfg.get("gate_complete", "0")) in ("1", "true", "True"),
-            person_goals=bool(self.cfg.get("person_goals")), reached=self._reaches)
+            person_goals=bool(self.cfg.get("person_goals")), reached=self._reaches,
+            no_refetch=self._reach_cfg() is not None)
         acc = r.__dict__.setdefault("repaired_by_op", {})
         for k, v in counts.items():
             acc[k] = acc.get(k, 0) + v
@@ -3391,6 +3421,10 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             # F6.2: handed over by a release action of the contract (a Handover) that succeeded: the person holds
             # it, so a look at their spot cannot see it there; the hand-over's own success is the evidence
             return True, f"the {o} was handed over at the {nice} (the hand-over succeeded)", None
+        key_, put_at = (getattr(r, "reach_put", None) or {}).get(o, (None, None))
+        why_ = reach_delivery.left_spot(r.places, key_, put_at) if key_ and self._reach_cfg() is not None else None
+        if why_:                                         # reach_delivery: the person's entry says the object is out of reach now
+            return False, f"the {o} is not within reach of {key_}: {why_}", None
         if r.places.openable(place) and place not in r.world.opened:
             return None, f"the {o} is inside the closed {nice}: not visible (belief)", None
         if r.world.arrived != place:
@@ -3518,6 +3552,11 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
     def _run_step(self, r, st):
         """Guard, bind, run and check one step: _NEXT, _DONE (goals reached) or _STOP."""
         a, o, started = st["action"], st["object"], time.time()
+        if self.cfg.get("reach_delivery") and a == "Place":
+            st, ev_ = self._reach_step(r, st)
+            if ev_ is not None:
+                yield ev_
+            a, o = st["action"], st["object"]
         out = yield from self._guard(r, st)
         if out is not None:
             return out
@@ -3559,6 +3598,56 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             return (yield from self._step_succeeded(r, st, rec))
         return (yield from self._step_failed(r, st, skill, rec, res, reason))
 
+    def _reach_step(self, r, st):
+        """Option ``reach_delivery``: a put-down for a person whose ENV snapshot is older than the pack's ``trust_s`` becomes the
+        robot's hand-over (the person may have left the spot; a hand-over reaches them wherever they are in the room).
+        (step, event | None); the plan keeps the new step."""
+        rc = self._reach_cfg()
+        key = reach_delivery.recipient(r.places, st, r.goals) if rc is not None else None
+        if key is None:
+            return st, None
+        age = self._now() - getattr(r, "reach_t0", self._now())
+        if not reach_delivery.stale(rc, age):
+            return st, None
+        rel = self._hand_action()
+        if rel is None:
+            self._lab("reach_delivery", why="stale_no_handover", person=key, age_s=round(age))
+            return st, None
+        new = reach_delivery.hand_step(rel, key)
+        if r.i < len(r.steps) and r.steps[r.i] is st:
+            r.steps[r.i] = new
+        self._lab("reach_delivery", why="stale", person=key, age_s=round(age), spot=reach_delivery.spot_of(r.places, key))
+        return new, r.ev("recover", at_index=r.i, kind="reach_delivery",
+                         msg=f"{key} may have moved since I last saw them ({age:.0f} s): handing it over instead of putting it down")
+
+    def _reach_ask_where(self, r, st, reason):
+        """Option ``reach_delivery``: a hand-over that replaced a put-down (the person's snapshot was old) cannot reach the person.
+        Ask once where they are; the place they name (``persons.place_in_answer``) gets a MoveTo and the hand-over again. _NEXT,
+        or None (no question possible, no answer, no place in it: the failure goes the usual way)."""
+        key = st.get("object")
+        if getattr(r, "reach_asked", None) or not persons.is_person(r.places, key):
+            return None
+        r.reach_asked = True
+        if (places_ := r.places).env.get(key, {}).get("speaker") or key == persons.speaker_key(places_):
+            q = speech.LocalText("q_where_are_you")
+        else:
+            q = speech.LocalText("q_where_is_person", {"person": key}, text=f"Where is {self._say_name(places_, key)}?")
+        yield r.ev("clarify", question=q, round=r.asked + 1, kind="reach_delivery")
+        ans, _n = self._ask_heard(q, r.node, self._log_fn(-1), r.lang)
+        r.heard += self._answer_source == "robot"
+        r.asked += 1
+        stop = self._cancelled(r)
+        if stop:
+            yield stop
+            return _STOP
+        at = persons.place_in_answer(places_, ans) if ans else None
+        self._lab("reach_delivery", why="asked_where", person=key, answered=bool(ans), place=at)
+        if not ans or not at or at.startswith("@"):
+            return None
+        r.dialogue += [("robot", q), ("user", ans)]
+        r.steps[r.i:r.i + 1] = [{"action": "MoveTo", "object": at, "grounded": True}, dict(st)]
+        return _NEXT
+
     def _post_check(self, r, st, skill, res, params, rec) -> list:
         """After a reported success, the effects + the skill's VerifySpecs (manifest: Pick looked at again
         once the arm is folded, MoveTo measured against the ENV loc); a release looked at twice; a Find
@@ -3596,7 +3685,12 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         a, o = st["action"], st["object"]
         rec.status = "success"; r.run.steps.append(rec)
         self._search_effect(r, st)                       # before the effect: where the robot did it
+        held_ = r.world.holding
         self._effect(st, r.world, r.memory, r.placed)
+        if a == "Place" and held_ and self._reach_cfg() is not None:
+            key_ = reach_delivery.recipient(r.places, st, r.goals)
+            if key_:                                     # the person's spot as it was when the object was put down
+                r.__dict__.setdefault("reach_put", {})[held_] = (key_, reach_delivery.spot_of(r.places, key_))
         if a == "Find":
             yield from self._which_one(r, st, rec)      # two objects fit the words: which one?
         if a == "MoveTo":
@@ -3638,6 +3732,10 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         rule = r.robot.policy.rule_for(code)
         device = res.device or skill
         self._note_failure(r, st, code, device, reason)
+        if st.get("reach_hand") and code is FailureCode.UNREACHABLE and self.cfg.get("reach_delivery"):
+            out = yield from self._reach_ask_where(r, st, reason)    # the person left: ask where they are, then hand over there
+            if out is not None:
+                return out
         if not rule.retry_allowed:
             what = "internal error in" if code is FailureCode.SOFTWARE else f"{code.value} in"
             yield self._finish(r, "failed", msg=f"{what} the {skill} skill (not retried): {reason}", code=code,
