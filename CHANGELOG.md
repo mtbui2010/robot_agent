@@ -5,6 +5,18 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+### Round 16: language facts are pack data (defaults byte-identical for English and Korean)
+- The language literals of the always-on core moved into the language packs (`lang/<code>.json`, new blocks `patterns`,
+  `grammar`, `dialogue`, `guard`, keys `detect_marks`, `latin_script`, `object_aliases`): particles, into / on-top / from markers,
+  the verbs "open" / "close", the self-correction markers (`understand._CORR` is now `understand.default_corr()`), what a refusal
+  reason names, yes / no / fillers / control words (stop, pause, resume) / negations / fallback keywords, the script guard of a
+  translation (`speech.guard`), the speaker's words, hazard and food-place words, the object particle, the Whisper silence
+  phrases. A language with no pack gets none of them (fail open). `tools/lang_inventory.py` lists what is still in code.
+- New manifest keys `planner.prompt_lang` (the language of the core's prompts, default English; `langdata.set_prompt_lang`) and
+  `planner.restates` (`frac`, `word_len`, `min_words` of "the answer says the request again", defaults 0.6 / 3 / 4).
+- Vietnamese ships as one data file (`lang/vi.json`), the third language of the round; drafted by the model, to be checked by a
+  native speaker.
+
 ### Round 15: reach delivery (opt-in, default off, defaults byte-identical)
 - `reach_delivery` with the pack data `planner.person_snapshot.trust_s`: a person entry of the ENV is a snapshot; a put-down for a
   person run after `trust_s` seconds becomes the robot's hand-over action, a hand-over that cannot reach the person asks where they

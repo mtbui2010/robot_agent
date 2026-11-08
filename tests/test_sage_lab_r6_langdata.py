@@ -1,8 +1,10 @@
 """Lab round 6 (generalisation): what the planner knows about a language is DATA (language packs ``lang/<code>.json``, the
 robot pack's i18n, the manifest ``planner`` numbers), never code. Checked on the real path (AssistLoop.run_blocking with the
 symbolic FakeRobot and a scripted LLM) and on the helpers: English and Korean read their words from the packs; "qq" and
-"zz" are made-up languages (qq: no data at all, so every option does nothing for it; zz: data given, so it works); no
-language is Vietnamese. Synthetic ENV and requests written for these tests (no benchmark text)."""
+"zz" are made-up languages (qq: no data at all, so every option does nothing for it; zz: data given, so it works). Vietnamese
+(round 16, user decision 2026-11-09) is the third shipped language and exists ONLY as the data file ``lang/vi.json``: no code
+of the package may name it (``test_vietnamese_is_one_data_file_and_no_code``). Synthetic ENV and requests written for these
+tests (no benchmark text)."""
 import os
 import re
 import types
@@ -31,23 +33,33 @@ def zz(monkeypatch):
 
 
 # ── the packs ──
-def test_packs_ship_for_english_and_korean_and_never_for_vietnamese():
-    assert {"en", "ko"} <= set(langdata.languages()) and "vi" not in langdata.languages()
-    assert lexicon.OPEN_WORDS.langs() == ("en", "ko") and lexicon.PUTIN.langs() == ("en", "ko")
-    assert langdata.get("vi") == {} and langdata.get("qq") == {} and langdata.words("qq", "open_words") == []
+def test_packs_ship_for_english_korean_and_vietnamese_as_data():
+    assert {"en", "ko", "vi"} <= set(langdata.languages())
+    assert lexicon.OPEN_WORDS.langs() == ("en", "ko", "vi") and lexicon.PUTIN.langs() == ("en", "ko", "vi")
+    assert langdata.get("vi")["lang"] == "vi" and "NOT CHECKED BY A NATIVE SPEAKER" in langdata.get("vi")["review"]
+    assert langdata.get("qq") == {} and langdata.words("qq", "open_words") == []
 
 
-def test_no_file_of_the_package_claims_vietnamese():
+# the only file of the package that may hold Vietnamese words: the data pack; the tests and the doc of the pack are checked
+# on their own (a test file may quote the language it tests)
+ALLOWED_VI = {"vi.json", "test_lang_vi_pack.py", "languages.md"}
+
+
+def test_vietnamese_is_one_data_file_and_no_code():
     root = os.path.join(os.path.dirname(__file__), "..")
     vi = re.compile("[ăơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]|\\bvi\\b|Vietnam", re.I)
-    hits = []
+    hits, found = [], set()
     for base in ("robot_agent", "tests", "docs"):
         for d, _dirs, files in os.walk(os.path.join(root, base)):
             for f in files:
                 if f.endswith((".py", ".json", ".md", ".yaml")) and f != os.path.basename(__file__):
                     text = open(os.path.join(d, f), encoding="utf-8").read()
-                    hits += [f"{f}: {m.group(0)}" for m in vi.finditer(text)][:1]
-    assert not hits, hits
+                    if vi.search(text):
+                        found.add(f)
+                        if f not in ALLOWED_VI or f.endswith(".py") and base == "robot_agent":
+                            hits.append(os.path.join(base, f))
+    assert not hits, hits                      # code never names it; data, its tests and its doc may
+    assert "vi.json" in found
 
 
 def test_a_table_reads_the_pack_and_the_robots_words():
@@ -142,7 +154,7 @@ def test_the_models_where_question_needs_data_for_the_prompt_language(monkeypatc
 
 # ── localized, translate targets ──
 def test_localized_and_translate_targets_come_from_the_packs(zz):
-    assert language.LANGS["ko"] == "Korean" and "vi" not in language.LANGS and "qq" not in language.LANGS
+    assert language.LANGS["ko"] == "Korean" and language.LANGS["vi"] == "Vietnamese" and "qq" not in language.LANGS
     assert language.localized("컵을 가져다 주세요", "ko") and not language.localized("bring the cup", "ko")
     assert language.localized("anything at all", "qq") and language.localized("anything at all", "en")
     t = "tazú kélé sá"                                      # about a quarter of the letters carry a mark

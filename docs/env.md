@@ -104,5 +104,11 @@ language is a pack, `robot_agent/core/planning/lang/<code>.json` (`langdata.py`)
 `plural_rules`, `particles`, `name` / `register` (a translate target), `script` or `non_ascii_min` (what counts as said
 in the language). English and Korean ship; `ja` and `zh` only name themselves. A robot adds words to any language with its
 i18n phrase of the same key (`|`-separated). Numbers are the manifest's `planner` section: `unstick.*` (above),
-`recovery.return_tries` (an integer >= 1; the tries of `endstate_check`), `recovery.wait`, `recovery.blocked_putin`.
-Rule: data missing means the flag does nothing, for that language or that robot. No other language is claimed.
+`recovery.return_tries` (an integer >= 1; the tries of `endstate_check`), `recovery.wait`, `recovery.blocked_putin`,
+`restates.{frac,word_len,min_words}` (when an answer "says the request again", defaults 0.6 / 3 / 4) and `prompt_lang` (the
+language the core's prompts are written in, default `en`; `$ROBOT_AGENT_PROMPT_LANG`).
+Rule: data missing means the flag does nothing, for that language or that robot. Languages that ship: English and Korean
+(round 15 and before) and a third one in round 16 (a data file only, drafted by the model, to be checked by a native speaker; see languages.md).
+Every pack key and how a language is added: [languages.md](languages.md). Round 16 moved the language literals of the core into
+the packs (particles, markers, self-correction, yes / no, control words, scripts); the inventory of what is left is
+`python tools/lang_inventory.py`.
