@@ -7,11 +7,11 @@ robot. Requests and ENV are written from the hazard category itself (a cleaning 
 import pytest
 
 from fakes import FakeLLM, FakeRobot, ScriptedPlanner, done, run_task, steps
-from robot_agent.core.planning import langdata
 from robot_agent.core.planning.assist_loop import Places
 from robot_agent.core.safety import check_goal
 from robot_agent.core.safety.receiver_class import receiver_class
 
+RECV = ("hazard.receivers",)
 SH, CT = "shelf@living room", "counter@kitchen"
 BASE = {
     CT: {"aliases": ["counter"], "loc": {"x": 1, "y": 1}},
@@ -43,42 +43,42 @@ def go(extra_env, goals, task, make_assist, **opts):
 
 
 # ── the receiver class, from names ──
-def test_receiver_class_from_names_and_a_declared_field():
-    assert receiver_class(Places({**BASE, **KID}), "child") == "vulnerable_person"
-    assert receiver_class(Places({"x1": {"person": "x1", "aliases": ["아이"]}}), "x1") == "vulnerable_person"
-    assert receiver_class(Places({"x2": {"person": "x2", "aliases": ["blik"], "age_group": "toddler"}}), "x2") == "vulnerable_person"
-    assert receiver_class(Places({**BASE, **ADULT}), "dad") == ""
-    assert receiver_class(Places({**BASE, **KID}), "kids room") == ""          # a place, not a person entry
-    assert receiver_class(Places({**BASE, **KID}), "nowhere") == ""
+def test_receiver_class_from_names_and_a_declared_field(household):
+    assert receiver_class(Places({**BASE, **KID}), "child", household) == "vulnerable_person"
+    assert receiver_class(Places({"x1": {"person": "x1", "aliases": ["아이"]}}), "x1", household) == "vulnerable_person"
+    assert receiver_class(Places({"x2": {"person": "x2", "aliases": ["blik"], "age_group": "toddler"}}), "x2", household) == "vulnerable_person"
+    assert receiver_class(Places({**BASE, **ADULT}), "dad", household) == ""
+    assert receiver_class(Places({**BASE, **KID}), "kids room", household) == ""          # a place, not a person entry
+    assert receiver_class(Places({**BASE, **KID}), "nowhere", household) == ""
 
 
-def test_the_rule_is_off_unless_asked_and_needs_both_sides():
+def test_the_rule_is_off_unless_asked_and_needs_both_sides(household):
     ps = Places({**BASE, **KID, **ADULT})
     g = G("on", "bleach bottle", "", "child")
-    assert check_goal(g, ps) is None                                           # default: unchanged
-    assert check_goal(g, ps, receivers=True)
-    assert check_goal(G("on", "detergent", "", "child"), ps, receivers=True)
-    assert check_goal(G("on", "orange juice", "", "child"), ps, receivers=True) is None   # safe object, same child
-    assert check_goal(G("on", "bleach bottle", "", "dad"), ps, receivers=True) is None    # same object, adult
-    assert check_goal(G("in", "bleach bottle", "", "sink cabinet@kitchen"), ps, receivers=True) is None
-    assert check_goal(G("on", "bleach bottle", "", "kids room"), ps, receivers=True) is None
-    assert check_goal(G("on", "bleach bottle", "", "child"), ps, mode="off", receivers=True) is None
-    assert check_goal(G("on", "glasses", "", SH, near_person="child"), ps, receivers=True) is None
-    assert check_goal(G("on", "bleach bottle", "", "table@kitchen", near_person="child"), ps, receivers=True)
+    assert check_goal(g, ps, household) is None                                           # default: unchanged
+    assert check_goal(g, ps, household, enabled=RECV)
+    assert check_goal(G("on", "detergent", "", "child"), ps, household, enabled=RECV)
+    assert check_goal(G("on", "orange juice", "", "child"), ps, household, enabled=RECV) is None   # safe object, same child
+    assert check_goal(G("on", "bleach bottle", "", "dad"), ps, household, enabled=RECV) is None    # same object, adult
+    assert check_goal(G("in", "bleach bottle", "", "sink cabinet@kitchen"), ps, household, enabled=RECV) is None
+    assert check_goal(G("on", "bleach bottle", "", "kids room"), ps, household, enabled=RECV) is None
+    assert check_goal(G("on", "bleach bottle", "", "child"), ps, household, mode="off", enabled=RECV) is None
+    assert check_goal(G("on", "glasses", "", SH, near_person="child"), ps, household, enabled=RECV) is None
+    assert check_goal(G("on", "bleach bottle", "", "table@kitchen", near_person="child"), ps, household, enabled=RECV)
 
 
-def test_a_robot_with_no_data_does_nothing(monkeypatch):
-    real = langdata.pattern_list
-    monkeypatch.setattr(langdata, "pattern_list", lambda key, langs=None: [] if key == "person_vulnerable" else real(key, langs))
+def test_a_robot_with_no_receiver_words_does_nothing(household):
+    from dataclasses import replace
+    bare = replace(household, receiver_classes=())
     ps = Places({**BASE, **KID})
-    assert receiver_class(ps, "child") == ""
-    assert check_goal(G("on", "bleach bottle", "", "child"), ps, receivers=True) is None
+    assert receiver_class(ps, "child", bare) == ""
+    assert check_goal(G("on", "bleach bottle", "", "child"), ps, bare, enabled=RECV) is None
 
 
-def test_a_made_up_language_gets_no_class():
+def test_a_made_up_language_gets_no_class(household):
     ps = Places({"zorp": {"person": "zorp", "aliases": ["blik", "snorf"], "loc": {"x": 1, "y": 1}}})
-    assert receiver_class(ps, "zorp") == ""
-    assert check_goal(G("on", "bleach bottle", "", "zorp"), ps, receivers=True) is None
+    assert receiver_class(ps, "zorp", household) == ""
+    assert check_goal(G("on", "bleach bottle", "", "zorp"), ps, household, enabled=RECV) is None
 
 
 # ── through the real AssistLoop ──

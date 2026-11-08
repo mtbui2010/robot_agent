@@ -46,6 +46,7 @@ class Report:
     errors: list = field(default_factory=list)
     warnings: list = field(default_factory=list)
     registry: dict = field(default_factory=dict)     # skill name -> SkillDef-like dict
+    notes: list = field(default_factory=list)        # counts and other facts, never a failure
 
     @property
     def ok(self) -> bool:
@@ -57,6 +58,7 @@ class Report:
         lines = [head + f": {len(self.errors)} error(s), {len(self.warnings)} warning(s)"]
         lines += [f"  ERROR   {e}" for e in self.errors]
         lines += [f"  warning {w}" for w in self.warnings]
+        lines += [f"  note    {n}" for n in self.notes]
         return "\n".join(lines)
 
 
@@ -245,6 +247,7 @@ def check(target, manifest_path=None) -> Report:
         return rep
 
     _check_planner(m, rep)
+    _check_safety(m, rep)
     reg, notes = read_registry(pkg_dir)
     rep.registry = reg
     rep.warnings += notes
@@ -305,6 +308,17 @@ def check(target, manifest_path=None) -> Report:
                 rep.warnings.append(f"action {action}: grace_namemap.SKILL_MAP binds {skill!r}, "
                                     f"which the manifest does not declare")
     return rep
+
+
+def _check_safety(m: Manifest, rep: Report) -> None:
+    """``safety.profile`` (loaded and validated by the manifest): what only --strict rejects (a source still to verify), and the counts."""
+    prof = m.safety_profile
+    if prof is None:
+        return
+    rep.warnings.extend(prof.warnings)
+    rep.notes.append("safety.profile {profile} v{version}: {hazard_classes} hazard / {place_classes} place / {receiver_classes} receiver "
+                     "classes, {rules} rules, {sourced_words} sourced / {assumed_words} assumed words, sha256 {sha}".format(
+                         sha=prof.sha256[:12], **prof.summary()))
 
 
 def _check_planner(m: Manifest, rep: Report) -> None:

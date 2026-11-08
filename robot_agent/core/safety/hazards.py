@@ -1,95 +1,80 @@
-"""Household hazards the robot refuses to cause, independent of any benchmark (SAGE-v2 F4.3).
+"""The rule engine of the safety layer (SAGE-v2 F4.3). It holds NO domain data: classes, words, rules and the sentences the
+robot says are in the robot's safety profile (``profile.py``, docs/safety.md).
 
-Hazardous products. The core list of cleaning chemicals comes from a public poison-control source that was
-opened when this list was written: Children's Hospital of Philadelphia Poison Control Center, "Household
-Cleaners" (https://chop.edu/centers-programs/poison-control-center/household-cleaners): ammonia-containing
-floor / glass / jewelry cleaners, bleach, acid products (drain openers, toilet bowl cleaners, oven cleaners) and
-mildew stain removers. Additions not on that page are marked ``assumed`` (general household knowledge:
-detergents, dishwasher / laundry pods, disinfectants, rust removers, insecticides, lye). Korean
-forms are common translations of the same products. The robot never reads a benchmark's ``toxic`` tags.
+A rule is (object: a hazard class or regexes) x (place: a place class or a regex on the place key, OR receiver: a receiver
+class). ``find_rule`` returns the first rule that fires for a goal, ``check_goal`` the sentence of it.
 
-Rules: (hazard class) x (place class, ``place_class.py``) -> refused, with a reason the robot says. A robot pack
-may add rules in its manifest ``safety.hazards`` ({objects: [regex], places: [class or regex], say}). Option
-``hazard_rules`` = core | pack | off (``off``: the model's own ``unsafe`` only, the ablation row).
+Evaluation (``mode``): ``off`` none; ``profile`` (alias ``core``) the profile's place rules, then the legacy manifest list
+``safety.hazards`` ({objects | hazard, places, say}); ``pack`` the legacy list only. Receiver rules (the destination or the
+person a delivery is near is a person entry of a receiver class) run in every mode but ``off``. A rule with ``enabled_by`` runs
+only when that option key is in ``enabled``. A goal kind not in ``profile.checks`` is not looked at. An object is the goal's
+``object`` and ``said`` text, lower case; the hazard class words are the union over all languages of the profile.
 """
 
 from __future__ import annotations
 
 import re
-from typing import Optional
+from typing import NamedTuple, Optional
 
 from .place_class import place_class
+from .profile import EMPTY, Rule
 from .receiver_class import receiver_class
 
-# The product words are language-pack data (``patterns.hazard_cleaning_sourced`` / ``hazard_cleaning_assumed`` of every
-# pack); the English lists carry the CHOP sources and the ``assumed`` marks named above. ``HAZARDS()`` reads them on use.
-_LISTS = {"cleaning_chemical": ("hazard_cleaning_sourced", "hazard_cleaning_assumed")}
+NOT_SAFE = "that is not safe"
 
 
-def HAZARDS() -> dict:                                                  # noqa: N802 (kept as the old table's name)
-    from robot_agent.core.planning import langdata
-    return {cls: {"sourced": langdata.pattern_list(a), "assumed": langdata.pattern_list(b)}
-            for cls, (a, b) in _LISTS.items()}
+class Verdict(NamedTuple):
+    say: str                     # why, in the prompt language
+    rule: str                    # id of the profile rule, "" for a legacy manifest rule
 
 
-HAZARD_RULES = [
-    {"hazard": "cleaning_chemical", "places": ["food_storage", "food_prep"],
-     "say": "cleaning chemicals do not go with food"},
-]
-
-# Option ``hazard_receiver`` (default off): a hazardous product must not be handed to a vulnerable person. The combination is
-# (hazard class) x (receiver class): neither side is hazardous alone. Source of the rule: the same CHOP page says to keep household
-# cleaners out of the reach of children (https://chop.edu/centers-programs/poison-control-center/household-cleaners). The words
-# of the receiver class are language-pack data (``patterns.person_vulnerable``, ``assumed``: general vocabulary, no source); a
-# person entry may also declare it (``age_group`` of the ENV entry, matched against the same words). No data = no receiver class
-# = the rule never fires (fail open).
-RECEIVER_RULES = [
-    {"hazard": "cleaning_chemical", "receivers": ["vulnerable_person"],
-     "say": "cleaning chemicals must not be handed to a child"},
-]
-
-
-def hazard_class(name: str) -> str:
+def hazard_class(name: str, profile=EMPTY) -> str:
+    """The first hazard class (profile order) whose words match ``name`` (any language of the profile), '' when none."""
     t = str(name or "").lower()
-    for cls, lists in HAZARDS().items():
-        if any(re.search(p, t) for p in lists["sourced"] + lists["assumed"]):
+    for cls, pats in profile.hazard_classes:
+        if any(re.search(p, t) for p in pats):
             return cls
     return ""
 
 
-def check_goal(goal: dict, places, pack_rules=(), mode: str = "core", receivers: bool = False) -> Optional[str]:
-    """Why the robot will not do ``goal`` (a move of a hazardous product into / onto a place of a forbidden
-    class), None. ``receivers`` (option ``hazard_receiver``): also a hazardous product given to a person of a vulnerable class
-    (``receiver_class``; the destination, or the person the delivery is near). ``mode`` core: the core rules (+ pack rules when given); pack: the pack's rules only; off: none."""
-    if mode == "off" or goal.get("type") not in ("on", "in"):
+def _object_hit(rule: Rule, obj: str, profile) -> bool:
+    if rule.hazard:
+        return hazard_class(obj, profile) == rule.hazard
+    return any(re.search(p, obj.lower()) for p in rule.objects)
+
+
+def _place_hit(rule: Rule, to, pc: str, declared) -> bool:
+    return any(p == pc or (p not in declared and re.search(p, str(to).lower())) for p in rule.places)
+
+
+def _receiver_hit(rule: Rule, goal: dict, places, profile) -> bool:
+    return any(key and receiver_class(places, key, profile) in rule.receivers for key in (goal.get("to"), goal.get("near_person")))
+
+
+def find_rule(goal: dict, places, profile=EMPTY, pack_rules=(), mode: str = "profile", enabled=()) -> Optional[Verdict]:
+    """The first rule that forbids ``goal`` as a :class:`Verdict`, None. ``pack_rules``: the manifest's legacy list."""
+    if mode == "off" or goal.get("type") not in profile.checks:
         return None
     obj = " ".join(str(goal.get(k) or "") for k in ("object", "said"))
     to = goal.get("to") or ""
-    pc = place_class(places, to)
-    rules = (list(HAZARD_RULES) if mode != "pack" else []) + list(pack_rules or ())
-    for r in rules:
-        if r.get("hazard"):
-            hit = hazard_class(obj) == r["hazard"]
-        else:
-            hit = any(re.search(p, obj.lower()) for p in r.get("objects") or [])
-        if not hit:
-            continue
-        for p in r.get("places") or []:
-            if p == pc or (p not in ("food_storage", "food_prep") and re.search(p, str(to).lower())):
-                return r.get("say") or "that is not safe"
-    return _receiver_check(goal, obj, places) if receivers else None
-
-
-def _receiver_check(goal: dict, obj: str, places) -> Optional[str]:
-    """The receiver rules (``RECEIVER_RULES``): the goal's destination (or the person it is near) is a person entry of a
-    class a rule names, and the object is of the rule's hazard class."""
-    for r in RECEIVER_RULES:
-        if hazard_class(obj) != r["hazard"]:
-            continue
-        for key in (goal.get("to"), goal.get("near_person")):
-            if key and receiver_class(places, key) in r["receivers"]:
-                return r["say"]
+    pc = place_class(places, to, profile)
+    declared = profile.place_names()
+    legacy = [Rule.legacy(d) for d in pack_rules or ()]
+    on = lambda r: not r.enabled_by or r.enabled_by in enabled                        # noqa: E731
+    place_rules = [r for r in (list(profile.rules) if mode != "pack" else []) + legacy if r.places and on(r)]
+    for r in place_rules:
+        if _object_hit(r, obj, profile) and _place_hit(r, to, pc, declared):
+            return Verdict(r.say or NOT_SAFE, r.id)
+    for r in profile.rules:
+        if r.receivers and on(r) and _object_hit(r, obj, profile) and _receiver_hit(r, goal, places, profile):
+            return Verdict(r.say or NOT_SAFE, r.id)
     return None
 
 
-__all__ = ["HAZARDS", "HAZARD_RULES", "RECEIVER_RULES", "hazard_class", "check_goal", "receiver_class"]
+def check_goal(goal: dict, places, profile=EMPTY, pack_rules=(), mode: str = "profile", enabled=()) -> Optional[str]:
+    """Why the robot will not do ``goal`` (the sentence of the first rule that fires, see :func:`find_rule`), None."""
+    v = find_rule(goal, places, profile, pack_rules, mode, enabled)
+    return v.say if v else None
+
+
+__all__ = ["NOT_SAFE", "Verdict", "check_goal", "find_rule", "hazard_class", "receiver_class"]

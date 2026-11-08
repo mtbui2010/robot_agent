@@ -15,7 +15,7 @@ Inventory of what is still written in code: `python tools/lang_inventory.py` (`-
 |---|---|---|
 | `lang`, `name`, `register` | the code, the English name and the register of what the robot says (a translate target needs `name`) | `language.LANGS` / `REGISTER` |
 | `words` | regex tables `putin`, `on_top`, `hand`, `first_person`, `recipient`, `tell`, `open_words`, question patterns of the prompt language | `lexicon`, `goal_fix` |
-| `patterns` | `into_before` / `into_after`, `ontop_*`, `on_before`, `open_verb`, `close_verb`, `from_after`, `self_correction`, `refusal_safety`, `refusal_capability`, `addressee` (`{name}` field), `answer_tail`, `object_marked` / `object_and`, `hazard_cleaning_*`, `place_food_*` | `langdata.rx(key)` joins the patterns of every language that has the key |
+| `patterns` | `into_before` / `into_after`, `ontop_*`, `on_before`, `open_verb`, `close_verb`, `from_after`, `self_correction`, `addressee` (`{name}` field), `answer_tail`, `object_marked` / `object_and` (hazard, place-class, receiver and refusal words are not language data since round 19: the robot's [safety profile](safety.md)) | `langdata.rx(key)` joins the patterns of every language that has the key |
 | `grammar` | `noun_particles`, `verb_noun_suffix`, `sep_or`, `speaker_forms`, `speaker_forms_weak`, `ascii_names`, `object_check`, `head_slip_ratio`, `object_particle`, `asr_hallucinations` | `understand`, `speech`, `persons`, `dialog_converge`, `announcer`, `connect.stt` |
 | `dialogue` | `yes`, `no`, `fillers`, `near_yes_no`, `yn_words`, `polite`, `stop` / `pause` / `resume` (+ `_prefix`), `tail`, `head`, `filler_tokens`, `negation_*`, `fallback_<intent>[_sub]` | `interact/dialog.py`, `interact/intent_router.py` |
 | `dialogue_ext` | polite endings, "not sure" phrases, room names, markers behind the option `dialog_agree2` | `dialog_ext` |
@@ -35,8 +35,7 @@ than English needs those texts too.
 ## Adding a language (Vietnamese, round 16, is the worked example)
 
 1. Write `lang/<code>.json`. Start from the keys above; every key is optional. Vietnamese has `words` (into, on top, hand,
-   recipient, tell, open), `patterns` (into / on-top markers, open and close verbs, self-correction markers, refusal words,
-   hazard and food-place words), `grammar` (speaker words, the "or" separator), `dialogue` (yes / no, fillers, polite words,
+   recipient, tell, open), `patterns` (into / on-top markers, open and close verbs, self-correction markers, refusal words moved to the safety profile), `grammar` (speaker words, the "or" separator), `dialogue` (yes / no, fillers, polite words,
    control words, negations, keyword fallbacks), `dialogue_ext` (not-sure phrases, room names) and `object_aliases`.
 2. Mark who wrote it. `lang/vi.json` carries `review`: drafted by the model, not checked by a native speaker.
 3. Add a test through the real `AssistLoop` (`tests/test_lang_vi_pack.py` is the model): the code must not change.

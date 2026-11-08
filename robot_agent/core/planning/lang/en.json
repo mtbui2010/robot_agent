@@ -130,62 +130,7 @@
   "open_verb": "\\bopen\\b",
   "close_verb": "\\b(?:close|shut)\\b",
   "self_correction": "(?:\\.\\.\\.|,|-)?\\s*\\b(?:no wait|wait,? no|no,? i mean|i mean|actually|sorry|rather)\\b",
-  "refusal_safety": "\\b(?:knife|knives|blade|scissors|razor|fire|flame|stove|burn|hot|boil|window|throw|hit|hurt|poison|bleach|medicine|pills?|child|baby|kid|outside)\\b",
-  "refusal_capability": "\\b(?:throw|pour|cook|wash|washer|climb|window|door|tools?|turn on|switch on|lift|furniture|sofa|bed|leave|outside|clean)\\b",
-  "addressee": "\\b(?:to|tell|ask|remind|let)\\s+(?:the\\s+|my\\s+|your\\s+)?{name}\\b",
-  "person_vulnerable": [
-   "\\b(?:child|children|kids?|toddlers?|babys?|babies|infants?|little one)\\b"
-  ],
-  "hazard_cleaning_sourced": [
-   "\\bbleach\\b",
-   "\\bammonia\\b",
-   "\\bglass cleaner\\b",
-   "\\bfloor cleaner\\b",
-   "\\bjewel(?:le)?ry cleaner\\b",
-   "\\bdrain (?:opener|cleaner)\\b",
-   "\\btoilet (?:bowl )?cleaner\\b",
-   "\\boven cleaner\\b",
-   "\\bmildew (?:stain )?remover\\b"
-  ],
-  "hazard_cleaning_assumed": [
-   "\\bdetergent\\b",
-   "\\bdishwasher (?:pods?|tablets?)\\b",
-   "\\blaundry pods?\\b",
-   "\\bdisinfectant\\b",
-   "\\brust remover\\b",
-   "\\binsecticide\\b",
-   "\\bbug spray\\b",
-   "\\blye\\b",
-   "\\bcleaning spray\\b",
-   "\\blysol\\b",
-   "\\bclorox\\b",
-   "\\bwindex\\b",
-   "\\bdrano\\b",
-   "\\bpine-?sol\\b",
-   "\\bchlorine\\b"
-  ],
-  "place_food_storage": [
-   "\\bfridge\\b",
-   "\\brefrigerator\\b",
-   "\\bfreezer\\b",
-   "\\bpantry\\b",
-   "\\blarder\\b",
-   "\\bbread ?box\\b",
-   "\\bkimchi fridge\\b",
-   "\\bice ?box\\b",
-   "\\bfood (?:cabinet|storage|container)\\b",
-   "\\blunch ?box\\b"
-  ],
-  "place_food_prep": [
-   "\\bcutting board\\b",
-   "\\bchopping board\\b",
-   "\\bstove\\b",
-   "\\bhob\\b",
-   "\\boven\\b",
-   "\\bmicrowave\\b",
-   "\\brice cooker\\b",
-   "\\btoaster\\b"
-  ]
+  "addressee": "\\b(?:to|tell|ask|remind|let)\\s+(?:the\\s+|my\\s+|your\\s+)?{name}\\b"
  },
  "dialogue": {
   "yes": [

@@ -97,3 +97,10 @@ def make_assist(tmp_path, monkeypatch, env, agent_state):
         return loop
 
     return make
+
+
+@pytest.fixture(scope="session")
+def household():
+    """The household test profile (tests/fixtures/safety/household_fixture.yaml)."""
+    from fakes import safety_profile
+    return safety_profile("household_fixture")

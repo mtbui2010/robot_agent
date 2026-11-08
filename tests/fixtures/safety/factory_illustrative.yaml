@@ -1,0 +1,23 @@
+# ILLUSTRATIVE TEST FIXTURE. It shows that the same engine behaves differently from data alone. It is NOT a safety assessment of
+# any factory; every entry is `assumed` (invented for the test, no source opened). Not shipped.
+profile: factory_illustrative
+version: 1
+checks: ["on", "in"]
+hazard_classes:
+  flammable_solvent:
+    words: {en: {assumed: ["\\bacetone\\b", "\\bpaint thinner\\b", "\\bisopropyl alcohol\\b"]}}
+place_classes:
+  ignition_source:
+    words: {en: ["\\bwelding (?:bay|station)\\b", "\\bfurnace\\b", "\\bgrinder\\b"]}
+    provenance: assumed
+  egress_route:
+    words: {en: ["\\bemergency exit\\b", "\\bfire exit\\b", "\\bwalkway\\b"]}
+    provenance: assumed
+receiver_classes:
+  visitor:
+    words: {en: ["\\bvisitor\\b", "\\bguest\\b"]}
+    provenance: assumed
+rules:
+  - {id: solvent_heat, hazard: flammable_solvent, places: [ignition_source], say: "solvents do not go near ignition sources", provenance: assumed}
+  - {id: keep_exits_clear, objects: [".+"], places: [egress_route], say: "nothing is left on an exit route", provenance: assumed}
+  - {id: solvent_visitor, hazard: flammable_solvent, receivers: [visitor], say: "solvents are not handed to visitors", enabled_by: hazard.receivers, provenance: assumed}

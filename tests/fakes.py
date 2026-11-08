@@ -285,3 +285,12 @@ def done(evs) -> dict:
     d = [e for e in evs if e["event"] in ("done", "error")]
     assert d, f"no done event in {[e['event'] for e in evs]}"
     return d[-1]
+
+
+def safety_profile(name: str = "household_fixture"):
+    """A SafetyProfile from tests/fixtures/safety/<name>.yaml (test data: the household copy, the illustrative factory one)."""
+    from pathlib import Path
+    from robot_agent.core.safety import load_profile
+    prof, errs = load_profile(Path(__file__).parent / "fixtures" / "safety" / f"{name}.yaml")
+    assert not errs, errs
+    return prof

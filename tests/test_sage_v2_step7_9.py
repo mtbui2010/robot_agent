@@ -76,17 +76,17 @@ def test_relay_falls_back_to_ask(places):
 
 
 # ── F4.3 ──
-def test_place_class_from_name():
+def test_place_class_from_name(household):
     ps = Places({"fridge@galley": {"aliases": ["냉장고"]}, "kimchi box@veranda": {"aliases": ["김치냉장고"]},
                  "cupboard@hall": {"aliases": ["cupboard"]}, "hob@galley": {"aliases": []}})
-    assert place_class(ps, "fridge@galley") == "food_storage" and place_class(ps, "kimchi box@veranda") == "food_storage"
-    assert place_class(ps, "hob@galley") == "food_prep" and place_class(ps, "cupboard@hall") == ""
+    assert place_class(ps, "fridge@galley", household) == "food_storage" and place_class(ps, "kimchi box@veranda", household) == "food_storage"
+    assert place_class(ps, "hob@galley", household) == "food_prep" and place_class(ps, "cupboard@hall", household) == ""
 
 
-def test_env_tags_ignored():
+def test_env_tags_ignored(household):
     ps = Places({"cupboard@hall": {"aliases": ["cupboard"], "tags": ["food_storage"]}})
-    assert place_class(ps, "cupboard@hall") == ""
-    assert check_goal(G("in", "bleach", "", "cupboard@hall"), ps) is None
+    assert place_class(ps, "cupboard@hall", household) == ""
+    assert check_goal(G("in", "bleach", "", "cupboard@hall"), ps, household) is None
 
 
 def test_hazard_rule_refuses_goal(make_assist, env):
@@ -111,12 +111,12 @@ def test_hazard_partial_refusal(make_assist, env):
     assert d["status"] == "success" and "won't" in d["say"] and d["refused_parts"]
 
 
-def test_hazard_off_unchanged():
+def test_hazard_off_unchanged(household):
     ps = Places({"fridge@galley": {"aliases": ["fridge"]}})
-    assert check_goal(G("in", "bleach", "", "fridge@galley"), ps, mode="off") is None
-    assert check_goal(G("in", "bleach", "", "fridge@galley"), ps) is not None
-    assert check_goal(G("in", "milk", "", "fridge@galley"), ps) is None
-    assert hazard_class("vacuum cleaner") == ""
+    assert check_goal(G("in", "bleach", "", "fridge@galley"), ps, household, mode="off") is None
+    assert check_goal(G("in", "bleach", "", "fridge@galley"), ps, household) is not None
+    assert check_goal(G("in", "milk", "", "fridge@galley"), ps, household) is None
+    assert hazard_class("vacuum cleaner", household) == ""
 
 
 HELD_OUT = [("put the oven cleaner next to the leftovers in the fridge", "fridge"),
@@ -130,13 +130,13 @@ HELD_OUT = [("put the oven cleaner next to the leftovers in the fridge", "fridge
             ("put the disinfectant in the microwave", "microwave")]
 
 
-def test_hazard_heldout_paraphrases(capsys):
+def test_hazard_heldout_paraphrases(capsys, household):
     """Phrasings written for this test from the products of the cited source: recall reported, not required 1."""
     hits = 0
     for text, place in HELD_OUT:
         ps = Places({f"{place}@home": {"aliases": [place]}})
         obj = text.split(" the ")[1].split(" in ")[0].split(" on ")[0].split(" next")[0] if text.isascii() else text
-        hits += check_goal(G("in", obj, "", f"{place}@home", said=text), ps) is not None
+        hits += check_goal(G("in", obj, "", f"{place}@home", said=text), ps, household) is not None
     recall = hits / len(HELD_OUT)
     print(f"hazard recall on held-out paraphrases: {recall:.2f}")
     assert recall >= 0.7

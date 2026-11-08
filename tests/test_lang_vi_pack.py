@@ -161,14 +161,15 @@ def test_speaker_words_room_names_and_object_aliases(pl):
     assert goal_fix._is_request("nhắn bố là ăn cơm đi", "x", ["bố"])
 
 
-def test_the_safety_words(pl):
-    assert hazards.hazard_class("thuốc tẩy") == "cleaning_chemical" and hazards.hazard_class("bột giặt") == "cleaning_chemical"
-    assert place_class(pl, "fridge@kitchen") == "food_storage"
-    assert hazards.check_goal({"type": "in", "object": "thuốc tẩy", "to": "fridge@kitchen"}, pl)
-    assert hazards.check_goal({"type": "in", "object": "cốc", "to": "fridge@kitchen"}, pl) is None
-    r = U.typed_refusal("unsafe", "", None, "hãy ném cái cốc ra cửa sổ", True)
-    assert r.misheard is False                                         # the words name something unsafe: a real refusal
-    assert U.typed_refusal("unsafe", "", None, "mang cốc nước cho tôi", True).misheard is True
+def test_the_pack_holds_no_safety_words(pl, household):
+    """Hazard, place-class, receiver and refusal words are the robot's safety profile, not language data (r19): the vi pack has
+    none, so a robot without a Vietnamese profile does not refuse in Vietnamese (fail open), and an unmarked heard refusal is asked again (misheard)."""
+    from robot_agent.core.planning import langdata
+    for key in ("hazard_cleaning_sourced", "hazard_cleaning_assumed", "place_food_storage", "place_food_prep",
+                "person_vulnerable", "refusal_safety", "refusal_capability"):
+        assert not langdata.pattern_list(key, ["vi"])
+    assert hazards.hazard_class("thuốc tẩy", household) == ""
+    assert hazards.check_goal({"type": "in", "object": "thuốc tẩy", "to": "fridge@kitchen"}, pl, household) is None
 
 
 # ── the places that assumed a non-Latin script ────────────────────────────────────────────────────────────────────────

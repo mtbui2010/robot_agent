@@ -135,6 +135,8 @@ class Manifest:
     # optional body limits {payload_kg, max_object_size_m} and safety add-ons {hazards: [...]} (docs/env.md)
     limits: dict = field(default_factory=dict)
     safety: dict = field(default_factory=dict)
+    # the loaded ``safety.profile`` (core/safety/profile.py SafetyProfile); None = the robot declares none (fail open)
+    safety_profile: object = field(default=None, compare=False, repr=False)
     extra: dict = field(default_factory=dict)
     source: Optional[str] = None                      # file it was read from
 
@@ -185,7 +187,7 @@ class Manifest:
 
         planner = _planner(d.get("planner"), errs)
         limits = _limits(d.get("limits"), errs)
-        safety = _safety(d.get("safety"), errs)
+        safety, safety_profile = _safety(d.get("safety"), errs, Path(source).parent if source else None)
 
         raw_skills = d.get("skills")
         if raw_skills is None:
@@ -206,7 +208,7 @@ class Manifest:
         if errs:
             raise ManifestError(errs, source)
         return cls(robot=robot.strip(), version=version, capabilities=dict(caps), language=language.strip(),
-                   geometry=dict(geom), skills=skills, planner=planner, limits=limits, safety=safety,
+                   geometry=dict(geom), skills=skills, planner=planner, limits=limits, safety=safety, safety_profile=safety_profile,
                    extra={k: v for k, v in d.items() if k not in _TOP_KEYS}, source=source)
 
     def to_dict(self) -> dict:
@@ -480,16 +482,23 @@ def _limits(v, errs) -> dict:
     return dict(v)
 
 
-def _safety(v, errs) -> dict:
+def _safety(v, errs, base=None) -> tuple:
+    """(the ``safety`` section as written, its loaded SafetyProfile or None). ``safety.profile``: a path relative to the
+    manifest or an inline mapping (schema: docs/safety.md); errors name the field path."""
     if v is None:
-        return {}
+        return {}, None
     if not isinstance(v, dict):
         errs.append(f"safety: must be a mapping, got {type(v).__name__}")
-        return {}
+        return {}, None
     hz = v.get("hazards")
     if hz is not None and not (isinstance(hz, list) and all(isinstance(h, dict) for h in hz)):
         errs.append("safety.hazards: must be a list of mappings {objects, places, say}")
-    return dict(v)
+    prof = None
+    if v.get("profile") is not None:
+        from ..core.safety.profile import load
+        prof, perrs = load(v["profile"], base, "safety.profile")
+        errs.extend(perrs)
+    return dict(v), prof
 
 
 def _check_caps(caps: dict, errs: list) -> None:
