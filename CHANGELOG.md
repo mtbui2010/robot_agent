@@ -5,6 +5,14 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+### Round 14: dialogue data and agreement guard, relook (opt-in, default off, defaults byte-identical)
+- `dialog_agree2` (includes `dialog_agree`): the Korean dialogue facts are language-pack data (`lang/*.json` block `dialogue_ext`:
+  polite endings, self-correction markers, not-sure phrases, room names; robot pack `planner.room_names`); a guard
+  (`planner.agree_guard.garble_ratio`) stops `dialog_agree` from confirming through garbled names, an object alone or words out of
+  the script, and asks the person once more instead. New module `dialog_ext.py`.
+- `relook`: a place the person named / memory holds / the last likely one gets one more look by another sense (close and reopen,
+  the declared wait, or a plain second look) before it counts as searched.
+
 ### Lab round 8: a model per role (all opt-in, default off, defaults byte-identical)
 - `repair_model` / `repair_url` / `repair_max_tokens`: another model answers the plan gate's repair prompts (sub-goal edit and the
   one refinement); a runaway falls back to the planner's model once (`planner.chat_override`, implemented by `GraceBackend`).

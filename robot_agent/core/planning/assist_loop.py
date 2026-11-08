@@ -60,7 +60,7 @@ from . import search as search_belief
 from .search_hooks import SearchHooks
 from .which_one import WhichOne
 from . import goals as goal_kinds
-from . import (dialog_agree, dialog_converge, dialog_unstick, exec_integrity, goal_filter, goal_fix, language, persons, plan_tidy,
+from . import (dialog_agree, dialog_converge, dialog_ext, dialog_unstick, exec_integrity, goal_filter, goal_fix, language, persons, plan_tidy,
                request_coverage, role_models, speech)
 from . import reconcile as sensed
 from .robot import run_skill
@@ -85,7 +85,7 @@ ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify
                 "search_legs", "object_check", "detector_miss_rate", "person_goals", "accept_goals",
                 "go_steps", "kind_anchor", "name_canon", "reask_abstain",
                 "exec_integrity", "gate_strict", "endstate_check", "reset_container", "wait_on_robot", "inventory_ask",
-                "dialog_unstick", "dialog_agree", "kind_anchor_ask", "reask_anchor", "no_shared_listener", "understand_views",
+                "dialog_unstick", "dialog_agree", "dialog_agree2", "relook", "kind_anchor_ask", "reask_anchor", "no_shared_listener", "understand_views",
                   "understand_goals_first", "understand_model", "understand_url", "understand_model_lang",
                 "understand_max_tokens", "understand_max_goals", "understand_schema_strict", "understand_give_kind",
                 "understand_verify_verdict", "understand_think", "repair_model", "repair_url", "repair_max_tokens",
@@ -121,6 +121,7 @@ class Places:
         self.env = {k: v for k, v in (env or {}).items() if isinstance(v, dict)}
         self.keys = list(self.env)
         self._openable = openable
+        self.ext = None            # option dialog_agree2: the language packs' word endings, correction markers, room names
 
     @staticmethod
     def head(key: str) -> str:
@@ -149,6 +150,8 @@ class Places:
     def candidates(self, name: str, hint: str = "") -> list:
         """ENV keys *name* may mean. A room name -> ['@room'] marker."""
         w = _strip_article(words(name))
+        if w and self.ext is not None and self.ext.rooms:
+            w = " ".join(self.ext.rewrite_rooms(w).split())            # a room named in the person's language
         if not w:
             return []
         try:
@@ -437,7 +440,14 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         self._reaches = lambda steps, world, goals, loop=None: AssistLoop._reaches(steps, world, goals, self)
 
     def _v2_cfg(self, overrides) -> dict:
-        """The SAGE-v2 options (docs/env.md): run option > environment > the robot's manifest > default."""
+        """The SAGE-v2 options (docs/env.md): run option > environment > the robot's manifest > default. Round 14:
+        ``dialog_agree2`` is the extension of ``dialog_agree`` and includes it."""
+        cfg = self._v2_cfg_base(overrides)
+        if cfg.get("dialog_agree2"):
+            cfg["dialog_agree"] = True
+        return cfg
+
+    def _v2_cfg_base(self, overrides) -> dict:
         env = os.environ.get
         return {
             # the planner's sub-goals: one per understood goal ("goals", no decompose call) or the planner's own
@@ -505,7 +515,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             #   understand_goals_first  the understand schema asks for the goals before the verdict (dialog_agree: round 12, dialog_agree.py)
             **{k: str(overrides.get(k, env("ROBOT_AGENT_" + k.upper(), str(self._manifest_planner(k, "0"))))).lower()
                in ("1", "true", "yes", "on") for k in ("reask_anchor", "no_shared_listener", "understand_views",
-                                                       "understand_goals_first", "dialog_agree")},
+                                                       "understand_goals_first", "dialog_agree", "dialog_agree2", "relook")},
             # solution-lab round 4 (default OFF, dialog_unstick.py): a restatement that gives the refused reading again is
             # read back once more instead of ending the run; a "not sure" answer to a where-is question is a cue to
             # search; a question with its own apology is not asked again behind the silence apology
@@ -1638,6 +1648,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         fixed = self._reconcile(r, "start")              # adapter.reconcile + the declared sensors
         from robot_agent.skill_configs import ENV
         r.places = Places(dict(ENV), openable=r.robot.openable)
+        if self.cfg.get("dialog_agree2"):
+            r.places.ext = dialog_ext.build(lang, r.places, getattr(self.robot.manifest, "planner", None))
         self._env_places = r.places
         r.verifier = self._verifier(r.node, r.places.env)
         r.memory = Memory(self.cfg["memory_path"])
@@ -1995,7 +2007,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         finds = sorted(a for a in self.robot.plan_actions if a.lower() == "find")
         objs = goal_fix.abstains_on_location(u) if finds and r.dialogue and r.dialogue[-1][0] == "user" else None
         if objs is None or not dialog_unstick.unsure_answer(
-                r.dialogue[-1][1], r.places, getattr(getattr(self.robot, "i18n", None), "phrases", None), r.lang,
+                r.dialogue[-1][1], r.places, self._unsure_data(r), r.lang,
                 self._manifest_planner("unstick", None)):
             return u
         r.unsure_reasked = True
@@ -2035,6 +2047,19 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
                 return out
         yield self._finish(r, "failed", msg="the user did not confirm the task"); return _STOP
 
+    def _unsure_data(self, r):
+        """The robot pack's i18n phrases, plus (option ``dialog_agree2``) the language pack's ``dialogue_ext.answer_unsure``
+        as pack data of the run's language: what ``dialog_unstick.unsure_answer`` reads."""
+        phrases = getattr(getattr(self.robot, "i18n", None), "phrases", None)
+        ext = getattr(r.places, "ext", None)
+        if ext is None or not ext.unsure:
+            return phrases
+        phrases = phrases if isinstance(phrases, dict) else {}
+        lg = (r.lang or "")[:2]
+        by = dict(phrases.get(dialog_unstick.KEY) or {})
+        by[lg] = list(by.get(lg) or ()) + list(ext.unsure)
+        return {**phrases, dialog_unstick.KEY: by}
+
     @staticmethod
     def _agree_state(r) -> dict:
         """The history ``dialog_agree`` reads: where each reading was first read back, every refusal, the doubts asked."""
@@ -2058,17 +2083,39 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         st = self._agree_state(r)
         st["tried"] = True
         sig = dialog_converge.goal_sig(r.goals)
+        guard = (dialog_ext.guard_for(r.lang, r.places, r.goals, getattr(self.robot.manifest, "planner", None), r.places.ext)
+                 if self.cfg.get("dialog_agree2") else None)
         res = dialog_agree.decide(r.goals, r.places, r.dialogue, st["first"].get(sig),
                                   [x for x in st["refusals"] if x["sig"] == sig], st["asked"], self._issues(r, r.goals),
-                                  describe, self._texts_of, bool(getattr(r, "part_asked", False)), getattr(r, "replaced", ()))
+                                  describe, self._texts_of, bool(getattr(r, "part_asked", False)), getattr(r, "replaced", ()),
+                                  guard)
         self._lab("dialog_agree", fire=res["fire"], last=res["last"], unsuperseded=len(res["unsuperseded"]),
-                  bad_refusals=len(res["bad_refusals"]), open_doubts=len(res["open_doubts"]))
+                  bad_refusals=len(res["bad_refusals"]), open_doubts=len(res["open_doubts"]),
+                  **({"reask": res["reask"], "guard": res["guard"], "garbled": res["garbled"]} if res.get("reask") else {}))
+        if res.get("reask"):
+            return (yield from self._agree_reask(r))
         if not res["fire"]:
             return None
         said = speech.LocalText.join(speech.LocalText("rb_restated"), self.summary(r.goals, r.places))
         yield r.ev("understand_check", issues=["the person's answers agree with a reading they refused"], correction="agreed",
                    say=said, goals=r.goals)
         return _DONE
+
+    def _agree_reask(self, r):
+        """Option ``dialog_agree2``: the answers agree with a refused reading, but only through garbled names, an object alone or
+        words out of the language's script (``dialog_ext.Guard``). The reading is not taken as confirmed on that: the person is
+        asked once more, as the same yes / no read-back. A yes counts as confirmed, anything else ends the run as before."""
+        rb = self.summary(r.goals, r.places)
+        cq = speech.LocalText("q_confirm", {"summary": rb}, text=f"{rb} Is that right?")
+        yield r.ev("clarify", question=cq, round=r.confirms, kind="confirm")
+        ans, ok_, _rest = self._ask_yes_no(r, cq)
+        stop = self._cancelled(r)
+        if stop:
+            yield stop; return _STOP
+        r.dialogue += [("robot", cq), ("user", ans)]
+        if ok_ is True:
+            return _DONE
+        return None
 
     def _restated_by_person(self, r) -> bool:
         """Did the person's latest answer say the request again (``dialog_unstick.restates``) AND add an ENV entity the
@@ -2413,7 +2460,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         if self.cfg.get("dialog_agree"):                  # what the refusal was: a bare no, a not-sure, or words
             self._agree_state(r)["refusals"].append({
                 "sig": sig, "ans": ans, "rest": rest,
-                "unsure": dialog_unstick.unsure_answer(ans, r.places, getattr(getattr(self.robot, "i18n", None), "phrases", None),
+                "unsure": dialog_unstick.unsure_answer(ans, r.places, self._unsure_data(r),
                                                        r.lang, self._manifest_planner("unstick", None))})
         again = self._converge() and sig in getattr(r, "rejected", ())
         r.rejected = list(getattr(r, "rejected", ())) + [sig]
@@ -3734,6 +3781,10 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             r.doubted.add(here); world.opened.discard(here)
             return None, (f"; precondition: {here} is not open (it was believed open, but the {o} is not visible "
                           f"inside): Open {here}, then Find the {o} again")
+        if self.cfg.get("relook") and code == FailureCode.ABSENT.value and rule.mark_searched and here:
+            out = yield from self._relook_here(r, o, here)       # round 14: one more look, by another sense
+            if out is not None:
+                return out
         # absent: the place counts as searched; could not look / out of reach: it does not (policy)
         if world.arrived and world.arrived not in r.searched and rule.mark_searched:
             r.searched.append(world.arrived)
@@ -3790,6 +3841,56 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
                "Choose where to look next among the places not yet searched")
         return None, (f"; it is not at {world.arrived}. {nxt}"
                       + (f" (it was seen near {r.seen_far[-1]})" if r.seen_far else ""))
+
+    def _relook_why(self, r, o, here) -> str:
+        """Why ``here`` deserves one more look before it counts as searched (option ``relook``), else "": the person named it
+        (a goal's source, an answer to a where-question), the object memory holds the object here, or it is the last place
+        the belief has left (marking it searched would end the search)."""
+        for g in r.goals or []:
+            if g.get("object") == o and (g.get("from") == here or here in (g.get("from_any") or [])):
+                return "named"
+        if (o, here) in getattr(r, "told", ()):
+            return "named"
+        if r.memory.where(o) == here:
+            return "memory"
+        bel = getattr(r, "search", None)
+        if bel is not None:
+            op = set(r.world.opened)
+            if not any(p != here and not bel.is_searched(o, p, op) and bel.leg_for(o, p, op) is not None for p in bel.places):
+                return "last"
+        return ""
+
+    def _relook_here(self, r, o, here):
+        """Option ``relook`` (default off): a Find that saw nothing at a place the person named, that memory says holds the
+        object, or that is the last likely one gets ONE more look by another sense before the place counts as searched: a
+        container believed open is closed and opened again, else the pack's declared wait action runs first, else the look is
+        simply made again. Once per object and place; the looks count against ``search_total``; the skills are the pack's own
+        (Close / Open, planner.recovery.wait), none declared = a plain second look. Returns (_NEXT, "") or None."""
+        done_ = r.__dict__.setdefault("relook_done", set())
+        if (o, here) in done_:
+            return None
+        why = self._relook_why(r, o, here)
+        if not why:
+            return None
+        looks = len(r.searched) + len((getattr(r, "second_looks", {}) or {}).get(o, [])) + len(done_)
+        if looks + 1 >= int(self.cfg.get("search_total", 8)):
+            return None
+        acts = {a.lower() for a in r.robot.plan_actions}
+        sense, pre = "again", []
+        if (r.places.openable(here) and here in r.world.opened and not r.world.holding
+                and {"close", "open"} <= acts):
+            sense, pre = "reopen", [{"action": "Close", "object": here, "grounded": True},
+                                    {"action": "Open", "object": here, "grounded": True}]
+        else:
+            act, sched = exec_integrity.wait_schedule((self._manifest_planner("recovery", None) or {}).get("wait"))
+            if act and act.lower() in acts:
+                sense, pre = "wait", [{"action": act, "object": f"{sched[0]:g}"}]
+        done_.add((o, here))
+        if pre:
+            r.steps[r.i:r.i] = pre
+        self._lab("relook", object=o, place=here, why=why, sense=sense)
+        yield r.ev("recover", at_index=r.i, kind="relook", msg=f"the {o} may still be at {here}: looking once more ({sense})")
+        return _NEXT, ""
 
     SECOND_LOOKS = 2       # without a belief: the two most likely places, once each (the default rate 0.1)
 

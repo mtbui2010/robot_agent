@@ -60,13 +60,17 @@ _TOP_KEYS = {"robot", "version", "language", "capabilities", "geometry", "planne
 #   dialog_model / dialog_model_lang ({language code: model}) / dialog_url / dialog_max_tokens (the model that writes the
 #   robot's words in the user's language), understand_think / repair_think / dialog_think (the role client's Ollama `think`
 #   switch), request_coverage (0 | 1, default 0): lab round 8, docs/env.md,
+#   dialog_agree2 (0 | 1, default 0: round 14, implies dialog_agree; the language pack's dialogue data and the guard against a
+#   confirmation made through garbled words), agree_guard ({garble_ratio: 0..1}: the guard's similarity threshold; none = no guard),
+#   room_names ({language code: {room: [names]}}: the names a room has in a language), relook (0 | 1, default 0: round 14, one more
+#   look, by another sense, at a place the person named / memory holds / the last likely one, before it counts as searched)
 #   detector_miss_rate (0 to 0.9, default 0.1: the chance that a look at the right place does not see the object;
 #   one miss is then weak evidence and the search looks again at the places the belief still holds probable)
 PLANNER_KEYS = {"seed_memory", "notes", "llm_budget", "translate_model", "translate_url", "translate_budget",
                 "search_legs", "search_total", "input_pivot", "detector_miss_rate", "person_goals", "accept_goals",
                 "go_steps", "kind_anchor", "name_canon", "reask_abstain",
                 "exec_integrity", "gate_strict", "endstate_check", "reset_container", "wait_on_robot", "inventory_ask",
-                "dialog_unstick", "dialog_agree", "canonical_lang", "label_tokens", "recovery", "kind_anchor_ask", "unstick",
+                "dialog_unstick", "dialog_agree", "dialog_agree2", "relook", "agree_guard", "room_names", "canonical_lang", "label_tokens", "recovery", "kind_anchor_ask", "unstick",
                 "reask_anchor", "no_shared_listener", "understand_views", "understand_goals_first",
                 "understand_model", "understand_url", "understand_model_lang", "understand_max_tokens",
                 "understand_max_goals", "understand_schema_strict", "understand_give_kind", "understand_verify_verdict",

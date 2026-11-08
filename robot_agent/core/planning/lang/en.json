@@ -117,5 +117,10 @@
    ""
   ]
  ],
- "text_fallback": true
+ "text_fallback": true,
+ "dialogue_ext": {
+  "self_correction": [
+   "(?:\\.\\.\\.|,|-)?\\s*\\b(?:no wait|wait,? no|no,? i mean|i mean|actually|sorry|rather)\\b"
+  ]
+ }
 }

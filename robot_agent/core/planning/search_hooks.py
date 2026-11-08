@@ -93,6 +93,7 @@ class SearchHooks:
         return s.next_leg(o, r.world.arrived, r.world.opened)
 
     def _search_told(self, r, o, k) -> None:
+        r.__dict__.setdefault("told", set()).add((o, k))      # where the person said it is (option relook reads it)
         if getattr(r, "search", None) is not None:
             r.search.see(o, k, how="user said"); r.search.unsearch(o, k)
 

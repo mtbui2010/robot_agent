@@ -163,9 +163,9 @@ def repair_destination(goals: list, text: str, places) -> tuple:
     named, while the person named exactly one place (one ENV key, not a source, not a person) that no goal
     uses: that place is the destination. Only with one such move goal (two goals and one place: which one is
     unclear, the read-back asks). Example: "put the towel in the cabinet" understood as "in the drawer"."""
-    from .understand import _active, _drop_corrected
+    from .understand import _active, _corr_of, _drop_corrected
     t = _active(text)
-    ms = _drop_corrected(t, place_mentions(t, places))
+    ms = _drop_corrected(t, place_mentions(t, places), _corr_of(places))
     person = lambda k: bool((places.env.get(k) or {}).get("person"))
     said = set().union(*(m[3] for m in ms)) if ms else set()
     used = {g.get(s) for g in goals for s in ("to", "from") if g.get(s)} | \

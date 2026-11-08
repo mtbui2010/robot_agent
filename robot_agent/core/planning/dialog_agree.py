@@ -95,11 +95,12 @@ def choices_of(dialogue, goals) -> list:
     return out
 
 
-def judge(texts, goals, places, settled_out=(), choices=()) -> tuple:
+def judge(texts, goals, places, settled_out=(), choices=(), guard=None) -> tuple:
     """(``"agree"`` | ``"conflict"`` | ``"neutral"``, detail) of one utterance (``texts``: as said, and its English when
     held) against the reading ``goals``. Conflict: it names an ENV place, room or the speaker the reading does not hold and
     that is not settled out, or the option the reading did not take. Agree: it names a part of the reading and no conflict.
-    A mention inside a message the reading will say is the message, not a slot, and is ignored unless the reading holds it."""
+    A mention inside a message the reading will say is the message, not a slot, and is ignored unless the reading holds it.
+    ``guard`` (option ``dialog_agree2``, ``dialog_ext.Guard``): an object counts only when its name is said as it is."""
     rk = rkeys(goals, places)
     msgs = _messages(goals)
     agree, conflict, n_mentions = [], [], 0
@@ -129,7 +130,7 @@ def judge(texts, goals, places, settled_out=(), choices=()) -> tuple:
         elif sk and not any(m and sk in m for m in msgs):
             conflict.append(("speaker", sk))
     for g in goals:
-        if DC._score(g, texts) >= 2:
+        if (guard.exact_score(g, texts) if guard is not None else DC._score(g, texts)) >= 2:
             agree.append(("object", g.get("object")))
     for qi, (opts, taken) in enumerate(choices):
         named = [o for o in opts if names_option(texts, o, opts)]
@@ -167,8 +168,34 @@ def settle_pair(question, answer, places, texts_of) -> set:
     return settled_by_choices([("robot", question), ("user", answer)], places, texts_of)
 
 
-def decide(goals, places, dialogue, first, refusals, asked_doubts, issues, describe, texts_of, part_asked, replaced=()) -> dict:
-    """The rule. ``first``: the index in ``dialogue`` where the reading was first read back; ``refusals``: [{"ans", "rest",
+def decide(goals, places, dialogue, first, refusals, asked_doubts, issues, describe, texts_of, part_asked, replaced=(),
+           guard=None) -> dict:
+    """The rule, then (option ``dialog_agree2``, ``guard`` given) the guard: when the rule would fire, the agreement must also
+    hold with names said as they are, name a slot of the reading (not only an object) and come from words with no garbled name
+    and in the language's script; else ``fire`` is False and ``reask`` True (the loop asks the person once more).
+    Without a guard this is the rule alone, as in round 12."""
+    res = _rule(goals, places, dialogue, first, refusals, asked_doubts, issues, describe, texts_of, part_asked, replaced)
+    if guard is None or not res["fire"]:
+        return res
+    strict = _rule(goals, places, dialogue, first, refusals, asked_doubts, issues, describe, texts_of, part_asked, replaced,
+                   guard)
+    utts = res["utts"]
+    why = []
+    if not strict["fire"]:
+        why.append("inexact")
+    elif rkeys(goals, places) and not strict["slot"]:
+        why.append("object_only")
+    garb = guard.garbled(utts)
+    if garb:
+        why.append("garbled")
+    if utts and not guard.plausible(utts[-1]):
+        why.append("script")
+    return {**res, "fire": not why, "reask": bool(why), "guard": why, "garbled": garb}
+
+
+def _rule(goals, places, dialogue, first, refusals, asked_doubts, issues, describe, texts_of, part_asked, replaced=(),
+          guard=None) -> dict:
+    """The round-12 rule. ``first``: the index in ``dialogue`` where the reading was first read back; ``refusals``: [{"ans", "rest",
     "unsure"}] of this reading (``rest`` empty = a bare "no"); ``asked_doubts``: the doubts already asked as questions;
     ``issues``: the coverage issues of the reading (``AssistLoop._issues``), ``describe``: an issue as text; ``texts_of(u)``:
     the utterance and its held English. Returns {"fire": bool, ...evidence for the lab log}."""
@@ -176,7 +203,7 @@ def decide(goals, places, dialogue, first, refusals, asked_doubts, issues, descr
     settled_out = settled_by_choices(dialogue, places, texts_of) | set(replaced or ())
     choices = choices_of(dialogue, R)
     utts = [t for w_, t in dialogue[first:] if w_ == "user"] if first is not None else []
-    cls = [judge(texts_of(u), R, places, settled_out, choices) for u in utts]
+    cls = [judge(texts_of(u), R, places, settled_out, choices, guard) for u in utts]
     # C2: a conflicting utterance stands unless a later agreeing utterance superseded it
     unsup = []
     for i, (v, d) in enumerate(cls):
@@ -200,7 +227,7 @@ def decide(goals, places, dialogue, first, refusals, asked_doubts, issues, descr
     for x in refusals:
         if not x.get("rest") or x.get("unsure"):
             continue
-        v, _d = judge(texts_of(x["rest"]), R, places, settled_out, choices)
+        v, _d = judge(texts_of(x["rest"]), R, places, settled_out, choices, guard)
         if v == "conflict" and x.get("ans") not in unsup:
             continue
         bad_ref.append(x.get("ans"))
@@ -227,7 +254,8 @@ def decide(goals, places, dialogue, first, refusals, asked_doubts, issues, descr
     ok = not unsup and not bad_ref and not open_doubts
     return {"fire": bool(ok and last == "agree" and part_asked), "last": last, "unsuperseded": unsup,
             "bad_refusals": bad_ref, "open_doubts": open_doubts, "settled_out": sorted(settled_out),
-            "verdicts": [v for v, _d in cls]}
+            "verdicts": [v for v, _d in cls], "utts": utts,
+            "slot": bool(cls) and any(a[0] != "object" for a in cls[-1][1]["agree"])}
 
 
 __all__ = ["decide", "judge", "settled_by_choices", "settle_pair", "choices_of", "names_option", "rkeys", "INTENT_PLACE"]

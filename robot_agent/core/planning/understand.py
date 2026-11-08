@@ -183,11 +183,14 @@ _HANGUL_RX = re.compile(r"[\uac00-\ud7a3]")
 _KO_HADA = r"(?:하|해|했|할|한|합|함)"
 
 
-def _find(phrase: str, text: str):
+def _find(phrase: str, text: str, extra: str = ""):
+    """``extra``: more word endings (regex alternatives, the language pack's ``polite_endings``; option ``dialog_agree2``)."""
     if phrase.isascii():
         return [m.span() for m in re.finditer(r"(?<![\w-])" + re.escape(phrase) + r"(?:s|es)?(?![\w-])", text)]
     if _HANGUL_RX.search(phrase):
-        rx = r"(?<![\w])" + re.escape(phrase) + r"(?=$|[\s.,!?;:)\]\"'~]|(?:" + _KO_PART + r")|" + _KO_HADA + r")"
+        rx = (r"(?<![\w])" + re.escape(phrase) + r"(?=$|[\s.,!?;:)\]\"'~]|(?:" + _KO_PART + r")|" + _KO_HADA + r")"
+              if not extra else
+              r"(?<![\w])" + re.escape(phrase) + r"(?=$|[\s.,!?;:)\]\"'~]|(?:" + _KO_PART + r")|" + _KO_HADA + r"|" + extra + r")")
         return [m.span() for m in re.finditer(rx, text)]
     return [m.span() for m in re.finditer(re.escape(phrase), text)]
 
@@ -199,10 +202,12 @@ def place_mentions(text: str, places) -> list:
     taken, out = [], []
     rooms = sorted({_norm(r) for r in places.rooms()}, key=len, reverse=True)
     phr = _phrases(places)
+    ext = getattr(places, "ext", None)                       # option dialog_agree2: the pack's word endings
+    extra = ext.part_rx if ext is not None else ""
     for p in sorted(phr, key=len, reverse=True):
         if p in rooms:
             continue
-        for s, e in _find(p, t):
+        for s, e in _find(p, t, extra):
             if any(s < e2 and s2 < e for s2, e2 in taken):
                 continue
             taken.append((s, e))
@@ -243,10 +248,16 @@ def _active(text: str) -> str:
     return " ".join(out)
 
 
-def _drop_corrected(t: str, mentions: list) -> list:
+def _corr_of(places):
+    """The self-correction regex of the run: the language packs' markers (option ``dialog_agree2``), else ``_CORR``."""
+    ext = getattr(places, "ext", None)
+    return ext.corr if ext is not None and ext.corr is not None else _CORR
+
+
+def _drop_corrected(t: str, mentions: list, corr=None) -> list:
     """Mentions minus the last one before each self-correction marker."""
     gone = set()
-    for m in _CORR.finditer(t):
+    for m in (corr or _CORR).finditer(t):
         before = [x for x in mentions if x[1] <= m.start() + 1 and m.start() - x[1] < 40]
         if before:
             gone.add(before[-1][:2])
@@ -292,7 +303,7 @@ def _object_mentions(text: str, places, user_words) -> list:
     """Nouns after a determiner in English *text* that are not places, rooms or generic words: 'tennis ball';
     only in object position (after a manipulation verb, not a clause's subject), no fillers or 1-2 letter words."""
     t = _active(text)
-    t = _CORR.sub(" ", t)
+    t = _corr_of(places).sub(" ", t)
     place_words = {w for p in _phrases(places) for w in p.split()} | {w for r in places.rooms() for w in _norm(r).split()}
     out = []
     for m in _DET.finditer(t):
@@ -371,7 +382,7 @@ def find_issues(goals, text: str, places, english: str = "", user_words=frozense
     full = place_mentions(text, places)
     act_t = _active(text)
     people = {k for k in places.keys if (places.env.get(k) or {}).get("person")}
-    for _s, _e, p, keys, is_src in _drop_corrected(act_t, place_mentions(act_t, places)):
+    for _s, _e, p, keys, is_src in _drop_corrected(act_t, place_mentions(act_t, places), _corr_of(places)):
         if keys & used:
             continue
         if _user_word(p, user_words):
