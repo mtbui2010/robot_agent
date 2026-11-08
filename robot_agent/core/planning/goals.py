@@ -119,10 +119,12 @@ def dedupe(goals: list) -> list:
     return out
 
 
-def conflicts(goals: list, name=None) -> tuple:
+def conflicts(goals: list, name=None, declare: bool = False) -> tuple:
     """(goals, question|None): the goal validator. Two destinations for one object is a question
     for the person; an open and a close of one container keep the last one (the final state). ``name``: how a
-    place key is said (default: 'shelf@kitchen' -> 'shelf in the kitchen')."""
+    place key is said (default: 'shelf@kitchen' -> 'shelf in the kitchen'). ``declare`` (option ``dialog_agree``): the question
+    comes as a ``speech.LocalText`` with the same English text that declares a choice between the places (intent
+    ``choose_place``, the keys as options), so that the answer can settle the option not taken."""
     q, dest = None, {}
     for g in goals:
         if g.get("type") in ("on", "in") and g.get("object"):
@@ -133,6 +135,9 @@ def conflicts(goals: list, name=None) -> tuple:
         if len(tos) > 1:
             nice = [name(t) if name is not None else t.replace("@", " in the ") for t in tos]
             q = f"Where should the {obj} go in the end: {' or '.join(nice)}? It cannot be in two places."
+            if declare:
+                from .speech import LocalText
+                q = LocalText("_two_places_q", text=q, ask={"intent": "choose_place", "options": list(tos), "about": str(obj)})
             break
     last = {}
     for k, g in enumerate(goals):

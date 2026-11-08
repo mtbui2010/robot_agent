@@ -46,7 +46,7 @@ _TOP_KEYS = {"robot", "version", "language", "capabilities", "geometry", "planne
 #   accept_goals (0 | 1, default 0: a caller may hand the run its goals, which skips the understand step),
 #   go_steps, kind_anchor, name_canon, reask_abstain (0 | 1, default 0: grounding chain v2 and the abstention re-ask, docs/env.md),
 #   exec_integrity (family) / gate_strict / endstate_check / reset_container / wait_on_robot, inventory_ask (0 | 1, default 0:
-#   solution-lab round 3, docs/env.md), dialog_unstick (0 | 1, default 0: round 4, docs/env.md), canonical_lang (en | none | <code>: the language of the core's object labels),
+#   solution-lab round 3, docs/env.md), dialog_unstick (0 | 1, default 0: round 4, docs/env.md), dialog_agree (0 | 1, default 0: round 12, docs/env.md), canonical_lang (en | none | <code>: the language of the core's object labels),
 #   label_tokens (words | none), recovery.wait ({action, schedule_s: [...]}: the wait skill WAIT_HEALTH may run),
 #   recovery.return_tries (count >= 1: endstate_check tries), kind_anchor_ask (0 | 1, default 0: keep an unasked open goal and
 #   read it back as a doubt instead of dropping it), unstick (the numbers of dialog_unstick: fallback_words, fallback_chars,
@@ -66,7 +66,7 @@ PLANNER_KEYS = {"seed_memory", "notes", "llm_budget", "translate_model", "transl
                 "search_legs", "search_total", "input_pivot", "detector_miss_rate", "person_goals", "accept_goals",
                 "go_steps", "kind_anchor", "name_canon", "reask_abstain",
                 "exec_integrity", "gate_strict", "endstate_check", "reset_container", "wait_on_robot", "inventory_ask",
-                "dialog_unstick", "canonical_lang", "label_tokens", "recovery", "kind_anchor_ask", "unstick",
+                "dialog_unstick", "dialog_agree", "canonical_lang", "label_tokens", "recovery", "kind_anchor_ask", "unstick",
                 "reask_anchor", "no_shared_listener", "understand_views", "understand_goals_first",
                 "understand_model", "understand_url", "understand_model_lang", "understand_max_tokens",
                 "understand_max_goals", "understand_schema_strict", "understand_give_kind", "understand_verify_verdict",

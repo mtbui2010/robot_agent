@@ -60,7 +60,7 @@ from . import search as search_belief
 from .search_hooks import SearchHooks
 from .which_one import WhichOne
 from . import goals as goal_kinds
-from . import (dialog_converge, dialog_unstick, exec_integrity, goal_filter, goal_fix, language, persons, plan_tidy,
+from . import (dialog_agree, dialog_converge, dialog_unstick, exec_integrity, goal_filter, goal_fix, language, persons, plan_tidy,
                request_coverage, role_models, speech)
 from . import reconcile as sensed
 from .robot import run_skill
@@ -85,7 +85,7 @@ ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify
                 "search_legs", "object_check", "detector_miss_rate", "person_goals", "accept_goals",
                 "go_steps", "kind_anchor", "name_canon", "reask_abstain",
                 "exec_integrity", "gate_strict", "endstate_check", "reset_container", "wait_on_robot", "inventory_ask",
-                "dialog_unstick", "kind_anchor_ask", "reask_anchor", "no_shared_listener", "understand_views",
+                "dialog_unstick", "dialog_agree", "kind_anchor_ask", "reask_anchor", "no_shared_listener", "understand_views",
                   "understand_goals_first", "understand_model", "understand_url", "understand_model_lang",
                 "understand_max_tokens", "understand_max_goals", "understand_schema_strict", "understand_give_kind",
                 "understand_verify_verdict", "understand_think", "repair_model", "repair_url", "repair_max_tokens",
@@ -502,10 +502,10 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             #   no_shared_listener      the recipient of a delivery is not moved to the speaker when the words name a person once
             #   understand_views        a non-English request is read from the original and from the translator's pivot; the
             #                           run acts when the two readings agree and asks "A or B?" when they differ
-            #   understand_goals_first  the understand schema asks for the goals before the verdict
+            #   understand_goals_first  the understand schema asks for the goals before the verdict (dialog_agree: round 12, dialog_agree.py)
             **{k: str(overrides.get(k, env("ROBOT_AGENT_" + k.upper(), str(self._manifest_planner(k, "0"))))).lower()
                in ("1", "true", "yes", "on") for k in ("reask_anchor", "no_shared_listener", "understand_views",
-                                                       "understand_goals_first")},
+                                                       "understand_goals_first", "dialog_agree")},
             # solution-lab round 4 (default OFF, dialog_unstick.py): a restatement that gives the refused reading again is
             # read back once more instead of ending the run; a "not sure" answer to a where-is question is a cue to
             # search; a question with its own apology is not asked again behind the silence apology
@@ -1837,9 +1837,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         out = yield from self._hazard_gate(r)                      # F4.3: the robot's own safety rules
         if out is _STOP:
             return _STOP
-        r.goals, conflict = goal_kinds.conflicts(r.goals, name=lambda k: speech.say_name(r.places, k, "en"))
-        if conflict:
-            q = conflict if not q else f"{conflict} {q}"
+        r.goals, q = self._two_places(r, q)
         # the grounding decides about places; the model's "ambiguous" counts only when it found nothing
         # to do (after "no, the shelf in the restroom" a 7B model kept asking which shelf)
         if u["status"] == "ambiguous" and u.get("question") and not r.goals:
@@ -1860,6 +1858,18 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             if out is not None:
                 return out
         return (yield from self._ask_clarify(r, q))
+
+    def _two_places(self, r, q):
+        """The goal validator (``goal_kinds.conflicts``): (goals, the question with its two-destination question first). With
+        ``dialog_agree`` the question declares its place options and keeps them when another question follows."""
+        on = bool(self.cfg.get("dialog_agree"))
+        r.goals, conflict = goal_kinds.conflicts(r.goals, name=lambda k: speech.say_name(r.places, k, "en"), declare=on)
+        if not conflict:
+            return r.goals, q
+        if on and getattr(conflict, "ask", None) and q:
+            conflict = speech.LocalText("_two_places_q", text=f"{conflict} {q}", ask=conflict.ask)
+            return r.goals, conflict
+        return r.goals, conflict if not q else f"{conflict} {q}"
 
     def _take_understanding(self, r):
         """(understanding, question) of the task: the goals a correction edited (no new understanding, R4b item 2)
@@ -2019,7 +2029,46 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             r.part_asked = True
             yield r.ev("understand_check", issues=["a refused reading again"], correction="repeat")
             return (yield from self._ask_clarify(r, speech.LocalText("q_which_part")))
+        if self.cfg.get("dialog_agree") and not self._agree_state(r)["tried"]:
+            out = yield from self._agreed_reading(r)
+            if out is not None:
+                return out
         yield self._finish(r, "failed", msg="the user did not confirm the task"); return _STOP
+
+    @staticmethod
+    def _agree_state(r) -> dict:
+        """The history ``dialog_agree`` reads: where each reading was first read back, every refusal, the doubts asked."""
+        st = r.__dict__.get("agree")
+        if st is None:
+            st = r.agree = {"first": {}, "refusals": [], "asked": [], "tried": False}
+        return st
+
+    def _texts_of(self, u) -> list:
+        """An utterance and, when the language layer already holds it (no translator call), its trusted English."""
+        out = [u]
+        h = getattr(getattr(self, "language", None), "heard", {}).get(str(u).strip())
+        if h is not None and getattr(h, "english", None) and getattr(h, "trusted", False):
+            out.append(h.english)
+        return out
+
+    def _agreed_reading(self, r):
+        """Option ``dialog_agree``, where the run would stop: the refused reading came back after the which-part question.
+        When the person's answers agree with it (``dialog_agree.decide``) it counts as confirmed: said as a statement,
+        _DONE. Once per run. None = today's stop."""
+        st = self._agree_state(r)
+        st["tried"] = True
+        sig = dialog_converge.goal_sig(r.goals)
+        res = dialog_agree.decide(r.goals, r.places, r.dialogue, st["first"].get(sig),
+                                  [x for x in st["refusals"] if x["sig"] == sig], st["asked"], self._issues(r, r.goals),
+                                  describe, self._texts_of, bool(getattr(r, "part_asked", False)), getattr(r, "replaced", ()))
+        self._lab("dialog_agree", fire=res["fire"], last=res["last"], unsuperseded=len(res["unsuperseded"]),
+                  bad_refusals=len(res["bad_refusals"]), open_doubts=len(res["open_doubts"]))
+        if not res["fire"]:
+            return None
+        said = speech.LocalText.join(speech.LocalText("rb_restated"), self.summary(r.goals, r.places))
+        yield r.ev("understand_check", issues=["the person's answers agree with a reading they refused"], correction="agreed",
+                   say=said, goals=r.goals)
+        return _DONE
 
     def _restated_by_person(self, r) -> bool:
         """Did the person's latest answer say the request again (``dialog_unstick.restates``) AND add an ENV entity the
@@ -2239,7 +2288,10 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         if not issues or getattr(r, "issue_asked", False):
             return None
         r.issue_asked = True
-        return issue_question(issues, r.places) or None
+        iq = issue_question(issues, r.places) or None
+        if iq and self.cfg.get("dialog_agree"):
+            self._agree_state(r)["asked"] += [str(x) for x in r.unsure]      # these doubts were asked as their own question
+        return iq
 
     _NAMES_PROMPT = ("Give the usual Korean name of each household object below, one per line, in the same order, "
                      "as a plain noun in Hangul (no numbering, nothing else):")
@@ -2336,6 +2388,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             yield self._finish(r, "failed", msg="the user did not confirm the task"); return _STOP, None
         r.confirms += 1
         sig = dialog_converge.goal_sig(r.goals)
+        if self.cfg.get("dialog_agree"):
+            self._agree_state(r)["first"].setdefault(sig, len(r.dialogue))
         r.readings = list(readings) + [sig]
         rb = self.summary(r.goals, r.places)
         cq = speech.LocalText("q_confirm", {"summary": rb}, text=f"{rb} Is that right?")
@@ -2356,6 +2410,11 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         if ok_ is None:
             yield self._finish(r, "failed", msg=f"no answer to: {cq}"); return _STOP, None
         r.dialogue += [("robot", cq), ("user", ans)]
+        if self.cfg.get("dialog_agree"):                  # what the refusal was: a bare no, a not-sure, or words
+            self._agree_state(r)["refusals"].append({
+                "sig": sig, "ans": ans, "rest": rest,
+                "unsure": dialog_unstick.unsure_answer(ans, r.places, getattr(getattr(self.robot, "i18n", None), "phrases", None),
+                                                       r.lang, self._manifest_planner("unstick", None))})
         again = self._converge() and sig in getattr(r, "rejected", ())
         r.rejected = list(getattr(r, "rejected", ())) + [sig]
         if not rest:                     # a bare "no": ask what instead (as a choice when this reading was refused before)
@@ -2460,6 +2519,10 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             return _STOP
         r.memory.remember_answer(r.task, q, ans)
         r.dialogue += [("robot", q), ("user", ans)]
+        if self.cfg.get("dialog_agree"):                  # a choice between places, answered: the option not taken is settled
+            gone = dialog_agree.settle_pair(q, ans, r.places, lambda u: self._texts_of(u))
+            if gone:
+                r.replaced = set(getattr(r, "replaced", ())) | gone
         if self._restates(r, ans) and not getattr(r, "free_round_used", False):
             r.free_round_used = True     # an answer that says the whole request again was informative: not a spent round
             r.asked -= 1
