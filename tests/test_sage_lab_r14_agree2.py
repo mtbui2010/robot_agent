@@ -289,7 +289,16 @@ def test_option_off_is_the_earlier_events(make_assist):
     ans = ["No.", TASK, "In the fridge, please."]
     l1, r1, e1 = play(make_assist, FakeLLM(default=READ), list(ans), dialog_unstick="1", dialog_agree="1")
     l2, r2, e2 = play(make_assist, FakeLLM(default=READ), list(ans), dialog_unstick="1", dialog_agree="1", dialog_agree2="0")
-    assert [{k: v for k, v in e.items() if k != "run_id"} for e in e1] == [{k: v for k, v in e.items() if k != "run_id"} for e in e2] and r1.asked == r2.asked and l2._ctx.places.ext is None
+    assert _no_wall(e1) == _no_wall(e2) and r1.asked == r2.asked and l2._ctx.places.ext is None
+
+
+def _no_wall(events):
+    """Events without the run id and the wall-clock planning time (plan_meta.plan_sec differs under load)."""
+    def clean(o):
+        if isinstance(o, dict):
+            return {k: clean(v) for k, v in o.items() if k not in ("run_id", "plan_sec")}
+        return [clean(v) for v in o] if isinstance(o, list) else o
+    return [clean(e) for e in events]
 
 
 # ── round 14 fixes: pack words are never garbled; the structural not-sure test also runs where phrases exist ─────────────
