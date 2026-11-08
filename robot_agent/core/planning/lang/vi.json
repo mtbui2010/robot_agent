@@ -77,6 +77,12 @@
   "refusal_safety": "\\b(?:dao|kéo|lửa|bếp|nóng|đun|cửa sổ|ném|đánh|làm đau|độc|thuốc|thuốc tẩy|trẻ em|em bé|con nít)\\b",
   "refusal_capability": "\\b(?:ném|đổ|nấu|rửa|leo|cửa sổ|dụng cụ|bật|nhấc|đồ nội thất|ghế sofa|giường|ra ngoài|lau|dọn dẹp)\\b",
   "addressee": "\\b(?:nói với|bảo|nhắn|báo|nhắc|hỏi)\\s+(?:cho\\s+)?(?:ông\\s+|bà\\s+|anh\\s+|chị\\s+|em\\s+|cô\\s+|chú\\s+|bác\\s+)?{name}\\b",
+  "person_vulnerable": [
+   "trẻ em",
+   "trẻ nhỏ",
+   "em bé",
+   "\\bcon nít\\b"
+  ],
   "hazard_cleaning_sourced": [
    "thuốc tẩy",
    "chất tẩy",

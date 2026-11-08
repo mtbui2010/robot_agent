@@ -162,6 +162,13 @@
   "answer_tail": "(?:에서|에|이요|요|이에요|예요|있어요|요\\.)$",
   "object_marked": "([\\uac00-\\ud7a3][\\uac00-\\ud7a3 ]*?[\\uac00-\\ud7a3])(?:을|를)(?=\\s|$|[.,!?])",
   "object_and": "\\s*(?:과|와|하고|이랑|랑|,)\\s*",
+  "person_vulnerable": [
+   "아이",
+   "아기",
+   "어린이",
+   "유아",
+   "꼬마"
+  ],
   "hazard_cleaning_sourced": [
    "표백제",
    "락스",

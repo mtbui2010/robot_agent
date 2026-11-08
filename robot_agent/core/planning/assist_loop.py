@@ -87,7 +87,7 @@ ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify
                 "search_legs", "object_check", "detector_miss_rate", "person_goals", "accept_goals",
                 "go_steps", "kind_anchor", "name_canon", "reask_abstain",
                 "exec_integrity", "gate_strict", "endstate_check", "reset_container", "wait_on_robot", "inventory_ask",
-                "dialog_unstick", "dialog_agree", "dialog_agree2", "relook", "reach_delivery", "unapplied_change", "kind_anchor_ask", "prompt_lang", "reask_anchor", "no_shared_listener", "understand_views",
+                "dialog_unstick", "dialog_agree", "dialog_agree2", "relook", "reach_delivery", "unapplied_change", "hazard_receiver", "kind_anchor_ask", "prompt_lang", "reask_anchor", "no_shared_listener", "understand_views",
                   "understand_goals_first", "understand_model", "understand_url", "understand_model_lang",
                 "understand_max_tokens", "understand_max_goals", "understand_schema_strict", "understand_give_kind",
                 "understand_verify_verdict", "understand_think", "repair_model", "repair_url", "repair_max_tokens",
@@ -517,7 +517,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             #   understand_goals_first  the understand schema asks for the goals before the verdict (dialog_agree: round 12, dialog_agree.py)
             **{k: str(overrides.get(k, env("ROBOT_AGENT_" + k.upper(), str(self._manifest_planner(k, "0"))))).lower()
                in ("1", "true", "yes", "on") for k in ("reask_anchor", "no_shared_listener", "understand_views",
-                                                       "understand_goals_first", "dialog_agree", "dialog_agree2", "relook", "reach_delivery", "unapplied_change")},
+                                                       "understand_goals_first", "dialog_agree", "dialog_agree2", "relook", "reach_delivery", "unapplied_change", "hazard_receiver")},
             # solution-lab round 4 (default OFF, dialog_unstick.py): a restatement that gives the refused reading again is
             # read back once more instead of ending the run; a "not sure" answer to a where-is question is a cue to
             # search; a question with its own apology is not asked again behind the silence apology
@@ -907,7 +907,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         from ..safety import check_goal
         mode = str(self.cfg.get("hazard_rules", "core"))
         pack = (getattr(self.robot.manifest, "safety", None) or {}).get("hazards") or []
-        bad = [(g, why) for g in r.goals for why in [check_goal(g, r.places, pack, mode)] if why]
+        bad = [(g, why) for g in r.goals for why in [check_goal(g, r.places, pack, mode, bool(self.cfg.get("hazard_receiver")))] if why]
         if not bad:
             return None
         yield r.ev("understand_check", issues=[f"unsafe: {goal_kinds.describe(g)} ({w})" for g, w in bad], hazard=True)
@@ -1997,7 +1997,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         from ..safety import check_goal
         pack = (getattr(self.robot.manifest, "safety", None) or {}).get("hazards") or []
         mode = str(self.cfg.get("hazard_rules", "core"))
-        if any(check_goal(g, r.places, pack, mode) for g in g1 + g2):
+        if any(check_goal(g, r.places, pack, mode, bool(self.cfg.get("hazard_receiver"))) for g in g1 + g2):
             return None
         nice = lambda k: speech.say_name(r.places, k, "en")                  # noqa: E731
         a, b = (speech.LocalText.seq([self._goal_phrase(g, r.places, nice) for g in gs]) for gs in (g1, g2))
@@ -2372,7 +2372,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
                 from ..safety import check_goal
                 pack = (getattr(self.robot.manifest, "safety", None) or {}).get("hazards") or []
                 mode = str(self.cfg.get("hazard_rules", "core"))
-                keep = [g for g in agreed if not check_goal(g, r.places, pack, mode)]
+                keep = [g for g in agreed if not check_goal(g, r.places, pack, mode, bool(self.cfg.get("hazard_receiver")))]
                 r.goals, r.unsure = (keep or r.goals), []          # a re-sample never brings back a refused goal
                 return None
         if not issues or getattr(r, "issue_asked", False):

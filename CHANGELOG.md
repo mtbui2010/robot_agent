@@ -5,6 +5,9 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+### Round 17: option `hazard_receiver` (default off, defaults byte-identical)
+- `core/safety/receiver_class.py`, `hazards.RECEIVER_RULES`, `check_goal(..., receivers=)`: a hazardous product given to a person entry of a vulnerable class is refused (partial refusals are said at the end). Words: new pack key `patterns.person_vulnerable` in `en`, `ko`, `vi`. Tests: `tests/test_sage_lab_r17_hazard_receiver.py`.
+
 ### Round 16: language facts are pack data (defaults byte-identical for English and Korean)
 - The language literals of the always-on core moved into the language packs (`lang/<code>.json`, new blocks `patterns`,
   `grammar`, `dialogue`, `guard`, keys `detect_marks`, `latin_script`, `object_aliases`): particles, into / on-top / from markers,

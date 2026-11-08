@@ -133,6 +133,9 @@
   "refusal_safety": "\\b(?:knife|knives|blade|scissors|razor|fire|flame|stove|burn|hot|boil|window|throw|hit|hurt|poison|bleach|medicine|pills?|child|baby|kid|outside)\\b",
   "refusal_capability": "\\b(?:throw|pour|cook|wash|washer|climb|window|door|tools?|turn on|switch on|lift|furniture|sofa|bed|leave|outside|clean)\\b",
   "addressee": "\\b(?:to|tell|ask|remind|let)\\s+(?:the\\s+|my\\s+|your\\s+)?{name}\\b",
+  "person_vulnerable": [
+   "\\b(?:child|children|kids?|toddlers?|babys?|babies|infants?|little one)\\b"
+  ],
   "hazard_cleaning_sourced": [
    "\\bbleach\\b",
    "\\bammonia\\b",

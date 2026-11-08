@@ -19,6 +19,7 @@ import re
 from typing import Optional
 
 from .place_class import place_class
+from .receiver_class import receiver_class
 
 # The product words are language-pack data (``patterns.hazard_cleaning_sourced`` / ``hazard_cleaning_assumed`` of every
 # pack); the English lists carry the CHOP sources and the ``assumed`` marks named above. ``HAZARDS()`` reads them on use.
@@ -36,6 +37,17 @@ HAZARD_RULES = [
      "say": "cleaning chemicals do not go with food"},
 ]
 
+# Option ``hazard_receiver`` (default off): a hazardous product must not be handed to a vulnerable person. The combination is
+# (hazard class) x (receiver class): neither side is hazardous alone. Source of the rule: the same CHOP page says to keep household
+# cleaners out of the reach of children (https://chop.edu/centers-programs/poison-control-center/household-cleaners). The words
+# of the receiver class are language-pack data (``patterns.person_vulnerable``, ``assumed``: general vocabulary, no source); a
+# person entry may also declare it (``age_group`` of the ENV entry, matched against the same words). No data = no receiver class
+# = the rule never fires (fail open).
+RECEIVER_RULES = [
+    {"hazard": "cleaning_chemical", "receivers": ["vulnerable_person"],
+     "say": "cleaning chemicals must not be handed to a child"},
+]
+
 
 def hazard_class(name: str) -> str:
     t = str(name or "").lower()
@@ -45,9 +57,10 @@ def hazard_class(name: str) -> str:
     return ""
 
 
-def check_goal(goal: dict, places, pack_rules=(), mode: str = "core") -> Optional[str]:
+def check_goal(goal: dict, places, pack_rules=(), mode: str = "core", receivers: bool = False) -> Optional[str]:
     """Why the robot will not do ``goal`` (a move of a hazardous product into / onto a place of a forbidden
-    class), None. ``mode`` core: the core rules (+ pack rules when given); pack: the pack's rules only; off: none."""
+    class), None. ``receivers`` (option ``hazard_receiver``): also a hazardous product given to a person of a vulnerable class
+    (``receiver_class``; the destination, or the person the delivery is near). ``mode`` core: the core rules (+ pack rules when given); pack: the pack's rules only; off: none."""
     if mode == "off" or goal.get("type") not in ("on", "in"):
         return None
     obj = " ".join(str(goal.get(k) or "") for k in ("object", "said"))
@@ -64,7 +77,19 @@ def check_goal(goal: dict, places, pack_rules=(), mode: str = "core") -> Optiona
         for p in r.get("places") or []:
             if p == pc or (p not in ("food_storage", "food_prep") and re.search(p, str(to).lower())):
                 return r.get("say") or "that is not safe"
+    return _receiver_check(goal, obj, places) if receivers else None
+
+
+def _receiver_check(goal: dict, obj: str, places) -> Optional[str]:
+    """The receiver rules (``RECEIVER_RULES``): the goal's destination (or the person it is near) is a person entry of a
+    class a rule names, and the object is of the rule's hazard class."""
+    for r in RECEIVER_RULES:
+        if hazard_class(obj) != r["hazard"]:
+            continue
+        for key in (goal.get("to"), goal.get("near_person")):
+            if key and receiver_class(places, key) in r["receivers"]:
+                return r["say"]
     return None
 
 
-__all__ = ["HAZARDS", "HAZARD_RULES", "hazard_class", "check_goal"]
+__all__ = ["HAZARDS", "HAZARD_RULES", "RECEIVER_RULES", "hazard_class", "check_goal", "receiver_class"]
