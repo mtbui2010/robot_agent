@@ -425,7 +425,7 @@ class LanguageAdapter:
                 if kept:
                     return kept                          # a pack line with an English reason after it: the line
         done = speech.render(text, lang, self.host.robot, self._places(), slot_tr=self.local_slot)
-        if done is not None and self._loc(done, lg):
+        if done is not None and (self._loc(done, lg) or self._declared_line(text)):
             return done
         if isinstance(text, speech.LocalText) and text.key == "_join" and len(text.parts) > 1:
             # phrases said one after the other ("Sorry, I didn't hear you." + the question asked before): each part
@@ -440,6 +440,14 @@ class LanguageAdapter:
         if out is not None:
             return out
         return None if strict else self._fallback(text, lg, kind)
+
+    @staticmethod
+    def _declared_line(text) -> bool:
+        """Is ``text`` a step milestone (``announcer`` step kinds) said from the robot's own phrase? Its only free slot is an
+        object's name (declared, cached or kept in English), so the sentence is declared data and a long English name in
+        it must not send the whole line to the translator."""
+        from .announcer import _STEP_KINDS
+        return isinstance(text, speech.LocalText) and text.key in _STEP_KINDS
 
     def _speak_text(self, text: str, lg: str) -> Optional[str]:
         """``text`` translated (cache, then the translator with its output guard), None when that fails."""

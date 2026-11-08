@@ -157,6 +157,13 @@ class Announcer:
         except Exception:
             return tmpl
 
+    def slots_for(self, kind: str, **ctx) -> dict:
+        """The slots ``say_for`` fills the template of ``kind`` with ({verb}, {eul}, {object}, ...): what a host that
+        says the same phrase through its own speech layer needs (the robot's phrase with a slot said alone)."""
+        ctx = self._resolve_verb(ctx)
+        ctx.setdefault('eul', _eul(ctx.get('verb', '')))
+        return ctx
+
     # -- speech --------------------------------------------------------------
     def announce(self, kind: str, **ctx) -> str:
         """Compute the phrase and (if enabled) speak it on the robot."""

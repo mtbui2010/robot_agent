@@ -376,6 +376,11 @@ class ClosedLoop:
         """Localized-ish argument name for announcements."""
         return self.robot.name_for(action, obj)
 
+    def _announce(self, r, kind: str, step: dict, action: str, obj: str, **kw) -> str:
+        """The announcer's line for a step milestone (``step_start`` / ``step_success`` / ``step_fail``). A host with
+        its own speech layer overrides this (AssistLoop says the robot's own phrase with no model call)."""
+        return r.announcer.announce(kind, **self._say(step, action, obj), **kw)
+
     def _say(self, step: dict, action: str, obj: str) -> dict:
         """Announcer kwargs for a step: the spoken names the plan gave
         (``이동->move::식탁 앞->table_top`` → step["say"]) win over the
@@ -741,7 +746,7 @@ class ClosedLoop:
         rec = StepRecord(index=r.i, action=action, object=obj, skill=skill_name,
                          params=params, status="running", started_at=started)
         yield r.ev("step_start", index=r.i, action=action, object=obj, skill=skill_name,
-                   say=r.announcer.announce("step_start", **self._say(step, action, obj)))
+                   say=self._announce(r, "step_start", step, action, obj))
         res = run_skill(self.sr, skill_name, params, r.node, log_fn=self._log_fn(r.i),
                         interruptible=r.robot.interruptible(skill_name))
         rec.result = res.to_legacy()
@@ -768,7 +773,7 @@ class ClosedLoop:
                                       status="failed", started_at=started, ended_at=time.time(),
                                       verifies=[VerifyResult("isdone", False, reason)]))
         yield r.ev("step_done", index=r.i, status="failed",
-                   say=r.announcer.announce("step_fail", **self._say(step, action, obj), reason=reason),
+                   say=self._announce(r, "step_fail", step, action, obj, reason=reason),
                    reason=reason, world=r.world.to_dict())
         if not self._cl_replan(r, step, reason):
             return _FAIL
@@ -792,7 +797,7 @@ class ClosedLoop:
         r.completed.append(step)
         r.run.steps.append(rec)
         yield r.ev("step_done", index=r.i, status="success", result=rec.result,
-                   say=r.announcer.announce("step_success", **self._say(step, action, obj)),
+                   say=self._announce(r, "step_success", step, action, obj),
                    world=r.world.to_dict())
         r.i += 1
 
@@ -802,7 +807,7 @@ class ClosedLoop:
         rec.status = "failed"
         r.run.steps.append(rec)
         yield r.ev("step_done", index=r.i, status="failed", result=rec.result, reason=reason,
-                   say=r.announcer.announce("step_fail", **self._say(step, action, obj), reason=reason),
+                   say=self._announce(r, "step_fail", step, action, obj, reason=reason),
                    world=r.world.to_dict())
         code = r.robot.failure_code(res, reason)
         r.failed_with(code, res.device or rec.skill, reason, {"action": action, "object": obj})

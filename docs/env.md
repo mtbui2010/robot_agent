@@ -39,7 +39,7 @@ person; the words asking for the hand ("hand me", 손에, 건네) make it the on
 |---|---|
 | `planner.llm_budget` | the run's cap on core LLM calls (option > `$ROBOT_AGENT_LLM_BUDGET` > manifest > 20) |
 | `planner.translate_model`, `planner.translate_url` | the model (and server) that translates what the robot says; default the planner's |
-| `planner.translate_budget` | the translator's own cap per run (default 10): one call per user utterance (kept while more than 2 calls are left) and what the robot says |
+| `planner.translate_budget` | the translator's own cap per run (default 10): one call per user utterance (kept while more than 2 calls are left) and what the robot says; a step milestone (progress line) is the robot's own phrase with the name as a slot and costs none, a name checked once is the name said (round 11) |
 | `planner.input_pivot` | the language layer's IN side for a non-English user: `none` (original only), `translate` (English translation; original only as the source of `said`), `both`; default `none` (chosen by the m10 KO comparison) |
 | `planner.detector_miss_rate` | the detector's false-negative rate, 0 to 0.9, default 0.1: after a miss at a place the object is still probable there (docs/search.md) |
 | `planner.search_legs`, `planner.search_total` | SAGE-v2 search: the belief's next look replaces a failed Find without a replan; after "I don't know" the likely places are searched, up to `search_total` looks |

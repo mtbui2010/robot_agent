@@ -1127,6 +1127,23 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         """{English name in ``text``: its name in ``lang``} for the ENV places / people the text names."""
         return self.language.glossary(text, lang)
 
+    def _announce(self, r, kind, step, action, obj, **kw):
+        """A step milestone in the user's language. The robot's phrase for it is declared data (the pack's i18n); only the
+        object's name is English. It is said as the robot's own phrase with the name as a slot (declared name, else the
+        run's cached name, else the English name inside the sentence), so a progress line costs no translator call (it
+        used to spend the translate budget the questions and the final message need). A failure with a reason in free
+        text, an English run and a language with no phrase for the milestone are as before."""
+        text = super()._announce(r, kind, step, action, obj, **kw)
+        lg = (getattr(r, "lang", None) or "en")[:2]
+        if not text or lg == "en" or kind == "step_fail" and kw.get("reason") or \
+                speech.phrase(self.robot, kind, lg) is None:
+            return text
+        slots = r.announcer.slots_for(kind, **self._say(step, action, obj))
+        slots["object"] = self.language.names(str(slots.get("object") or ""), lg)      # no raw ENV key reaches the user
+        if slots.get("verb") and not speech._in_script(str(slots["verb"]), lg):
+            return text                               # the robot has no word for this skill in the language: translated as before
+        return speech.LocalText(kind, {k: v for k, v in slots.items() if k in ("object", "verb", "eul")}, text=text)
+
     def _in_lang(self, text, lang) -> str:
         """``text`` as the user hears it: the ONE speaking function (``LanguageAdapter.speak``)."""
         return self.language.speak(text, lang)
@@ -2279,6 +2296,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
                 except Exception:
                     pass
             cache[key] = out
+            for o, n in out.items():                            # a name checked here is the name the robot says (no second call)
+                lang.names_cache.setdefault((" ".join(str(o).split()).lower(), lg), n)
         return cache[key]
 
     def _resample(self, r, issues):
@@ -3406,7 +3425,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         rec = StepRecord(index=r.i, action=a, object=o, skill=skill, params=params,
                          status="running", started_at=started)
         yield r.ev("step_start", index=r.i, action=a, object=o, skill=skill,
-                   say=r.announcer.announce("step_start", **self._say(st, a, o)))
+                   say=self._announce(r, "step_start", st, a, o))
         # manifest interruptible: false (a grasp, a drawer pull): a stop meanwhile waits for it to end
         # a stale camera before a Find: perception_unavailable without running it (sensor_health)
         res = find_precheck(r.robot, r.node, st, self.cfg["sensor_health"])
@@ -3475,7 +3494,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             r.placed[o] = st["verify_goal"]             # seen at its destination: the goal holds
         r.completed.append(st)
         yield r.ev("step_done", index=r.i, status="success", result=rec.result,
-                   say=r.announcer.announce("step_success", **self._say(st, a, o)), world=r.world.to_dict())
+                   say=self._announce(r, "step_success", st, a, o), world=r.world.to_dict())
         r.i += 1
         for f in r.failures:
             if f["sig"] == (a, o):
@@ -3493,7 +3512,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         a, o = st["action"], st["object"]
         rec.status = "failed"; r.run.steps.append(rec)
         yield r.ev("step_done", index=r.i, status="failed", result=rec.result, reason=reason,
-                   say=r.announcer.announce("step_fail", **self._say(st, a, o), reason=reason),
+                   say=self._announce(r, "step_fail", st, a, o, reason=reason),
                    world=r.world.to_dict())
         if st.get("verify_goal"):
             r.world.found = None; r.i += 1              # not there: the goal does not hold yet (replan at the end)
