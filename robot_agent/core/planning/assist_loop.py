@@ -3625,9 +3625,18 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         Ask once where they are; the place they name (``persons.place_in_answer``) gets a MoveTo and the hand-over again. _NEXT,
         or None (no question possible, no answer, no place in it: the failure goes the usual way)."""
         key = st.get("object")
-        if getattr(r, "reach_asked", None) or not persons.is_person(r.places, key):
+        if not persons.is_person(r.places, key):
             return None
-        r.reach_asked = True
+        where = r.__dict__.setdefault("reach_where", {})      # person key -> the place they answered
+        asked = r.__dict__.setdefault("reach_asked_keys", set())
+        known = where.get(key)
+        if known and r.world.arrived != known:                # asked before for this person: go there, no second question
+            r.steps[r.i:r.i + 1] = [{"action": "MoveTo", "object": known, "grounded": True}, dict(st)]
+            self._lab("reach_delivery", why="known_where", person=key, place=known)
+            return _NEXT
+        if key in asked:
+            return None
+        asked.add(key)
         if (places_ := r.places).env.get(key, {}).get("speaker") or key == persons.speaker_key(places_):
             q = speech.LocalText("q_where_are_you")
         else:
@@ -3645,6 +3654,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         if not ans or not at or at.startswith("@"):
             return None
         r.dialogue += [("robot", q), ("user", ans)]
+        where[key] = at
         r.steps[r.i:r.i + 1] = [{"action": "MoveTo", "object": at, "grounded": True}, dict(st)]
         return _NEXT
 
@@ -3736,6 +3746,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             out = yield from self._reach_ask_where(r, st, reason)    # the person left: ask where they are, then hand over there
             if out is not None:
                 return out
+            if self.cfg.get("reach_delivery"):                       # no place to go: no same-step retries, the replan / give-up path
+                return (yield from self._replan_or_fail(r, st, reason, f"{a} {o} failed: {reason} (replan budget used)"))
         if not rule.retry_allowed:
             what = "internal error in" if code is FailureCode.SOFTWARE else f"{code.value} in"
             yield self._finish(r, "failed", msg=f"{what} the {skill} skill (not retried): {reason}", code=code,

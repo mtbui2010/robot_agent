@@ -321,3 +321,55 @@ def test_033_shape_the_gate_does_not_walk_back_to_the_source_of_a_held_object():
         out[flag] = [f"{s['action']} {s['object']}" for s in F]
     assert out[False][-5:] == [f"MoveTo {KC}", "Find mug", "Pick mug", f"MoveTo {ME}", f"Place {ME}"]
     assert out[True][-2:] == [f"MoveTo {ME}", f"Place {ME}"] and out[True].count(f"MoveTo {KC}") == 1
+
+
+# ── two objects for the same person who moved (047 shape): ask once, reuse the answered place ──
+PLAN2 = steps(f"MoveTo {KC}", "Find mug", "Pick mug", f"MoveTo {ME}", f"Place {ME}",
+              f"MoveTo {KC}", "Find book", "Pick book", f"MoveTo {ME}", f"Place {ME}")
+
+
+def understood2(dest="me"):
+    u = understood(dest)
+    u["goals"] = u["goals"] + [{"type": "on", "object": "book", "from": KC, "to": dest}]
+    return u
+
+
+def run2(make_assist, env, robot, lang="en", dest="me", task="Bring me the mug and the book.", **opts):
+    opts = dict(search_legs=1, search_rank="prior", ask_help=False, detector_miss_rate=0, **opts)
+    loop = make_assist(robot, FakeLLM(understood2(dest), default="{}"), ScriptedPlanner(PLAN2), **opts)
+    loop.clock = lambda: robot.t
+    return loop, run_task(loop, task, lang=lang, max_events=4000)
+
+
+def failed_handovers(robot):
+    return [t for t in robot.trace if t[0] == "handover" and not t[2]]
+
+
+@pytest.mark.parametrize("lang,ans,dest,task", [
+    ("en", "I'm on the sofa in the living room.", "me", "Bring me the mug and the book."),
+    ("ko", "거실 소파에 있어요.", "나한테", "머그잔이랑 책 나한테 갖다 줘요."),
+])
+def test_047_shape_two_objects_one_question_and_no_repeated_unreachable_handovers(make_assist, env, lang, ans, dest, task):
+    robot = HomeRobot(env, {"mug": KC, "book": KC}, start=KC, person_then=SO, leaves_at=40.0, answers=[ans, ans])
+    loop, evs = run2(make_assist, env, robot, lang=lang, dest=dest, task=task, reach_delivery="1")
+    assert done(evs)["status"] == "success", [e for e in evs if e["event"] in ("step_done", "done")][-3:]
+    assert robot.obj["mug"] == "person:lena" and robot.obj["book"] == "person:lena"
+    assert len(robot.asked) == 1, robot.asked
+    assert len(failed_handovers(robot)) == 2            # one per object: never the same hand-over three times in a row
+    assert [e["place"] for e in lab(loop, "asked_where")] == [SO]
+    assert [e["place"] for e in lab(loop, "known_where")] == [SO]
+
+
+def test_unanswered_where_does_not_retry_the_handover_in_place(make_assist, env):
+    robot = HomeRobot(env, {"mug": KC, "book": KC}, start=KC, person_then=SO, leaves_at=40.0, answers=["somewhere", "somewhere"])
+    loop, evs = run2(make_assist, env, robot, reach_delivery="1")
+    assert done(evs)["status"] != "success"
+    assert len(failed_handovers(robot)) == 1 and len(robot.asked) == 1
+
+
+def test_two_objects_flag_off_is_identical_to_reach_delivery_zero(make_assist, env):
+    a = HomeRobot(env, {"mug": KC, "book": KC}, start=KC, person_then=SO, leaves_at=40.0)
+    b = HomeRobot(env, {"mug": KC, "book": KC}, start=KC, person_then=SO, leaves_at=40.0)
+    _l1, e1 = run2(make_assist, env, a)
+    _l2, e2 = run2(make_assist, env, b, reach_delivery="0")
+    assert events_of(e1) == events_of(e2) and a.calls == b.calls
