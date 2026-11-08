@@ -53,10 +53,10 @@ def test_unsure_doubts_render_in_a_robot_language():
     assert speech.render(t, "ko", Robot) == "잘못 알아들었을 수 있어요 (베란다 말씀하셨는데 계획에 없어요)."
 
 
-def test_household_brands_of_cleaning_chemicals_are_hazards():
+def test_household_brands_of_cleaning_chemicals_are_hazards(household):
     for name in ("lysol", "Clorox bottle", "window cleaner windex", "라이솔"):
-        assert hazard_class(name) == "cleaning_chemical", name
-    assert hazard_class("water bottle") == ""
+        assert hazard_class(name, household) == "cleaning_chemical", name
+    assert hazard_class("water bottle", household) == ""
 
 
 def test_rank_prompt_groups_places_by_room():

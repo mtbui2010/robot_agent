@@ -72,14 +72,14 @@ def test_yes_no_and_script_literals_are_the_old_ones(two_packs):
     assert langdata.get("ko")["grammar"]["sep_or"] == " 아니면 " and langdata.get("en")["grammar"]["sep_or"] == " or "
 
 
-def test_the_refusal_marks_are_the_old_regexes(two_packs):
+def test_the_refusal_marks_are_the_old_regexes(two_packs, household):
     old_safety = re.compile(r"\b(?:knife|knives|blade|scissors|razor|fire|flame|stove|burn|hot|boil|window|throw|"
                             r"hit|hurt|poison|bleach|medicine|pills?|child|baby|kid|outside)\b|칼|불|창문|던지|가위|독|약|"
                             r"아이", re.I)
     old_cap = re.compile(r"\b(?:throw|pour|cook|wash|washer|climb|window|door|tools?|turn on|switch on|lift|"
                          r"furniture|sofa|bed|leave|outside|clean)\b|던지|붓|요리|씻|세탁|올라|창문|문을|켜", re.I)
     for kind, old in (("safety", old_safety), ("capability", old_cap)):
-        new = U._mark(kind)
+        new = U._mark(kind, household)
         for text in ("put the knife away", "칼을 가져와", "bring the cup", "컵을 가져다 줘", "throw it", "창문을 열어", "turn on the light", "불 켜줘"):
             assert bool(new.search(text)) == bool(old.search(text)), (kind, text)
 

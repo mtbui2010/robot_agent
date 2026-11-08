@@ -591,10 +591,10 @@ def consensus(samples: list, need: int = 2):
 CAPABILITY, SAFETY, DECLINED = "capability", "safety", "declined"
 # words that make a request unsafe / beyond a household robot (the understand prompt's "It cannot" list):
 # a refusal the model gives after an answer heard through the microphone needs one of them in the person's words
-def _mark(kind: str):
-    """The words that make a request ``kind`` (safety / capability) unsafe or beyond a household robot: pack data
-    (``patterns.refusal_<kind>``, every language). None when no pack has any."""
-    return langdata.rx("refusal_" + kind, re.I)
+def _mark(kind: str, profile=None):
+    """The words that make a request ``kind`` (safety / capability) unsafe or beyond the robot: the robot's safety profile
+    (``refusal_marks``, every language). None when it has none."""
+    return profile.mark(kind) if profile is not None else None
 
 
 @dataclass(frozen=True)
@@ -611,14 +611,15 @@ class Refusal:
 
 
 def typed_refusal(status: str, reason: str, missing: Optional[str], words: str,
-                  answer_heard: bool) -> Optional[Refusal]:
+                  answer_heard: bool, marks=None) -> Optional[Refusal]:
     """The refusal of one understanding, or None. ``status`` / ``reason``: the model's typed status and its
     sentence; ``missing``: the actions the goals need that the manifest lacks; ``words``: everything the
     person said; ``answer_heard``: the last thing in play is an answer heard through the robot's I/O (a
-    typed one cannot be misheard). The model's free text never refuses by itself."""
+    typed one cannot be misheard); ``marks``: the robot's safety profile, whose ``refusal_marks`` make a refusal after a heard
+    answer believable (none = the refusal stands). The model's free text never refuses by itself."""
     if status in ("unsafe", "infeasible"):
         kind = SAFETY if status == "unsafe" else CAPABILITY
-        mark = _mark(kind)
+        mark = _mark(kind, marks)
         if answer_heard and mark is not None and not mark.search(words or ""):
             return Refusal(kind, misheard=True)
         msg = (reason or "").strip() or "I can't do that."

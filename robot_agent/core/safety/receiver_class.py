@@ -1,32 +1,34 @@
-"""The class of a person entry of the ENV, inferred by the robot from the entry's own names (option ``hazard_receiver``).
+"""The class of a person entry of the ENV, inferred by the robot from the entry's own names.
 
-Clean-room: no benchmark tag or text is read. The class ``vulnerable_person`` is a person who must not be handed a hazardous
-product (a young child). Its words are language-pack data (``patterns.person_vulnerable`` of every pack, one regex each);
-an ENV entry may also declare ``age_group`` (any text, matched against the same words). An entry that is not a person, a
-language with no pack and an ENV with neither names nor field give ``""`` (fail open).
+Clean-room: no benchmark tag or text is read. The classes, their words and the ENV fields matched (default ``age_group``,
+``category``) are data of the robot's safety profile (``profile.py``). An entry that is not a person, and a profile with no
+receiver classes, give ``""`` (fail open).
 """
 
 from __future__ import annotations
 
 import re
 
+from .profile import EMPTY
 
-def _names(places, key) -> list:
+
+def _names(places, key, fields) -> list:
     e = (getattr(places, "env", {}) or {}).get(key) or {}
     head = str(key or "").split("@")[0].replace("_", " ")
-    return [head] + [str(a) for a in e.get("aliases") or []] + [str(e[f]) for f in ("age_group", "category") if e.get(f)]
+    return [head] + [str(a) for a in e.get("aliases") or []] + [str(e[f]) for f in fields if e.get(f)]
 
 
-def receiver_class(places, key) -> str:
-    """``vulnerable_person`` when ENV person entry ``key`` is named (key head, aliases, ``age_group``) by a word of the packs'
-    ``person_vulnerable`` list, else ''."""
+def receiver_class(places, key, profile=EMPTY) -> str:
+    """The first receiver class (profile order) whose words name ENV person entry ``key`` (key head, aliases, the class's
+    ``fields``), else ''."""
     e = (getattr(places, "env", {}) or {}).get(key) or {}
     if not e.get("person"):
         return ""
-    from robot_agent.core.planning import langdata
-    pats = langdata.pattern_list("person_vulnerable")
-    text = " | ".join(n.lower() for n in _names(places, key))
-    return "vulnerable_person" if any(re.search(p, text) for p in pats) else ""
+    for cls, pats, fields in profile.receiver_classes:
+        text = " | ".join(n.lower() for n in _names(places, key, fields))
+        if any(re.search(p, text) for p in pats):
+            return cls
+    return ""
 
 
 __all__ = ["receiver_class"]

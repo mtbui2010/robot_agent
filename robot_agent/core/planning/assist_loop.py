@@ -904,12 +904,12 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         """Goals the robot's safety rules forbid (core/safety, option ``hazard_rules`` core | pack | off): all of
         them -> a typed safety refusal (_STOP); some -> those are dropped and said at the end
         (``r.refused_parts``); None."""
-        from ..safety import check_goal
-        mode = str(self.cfg.get("hazard_rules", "core"))
-        pack = (getattr(self.robot.manifest, "safety", None) or {}).get("hazards") or []
-        bad = [(g, why) for g in r.goals for why in [check_goal(g, r.places, pack, mode, bool(self.cfg.get("hazard_receiver")))] if why]
+        found = [(g, self._verdict(g, r.places)) for g in r.goals]
+        bad = [(g, v.say) for g, v in found if v]
         if not bad:
             return None
+        r.refusals = list(getattr(r, "refusals", []))
+        r.refusals += [x for x in (self._refusal_record(g, v) for g, v in found if v) if x not in r.refusals]
         yield r.ev("understand_check", issues=[f"unsafe: {goal_kinds.describe(g)} ({w})" for g, w in bad], hazard=True)
         support = self._support_goals(r.goals, [g for g, _w in bad])
         if len(bad) + len(support) == len(r.goals):
@@ -920,6 +920,29 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         r.refused_parts = list(getattr(r, "refused_parts", [])) + bad
         r.goals = [g for g in r.goals if all(g is not b for b, _w in bad) and all(g is not x for x in support)]
         return None
+
+    def _safety_profile(self):
+        from ..safety import profile_of
+        return profile_of(self.robot)
+
+    def _verdict(self, goal, places):
+        """The safety rule (robot's profile + legacy manifest list) that forbids ``goal``, as a ``Verdict``; None. The one place
+        that reads the hazard options: ``hazard_rules`` core | pack | off, ``hazard_receiver`` (turns on ``hazard.receivers`` rules)."""
+        from ..safety import find_rule
+        pack = (getattr(self.robot.manifest, "safety", None) or {}).get("hazards") or []
+        return find_rule(goal, places, self._safety_profile(), pack, str(self.cfg.get("hazard_rules", "core")),
+                         {"hazard.receivers"} if self.cfg.get("hazard_receiver") else ())
+
+    def _forbids(self, goal, places):
+        """Why the robot's safety rules forbid ``goal`` (the sentence), None."""
+        v = self._verdict(goal, places)
+        return v.say if v else None
+
+    @staticmethod
+    def _refusal_record(goal, verdict) -> dict:
+        """One entry of the ``done`` event's ``refusals`` (docs/safety.md): the rule, the reason and the goal refused."""
+        return {"kind": "safety", "rule": verdict.rule, "why": verdict.say,
+                "goal": {k: str(goal.get(k) or "") for k in ("type", "object", "said", "from", "to", "near_person")}}
 
     @staticmethod
     def _support_goals(goals, refused) -> list:
@@ -1747,6 +1770,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             say = self._say_of_msg(msg)
         if say and not localized:
             say = self._humanize(say)                         # no raw ENV key reaches the user (F5.1)
+        if getattr(r, "refusals", None) and "refusals" not in kw:
+            kw["refusals"] = list(r.refusals)              # the safety rules' refusals, on every final status (docs/safety.md)
         return r.ev("done", status=status, run_id=r.run_id, msg=msg,
                     say=(say if localized else self._in_lang(say, r.lang)) if say else r.announcer.announce(kind), world=r.world.to_dict(), **kw)
 
@@ -1863,7 +1888,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         if heard and getattr(r, "repeat_asked", False) and len(r.dialogue) == 2:
             heard = False            # the request said again after "say it again": a refusal of it is a refusal
         ref = typed_refusal(u["status"], u.get("reason"), self._cannot_do(r.goals),
-                            " ".join([r.task, self.original or ""] + [t for w_, t in r.dialogue if w_ == "user"]), heard)
+                            " ".join([r.task, self.original or ""] + [t for w_, t in r.dialogue if w_ == "user"]), heard,
+                            marks=self._safety_profile())
         if ref is not None and ref.kind == "capability" and not ref.missing and u["status"] == "infeasible":
             how = self._capability_check(r, u)
             if how == "repeat":                          # F4.2: not heard / not a request: say it again
@@ -1994,10 +2020,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         if not g1 or not g2 or q1 or q2 or signature(g1) == signature(g2):
             self._lab("understand_views", agreed=bool(g1 and g2 and signature(g1) == signature(g2)))
             return None
-        from ..safety import check_goal
-        pack = (getattr(self.robot.manifest, "safety", None) or {}).get("hazards") or []
-        mode = str(self.cfg.get("hazard_rules", "core"))
-        if any(check_goal(g, r.places, pack, mode, bool(self.cfg.get("hazard_receiver"))) for g in g1 + g2):
+        if any(self._forbids(g, r.places) for g in g1 + g2):
             return None
         nice = lambda k: speech.say_name(r.places, k, "en")                  # noqa: E731
         a, b = (speech.LocalText.seq([self._goal_phrase(g, r.places, nice) for g in gs]) for gs in (g1, g2))
@@ -2369,10 +2392,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             if agreed is _STOP:
                 return _STOP
             if agreed is not None:
-                from ..safety import check_goal
-                pack = (getattr(self.robot.manifest, "safety", None) or {}).get("hazards") or []
-                mode = str(self.cfg.get("hazard_rules", "core"))
-                keep = [g for g in agreed if not check_goal(g, r.places, pack, mode, bool(self.cfg.get("hazard_receiver")))]
+                keep = [g for g in agreed if not self._forbids(g, r.places)]
                 r.goals, r.unsure = (keep or r.goals), []          # a re-sample never brings back a refused goal
                 return None
         if not issues or getattr(r, "issue_asked", False):

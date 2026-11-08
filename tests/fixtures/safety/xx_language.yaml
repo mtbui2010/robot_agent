@@ -1,0 +1,10 @@
+# ILLUSTRATIVE TEST FIXTURE: a made-up language code `xx` (words invented for the test). Not shipped.
+profile: xx_language
+hazard_classes:
+  zorb_stuff: {words: {xx: {assumed: ["\\bzorbium\\b"]}}}
+place_classes:
+  blik_zone: {words: {xx: ["\\bblikzone\\b"]}, provenance: assumed}
+rules:
+  - {id: zorb_blik, hazard: zorb_stuff, places: [blik_zone], say: "zorbium stays out of a blik zone", provenance: assumed}
+refusal_marks:
+  safety: {xx: ["\\bzorbium\\b"]}

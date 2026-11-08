@@ -74,57 +74,7 @@
   "open_verb": "\\bmở\\b",
   "close_verb": "\\b(?:đóng|khép)\\b",
   "self_correction": "(?:\\.\\.\\.|,|-)?\\s*\\b(?:à không|ý tôi là|nhầm rồi|nhầm|khoan đã|thực ra|xin lỗi)\\b",
-  "refusal_safety": "\\b(?:dao|kéo|lửa|bếp|nóng|đun|cửa sổ|ném|đánh|làm đau|độc|thuốc|thuốc tẩy|trẻ em|em bé|con nít)\\b",
-  "refusal_capability": "\\b(?:ném|đổ|nấu|rửa|leo|cửa sổ|dụng cụ|bật|nhấc|đồ nội thất|ghế sofa|giường|ra ngoài|lau|dọn dẹp)\\b",
-  "addressee": "\\b(?:nói với|bảo|nhắn|báo|nhắc|hỏi)\\s+(?:cho\\s+)?(?:ông\\s+|bà\\s+|anh\\s+|chị\\s+|em\\s+|cô\\s+|chú\\s+|bác\\s+)?{name}\\b",
-  "person_vulnerable": [
-   "trẻ em",
-   "trẻ nhỏ",
-   "em bé",
-   "\\bcon nít\\b"
-  ],
-  "hazard_cleaning_sourced": [
-   "thuốc tẩy",
-   "chất tẩy",
-   "nước tẩy",
-   "amoniac",
-   "nước lau kính",
-   "nước lau sàn",
-   "thông cống",
-   "tẩy bồn cầu",
-   "tẩy lò nướng",
-   "tẩy nấm mốc"
-  ],
-  "hazard_cleaning_assumed": [
-   "bột giặt",
-   "nước giặt",
-   "viên rửa chén",
-   "viên giặt",
-   "thuốc khử trùng",
-   "tẩy gỉ",
-   "thuốc diệt côn trùng",
-   "thuốc xịt muỗi",
-   "xút",
-   "nước rửa chén"
-  ],
-  "place_food_storage": [
-   "tủ lạnh",
-   "tủ đông",
-   "tủ đựng thức ăn",
-   "hộp cơm",
-   "hộp đựng thức ăn",
-   "kho thực phẩm"
-  ],
-  "place_food_prep": [
-   "thớt",
-   "bếp ga",
-   "bếp từ",
-   "bếp điện",
-   "lò nướng",
-   "lò vi sóng",
-   "nồi cơm điện",
-   "máy nướng bánh mì"
-  ]
+  "addressee": "\\b(?:nói với|bảo|nhắn|báo|nhắc|hỏi)\\s+(?:cho\\s+)?(?:ông\\s+|bà\\s+|anh\\s+|chị\\s+|em\\s+|cô\\s+|chú\\s+|bác\\s+)?{name}\\b"
  },
  "grammar": {
   "sep_or": " hoặc ",
