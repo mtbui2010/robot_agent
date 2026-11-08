@@ -86,14 +86,14 @@ questions ("Shall I try again?") still treat anything but a clear yes as no.
   its i18n `cannot_do`.
 - **capability / safety from the model's typed status** (`infeasible` / `unsafe`): this stands on the person's own
   command, or on a typed answer. After an answer heard through the microphone, it stands only when the person's
-  words name something unsafe or impossible (`understand._MARK`: knife, window, throw, fire, pour, washer ...,
-  plus the Korean words). If they name nothing like that, the refusal could only come from a
+  words name something unsafe or impossible (the robot's safety profile `refusal_marks`: for a household robot knife, window, throw, fire, pour, washer ..., plus the
+  Korean words; a profile with none lets the refusal stand). If they name nothing like that, the refusal could only come from a
   misheard answer ("the rest broom" for "the restroom"). The misheard answer is then dropped from the dialogue,
   and the question is asked again: "Sorry, I may have misheard you. <the question>". The `clarify_rounds` limit
   still applies.
 - **declined**: the person said no (kept as a kind for the refusals the dialog adds later).
 
-The `done` event of a refusal carries `refusal: capability | safety` (`declined` is not used yet).
+The `done` event of a refusal carries `refusal: capability | safety` (`declined` is not used yet). When the safety rules of the robot's profile refused a goal, the `done` event also carries `refusals` (rule id, reason and goal, on every final status; [safety.md](safety.md)).
 
 ### A deterministic understand call (UND_T0)
 

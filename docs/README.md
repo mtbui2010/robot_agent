@@ -11,6 +11,7 @@ Rules and process:
 Core design:
 
 - [contract.md](contract.md): RobotAdapter, manifest, SkillSpec / SkillResult / FailureCode
+- [safety.md](safety.md): the per-robot safety profile (hazard / place / receiver classes and rules as data), the engine, the `refusals` event key
 - [run_manager.md](run_manager.md): run ids, one active run per robot, cancel / pause / inject, intent router
 - [languages.md](languages.md): language packs (data), what a pack may hold, adding a language, scripts
 - [dialog.md](dialog.md): the robot's questions, yes / no answers (unclear ones asked again), typed refusals, the understand call's sampling

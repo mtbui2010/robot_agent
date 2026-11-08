@@ -5,7 +5,7 @@ Full rule text and reasons: [docs/rules.md](docs/rules.md). Docs index: [docs/RE
 
 ## Rules
 
-1. No robot names or robot data in the core; get them from the RobotAdapter / manifest ([contract](docs/contract.md)).
+1. No robot names, robot data or hazard rules in the core; get them from the RobotAdapter / manifest ([contract](docs/contract.md), [safety profile](docs/safety.md)).
 2. Keep dependencies one-way (`contract` <- `model` <- `plan` / `execute` <- `interact` <- `api`); no `_private` access across modules.
 3. Import `embodiplan` only in `core/planning/backends/` and `core/planning/action_model.py`, public API, `>=0.2.1,<0.3`.
 4. Keep one source of action rules (the action model); never copy them into a checker, verifier or mapper.

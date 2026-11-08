@@ -5,6 +5,21 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+### Round 19: what is hazardous is the robot's own safety profile, not the core's (MINOR for packs that declare one; behaviour change for a pack that relied on the implicit household rules)
+- New manifest key `safety.profile` (path relative to the manifest, or an inline mapping), validated by field path in `contract/manifest.py`
+  (`core/safety/profile.py`); `Manifest.safety_profile`; `check_manifest` prints its counts and `--strict` fails on `status: verify`. Schema: docs/safety.md.
+- `core/safety` is the engine only: the household hazard tables are gone (`HAZARD_RULES`, `RECEIVER_RULES`, `HAZARDS()`, `CLASSES()`, the hard-coded
+  class names), the pack keys `hazard_cleaning_*`, `place_food_*`, `person_vulnerable`, `refusal_safety`, `refusal_capability` left `lang/{en,ko,vi}.json`
+  (the vi pack therefore has no hazard words; a Vietnamese profile is a robot pack's data). A robot without a profile gets no hazard refusal.
+  API: `check_goal(goal, places, profile, pack_rules, mode, enabled)`, `find_rule` -> `Verdict(say, rule)`, `place_class` / `receiver_class` /
+  `hazard_class` take the profile, `typed_refusal(..., marks=profile)`. Option keys: `hazard_receiver` turns on rules with `enabled_by: hazard.receivers`;
+  `hazard_rules` core (alias profile) | pack | off unchanged.
+- The `done` event gains `refusals` ([{kind, rule, why, goal}], every final status, absent when nothing was refused). Nothing the loop does or says changes.
+- `AssistLoop._verdict` / `_forbids` replace the four copies of the hazard lookup.
+- Pins: golden decision table of the r17 tables reproduced by the household profile (28k decisions); `--llm fake` 12 dev tasks EN/KO x 6 sage variants
+  and the offline replay of r17 fresh / fresh_asr rep1 (s8n, s9, EN/KO, 798 episodes) are byte-identical to r17 with the same data in the pack.
+- Packs that rely on the implicit household rules and declare no profile (manifest scan of the sibling packs: kcare_robot, base_robot; homeloop_robot gets its profile in its own repo) lose them. base_robot: it loses the implicit food-place rule (it cannot put anything into a fridge). No recorded base_robot result changes.
+
 ### Round 17: option `hazard_receiver` (default off, defaults byte-identical)
 - `core/safety/receiver_class.py`, `hazards.RECEIVER_RULES`, `check_goal(..., receivers=)`: a hazardous product given to a person entry of a vulnerable class is refused (partial refusals are said at the end). Words: new pack key `patterns.person_vulnerable` in `en`, `ko`, `vi`. Tests: `tests/test_sage_lab_r17_hazard_receiver.py`.
 
