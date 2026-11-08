@@ -325,6 +325,9 @@ def _check_planner(m: Manifest, rep: Report) -> None:
     """``planner:``: unknown keys warn; the seed pool must exist and hold JSON lines."""
     for k in sorted(set(m.planner) - PLANNER_KEYS):
         rep.warnings.append(f"planner.{k}: not part of the contract (kept, ignored by the core)")
+    opts = m.planner.get("options")
+    if opts is not None and not (isinstance(opts, dict) and all(isinstance(v, dict) for v in opts.values())):
+        rep.errors.append("planner.options: must be a mapping {option: {key: value}} (docs/options.md)")
     rate = m.planner.get("detector_miss_rate")
     if rate is not None and not (isinstance(rate, (int, float)) and not isinstance(rate, bool) and 0 <= rate <= 0.9):
         rep.errors.append(f"planner.detector_miss_rate: {rate!r} is not a number from 0 to 0.9")

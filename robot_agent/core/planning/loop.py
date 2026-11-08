@@ -33,6 +33,7 @@ from typing import Iterator, Optional
 from robot_agent.observe.paths import data_dir
 from robot_agent.contract import FailureCode, classify_legacy_failure
 from robot_agent.state import current, host_id
+from ..options.spec import NEXT as _OPT_NEXT, STOP as _OPT_STOP
 from . import episode_memory, robot_prompt
 from .announcer import Announcer
 from .base import WorldState
@@ -180,7 +181,7 @@ def _manager_run_id() -> Optional[str]:
 
 
 # step outcomes of the phase methods (generators return one of these)
-_NEXT, _FAIL, _STOP, _DONE = "next", "fail", "stop", "done"
+_NEXT, _FAIL, _STOP, _DONE = _OPT_NEXT, "fail", _OPT_STOP, "done"
 
 
 class RunContext:

@@ -11,8 +11,10 @@ import pytest
 
 from fakes import FakeLLM, FakeRobot, ScriptedPlanner, done, run_task, steps
 from robot_agent.contract.manifest import PLANNER_KEYS
-from robot_agent.core.planning import persons, plan_repair, reach_delivery
+from robot_agent.core.planning import persons, plan_repair
+from robot_agent.options import reach_delivery
 from robot_agent.core.planning.assist_loop import ASSIST_OPTIONS, AssistLoop, Places
+from robot_agent.core.planning.option_services import option_dispatcher
 
 KC, DK, SO, ST = "counter@kitchen", "desk@study", "sofa@living", "side table@living"
 ME = "spot near you"                     # the speaker's own ENV key (a made-up one: nothing in the code names it)
@@ -232,6 +234,7 @@ def bare(robot_has_hand, flag, planner_data=True):
             return ["Handover"] if robot_has_hand else []
     lp.cfg = {"person_seat_m": 1.0, "person_surface_m": 1.2, "search": SearchConfig(enabled=False), "reach_delivery": flag}
     lp.robot, lp._where_asked = R(), None
+    lp.options = option_dispatcher(lp, {"reach_delivery": flag})        # a loop built without __init__ resolves its options by hand
     return lp
 
 
