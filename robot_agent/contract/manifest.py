@@ -73,11 +73,15 @@ _TOP_KEYS = {"robot", "version", "language", "capabilities", "geometry", "planne
 #   written in; its pack holds the question patterns and the markers read from the held reading, langdata.set_prompt_lang),
 #   unapplied_change (0 | 1, default 0: round 15). A correction the robot cannot apply asks the understand step's own question once;
 #   if it still cannot be applied the run ends failed ("I could not apply your change") instead of claiming success),
+#   action_roles ({put_down, move, open, close: an action of the pack}: round 16, the actions reach_delivery / relook splice;
+#   a role not declared = the part of the option that needs it does nothing), coverage_limits ({max_parts, max_steps}: integers
+#   >= 1, the caps of request_coverage; not declared = no cap), agree_guard also holds particle_chain / tail_chars (integers >= 1;
+#   not declared = that part of the guard is off), person_snapshot ({trust_s: seconds > 0}),
 #   detector_miss_rate (0 to 0.9, default 0.1: the chance that a look at the right place does not see the object;
 #   one miss is then weak evidence and the search looks again at the places the belief still holds probable)
 PLANNER_KEYS = {"seed_memory", "notes", "llm_budget", "translate_model", "translate_url", "translate_budget",
                 "search_legs", "search_total", "input_pivot", "detector_miss_rate", "person_goals", "accept_goals",
-                "go_steps", "kind_anchor", "name_canon", "reask_abstain",
+                "go_steps", "kind_anchor", "name_canon", "reask_abstain", "action_roles", "coverage_limits",
                 "exec_integrity", "gate_strict", "endstate_check", "reset_container", "wait_on_robot", "inventory_ask",
                 "dialog_unstick", "dialog_agree", "dialog_agree2", "relook", "reach_delivery", "unapplied_change", "prompt_lang", "restates", "person_snapshot", "agree_guard", "room_names", "canonical_lang", "label_tokens", "recovery", "kind_anchor_ask", "unstick",
                 "reask_anchor", "no_shared_listener", "understand_views", "understand_goals_first",
@@ -85,6 +89,10 @@ PLANNER_KEYS = {"seed_memory", "notes", "llm_budget", "translate_model", "transl
                 "understand_max_goals", "understand_schema_strict", "understand_give_kind", "understand_verify_verdict",
                 "repair_model", "repair_url", "repair_max_tokens", "repair_think", "dialog_model", "dialog_model_lang",
                 "dialog_url", "dialog_max_tokens", "dialog_think", "understand_think", "request_coverage"}
+AGREE_GUARD_KEYS = {"garble_ratio", "particle_chain", "tail_chars"}
+PERSON_SNAPSHOT_KEYS = {"trust_s"}
+ACTION_ROLE_KEYS = {"put_down", "move", "open", "close"}
+COVERAGE_LIMIT_KEYS = {"max_parts", "max_steps"}
 UNSTICK_KEYS = {"fallback_words", "fallback_chars", "restate_frac", "restate_word_len", "restate_min_words",
                 "restate_min_bigrams"}
 # keys of the optional `limits:` section (what the body can carry; checked against the ENV object estimates)
@@ -345,6 +353,30 @@ def _version(v, where, errs) -> str:
     return "1.0"
 
 
+def _is_count(x) -> bool:
+    return isinstance(x, int) and not isinstance(x, bool) and x >= 1
+
+
+def _is_name(x) -> bool:
+    return isinstance(x, str) and bool(x.strip())
+
+
+def _section(v: dict, key: str, allowed: set, errs: list, checks: dict, what: str) -> None:
+    """A planner section that is a mapping of known keys with checked values (``planner.<key>``); absent is fine."""
+    sec = v.get(key)
+    if sec is None:
+        return
+    if not isinstance(sec, dict):
+        errs.append(f"planner.{key}: must be a mapping ({what})")
+        return
+    bad = sorted(set(sec) - allowed)
+    if bad:
+        errs.append(f"planner.{key}: unknown keys {bad} (allowed: {sorted(allowed)})")
+    for k, x in sec.items():
+        if k in checks and not checks[k](x):
+            errs.append(f"planner.{key}.{k}: invalid value {x!r} ({what})")
+
+
 def _planner(v, errs) -> dict:
     if v is None:
         return {}
@@ -409,6 +441,20 @@ def _planner(v, errs) -> dict:
             bad = sorted(set(un) - UNSTICK_KEYS)
             if bad:
                 errs.append(f"planner.unstick: unknown keys {bad} (allowed: {sorted(UNSTICK_KEYS)})")
+    _section(v, "agree_guard", AGREE_GUARD_KEYS, errs, {"garble_ratio": lambda x: _is_number(x) and 0 < x <= 1,
+                                                        "particle_chain": _is_count, "tail_chars": _is_count},
+             "garble_ratio a number in (0, 1], particle_chain and tail_chars integers >= 1")
+    _section(v, "person_snapshot", PERSON_SNAPSHOT_KEYS, errs, {"trust_s": lambda x: _is_number(x) and x > 0},
+             "trust_s a number of seconds > 0")
+    _section(v, "action_roles", ACTION_ROLE_KEYS, errs, {k: _is_name for k in ACTION_ROLE_KEYS},
+             "each role an action name (non-empty string)")
+    _section(v, "coverage_limits", COVERAGE_LIMIT_KEYS, errs, {k: _is_count for k in COVERAGE_LIMIT_KEYS},
+             "max_parts and max_steps integers >= 1")
+    rn = v.get("room_names")
+    if rn is not None and not (isinstance(rn, dict) and all(
+            isinstance(lg, str) and isinstance(m, dict) and all(isinstance(rm, str) and isinstance(ns, list) and all(
+                isinstance(n, str) and n.strip() for n in ns) for rm, ns in m.items()) for lg, m in rn.items())):
+        errs.append("planner.room_names: must be {language code: {room: [names]}}")
     notes = v.get("notes")
     if notes is not None:
         if not isinstance(notes, list):

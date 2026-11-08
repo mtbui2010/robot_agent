@@ -17,6 +17,15 @@ manifest format, the event schema). See `docs/contract.md`.
 - Vietnamese ships as one data file (`lang/vi.json`), the third language of the round; drafted by the model, to be checked by a
   native speaker.
 
+### Round 16: the numbers and action names of the round 12-15 options are pack data (opt-in options stay default off, defaults byte-identical)
+- `planner.action_roles` ({put_down, move, open, close}, new module `action_roles.py`): `reach_delivery` and `relook` no longer name
+  `Place`, `MoveTo`, `Open` or `Close`; a role not declared is no role and the part that needs it does nothing.
+- `planner.agree_guard` also holds `particle_chain` and `tail_chars` (were `{1,2}` and `min(3, len)` in `dialog_ext.py`); the share of
+  own-script letters is the pack's `script.min_share` only (the code default 0.7 is gone).
+- `planner.coverage_limits` ({max_parts, max_steps}) replaces the constants of `request_coverage.py`.
+- `contract/manifest.py` validates `agree_guard`, `person_snapshot`, `action_roles`, `coverage_limits` and `room_names` (known keys, ranges).
+- docs/env.md: limitations that depend on simulator conventions (wait schedule, independent redraw of detector misses, stale person snapshot).
+
 ### Round 15: reach delivery (opt-in, default off, defaults byte-identical)
 - `reach_delivery` with the pack data `planner.person_snapshot.trust_s`: a person entry of the ENV is a snapshot; a put-down for a
   person run after `trust_s` seconds becomes the robot's hand-over action, a hand-over that cannot reach the person asks where they

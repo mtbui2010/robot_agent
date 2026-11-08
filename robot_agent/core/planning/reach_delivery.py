@@ -44,10 +44,11 @@ def config(planner_data) -> Optional[dict]:
     return {"trust_s": t if t is not None and t > 0 else None}
 
 
-def recipient(places, step: dict, goals) -> Optional[str]:
+def recipient(places, step: dict, goals, put_down: Optional[str] = None) -> Optional[str]:
     """The person entry a put-down step is for: the step's own object when it is a person entry, else the person
-    of the ``on`` goal that the put-down at a place serves (``near_person``). None when the step is for nobody."""
-    if step.get("action") not in ("Place",):
+    of the ``on`` goal that the put-down at a place serves (``near_person``). None when the step is for nobody.
+    ``put_down``: the pack's put-down action (``action_roles``); none declared = no step is a put-down (fail open)."""
+    if put_down is None or step.get("action") != put_down:
         return None
     o = step.get("object")
     if persons.is_person(places, o):

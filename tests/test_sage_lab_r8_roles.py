@@ -371,9 +371,11 @@ def test_coverage_parts_are_quotations_of_the_request():
     d = {"unserved": [{"part": "bring the mug to ben", "why": "no_goal"}, {"part": "water the plants", "why": "no_goal"},
                       {"part": ""}, "bring the mug to ben", {"part": "put the cup on the shelf"}, {"part": "x"}]}
     assert request_coverage.parts(d, req) == ["bring the mug to ben", "put the cup on the shelf"]
+    assert request_coverage.parts(d, req, (), 1) == ["bring the mug to ben"]            # the cap is the pack's (round 16)
     assert request_coverage.parts({"unserved": "x"}, req) == [] and request_coverage.parts(None, req) == []
-    p = request_coverage.prompt("req", "", ["MoveTo a"] * 60)
-    assert "(none)" in p and p.count("MoveTo a") == request_coverage.MAX_STEPS
+    p = request_coverage.prompt("req", "", ["MoveTo a"] * 60, 40)
+    assert "(none)" in p and p.count("MoveTo a") == 40
+    assert request_coverage.prompt("req", "", ["MoveTo a"] * 60).count("MoveTo a") == 60          # no cap declared: all steps
 
 
 CUP = U(G("on", "cup", "table@kitchen", "shelf@hall"))
