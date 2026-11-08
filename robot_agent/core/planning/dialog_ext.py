@@ -45,7 +45,6 @@ from . import langdata, persons
 
 BLOCK = "dialogue_ext"
 _END = r"(?=$|[\s.,!?;:)\]\"'~])"            # a polite ending closes the word
-_HANGUL = re.compile(r"[가-힣]")
 
 
 def _norm(s) -> str:
@@ -237,8 +236,8 @@ class Guard:
             if obj and obj[-1] in toks:
                 sc = 2 + sum(1 for m in obj[:-1] if m in toks)
             for key in ("said", "name_local"):
-                hs = [x for x in _tokens(goal.get(key)) if _HANGUL.search(x)]
-                if hs and any(hs[-1] in w for w in toks if _HANGUL.search(w)):
+                hs = [x for x in _tokens(goal.get(key)) if self._own(x)]
+                if hs and any(hs[-1] in w for w in toks if self._own(w)):
                     sc = max(sc, 2 + sum(1 for m in hs[:-1] if m in str(t)))
             best = max(best, sc)
         return best
