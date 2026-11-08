@@ -5,6 +5,21 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+### Round 19 (modular core): options are registered modules (MINOR: new manifest key `planner.options`, new modules; no behaviour change)
+- New engine package `core/options` (spec, config, registry, dispatch, services) and option layer `robot_agent/options`: `hazard`,
+  `reach_delivery` (was `core/planning/reach_delivery.py`) and `unapplied_change` left `assist_loop.py` for hooks (`on_goals`, `on_step`,
+  `on_final`, ... 13 kinds, docs/options.md). Their old names keep working: run options `hazard_rules`, `hazard_receiver`, `reach_delivery`,
+  `unapplied_change`, `$ROBOT_AGENT_*`, manifest `planner.<name>`, and `AssistLoop.cfg[<name>]`; the canonical names are `<option>.<key>` and
+  `planner.options.<option>.<key>` (new). `ASSIST_OPTIONS` is the literal engine names plus the registry's. Third-party options: entry point group
+  `robot_agent.options`.
+- `AssistLoop`: `_hazard_gate`, `_verdict`, `_reach_step`, `_reach_ask_where`, `_reach_cfg`, `_refusal_record`, `_support_goals` moved to the
+  options (`options.hazard.support_goals` is the function the tests import); `_forbids` asks the registry. `loop._NEXT/_STOP` are
+  `core.options.NEXT/STOP`. Run state of an option is `run.opt["<name>"]`.
+- Enforced structure: `tools/lint_arch.py` (import layers with relative imports resolved, size limits, option wiring ratchet; baseline
+  `tools/arch_baseline.json`), `tests/test_architecture.py`, `make lint-core` runs it; CLAUDE.md rules 13-15; docs/architecture.md, docs/options.md.
+- Pins: `--llm fake` 12 dev tasks EN/KO x 6 sage variants and the offline replay of the r17 fresh / fresh_asr rep1 caches (s8n, s9, EN/KO): 942
+  episodes byte-identical to r19a; assist_loop.py 4342 -> 4210 lines, option keys read 70 -> 66, branches on `self.cfg` 77 -> 67.
+
 ### Round 19: what is hazardous is the robot's own safety profile, not the core's (MINOR for packs that declare one; behaviour change for a pack that relied on the implicit household rules)
 - New manifest key `safety.profile` (path relative to the manifest, or an inline mapping), validated by field path in `contract/manifest.py`
   (`core/safety/profile.py`); `Manifest.safety_profile`; `check_manifest` prints its counts and `--strict` fails on `status: verify`. Schema: docs/safety.md.
