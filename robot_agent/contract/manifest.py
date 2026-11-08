@@ -67,6 +67,10 @@ _TOP_KEYS = {"robot", "version", "language", "capabilities", "geometry", "planne
 #   reach_delivery (0 | 1, default 0: round 15). With it, the pack's mapping ``person_snapshot: {trust_s: seconds}`` says how
 #   long a person's position in the ENV is trusted: later a put-down for them becomes the hand-over action, and the goal check
 #   reads their entry again; no mapping = the option does nothing)
+#   restates ({frac: 0..1, word_len: letters, min_words: count}: when an answer "says the request again" in the dialogue loop,
+#   defaults 0.6 / 3 / 4, a priori values the manifest may replace),
+#   prompt_lang (two-letter language code, default "" = en: the language the core's prompts and the model's own questions are
+#   written in; its pack holds the question patterns and the markers read from the held reading, langdata.set_prompt_lang),
 #   unapplied_change (0 | 1, default 0: round 15). A correction the robot cannot apply asks the understand step's own question once;
 #   if it still cannot be applied the run ends failed ("I could not apply your change") instead of claiming success),
 #   detector_miss_rate (0 to 0.9, default 0.1: the chance that a look at the right place does not see the object;
@@ -75,7 +79,7 @@ PLANNER_KEYS = {"seed_memory", "notes", "llm_budget", "translate_model", "transl
                 "search_legs", "search_total", "input_pivot", "detector_miss_rate", "person_goals", "accept_goals",
                 "go_steps", "kind_anchor", "name_canon", "reask_abstain",
                 "exec_integrity", "gate_strict", "endstate_check", "reset_container", "wait_on_robot", "inventory_ask",
-                "dialog_unstick", "dialog_agree", "dialog_agree2", "relook", "reach_delivery", "unapplied_change", "person_snapshot", "agree_guard", "room_names", "canonical_lang", "label_tokens", "recovery", "kind_anchor_ask", "unstick",
+                "dialog_unstick", "dialog_agree", "dialog_agree2", "relook", "reach_delivery", "unapplied_change", "prompt_lang", "restates", "person_snapshot", "agree_guard", "room_names", "canonical_lang", "label_tokens", "recovery", "kind_anchor_ask", "unstick",
                 "reask_anchor", "no_shared_listener", "understand_views", "understand_goals_first",
                 "understand_model", "understand_url", "understand_model_lang", "understand_max_tokens",
                 "understand_max_goals", "understand_schema_strict", "understand_give_kind", "understand_verify_verdict",
@@ -371,6 +375,9 @@ def _planner(v, errs) -> dict:
         x = v.get(k)
         if x is not None and (not isinstance(x, str) or not x.strip()):
             errs.append(f"planner.{k}: must be a non-empty string")
+    pl = v.get("prompt_lang")
+    if pl is not None and (not isinstance(pl, str) or not (len(pl) == 2 and pl.isalpha() and pl.islower())):
+        errs.append(f"planner.prompt_lang: must be a two-letter lower-case language code, got {pl!r}")
     for k in ("canonical_lang", "label_tokens"):
         x = v.get(k)
         if x is not None and (not isinstance(x, str) or not x.strip()):
@@ -387,6 +394,12 @@ def _planner(v, errs) -> dict:
     rt = (v.get("recovery") or {}).get("return_tries") if isinstance(v.get("recovery"), dict) else None
     if rt is not None and not (isinstance(rt, int) and not isinstance(rt, bool) and rt >= 1):
         errs.append(f"planner.recovery.return_tries: must be an integer >= 1, got {rt!r}")
+    rs = v.get("restates")
+    if rs is not None:
+        if not isinstance(rs, dict) or set(rs) - {"frac", "word_len", "min_words"} or not all(
+                isinstance(x, (int, float)) and not isinstance(x, bool) and x > 0 for x in rs.values()) or \
+                float(rs.get("frac", 0.5)) > 1:
+            errs.append("planner.restates: must map frac (0..1], word_len and min_words (> 0) to numbers")
     un = v.get("unstick")
     if un is not None:
         if not isinstance(un, dict) or not all(isinstance(x, (int, float)) and not isinstance(x, bool) and x >= 0

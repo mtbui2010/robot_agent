@@ -75,12 +75,18 @@ SILENT_KINDS = {'plan_ready'}
 
 
 def _eul(word) -> str:
-    """Korean object particle for *word*: 을 after a final consonant (이동을),
-    를 after a vowel (찾기를). A verb written in the plan (``이동->move``) can
-    end either way, so the template cannot hard-code one."""
+    """The object particle for *word*, from the rule a language pack declares (``grammar.object_particle``: for Korean, 을 after
+    a syllable with a final consonant (이동을), 를 after one without (찾기를)). A verb written in the plan (``이동->move``) can end
+    either way, so the template cannot hard-code one. A word outside every rule's letters gets the particle for "no final"
+    of the first rule; no pack with a rule: ''."""
+    from . import langdata
     w = str(word or '').rstrip()
     c = ord(w[-1]) if w else 0
-    return '을' if 0xAC00 <= c <= 0xD7A3 and (c - 0xAC00) % 28 else '를'
+    rules = [r for r in (langdata.grammar(lg, 'object_particle') for lg in langdata.languages()) if isinstance(r, dict)]
+    for r in rules:
+        if r['first'] <= c <= r['last']:
+            return r['with_final'] if (c - r['first']) % r['cycle'] else r['without_final']
+    return rules[0]['without_final'] if rules else ''
 
 
 class _BlankDict(dict):

@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import re
 
+from . import langdata
+
 MAX_PARTS = 2
 MAX_STEPS = 40
 SCHEMA = {"type": "object",
@@ -95,7 +97,7 @@ def names_any(part: str, names) -> bool:
     (Hangul, kana, ...) is found inside a word, its particles being attached."""
     t = norm(part)
     for n in names:
-        if re.search(r"[^\W\d_]", n) and n.isascii():
+        if re.search(r"[^\W\d_]", n) and (n.isascii() or langdata.latin_text(n)):
             if re.search(r"(?<!\w)" + re.escape(n) + r"(?!\w)", t):
                 return True
         elif n in t:

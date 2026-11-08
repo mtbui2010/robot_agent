@@ -78,7 +78,14 @@ LANGS = _PackNames("name")              # the languages the robot can translate 
 REGISTER = _PackNames("register")
 
 UNCLEAR = "UNCLEAR"
-_NON_LATIN = re.compile(r"[가-힣぀-ヿ㐀-䶿一-鿿Ѐ-ӿ]")
+
+
+def _non_latin(text) -> bool:
+    """Does ``text`` hold a letter that marks it as written in a language other than the prompt language? Pack data
+    (``detect_marks`` of every pack: Hangul / Han / kana / Cyrillic for Korean, the marks only a Latin-script language uses ...)."""
+    return langdata.has_marks(text)
+
+
 
 _IN_PROMPT = ("Translate what this person said to their household robot, from {name} into plain English. Keep the "
               "meaning, names and numbers. Do not add anything and do not answer it.{names} If the text is not an "
@@ -114,7 +121,8 @@ LAB_FIX_FLAGS = ("dialog_unstick", "inventory_ask")
 def localized(text, lang: str, per_language: bool = False) -> bool:
     """Is ``text`` already said in ``lang``? Language-pack data decides: a language whose pack declares ``script``
     (``letters`` and ``min_share``, plus an ``other_script`` that must not occur) is checked by that script; any other
-    language with a pack by the share of non-ASCII letters (0.5, or the pack's ``non_ascii_min`` when ``per_language``).
+    language with a pack by the share of non-ASCII letters (0.5, or the pack's ``non_ascii_min`` when ``per_language`` or when
+    the pack says ``latin_script``: a Latin-script language is told by the marks on its letters, which never reach half).
     A language without a pack (English included) is always 'localized': nothing can show it is not."""
     lg = (lang or "")[:2]
     if lg not in LANGS:
@@ -124,6 +132,8 @@ def localized(text, lang: str, per_language: bool = False) -> bool:
     if not letters:
         return True                                  # digits / punctuation only
     script = langdata.get(lg).get("script") or {}
+    if langdata.get(lg).get("latin_script"):          # Latin letters with marks: the share of non-ASCII letters decides
+        per_language = True
     if script.get("letters"):
         mine = re.compile(script["letters"])
         other = re.compile(script["other_script"]) if script.get("other_script") else None
@@ -240,7 +250,7 @@ class LanguageAdapter:
             if (places.env.get(k) or {}).get("speaker"):
                 continue          # the listener: English "you" is a pronoun, and natural Korean leaves it out
             en, local = speech.say_name(places, k, "en"), speech.say_name(places, k, lg)
-            if en and local and en != local and local.isascii() is False and \
+            if en and local and en != local and (local.isascii() is False or langdata.get(lg).get("latin_script")) and \
                     re.search(r"(?<![\w-])" + re.escape(en) + r"(?![\w-])", t, re.I):
                 out[en] = local   # a whole-word name only ("you" is not in "your", "door" not in "indoor")
         return out
@@ -255,7 +265,8 @@ class LanguageAdapter:
             if e.get("speaker"):
                 continue
             for a in e.get("aliases") or []:
-                if a and not a.isascii() and a in text and not speech._speaker_alias(a):
+                if a and (not a.isascii() or langdata.get(lang).get("latin_script")) and a in text \
+                        and not speech._speaker_alias(a):
                     out.setdefault(a, []).append(k)
         return out
 
@@ -288,7 +299,7 @@ class LanguageAdapter:
     def _local_sentences(self, text: str, lg: str) -> str:
         """The sentences of ``text`` that are already in ``lg`` ("" when none or all)."""
         parts = re.split(r"(?<=[.!?])\s+", text.strip())
-        kept = [p for p in parts if _NON_LATIN.search(p) and self._loc(p, lg)]
+        kept = [p for p in parts if _non_latin(p) and self._loc(p, lg)]
         return " ".join(kept) if kept and len(kept) < len(parts) else ""
 
     def local_slot(self, text, slot: str = "") -> Optional[str]:
@@ -298,7 +309,7 @@ class LanguageAdapter:
         itself inside the phrase), never sent alone as free text."""
         lg = self.run_lang()
         places, s = self._places(), " ".join(str(text or "").split())
-        if not s or lg == "en":
+        if not s or langdata.is_prompt_lang(lg):
             return s or None
         if places is not None:
             for k in places.keys:
@@ -317,7 +328,7 @@ class LanguageAdapter:
         (``{lang: {english name: local name}}``), else an ENV entry that carries ``en`` (its head, or an English
         alias) and an alias in ``lg``. None when nothing declares it (or ``lg`` has no data)."""
         key = " ".join(speech._words(en).lower().split())
-        if not key or lg == "en":
+        if not key or langdata.is_prompt_lang(lg):
             return None
         by = ((getattr(getattr(self.host.robot, "i18n", None), "phrases", None) or {}).get("names") or {}).get(lg)
         if isinstance(by, dict):
@@ -381,7 +392,7 @@ class LanguageAdapter:
         """The name of the object / place ``en`` in ``lg`` (cached for the run): declared data first; else ONE
         constrained translation (the name is asked as a noun for a sentence, not translated alone as free text) that
         ``plausible_name`` must accept; None when none works (the caller keeps the English name inside the sentence)."""
-        if lg == "en" or lg not in LANGS:
+        if langdata.is_prompt_lang(lg) or lg not in LANGS:
             return None
         s = " ".join(str(en or "").split())
         key = (s.lower(), lg)
@@ -418,7 +429,7 @@ class LanguageAdapter:
             return self.plain_names(str(text))          # an English line never names an ENV key either
         if not isinstance(text, speech.LocalText):
             text = self.names(str(text), lg)             # no raw ENV key (kimchi_fridge@kitchen) reaches the user
-            if _NON_LATIN.search(text):
+            if _non_latin(text):
                 if self._loc(text, lg):
                     return text                          # already said in the user's language
                 kept = self._local_sentences(text, lg)
@@ -508,7 +519,7 @@ class LanguageAdapter:
         lg = (lang or self.run_lang())[:2]
         t = str(text or "").strip()
         pv = pivot if pivot in PIVOTS else self.pivot
-        if lg == "en" or lg not in LANGS or not t or pv == "none" or not _NON_LATIN.search(t):
+        if langdata.is_prompt_lang(lg) or lg not in LANGS or not t or pv == "none" or not _non_latin(t):
             return Heard(t, trusted=True)
         if t in self.heard:
             return self.heard[t]
@@ -537,7 +548,7 @@ class LanguageAdapter:
             return Heard(t, trusted=True, why="no translation")
         if not out or out.upper().strip(". ") == UNCLEAR:
             return Heard(t, "", False, "the text is not an understandable sentence")
-        if _NON_LATIN.search(out) or len(out) > 4 * len(t) + 80:
+        if _non_latin(out) or len(out) > 4 * len(t) + 80:
             return Heard(t, "", False, "the translation is not English")
         low = out.lower()
         lost = [a for a, en in gl.items() if not all(w in low for w in _head_words(en))]
@@ -559,7 +570,7 @@ class LanguageAdapter:
         run's ``input_pivot``."""
         lg = self.run_lang()
         pivot = pivot if pivot in PIVOTS else self.pivot
-        if lg == "en" or pivot == "none":
+        if langdata.is_prompt_lang(lg) or pivot == "none":
             return task, "", [robot_line(t, False) if w == "robot" else f"User: {t}" for w, t in dialogue]
         h = self.hear(task, pivot=pivot)
         task_text, orig = task, ""

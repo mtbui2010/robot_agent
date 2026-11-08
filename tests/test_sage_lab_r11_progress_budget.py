@@ -74,7 +74,7 @@ def test_distinct_calls_only_a_repeated_sentence_and_name_cost_once():
 def test_the_checked_name_is_the_name_the_robot_says():
     llm = Mock()
     lp = loop_with(llm, translate_budget=8)
-    assert lp._local_names(["mug"]) == {"mug": "머그컵"}
+    assert lp._local_names(["mug"], "ko") == {"mug": "머그컵"}
     n = len(llm.calls)
     assert lp.language.local_name("mug", "ko") == "머그컵" and len(llm.calls) == n    # no second call for the same name
 

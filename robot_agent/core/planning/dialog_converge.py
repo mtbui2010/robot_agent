@@ -32,14 +32,30 @@ import re
 from difflib import SequenceMatcher
 from typing import Optional
 
-from . import persons
+from . import langdata, persons
 
-_HANGUL = re.compile(r"[가-힣]")
+
+# A word of a language whose pack declares ``grammar.noun_particles`` (particles attach to the noun) is matched by its head
+# syllables (``_head_hit``); the other words of the correction by whole words. ``_native`` tells the two apart by the script.
+def _native_langs() -> list:
+    return [lg for lg, _r in langdata.script_langs() if langdata.grammar(lg, "noun_particles")]
+
+
+def _native(s) -> bool:
+    return any(langdata.in_script(s, lg) for lg in _native_langs())
+
+
 # words that make a repeated question a different wording only (politeness, hedges, the sorry prefix)
 _FILLER = {"sorry", "please", "clarify", "again", "i", "may", "have", "misheard", "you", "could", "would", "can",
            "the", "a", "an", "did", "do", "does", "exactly", "just", "so", "me", "us", "your", "to", "is", "are"}
-_KO_SPEAKER = tuple(w for w in persons.SPEAKER_FORMS if _HANGUL.search(w) and len(w) > 1)
-_EN_SPEAKER = {w for w in persons.SPEAKER_FORMS if w.isascii() and " " not in w} - {"user", "person", "you", "here"}
+
+
+def _speaker_words() -> tuple:
+    """(native-script forms longer than one letter, Latin-script single-word forms) of the speaker words the packs declare
+    (``grammar.speaker_forms``), the ambiguous ones (``speaker_forms_weak``) left out of the Latin set."""
+    forms, weak = persons.speaker_forms(), set(langdata.grammar_all("speaker_forms_weak"))
+    return (tuple(w for w in forms if _native(w) and len(w) > 1),
+            {w for w in forms if (w.isascii() or langdata.latin_text(w)) and " " not in w} - weak)
 
 
 def goal_sig(goals) -> tuple:
@@ -67,7 +83,10 @@ def same_question(a, b) -> bool:
 # ── which goal a correction is about, and where it sends the object ──────────────────────────────────────────
 
 def _toks(s) -> list:
-    return re.findall(r"[a-z0-9]+|[가-힣]+", str(s or "").lower())
+    latin = any(langdata.get(lg).get("latin_script") for lg in langdata.languages())
+    first = "[a-z0-9\u00c0-\u024f\u1e00-\u1eff]+" if latin else "[a-z0-9]+"     # a Latin-script language: letters with marks too
+    alts = [first] + [langdata.block(lg, "script")["letters"] + "+" for lg in _native_langs()]
+    return re.findall("|".join(alts), str(s or "").lower())
 
 
 def _close(a: str, b: str) -> bool:
@@ -77,19 +96,28 @@ def _close(a: str, b: str) -> bool:
     return len(a) >= 4 and len(b) >= 4 and SequenceMatcher(None, a, b).ratio() >= 0.8
 
 
+def _slip(word: str) -> float:
+    """The similarity a recognizer slip may leave between a name's head and the start of a word (pack
+    ``grammar.head_slip_ratio`` of the word's language)."""
+    for lg in _native_langs():
+        if langdata.in_script(word, lg):
+            return float(langdata.grammar(lg, "head_slip_ratio", 0.66))
+    return 0.66
+
+
 def _ko_head_hit(name: str, text: str) -> bool:
     """The last Hangul word of ``name`` in the Hangul ``text`` (particles attach, so a prefix of a word counts; a
     one-syllable slip of the recognizer is allowed for a name of three or more syllables)."""
-    heads = _toks(" ".join(t for t in _toks(name) if _HANGUL.search(t)))
+    heads = _toks(" ".join(t for t in _toks(name) if _native(t)))
     if not heads:
         return False
     head = heads[-1]
     for w in _toks(text):
-        if not _HANGUL.search(w):
+        if not _native(w):
             continue
         if head in w:
             return True
-        if len(head) >= 3 and len(w) >= len(head) and SequenceMatcher(None, head, w[:len(head)]).ratio() >= 0.66:
+        if len(head) >= 3 and len(w) >= len(head) and SequenceMatcher(None, head, w[:len(head)]).ratio() >= _slip(w):
             return True
     return False
 
@@ -102,13 +130,17 @@ def _score(goal: dict, texts) -> int:
     obj = _toks(goal["object"])
     best = 0
     for t in texts:
-        words = [w for w in _toks(t) if not _HANGUL.search(w)]
+        words = [w for w in _toks(t) if not _native(w)]
         sc = 0
         if obj and any(_close(obj[-1], w) for w in words):
             sc = 2 + sum(1 for m in obj[:-1] if any(_close(m, w) for w in words))
         for key in ("said", "name_local"):
-            if goal.get(key) and _HANGUL.search(str(goal[key])) and _ko_head_hit(goal[key], t):
-                sc = max(sc, 2 + sum(1 for m in _toks(goal[key])[:-1] if _HANGUL.search(m) and m in str(t)))
+            if goal.get(key) and _native(str(goal[key])) and _ko_head_hit(goal[key], t):
+                sc = max(sc, 2 + sum(1 for m in _toks(goal[key])[:-1] if _native(m) and m in str(t)))
+            elif goal.get(key) and langdata.latin_text(str(goal[key])):       # a Latin-script name: whole words, as English
+                sw = _toks(goal[key])
+                if sw and any(_close(sw[-1], w) for w in words):
+                    sc = max(sc, 2 + sum(1 for m in sw[:-1] if any(_close(m, w) for w in words)))
         best = max(best, sc)
     return best
 
@@ -130,7 +162,8 @@ def named_goals(goals, texts) -> list:
 
 def speaker_said(texts) -> bool:
     for t in texts:
-        if _EN_SPEAKER & set(_toks(t)) or any(w in str(t) for w in _KO_SPEAKER):
+        native, latin = _speaker_words()
+        if latin & set(_toks(t)) or any(w in str(t) for w in native):
             return True
     return False
 

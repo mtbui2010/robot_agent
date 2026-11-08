@@ -13,15 +13,15 @@ from __future__ import annotations
 
 import re
 
-CLASSES = {
-    "food_storage": [r"\bfridge\b", r"\brefrigerator\b", r"\bfreezer\b", r"\bpantry\b", r"\blarder\b",
-                     r"\bbread ?box\b", r"\bkimchi fridge\b", r"\bice ?box\b", r"\bfood (?:cabinet|storage|container)\b",
-                     r"\blunch ?box\b", r"냉장고", r"냉동고", r"김치냉장고", r"팬트리", r"식료품", r"찬장", r"반찬통",
-                     r"도시락"],
-    "food_prep": [r"\bcutting board\b", r"\bchopping board\b", r"\bstove\b", r"\bhob\b", r"\boven\b",
-                  r"\bmicrowave\b", r"\brice cooker\b", r"\btoaster\b", r"도마", r"가스레인지", r"레인지", r"오븐",
-                  r"전자레인지", r"밥솥"],
-}
+# The words are language-pack data (``patterns.place_food_storage`` / ``place_food_prep`` of every pack, one regex each);
+# ``CLASSES()`` reads them on use. A language with no pack adds none: its place names are then classed through the names the
+# ENV also holds in a language that has (the English head of the key).
+_KEYS = {"food_storage": "place_food_storage", "food_prep": "place_food_prep"}
+
+
+def CLASSES() -> dict:                                                  # noqa: N802 (kept as the old table's name)
+    from robot_agent.core.planning import langdata
+    return {cls: langdata.pattern_list(key) for cls, key in _KEYS.items()}
 
 
 def _names(places, key) -> list:
@@ -33,7 +33,7 @@ def _names(places, key) -> list:
 def place_class(places, key) -> str:
     """The class of ENV place ``key`` from its names, '' when none fits (``tags`` are never read)."""
     text = " | ".join(n.lower() for n in _names(places, key))
-    for cls, pats in CLASSES.items():
+    for cls, pats in CLASSES().items():
         if any(re.search(p, text) for p in pats):
             return cls
     return ""

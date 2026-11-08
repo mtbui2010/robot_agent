@@ -22,10 +22,12 @@ import re
 from . import langdata, lexicon
 from .understand import _norm, place_mentions
 
-_EN_INTO = re.compile(r"\b(?:in|into|inside)\s+(?:the\s+|my\s+|your\s+|a\s+|our\s+|her\s+|his\s+)?(?:[\w'-]+\s+){0,2}$")
-_EN_ONTOP = re.compile(r"\bon\s+top\s+of\s+(?:the\s+|my\s+|your\s+)?(?:[\w'-]+\s+){0,2}$|\bonto\s+(?:the\s+)?(?:[\w'-]+\s+){0,2}$")
-_KO_INTO = re.compile(r"^\s*(?:의\s*)?(?:안|속|안쪽)|^(?:에|에다|에다가)?\s*(?:\S+\s+){0,2}?\S*넣")
-_KO_ONTOP = re.compile(r"^\s*(?:의\s*)?위")
+# The into / on-top markers are language-pack data (``patterns``: ``into_before`` / ``ontop_before`` / ``on_before`` for a
+# language whose marker comes before the place name, ``into_after`` / ``ontop_after`` for one whose marker follows it). A
+# language with no such data gives no marker: nothing is read as "into" or "on top".
+def _hit(key: str, text: str, flags: int = 0) -> bool:
+    r = langdata.rx(key, flags)
+    return bool(r and r.search(text))
 
 
 def _mentions_of(key: str, text: str, places) -> list:
@@ -38,20 +40,17 @@ def says_into(key: str, text: str, places) -> bool:
     spans, t = _mentions_of(key, text, places)
     for s, e in spans:
         before, after = t[max(0, s - 32):s], t[e:e + 16]
-        if _EN_ONTOP.search(before) or _KO_ONTOP.search(after):
+        if _hit("ontop_before", before) or _hit("ontop_after", after):
             continue
-        if _EN_INTO.search(before) or _KO_INTO.search(after):
+        if _hit("into_before", before) or _hit("into_after", after):
             return True
     return False
-
-
-_EN_ON = re.compile(r"\b(?:on|onto|atop)\s+(?:top\s+of\s+)?(?:the\s+|my\s+|your\s+|a\s+|our\s+)?(?:[\w'-]+\s+){0,2}$")
 
 
 def says_on(key: str, text: str, places) -> bool:
     """Do the words put something ON ``key`` ("on the fridge", "on top of", 위에)?"""
     spans, t = _mentions_of(key, text, places)
-    return any(_EN_ON.search(t[max(0, s - 32):s]) or _KO_ONTOP.search(t[e:e + 16]) for s, e in spans)
+    return any(_hit("on_before", t[max(0, s - 32):s]) or _hit("ontop_after", t[e:e + 16]) for s, e in spans)
 
 
 def kind_from_destination(goals: list, text: str, places, can_putin: bool = True) -> tuple:
@@ -79,10 +78,6 @@ def drop_empty(goals: list) -> tuple:
     return keep, [g for g in goals if g not in keep]
 
 
-_OPEN = re.compile(r"\bopen\b|열어|열어\s*줘", re.I)
-_CLOSE = re.compile(r"\b(?:close|shut)\b|닫아", re.I)
-
-
 def drop_invented(goals: list, text: str, places) -> tuple:
     """(goals, dropped): F4.4 (see the module doc)."""
     t = _norm(text)
@@ -93,7 +88,7 @@ def drop_invented(goals: list, text: str, places) -> tuple:
         if typ in ("on", "in") and obj:
             k = places.ground(obj, obj)
             if k and k in places.env and not (places.env.get(k) or {}).get("person"):
-                verb = "open" if _OPEN.search(t) else ("close" if _CLOSE.search(t) else None)
+                verb = "open" if _hit("open_verb", t, re.I) else ("close" if _hit("close_verb", t, re.I) else None)
                 if verb and not any(h.get("type") == verb and h.get("object") == k for h in goals):
                     out.append({"type": verb, "object": k, "from": "", "to": k})
                 dropped.append(g)
@@ -155,7 +150,10 @@ def shared_listener(goals: list, text: str, places) -> tuple:
     return out, notes
 
 
-_KO_FROM = re.compile(r"(?:에서|에게서|한테서|부터|으로부터|로부터)")
+def _from_after(rest: str) -> bool:
+    """Does ``rest`` (the text after a place name) start with a source marker ("from" said after the name)? Pack data."""
+    r = langdata.rx("from_after")
+    return bool(r and r.match(rest))
 
 
 def repair_destination(goals: list, text: str, places) -> tuple:
@@ -171,7 +169,7 @@ def repair_destination(goals: list, text: str, places) -> tuple:
     used = {g.get(s) for g in goals for s in ("to", "from") if g.get(s)} | \
         {g.get("object") for g in goals if g.get("type") in ("open", "close")}
     free = {next(iter(keys)) for _s, e, _p, keys, src in ms
-            if len(keys) == 1 and not src and not _KO_FROM.match(t[e:]) and not person(next(iter(keys)))} - used
+            if len(keys) == 1 and not src and not _from_after(t[e:]) and not person(next(iter(keys)))} - used
     movers = [k for k, g in enumerate(goals) if g.get("type") in ("on", "in") and g.get("to") in places.env
               and not person(g["to"]) and g["to"] not in said and not g.get("near_person") and not g.get("hand")]
     if len(free) != 1 or len(movers) != 1:
@@ -202,8 +200,8 @@ def _is_request(text: str, task: str, listener_names) -> bool:
             continue
         # the listener as the addressee of a tell ("to dad", "tell dad", 아빠한테 / 아빠에게): the request itself;
         # a vocative ("Dinner is ready, dad.") is part of a message
-        if re.search(r"\b(?:to|tell|ask|remind|let)\s+(?:the\s+|my\s+|your\s+)?" + re.escape(n) + r"\b", t) or \
-                re.search(r"(?<!\w)" + re.escape(n) + r"\s*(?:한테|에게|께|더러)", t):
+        addressee = langdata.rx("addressee", name=n)
+        if addressee is not None and addressee.search(t):
             return True
     return lexicon.has(lexicon.TELL, t)
 
@@ -250,25 +248,29 @@ def drop_echo_say(goals: list, task: str, places) -> tuple:
     return (out, dropped) if dropped else (goals, [])
 
 
-_KO_ACC = re.compile(r"([\uac00-\ud7a3][\uac00-\ud7a3 ]*?[\uac00-\ud7a3])(?:을|를)(?=\s|$|[.,!?])")
-_KO_AND = re.compile(r"\s*(?:과|와|하고|이랑|랑|,)\s*")
-
-
 def ko_object_issues(goals: list, text: str) -> list:
-    """F4.5: every Korean accusative noun group (을 / 를, with 과 / 와 / 하고 / 이랑 chains) must be covered by a
-    goal's ``said`` (the person's own words for its object, from the same understand call). Only when the goals
-    carry ``said`` (the model filled it); a miss is an ``object`` issue (re-sample, then ask)."""
+    """F4.5: every accusative noun group of the person's words (a language whose pack declares ``patterns.object_marked``:
+    Korean 을 / 를, with 과 / 와 / 하고 / 이랑 chains split by ``patterns.object_and``) must be covered by a goal's ``said``
+    (the person's own words for its object, from the same understand call). Only when the goals carry ``said`` (the model
+    filled it) and the text is written in the script of such a language; a miss is an ``object`` issue (re-sample, then
+    ask). A language with no such data gives no issue."""
     saids = [_norm(g.get("said")) for g in goals if g.get("said")]
-    if not saids or not re.search(r"[\uac00-\ud7a3]", str(text or "")):
+    if not saids:
+        return []
+    langs = [lg for lg in langdata.languages() if langdata.block(lg, "patterns").get("object_marked")
+             and langdata.in_script(text, lg)]
+    if not langs:
         return []
     out = []
-    for m in _KO_ACC.finditer(_norm(text)):
-        for part in _KO_AND.split(m.group(1)):
-            noun = part.strip().split()[-1] if part.strip() else ""
-            if len(noun) < 2:
-                continue
-            if not any(noun in s or s in noun for s in saids):
-                out.append({"kind": "object", "what": noun})
+    for lg in langs:
+        acc, split = langdata.rx("object_marked", langs=[lg]), langdata.rx("object_and", langs=[lg])
+        for m in acc.finditer(_norm(text)):
+            for part in (split.split(m.group(1)) if split is not None else [m.group(1)]):
+                noun = part.strip().split()[-1] if part.strip() else ""
+                if len(noun) < 2:
+                    continue
+                if not any(noun in s or s in noun for s in saids):
+                    out.append({"kind": "object", "what": noun})
     return [x for k, x in enumerate(out) if x not in out[:k]]
 
 
@@ -340,7 +342,7 @@ def unrequested_open(goals: list, text: str, places, robot=None, lang=None, engl
     pats = open_words_for(lang, robot)
     if pats is None:
         eng = str(english or "")
-        pivot = langdata.PROMPT_LANG
+        pivot = langdata.prompt_lang()
         if not eng or eng == text or not eng.isascii() or pivot not in OPEN_WORDS:
             return []
         pats, text = lexicon.patterns(OPEN_WORDS, robot, "open_words", langs=(pivot,)), eng
@@ -362,7 +364,8 @@ def kind_anchor_open(goals: list, text: str, places, robot=None, lang=None, engl
     return ([g for g in goals if not any(g is x for x in gone)], gone) if gone else (goals, [])
 
 
-def _plain(s, lang: str = langdata.PROMPT_LANG) -> str:
+def _plain(s, lang: "str | None" = None) -> str:
+    lang = lang or langdata.prompt_lang()
     arts = langdata.phrases(lang, "articles")
     out = _norm(s)
     if arts:
@@ -370,8 +373,8 @@ def _plain(s, lang: str = langdata.PROMPT_LANG) -> str:
     return out.replace("-", " ").strip()
 
 
-def _singular(w: str, lang: str = langdata.PROMPT_LANG) -> str:
-    return _fold(w, _data_rules(lang))
+def _singular(w: str, lang: "str | None" = None) -> str:
+    return _fold(w, _data_rules(lang or langdata.prompt_lang()))
 
 
 def canon_names(goals: list, memory_objects: dict, places) -> tuple:
@@ -437,14 +440,15 @@ def _fold(w: str, rules: list) -> str:
 
 
 def alias_groups(robot, lang: str) -> list:
-    """[[phrase, alias, ...]] the pack declares for objects of `lang` that are the same thing under two names: its i18n
-    key ``object_aliases`` (``{lang: ["mug|coffee mug", ...]}``, the first phrase is the canonical one). None declared:
-    no aliases."""
+    """[[phrase, alias, ...]] declared for objects of `lang` that are the same thing under two names: the robot pack's i18n
+    key ``object_aliases`` (``{lang: ["mug|coffee mug", ...]}``, the first phrase is the canonical one) and the language
+    pack's own ``object_aliases`` list of the same strings (regional names of one thing). None declared: no aliases."""
     try:
         by = (getattr(getattr(robot, "i18n", None), "phrases", None) or {}).get("object_aliases") or {}
     except Exception:
-        return []
-    return [[_norm(x) for x in str(g).split("|") if _norm(x)] for g in (by.get(lang) or [])
+        by = {}
+    declared = list(by.get(lang) or []) + langdata.phrases(lang, "object_aliases")
+    return [[_norm(x) for x in str(g).split("|") if _norm(x)] for g in declared
             if len([x for x in str(g).split("|") if _norm(x)]) > 1]
 
 
@@ -503,7 +507,7 @@ def canon_inventory(goals: list, memory_objects: dict, places, lang: str = "en",
     if lang in ("none", "off"):
         return goals, None, []
     rules = fold_rules(None, lang) if rules is None else rules
-    names = [n for n in (memory_objects or {}) if n and (lang != "en" or str(n).isascii())]
+    names = [n for n in (memory_objects or {}) if n and (not langdata.is_prompt_lang(lang) or str(n).isascii())]
     if not names:
         return goals, None, []
     sing = lambda w: _fold(w, rules)                                                    # noqa: E731
@@ -538,7 +542,7 @@ def canon_inventory(goals: list, memory_objects: dict, places, lang: str = "en",
 # the model's own English question or reason asks where an OBJECT is now (a search can answer that), not where to PUT it
 def _rx(key: str):
     """The model-question pattern ``key`` of the prompt language's pack, compiled (None when the pack has none)."""
-    pats = langdata.words(langdata.PROMPT_LANG, key)
+    pats = langdata.words(langdata.prompt_lang(), key)
     return re.compile("|".join(pats), re.I) if pats else None
 
 

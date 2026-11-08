@@ -476,7 +476,9 @@ class UnifiedAgent:
         announcer = Announcer(lang=lang, speak_backend=False)
 
         def _hangul(text) -> bool:
-            return any('\uac00' <= ch <= '\ud7a3' for ch in str(text or ''))
+            """Is the text written in the script of a language with a pack (``script.letters``; Korean ships one)?"""
+            from .planning import langdata
+            return langdata.any_script(text)
 
         def _step_say(kind, vo, **kw):
             """(phrase, its language) for a step, in the run's language. A step written

@@ -60,6 +60,7 @@ from . import search as search_belief
 from .search_hooks import SearchHooks
 from .which_one import WhichOne
 from . import goals as goal_kinds
+from . import langdata
 from . import (dialog_agree, dialog_converge, dialog_ext, dialog_unstick, exec_integrity, goal_filter, goal_fix, language, persons, plan_tidy,
                 reach_delivery,
                request_coverage, role_models, speech)
@@ -86,7 +87,7 @@ ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify
                 "search_legs", "object_check", "detector_miss_rate", "person_goals", "accept_goals",
                 "go_steps", "kind_anchor", "name_canon", "reask_abstain",
                 "exec_integrity", "gate_strict", "endstate_check", "reset_container", "wait_on_robot", "inventory_ask",
-                "dialog_unstick", "dialog_agree", "dialog_agree2", "relook", "reach_delivery", "unapplied_change", "kind_anchor_ask", "reask_anchor", "no_shared_listener", "understand_views",
+                "dialog_unstick", "dialog_agree", "dialog_agree2", "relook", "reach_delivery", "unapplied_change", "kind_anchor_ask", "prompt_lang", "reask_anchor", "no_shared_listener", "understand_views",
                   "understand_goals_first", "understand_model", "understand_url", "understand_model_lang",
                 "understand_max_tokens", "understand_max_goals", "understand_schema_strict", "understand_give_kind",
                 "understand_verify_verdict", "understand_think", "repair_model", "repair_url", "repair_max_tokens",
@@ -219,7 +220,7 @@ class Places:
                 n = words(al)
                 if len(n) < 2 or n == w:
                     continue
-                hit = (n in w) if re.search(r"[가-힣]", n) else bool(re.search(r"(?<!\w)" + re.escape(n) + r"(?!\w)", w))
+                hit = (n in w) if langdata.attached_script(n) else bool(re.search(r"(?<!\w)" + re.escape(n) + r"(?!\w)", w))
                 if hit:
                     found.append((len(n), k))
         if not found:
@@ -563,6 +564,9 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             "understand_schema_strict": on("understand_schema_strict"),
             "understand_give_kind": on("understand_give_kind"),
             "understand_verify_verdict": on("understand_verify_verdict"),
+            # the language the core's prompts and the model's own questions are written in (langdata.prompt_lang);
+            # "" = the pack default (English)
+            "prompt_lang": str(pick("prompt_lang", "") or "").strip().lower()[:2],
         }
 
     def _rm_cfg(self, overrides) -> dict:
@@ -763,6 +767,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
                         passthrough=passthrough, options=self._sampling(sample))
 
     def run_blocking(self, task: str, lang: str = "en", plan_only: bool = False, goals=None) -> Iterator[dict]:
+        if self.cfg.get("prompt_lang"):
+            langdata.set_prompt_lang(self.cfg["prompt_lang"])      # the manifest / option names the prompt language
         gen = self._run_blocking(task, lang, plan_only, goals)
         if not self._um_for(lang):
             return gen                                        # today's generator, untouched
@@ -1173,7 +1179,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         text, an English run and a language with no phrase for the milestone are as before."""
         text = super()._announce(r, kind, step, action, obj, **kw)
         lg = (getattr(r, "lang", None) or "en")[:2]
-        if not text or lg == "en" or kind == "step_fail" and kw.get("reason") or \
+        if not text or langdata.is_prompt_lang(lg) or kind == "step_fail" and kw.get("reason") or \
                 speech.phrase(self.robot, kind, lg) is None:
             return text
         slots = r.announcer.slots_for(kind, **self._say(step, action, obj))
@@ -1564,7 +1570,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         if a in _LOC_ACTIONS or a in ("Find", "Pick"):
             p["inputs"] = self._query_of(st, o)          # the instance the person chose (which_one), else the name
         lang = getattr(self, "_run_lang", "en") or "en"
-        if a in ("Say", "Announce") and lang[:2] != "en":
+        if a in ("Say", "Announce") and not langdata.is_prompt_lang(lang):
             from . import lexicon
             for k_ in ("inputs", "text"):
                 if isinstance(p.get(k_), str) and p[k_].strip() and lexicon.lang_of(p[k_]) != lang[:2]:
@@ -1957,7 +1963,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         call: None, today's path. Once per run. _STOP when the LLM failed."""
         r.views_done = True
         lg = (r.lang or "en")[:2]
-        if lg == "en" or lg not in language.LANGS or not u.get("goals") or u.get("status") not in ("clear", "ambiguous"):
+        if langdata.is_prompt_lang(lg) or lg not in language.LANGS or not u.get("goals") or u.get("status") not in ("clear", "ambiguous"):
             return None
         h = self.language.hear(r.task, pivot="translate")
         if not h.english or not h.trusted:
@@ -2171,7 +2177,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
     def _distrusted(self, r) -> Optional[str]:
         """Why the English of the user's latest words (the instruction, else the last answer) cannot be trusted
         (``LanguageAdapter.untrusted``); asked once per run. None for an English run or a pivot of ``none``."""
-        if getattr(r, "pivot_asked", False) or (r.lang or "en")[:2] == "en" or self.language.pivot == "none":
+        if getattr(r, "pivot_asked", False) or langdata.is_prompt_lang(r.lang or "en") or self.language.pivot == "none":
             return None
         last = [t for w_, t in r.dialogue if w_ == "user"]
         return self.language.untrusted(last[-1] if last else r.task)
@@ -2259,7 +2265,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
                 self._lab("go_steps", dropped=len(gone), delivery=len(made))
             r.filtered += gone
         if c.get("kind_anchor"):
-            heard = None if (getattr(r, "lang", None) or "en")[:2] == "en" else getattr(self.language, "heard", {}).get(r.task)
+            heard = None if langdata.is_prompt_lang(getattr(r, "lang", None) or "en") else getattr(self.language, "heard", {}).get(r.task)
             args = (words_, r.places, self.robot, getattr(r, "lang", None) or "en",
                     heard.english if heard is not None and heard.trusted else "")
             if c.get("kind_anchor_ask"):               # keep the open goal; the read-back names the doubt
@@ -2303,7 +2309,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             return goal_fix.canon_names(goals, mem, r.places)
         lang = str(self._manifest_planner("canonical_lang", "en")).lower()
         eng = ""
-        if (getattr(r, "lang", None) or "en")[:2] == "en":
+        if langdata.is_prompt_lang(getattr(r, "lang", None) or "en"):
             eng = " ".join([r.task] + [t for w_, t in r.dialogue if w_ == "user"])
         else:                                          # only a reading the language layer already holds (no new call)
             heard = getattr(self.language, "heard", {}).get(r.task)
@@ -2324,7 +2330,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         if not answers and verb_lost(r.task):             # the request's verb was lost: the goals are a guess
             issues = [{"kind": "noverb", "what": ""}] + issues
         extra = goal_fix.ko_object_issues(goals, r.task)                                          # F4.5
-        if (getattr(r, "lang", None) or "en")[:2] != "en":         # a goal set that only goes somewhere: the English reading's objects
+        if not langdata.is_prompt_lang(getattr(r, "lang", None) or "en"):         # a goal set that only goes somewhere: the English reading's objects
             h = self.language.hear(r.task)
             extra += vacuous_goal_issues(goals, h.english if h.trusted else "", r.places, _USER_WORDS)
         return issues + [i for i in extra if i not in issues]
@@ -2378,33 +2384,35 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         invented object ("gray sock") that no check saw. The translator gives each object's usual Korean name
         once (one call for all, cached, the translator's own budget); an object whose head noun is not in the
         person's words is read back before planning (r.unsure). No lexicon; no call for English requests."""
-        if (r.lang or "en")[:2] != "ko" or str(self.cfg.get("object_check", "1")) in ("0", "false", "False"):
+        lg = (r.lang or "en")[:2]
+        if not langdata.grammar(lg, "object_check") or str(self.cfg.get("object_check", "1")) in ("0", "false", "False"):
+            return []                                         # only a language whose pack declares the check (grammar.object_check)
+        mine = langdata.script_rx(lg)
+        if mine is None:
             return []
-        hangul = re.compile(r"[\uac00-\ud7a3]")
         objs = list(dict.fromkeys(str(g.get("object")) for g in r.goals if g.get("type") in ("on", "in")
-                                  and g.get("object") and not g.get("said") and not hangul.search(str(g["object"]))))
-        if not objs or not hangul.search(r.task or ""):
+                                  and g.get("object") and not g.get("said") and not mine.search(str(g["object"]))))
+        if not objs or not mine.search(r.task or ""):
             return []
         heard = re.sub(r"\s+", "", " ".join([r.task, self.original or ""] + [t for w_, t in r.dialogue if w_ == "user"]))
-        names = self._local_names(objs)
+        names = self._local_names(objs, lg)
         for g in r.goals:                    # the read-back names the object in the user's language: no call
             if names.get(g.get("object")) and not g.get("said"):
                 g["name_local"] = names[g["object"]]
         out = []
         for o in objs:
-            toks = re.findall(r"[\uac00-\ud7a3]+", names.get(o) or "")
+            toks = re.findall(langdata.block(lg, "script")["letters"] + "+", names.get(o) or "")
             while len(toks) > 1 and len(toks[-1]) < 2:
                 toks.pop()                                  # a one-syllable packaging noun ("우유 팩"): the noun before
             if toks and toks[-1] not in heard:
                 out.append(o)
         return out
 
-    def _local_names(self, objs) -> dict:
-        """{object: its Korean name} from the translator (one call, cached; {} when it fails or is over budget)."""
+    def _local_names(self, objs, lg: str) -> dict:
+        """{object: its name in ``lg``} from the translator (one call, cached; {} when it fails or is over budget)."""
         cache = self.__dict__.setdefault("_tr_cache", {})
-        lg = "ko"                                               # the Hangul names the check reads
         dm = self.language.dialog_model(lg)
-        key = ("names", tuple(objs), str(self.cfg.get("translate_model") or "") + (f"|{dm}" if dm else ""))
+        key = ("names", lg, tuple(objs), str(self.cfg.get("translate_model") or "") + (f"|{dm}" if dm else ""))
         if key not in cache:
             out = {}
             lang = self.language
@@ -2522,7 +2530,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
     def _correction_texts(self, r, rest) -> list:
         """The correction as said, and (for another language) its English."""
         out = [rest]
-        if (getattr(r, "lang", None) or "en")[:2] != "en":
+        if not langdata.is_prompt_lang(getattr(r, "lang", None) or "en"):
             h = self.language.hear(rest)
             if h.english:
                 out.append(h.english)
@@ -2638,9 +2646,14 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
     def _restates(self, r, ans) -> bool:
         """True when `ans` carries most of the words of the request the run started with (the person said it
         all again after "could you say it again?" / "what do you mean by ...?")."""
-        words = lambda t: {w for w in re.findall(r"\w+", str(t).lower()) if len(w) > 2}
+        try:
+            p = self._manifest_planner("restates", {}) or {}               # a priori defaults the manifest may replace
+        except AttributeError:                                              # a bare helper object (no robot): the defaults
+            p = {}
+        frac, wlen, nmin = (langdata.number(p, "frac", 0.6), langdata.number(p, "word_len", 3), langdata.number(p, "min_words", 4))
+        words = lambda t: {w for w in re.findall(r"\w+", str(t).lower()) if len(w) >= wlen}      # noqa: E731
         base = words(self.original or r.task)
-        return len(base) >= 4 and len(base & words(ans)) >= 0.6 * len(base)
+        return len(base) >= nmin and len(base & words(ans)) >= frac * len(base)
 
     # ── 2. plan: the planner generates, the checker reports, the planner repairs
     def _obs(self, r) -> str:
@@ -3319,7 +3332,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         part = missing[0]                               # the first part that survived the filter
         # the robot's own fixed phrase with the part in the person's own words (no English sentence with a
         # foreign-script part reaches the translator); a pack without the phrase in the person's language: no question
-        if (r.lang or "en")[:2] != "en" and speech.phrase(r.robot, "q_coverage", r.lang) is None:
+        if not langdata.is_prompt_lang(r.lang or "en") and speech.phrase(r.robot, "q_coverage", r.lang) is None:
             self._lab("request_coverage_no_phrase", lang=r.lang)
             return None
         q = speech.LocalText("q_coverage", {"what": part})

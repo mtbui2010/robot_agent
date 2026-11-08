@@ -24,6 +24,7 @@ from typing import Optional
 
 from robot_agent.contract import FailureCode
 
+from . import langdata
 from .speech import LocalText
 
 
@@ -140,7 +141,15 @@ def ask_json(llm, prompt: str, schema: dict, budget: Optional[LLMBudget] = None,
 # ─────────────────────────────────────────────────────────────────────────────
 _COND = re.compile(r"\b(?:if|unless|whether|in case)\b[^,;.]*", re.I)
 _NEG = re.compile(r"\b(?:don'?t|do not|never|except|without|but not|not)\b[^,;.]*", re.I)
-_CORR = re.compile(r"(?:\.\.\.|,|-)?\s*\b(?:no wait|wait,? no|no,? i mean|i mean|actually|sorry|rather)\b", re.I)
+
+
+def default_corr():
+    """The self-correction regex when the pack's dialogue option is off: the markers every language pack declares under
+    ``patterns.self_correction`` (English ships "no wait", "i mean" ...; the held English reading of a translated answer
+    is read with them too). None when no pack declares any: no mention is taken back."""
+    return langdata.rx("self_correction", re.I)
+
+
 _SOURCE = re.compile(r"\b(?:from|out of|off)\s+(?:the\s+|my\s+|your\s+)?(?:\w+\s+){0,2}$", re.I)
 _VERB = {"open": re.compile(r"(?:^|[,.;:]\s*|\b(?:and|then|please|to|also|first)\s+)open\b(?!\s+(?:kitchen\s+)?\w*\s*(?:is|are)\b)", re.I),
          "close": re.compile(r"(?:^|[,.;:]\s*|\b(?:and|then|please|to|also|first)\s+)(?:close|shut)\b(?!\s+to\b)", re.I)}
@@ -172,25 +181,33 @@ def _phrases(places) -> dict:
     return out
 
 
-# Korean particles a noun may take (lexicon.KO_PARTICLES), longest first: a Hangul phrase is a mention only as a
-# whole word: at the start / after a space or punctuation, and followed by the end, a space, punctuation or one
-# of these particles (SAGE-v2 F3.2: 나 is not in 하나 / 나중에, 냉장고 is not inside 김치냉장고)
-_KO_PART = "|".join(sorted(("이랑", "에서", "한테", "에게", "으로", "까지", "부터", "하고", "에다", "에", "을", "를", "이",
-                            "가", "은", "는", "께", "로", "도", "만", "의", "과", "와", "랑", "위", "안", "옆", "쪽"),
-                           key=len, reverse=True))
-_HANGUL_RX = re.compile(r"[\uac00-\ud7a3]")
-# a Hangul noun made a verb by 하다 ("충전하러", "청소해 줘", "정리한 다음"): the noun is still a whole-word mention
-_KO_HADA = r"(?:하|해|했|할|한|합|함)"
+# A phrase in a script whose pack declares ``grammar.noun_particles`` is a mention only as a whole word: at the start /
+# after a space or punctuation, and followed by the end, a space, punctuation or one of the particles (SAGE-v2 F3.2:
+# 나 is not in 하나 / 나중에, 냉장고 is not inside 김치냉장고). ``grammar.verb_noun_suffix`` lets a noun made a verb count
+# ("충전하러", "청소해 줘", "정리한 다음"). Particles longest first.
+def _particle_rx(lang) -> str:
+    return "|".join(sorted(langdata.grammar(lang, "noun_particles", []) or [], key=len, reverse=True))
+
+
+def _particle_lang(phrase: str):
+    """The language whose pack has noun particles and whose script ``phrase`` is written in, else None."""
+    for lg, r in langdata.script_langs():
+        if r.search(phrase) and langdata.grammar(lg, "noun_particles"):
+            return lg
+    return None
 
 
 def _find(phrase: str, text: str, extra: str = ""):
     """``extra``: more word endings (regex alternatives, the language pack's ``polite_endings``; option ``dialog_agree2``)."""
-    if phrase.isascii():
-        return [m.span() for m in re.finditer(r"(?<![\w-])" + re.escape(phrase) + r"(?:s|es)?(?![\w-])", text)]
-    if _HANGUL_RX.search(phrase):
-        rx = (r"(?<![\w])" + re.escape(phrase) + r"(?=$|[\s.,!?;:)\]\"'~]|(?:" + _KO_PART + r")|" + _KO_HADA + r")"
-              if not extra else
-              r"(?<![\w])" + re.escape(phrase) + r"(?=$|[\s.,!?;:)\]\"'~]|(?:" + _KO_PART + r")|" + _KO_HADA + r"|" + extra + r")")
+    ascii_ = phrase.isascii()
+    if ascii_ or langdata.latin_text(phrase):            # Latin letters (a Latin-script pack: accents and tone marks too)
+        plural = r"(?:s|es)?" if ascii_ else ""
+        return [m.span() for m in re.finditer(r"(?<![\w-])" + re.escape(phrase) + plural + r"(?![\w-])", text)]
+    lg = _particle_lang(phrase)
+    if lg:
+        part, hada = _particle_rx(lg), langdata.grammar(lg, "verb_noun_suffix", "") or ""
+        tail = (r"|" + hada if hada else "") + (r"|" + extra if extra else "")
+        rx = r"(?<![\w])" + re.escape(phrase) + r"(?=$|[\s.,!?;:)\]\"'~]|(?:" + part + r")" + tail + r")"
         return [m.span() for m in re.finditer(rx, text)]
     return [m.span() for m in re.finditer(re.escape(phrase), text)]
 
@@ -249,15 +266,16 @@ def _active(text: str) -> str:
 
 
 def _corr_of(places):
-    """The self-correction regex of the run: the language packs' markers (option ``dialog_agree2``), else ``_CORR``."""
+    """The self-correction regex of the run: the language packs' markers (option ``dialog_agree2``), else ``default_corr()``."""
     ext = getattr(places, "ext", None)
-    return ext.corr if ext is not None and ext.corr is not None else _CORR
+    return ext.corr if ext is not None and ext.corr is not None else default_corr()
 
 
 def _drop_corrected(t: str, mentions: list, corr=None) -> list:
     """Mentions minus the last one before each self-correction marker."""
     gone = set()
-    for m in (corr or _CORR).finditer(t):
+    corr = corr or default_corr()
+    for m in (corr.finditer(t) if corr is not None else ()):
         before = [x for x in mentions if x[1] <= m.start() + 1 and m.start() - x[1] < 40]
         if before:
             gone.add(before[-1][:2])
@@ -478,7 +496,9 @@ def fuzzy_place(places, text: str, threshold: float = 0.25):
     t = _norm(re.sub(r"[.,!?]", " ", str(text or "")))
     toks = t.split()
     spans = {" ".join(toks[i:j]) for i in range(len(toks)) for j in range(i + 1, min(len(toks), i + 3) + 1)}
-    spans |= {re.sub(_KO_TAIL, "", x) for x in spans}
+    tail = langdata.rx("answer_tail")
+    if tail is not None:
+        spans |= {tail.sub("", x) for x in spans}
     best = {}
     for k in places.keys:
         if (places.env.get(k) or {}).get("person"):
@@ -500,9 +520,6 @@ def fuzzy_place(places, text: str, threshold: float = 0.25):
         return None, ""
     k, (_d, n) = next(iter(best.items()))
     return k, n
-
-
-_KO_TAIL = r"(?:에서|에|이요|요|이에요|예요|있어요|요\.)$"
 
 
 def _jamo(s: str) -> str:
@@ -574,13 +591,10 @@ def consensus(samples: list, need: int = 2):
 CAPABILITY, SAFETY, DECLINED = "capability", "safety", "declined"
 # words that make a request unsafe / beyond a household robot (the understand prompt's "It cannot" list):
 # a refusal the model gives after an answer heard through the microphone needs one of them in the person's words
-_MARK = {
-    SAFETY: re.compile(r"\b(?:knife|knives|blade|scissors|razor|fire|flame|stove|burn|hot|boil|window|throw|"
-                       r"hit|hurt|poison|bleach|medicine|pills?|child|baby|kid|outside)\b|칼|불|창문|던지|가위|독|약|"
-                       r"아이", re.I),
-    CAPABILITY: re.compile(r"\b(?:throw|pour|cook|wash|washer|climb|window|door|tools?|turn on|switch on|lift|"
-                           r"furniture|sofa|bed|leave|outside|clean)\b|던지|붓|요리|씻|세탁|올라|창문|문을|켜", re.I),
-}
+def _mark(kind: str):
+    """The words that make a request ``kind`` (safety / capability) unsafe or beyond a household robot: pack data
+    (``patterns.refusal_<kind>``, every language). None when no pack has any."""
+    return langdata.rx("refusal_" + kind, re.I)
 
 
 @dataclass(frozen=True)
@@ -604,7 +618,8 @@ def typed_refusal(status: str, reason: str, missing: Optional[str], words: str,
     typed one cannot be misheard). The model's free text never refuses by itself."""
     if status in ("unsafe", "infeasible"):
         kind = SAFETY if status == "unsafe" else CAPABILITY
-        if answer_heard and not _MARK[kind].search(words or ""):
+        mark = _mark(kind)
+        if answer_heard and mark is not None and not mark.search(words or ""):
             return Refusal(kind, misheard=True)
         msg = (reason or "").strip() or "I can't do that."
         return Refusal(kind, msg=msg, say=f"I can't do that: {msg}")

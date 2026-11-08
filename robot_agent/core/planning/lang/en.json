@@ -122,5 +122,257 @@
   "self_correction": [
    "(?:\\.\\.\\.|,|-)?\\s*\\b(?:no wait|wait,? no|no,? i mean|i mean|actually|sorry|rather)\\b"
   ]
+ },
+ "patterns": {
+  "into_before": "\\b(?:in|into|inside)\\s+(?:the\\s+|my\\s+|your\\s+|a\\s+|our\\s+|her\\s+|his\\s+)?(?:[\\w'-]+\\s+){0,2}$",
+  "ontop_before": "\\bon\\s+top\\s+of\\s+(?:the\\s+|my\\s+|your\\s+)?(?:[\\w'-]+\\s+){0,2}$|\\bonto\\s+(?:the\\s+)?(?:[\\w'-]+\\s+){0,2}$",
+  "on_before": "\\b(?:on|onto|atop)\\s+(?:top\\s+of\\s+)?(?:the\\s+|my\\s+|your\\s+|a\\s+|our\\s+)?(?:[\\w'-]+\\s+){0,2}$",
+  "open_verb": "\\bopen\\b",
+  "close_verb": "\\b(?:close|shut)\\b",
+  "self_correction": "(?:\\.\\.\\.|,|-)?\\s*\\b(?:no wait|wait,? no|no,? i mean|i mean|actually|sorry|rather)\\b",
+  "refusal_safety": "\\b(?:knife|knives|blade|scissors|razor|fire|flame|stove|burn|hot|boil|window|throw|hit|hurt|poison|bleach|medicine|pills?|child|baby|kid|outside)\\b",
+  "refusal_capability": "\\b(?:throw|pour|cook|wash|washer|climb|window|door|tools?|turn on|switch on|lift|furniture|sofa|bed|leave|outside|clean)\\b",
+  "addressee": "\\b(?:to|tell|ask|remind|let)\\s+(?:the\\s+|my\\s+|your\\s+)?{name}\\b",
+  "hazard_cleaning_sourced": [
+   "\\bbleach\\b",
+   "\\bammonia\\b",
+   "\\bglass cleaner\\b",
+   "\\bfloor cleaner\\b",
+   "\\bjewel(?:le)?ry cleaner\\b",
+   "\\bdrain (?:opener|cleaner)\\b",
+   "\\btoilet (?:bowl )?cleaner\\b",
+   "\\boven cleaner\\b",
+   "\\bmildew (?:stain )?remover\\b"
+  ],
+  "hazard_cleaning_assumed": [
+   "\\bdetergent\\b",
+   "\\bdishwasher (?:pods?|tablets?)\\b",
+   "\\blaundry pods?\\b",
+   "\\bdisinfectant\\b",
+   "\\brust remover\\b",
+   "\\binsecticide\\b",
+   "\\bbug spray\\b",
+   "\\blye\\b",
+   "\\bcleaning spray\\b",
+   "\\blysol\\b",
+   "\\bclorox\\b",
+   "\\bwindex\\b",
+   "\\bdrano\\b",
+   "\\bpine-?sol\\b",
+   "\\bchlorine\\b"
+  ],
+  "place_food_storage": [
+   "\\bfridge\\b",
+   "\\brefrigerator\\b",
+   "\\bfreezer\\b",
+   "\\bpantry\\b",
+   "\\blarder\\b",
+   "\\bbread ?box\\b",
+   "\\bkimchi fridge\\b",
+   "\\bice ?box\\b",
+   "\\bfood (?:cabinet|storage|container)\\b",
+   "\\blunch ?box\\b"
+  ],
+  "place_food_prep": [
+   "\\bcutting board\\b",
+   "\\bchopping board\\b",
+   "\\bstove\\b",
+   "\\bhob\\b",
+   "\\boven\\b",
+   "\\bmicrowave\\b",
+   "\\brice cooker\\b",
+   "\\btoaster\\b"
+  ]
+ },
+ "dialogue": {
+  "yes": [
+   "yes",
+   "yeah",
+   "yep",
+   "ok",
+   "okay",
+   "right",
+   "correct",
+   "sure",
+   "go ahead"
+  ],
+  "no": [
+   "no",
+   "nope",
+   "not",
+   "wrong"
+  ],
+  "fillers": [
+   "uh",
+   "um",
+   "umm",
+   "er",
+   "erm",
+   "ah",
+   "eh",
+   "oh",
+   "hm",
+   "hmm",
+   "mm",
+   "mhm",
+   "huh",
+   "what",
+   "sorry",
+   "pardon",
+   "well",
+   "so",
+   "the",
+   "a",
+   "an",
+   "it",
+   "is",
+   "that",
+   "this",
+   "i",
+   "noise",
+   "inaudible",
+   "unk"
+  ],
+  "yn_words": [
+   "yes",
+   "yeah",
+   "yep",
+   "okay",
+   "no",
+   "nope",
+   "sure"
+  ],
+  "stop": [
+   "stop",
+   "halt",
+   "abort",
+   "cancel",
+   "freeze",
+   "emergency stop",
+   "stop the robot",
+   "enough",
+   "that is enough",
+   "that's enough"
+  ],
+  "pause": [
+   "pause",
+   "wait",
+   "hold on",
+   "hang on",
+   "one moment",
+   "just a moment",
+   "wait a moment",
+   "wait a second",
+   "wait a minute",
+   "one second"
+  ],
+  "resume": [
+   "resume",
+   "continue",
+   "go on",
+   "carry on",
+   "keep going",
+   "go ahead",
+   "proceed"
+  ],
+  "tail": [
+   "now",
+   "it",
+   "that",
+   "everything",
+   "right now",
+   "immediately",
+   "moving",
+   "please",
+   "robot"
+  ],
+  "head": [
+   "please",
+   "robot",
+   "ok",
+   "okay",
+   "hey",
+   "oh",
+   "ah",
+   "um",
+   "uh",
+   "just"
+  ],
+  "negation_words": [
+   "don't",
+   "dont",
+   "do not",
+   "never",
+   "not",
+   "no need to",
+   "doesn't",
+   "won't"
+  ],
+  "negation_contains": [
+   "do not",
+   "no need"
+  ],
+  "fallback_status": [
+   "what are you doing",
+   "status",
+   "where are you",
+   "how is it going",
+   "are you done",
+   "progress",
+   "what is happening"
+  ],
+  "fallback_drop": [
+   "forget",
+   "skip",
+   "never mind the",
+   "don't bring",
+   "do not bring",
+   "leave out",
+   "no longer need",
+   "don't need",
+   "drop the"
+  ],
+  "fallback_modify": [
+   "instead",
+   "actually",
+   "not the",
+   "change",
+   "rather",
+   "i meant"
+  ],
+  "fallback_add": [
+   "also",
+   "as well",
+   "too",
+   "and then",
+   "after that",
+   "one more"
+  ]
+ },
+ "grammar": {
+  "sep_or": " or ",
+  "ascii_names": true,
+  "speaker_forms": [
+   "me",
+   "myself",
+   "here",
+   "user",
+   "the user",
+   "you",
+   "person"
+  ],
+  "speaker_forms_weak": [
+   "user",
+   "person",
+   "you",
+   "here"
+  ],
+  "asr_hallucinations": [
+   "thankyou",
+   "thanksforwatching",
+   "thankyouforwatching",
+   "pleasesubscribe",
+   "bye"
+  ]
  }
 }
