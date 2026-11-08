@@ -16,7 +16,7 @@ from robot_agent.core.planning.assist_loop import ASSIST_OPTIONS, Places
 from test_sage_lab_r12_agree import (BOTH, ENV, PARTS, PLAN, READ, TASK, UNSTICK, ScriptRobot, agreed, confirms, fired,  # noqa: F401
                                      gave_up, glass_run, GLASS_ANSWERS, GLASS_READINGS, GLASS_ENV)
 
-GUARD = {"garble_ratio": 0.6}
+GUARD = {"garble_ratio": 0.6, "particle_chain": 2, "tail_chars": 2}
 B2 = dict(dialog_unstick="1", dialog_agree2="1")
 
 
@@ -246,7 +246,7 @@ def test_without_a_declared_ratio_there_is_no_guard(make_assist):
 
 def test_guard_functions():
     pl = Places(KO_ENV)
-    g = DX.Guard("ko", pl, KO_READ["goals"], 0.6, DX.build("ko", pl))
+    g = DX.Guard("ko", pl, KO_READ["goals"], 0.6, DX.build("ko", pl), 2, 2)
     assert g.garbled(["할아버지한테 갖다 주세요", "저한테 주세요", "책상에서요"]) == []
     assert g.garbled(["할아버지한태 갖다 주세요"]) == ["할아버지한태"] and g.garbled(["저한태"]) == ["저한태"]
     assert g.plausible("책상에 놔 주세요") and not g.plausible("put it on the shelf please")
@@ -347,7 +347,7 @@ def test_unsure_answer_fallback_too_flag():
 
 def test_guard_skips_the_packs_own_words_and_their_stems():
     pl = Places(KO_ENV)
-    g = DX.Guard("ko", pl, KO_READ["goals"], 0.6, DX.build("ko", pl))
+    g = DX.Guard("ko", pl, KO_READ["goals"], 0.6, DX.build("ko", pl), 2, 2)
     known = g._pack_words()
     assert known and "아니요" in known or any(w.startswith("아니") for w in known)
     assert g.garbled(["아니요", "아니에요", "아니요요"]) == []

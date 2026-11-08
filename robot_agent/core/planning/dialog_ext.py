@@ -31,6 +31,12 @@ Two parts, both DATA-driven; nothing here names a language, a robot, an object o
    When the answers agree but the guard objects, the reading is NOT taken as confirmed: the robot asks the person once more,
    as a yes / no read-back. A genuine "no" still ends the run. No ``agree_guard.garble_ratio`` in the manifest: no guard.
 
+   Every number of the guard is data, none is in the code (round 16): the manifest's ``planner.agree_guard`` holds
+   ``garble_ratio`` (0 < x <= 1), ``particle_chain`` (how many case particles may follow a name, an integer >= 1) and
+   ``tail_chars`` (the longest tail of a word, in letters, that is read as a declared tail of a pack word, an integer >= 1);
+   the language pack's ``script.min_share`` is the share of own-script letters a plausible answer needs. A number that is
+   not declared turns its part off (no particle tail test, no declared-tail skip, no share test): fail open.
+
 Pure functions; ``AssistLoop`` builds the objects once per run.
 """
 
@@ -140,8 +146,10 @@ class Guard:
     """The agreement guard of one run: the names the garble test knows (ENV heads / aliases / rooms / persons, the goals'
     object names, the speaker forms), the garble ratio and the language's script data."""
 
-    def __init__(self, lang, places, goals, ratio: float, ext: Optional[Ext] = None):
+    def __init__(self, lang, places, goals, ratio: float, ext: Optional[Ext] = None, chain: Optional[int] = None,
+                 tail_chars: Optional[int] = None):
         self.lang, self.ratio, self.places = (lang or "en")[:2], float(ratio), places
+        self.tail_chars = int(tail_chars) if tail_chars else 0       # 0: no declared-tail skip
         names = set()
         for k in places.keys:
             names.update(_tokens(places.head(k)))
@@ -163,8 +171,8 @@ class Guard:
         except re.error:
             self._letters = None
         self._parts = tuple(dict.fromkeys(parts))
-        self._tail = (re.compile("(?:" + "|".join(re.escape(p) for p in sorted(parts, key=len, reverse=True)) + "){1,2}")
-                      if parts else None)
+        self._tail = (re.compile("(?:" + "|".join(re.escape(p) for p in sorted(parts, key=len, reverse=True)) + "){1,%d}" % int(chain))
+                      if parts and chain else None)
 
     # a token the name list holds, with or without case particles after it (the language pack's own list)
     def _exact(self, tok: str) -> bool:
@@ -211,7 +219,7 @@ class Guard:
                 if not self._own(tok) or self._exact(tok):
                     continue
                 if tok in known or any(
-                        tok[:len(tok) - k] in known for k in range(1, min(3, len(tok)))
+                        tok[:len(tok) - k] in known for k in range(1, min(self.tail_chars + 1, len(tok)))
                         if self._tail is not None and self._tail.fullmatch(tok[len(tok) - k:])):
                     continue        # a word of the language's own pack (or one with a declared tail): not garbled
                 if self._bad_tail(tok):
@@ -236,7 +244,8 @@ class Guard:
         try:
             letters = [c for c in t if c.isalpha()]
             mine = [c for c in letters if re.match(sc["letters"], c)]
-            if letters and len(mine) / len(letters) < float(sc.get("min_share", 0.7)):
+            share = sc.get("min_share")                      # pack data; none declared = no share test
+            if letters and share is not None and len(mine) / len(letters) < float(share):
                 return False
             return not (sc.get("other_script") and re.search(sc["other_script"], t))
         except (re.error, TypeError, ValueError):
@@ -263,8 +272,17 @@ class Guard:
 
 def guard_for(lang, places, goals, planner: Optional[dict], ext: Optional[Ext] = None) -> Optional[Guard]:
     """The run's guard when the manifest declares ``planner.agree_guard.garble_ratio`` (0 < x <= 1), else None (no guard)."""
-    r = langdata.number((planner or {}).get("agree_guard"), "garble_ratio")
-    return Guard(lang, places, goals, r, ext) if r is not None and 0 < r <= 1 else None
+    g = (planner or {}).get("agree_guard")
+    r = langdata.number(g, "garble_ratio")
+    if r is None or not 0 < r <= 1:
+        return None
+    return Guard(lang, places, goals, r, ext, _count(g, "particle_chain"), _count(g, "tail_chars"))
+
+
+def _count(source, key: str) -> Optional[int]:
+    """An integer >= 1 from a manifest section, else None (not declared)."""
+    v = source.get(key) if isinstance(source, dict) else None
+    return v if isinstance(v, int) and not isinstance(v, bool) and v >= 1 else None
 
 
 __all__ = ["Ext", "Guard", "build", "guard_for", "BLOCK"]

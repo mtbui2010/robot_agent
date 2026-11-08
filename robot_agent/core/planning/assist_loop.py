@@ -60,7 +60,7 @@ from . import search as search_belief
 from .search_hooks import SearchHooks
 from .which_one import WhichOne
 from . import goals as goal_kinds
-from . import (dialog_agree, dialog_converge, dialog_ext, dialog_unstick, exec_integrity, goal_filter, goal_fix, language, persons, plan_tidy,
+from . import (action_roles, dialog_agree, dialog_converge, dialog_ext, dialog_unstick, exec_integrity, goal_filter, goal_fix, language, persons, plan_tidy,
                 reach_delivery,
                request_coverage, role_models, speech)
 from . import reconcile as sensed
@@ -610,6 +610,14 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             return float(c()) if callable(c) else time.time()
         except Exception:                                  # noqa: BLE001 - a broken host clock: wall time
             return time.time()
+
+    def _role(self, role: str):
+        """The robot's action for a role (manifest ``planner.action_roles``, ``action_roles.py``), or None: the declared one,
+        when the robot has it. The options that splice or recognise steps read their action names here, never from code."""
+        try:
+            return action_roles.action_for(getattr(self.robot.manifest, "planner", None), role, self.robot.plan_actions)
+        except Exception:                                  # noqa: BLE001 - no robot / manifest: no role
+            return None
 
     def _hand_action(self):
         """The robot's action that hands the held object to a person (its first release action other than Place), or None."""
@@ -3302,9 +3310,10 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         said = [t for w_, t in r.dialogue if w_ == "user"]
         request = " ".join([r.task, self.original or ""] + said)
         steps = [f"{s_.get('action')} {s_.get('object')}" for s_ in r.completed]
+        lim = request_coverage.limits(getattr(self.robot.manifest, "planner", None))     # pack data; a cap not declared is no cap
         try:
             d = ask_json(self._llm(), request_coverage.prompt(" ".join([self.original or r.task] + said),
-                                                              self._goal_text(r.goals), steps),
+                                                              self._goal_text(r.goals), steps, lim.get("max_steps")),
                          request_coverage.SCHEMA, budget=r.llm_budget, retries=0, where="request coverage",
                          call=call_cancellable, passthrough=is_cancel, options=self._sampling(0))
         except Exception as e:                          # noqa: BLE001 - fail open: the run says done as before
@@ -3312,8 +3321,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
                 raise
             return None
         covered = request_coverage.covered_names(r.goals, r.completed, r.places)
-        missing = request_coverage.parts(d, request, covered)
-        self._lab("request_coverage", parts=missing, dropped=len(request_coverage.parts(d, request)) - len(missing))
+        missing = request_coverage.parts(d, request, covered, lim.get("max_parts"))
+        self._lab("request_coverage", parts=missing, dropped=len(request_coverage.parts(d, request, (), lim.get("max_parts"))) - len(missing))
         if not missing:
             return None
         part = missing[0]                               # the first part that survived the filter
@@ -3570,7 +3579,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
     def _run_step(self, r, st):
         """Guard, bind, run and check one step: _NEXT, _DONE (goals reached) or _STOP."""
         a, o, started = st["action"], st["object"], time.time()
-        if self.cfg.get("reach_delivery") and a == "Place":
+        if self.cfg.get("reach_delivery") and a == self._role("put_down"):
             st, ev_ = self._reach_step(r, st)
             if ev_ is not None:
                 yield ev_
@@ -3621,7 +3630,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         robot's hand-over (the person may have left the spot; a hand-over reaches them wherever they are in the room).
         (step, event | None); the plan keeps the new step."""
         rc = self._reach_cfg()
-        key = reach_delivery.recipient(r.places, st, r.goals) if rc is not None else None
+        key = reach_delivery.recipient(r.places, st, r.goals, self._role("put_down")) if rc is not None else None
         if key is None:
             return st, None
         age = self._now() - getattr(r, "reach_t0", self._now())
@@ -3643,13 +3652,14 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         Ask once where they are; the place they name (``persons.place_in_answer``) gets a MoveTo and the hand-over again. _NEXT,
         or None (no question possible, no answer, no place in it: the failure goes the usual way)."""
         key = st.get("object")
-        if not persons.is_person(r.places, key):
+        mv = self._role("move")
+        if mv is None or not persons.is_person(r.places, key):         # no declared move action: nowhere to go (fail open)
             return None
         where = r.__dict__.setdefault("reach_where", {})      # person key -> the place they answered
         asked = r.__dict__.setdefault("reach_asked_keys", set())
         known = where.get(key)
         if known and r.world.arrived != known:                # asked before for this person: go there, no second question
-            r.steps[r.i:r.i + 1] = [{"action": "MoveTo", "object": known, "grounded": True}, dict(st)]
+            r.steps[r.i:r.i + 1] = [{"action": mv, "object": known, "grounded": True}, dict(st)]
             self._lab("reach_delivery", why="known_where", person=key, place=known)
             return _NEXT
         if key in asked:
@@ -3673,7 +3683,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             return None
         r.dialogue += [("robot", q), ("user", ans)]
         where[key] = at
-        r.steps[r.i:r.i + 1] = [{"action": "MoveTo", "object": at, "grounded": True}, dict(st)]
+        r.steps[r.i:r.i + 1] = [{"action": mv, "object": at, "grounded": True}, dict(st)]
         return _NEXT
 
     def _post_check(self, r, st, skill, res, params, rec) -> list:
@@ -3715,8 +3725,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         self._search_effect(r, st)                       # before the effect: where the robot did it
         held_ = r.world.holding
         self._effect(st, r.world, r.memory, r.placed)
-        if a == "Place" and held_ and self._reach_cfg() is not None:
-            key_ = reach_delivery.recipient(r.places, st, r.goals)
+        if a == self._role("put_down") and held_ and self._reach_cfg() is not None:
+            key_ = reach_delivery.recipient(r.places, st, r.goals, self._role("put_down"))
             if key_:                                     # the person's spot as it was when the object was put down
                 r.__dict__.setdefault("reach_put", {})[held_] = (key_, reach_delivery.spot_of(r.places, key_))
         if a == "Find":
@@ -4005,11 +4015,12 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         if looks + 1 >= int(self.cfg.get("search_total", 8)):
             return None
         acts = {a.lower() for a in r.robot.plan_actions}
+        close_, open_ = self._role("close"), self._role("open")      # the pack's actions; none declared = no reopen
         sense, pre = "again", []
         if (r.places.openable(here) and here in r.world.opened and not r.world.holding
-                and {"close", "open"} <= acts):
-            sense, pre = "reopen", [{"action": "Close", "object": here, "grounded": True},
-                                    {"action": "Open", "object": here, "grounded": True}]
+                and close_ is not None and open_ is not None):
+            sense, pre = "reopen", [{"action": close_, "object": here, "grounded": True},
+                                    {"action": open_, "object": here, "grounded": True}]
         else:
             act, sched = exec_integrity.wait_schedule((self._manifest_planner("recovery", None) or {}).get("wait"))
             if act and act.lower() in acts:

@@ -10,13 +10,15 @@ covered (an object, place or person of a held goal, the person's own word for it
 the names come from the ENV aliases and the goals, ``covered_names``) is dropped: a small model names such parts by mistake.
 The question is asked about the first part that survives. Fails open: an error, an over-budget call, no JSON, no answer or an
 answer the loop cannot read means no gap (the run says done as before, the goals were observed to hold).
+
+The two caps (how many parts are kept, how many executed steps go into the prompt) are pack data, the manifest's
+``planner.coverage_limits: {max_parts, max_steps}`` (integers >= 1, see ``limits``); a cap the pack does not declare is no cap.
 """
 from __future__ import annotations
 
 import re
 
-MAX_PARTS = 2
-MAX_STEPS = 40
+LIMIT_KEYS = ("max_parts", "max_steps")
 SCHEMA = {"type": "object",
           "properties": {"unserved": {"type": "array", "items": {"type": "object", "properties": {
               "part": {"type": "string"},
@@ -39,9 +41,18 @@ def norm(t) -> str:
     return re.sub(r"\s+", " ", str(t or "")).strip().casefold()
 
 
-def prompt(request: str, goals_text: str, steps: list) -> str:
-    """The comparison prompt; ``steps``: ["Action object", ...] (the last ``MAX_STEPS``)."""
-    sl = [str(s) for s in steps][-MAX_STEPS:]
+def limits(planner) -> dict:
+    """``{max_parts, max_steps}`` the pack declares (``planner.coverage_limits``): only integers >= 1; a missing or bad cap is absent."""
+    v = (planner or {}).get("coverage_limits") if isinstance(planner, dict) else None
+    v = v if isinstance(v, dict) else {}
+    return {k: v[k] for k in LIMIT_KEYS if isinstance(v.get(k), int) and not isinstance(v.get(k), bool) and v[k] >= 1}
+
+
+def prompt(request: str, goals_text: str, steps: list, max_steps: int = None) -> str:
+    """The comparison prompt; ``steps``: ["Action object", ...] (the last ``max_steps`` of them; all when no cap is given)."""
+    sl = [str(s) for s in steps]
+    if max_steps:
+        sl = sl[-max_steps:]
     return PROMPT.format(request=request, goals=goals_text or "(none)", steps="; ".join(sl) if sl else "(none)")
 
 
@@ -103,13 +114,14 @@ def names_any(part: str, names) -> bool:
     return False
 
 
-def parts(d, request: str, covered=()) -> list:
+def parts(d, request: str, covered=(), max_parts: int = None) -> list:
     """The named parts of ``d`` (the model's answer) that are quotations of ``request`` and name nothing of ``covered``
-    (:func:`covered_names`): unique, at most ``MAX_PARTS``, in the model's order (the first is the one asked about)."""
+    (:func:`covered_names`): unique, at most ``max_parts`` (no cap when not given), in the model's order (the first is the
+    one asked about)."""
     hay, out = norm(request), []
     items = d.get("unserved") if isinstance(d, dict) and isinstance(d.get("unserved"), list) else []
     for it in items:
         p = str(it.get("part") if isinstance(it, dict) else it or "").strip()
         if p and norm(p) in hay and p not in out and not names_any(p, covered):
             out.append(p)
-    return out[:MAX_PARTS]
+    return out[:max_parts] if max_parts else out

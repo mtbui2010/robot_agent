@@ -31,6 +31,7 @@ defaults:
   home_place: living room     # ME: where `place::me` goes
 planner:
   person_snapshot: {trust_s: 60}
+  action_roles: {put_down: Place, move: MoveTo, open: Open, close: Close}
 skills:
   - name: move
     action: MoveTo

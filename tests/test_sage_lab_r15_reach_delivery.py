@@ -128,6 +128,7 @@ def test_a_robot_with_no_handover_action_keeps_the_put_down(make_assist, env, ag
     loop = make_assist(robot, FakeLLM(understood("me"), default="{}"), ScriptedPlanner(PLAN), reach_delivery="1", search_legs=1,
                        search_rank="prior", ask_help=False, detector_miss_rate=0)
     loop.robot.manifest.planner["person_snapshot"] = {"trust_s": 60}
+    loop.robot.manifest.planner["action_roles"] = {"put_down": "Place", "move": "MoveTo"}
     loop.clock = lambda: robot.t
     evs = run_task(loop, "Bring me the mug.", max_events=3000)
     assert done(evs)["status"] == "success" and robot.obj["mug"] == ME
@@ -223,7 +224,9 @@ def bare(robot_has_hand, flag, planner_data=True):
 
     class R:
         class manifest:
-            planner = {"person_snapshot": {"trust_s": 60}} if planner_data else {}
+            planner = {"person_snapshot": {"trust_s": 60}, "action_roles": {"put_down": "Place", "move": "MoveTo"}} if planner_data else {}
+
+        plan_actions = {"Place", "MoveTo", "Handover"}
 
         def release_actions(self):
             return ["Handover"] if robot_has_hand else []
