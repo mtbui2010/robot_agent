@@ -310,3 +310,16 @@ def test_the_vietnamese_pack_json_is_plain_utf8_data():
     path = os.path.join(os.path.dirname(langdata.__file__), "lang", "vi.json")
     raw = open(path, encoding="utf-8").read()
     assert json.loads(raw)["lang"] == "vi" and "�" not in raw
+
+from robot_agent.core.planning import dialog_hold as DH  # noqa: E402
+
+
+# round 18 (dialog_hold): evidence in her words reads the pack only (whole tokens, articles from the pack)
+def test_dialog_hold_evidence_by_the_pack_only():
+    chiec, coc, cai, chen = "chi\u1ebfc", "c\u1ed1c", "c\u00e1i", "ch\u00e9n"          # written as escapes: the vi data lives in lang/vi.json
+    assert DH.token_forms(f"{chiec} {coc}", "vi") == {chiec, coc}
+    g = {"type": "in", "object": "glass", "said": f"{cai} {coc}", "to": "fridge@kitchen"}
+    assert DH.object_score(g, [f"{chiec} {coc}"], "vi") == 1 and DH.object_score(g, [f"{coc} {chen}"], "vi") == 1
+    assert DH.object_score(g, [coc + "c"], "vi") == 0                                      # whole tokens only
+
+

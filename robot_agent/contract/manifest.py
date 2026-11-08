@@ -77,13 +77,16 @@ _TOP_KEYS = {"robot", "version", "language", "capabilities", "geometry", "planne
 #   a role not declared = the part of the option that needs it does nothing), coverage_limits ({max_parts, max_steps}: integers
 #   >= 1, the caps of request_coverage; not declared = no cap), agree_guard also holds particle_chain / tail_chars (integers >= 1;
 #   not declared = that part of the guard is off), person_snapshot ({trust_s: seconds > 0}),
+#   dialog_hold ({hold, one_part, max_options}: round 18, hold the reading in a ledger of parts / repair one part at a time after a
+#   content-free answer; max_options = most options in a spoken choice, default 3, assumed; absent = off), noun_relabel (0 | 1, default 0:
+#   her object noun names the part, through the translator),
 #   detector_miss_rate (0 to 0.9, default 0.1: the chance that a look at the right place does not see the object;
 #   one miss is then weak evidence and the search looks again at the places the belief still holds probable)
 PLANNER_KEYS = {"seed_memory", "notes", "llm_budget", "translate_model", "translate_url", "translate_budget",
                 "search_legs", "search_total", "input_pivot", "detector_miss_rate", "person_goals", "accept_goals",
                 "go_steps", "kind_anchor", "name_canon", "reask_abstain", "action_roles", "coverage_limits",
                 "exec_integrity", "gate_strict", "endstate_check", "reset_container", "wait_on_robot", "inventory_ask",
-                "dialog_unstick", "dialog_agree", "dialog_agree2", "relook", "reach_delivery", "unapplied_change", "prompt_lang", "restates", "person_snapshot", "agree_guard", "room_names", "canonical_lang", "label_tokens", "recovery", "kind_anchor_ask", "unstick",
+                "dialog_unstick", "dialog_agree", "dialog_agree2", "relook", "reach_delivery", "unapplied_change", "dialog_hold", "noun_relabel", "prompt_lang", "restates", "person_snapshot", "agree_guard", "room_names", "canonical_lang", "label_tokens", "recovery", "kind_anchor_ask", "unstick",
                 "reask_anchor", "no_shared_listener", "understand_views", "understand_goals_first",
                 "understand_model", "understand_url", "understand_model_lang", "understand_max_tokens",
                 "understand_max_goals", "understand_schema_strict", "understand_give_kind", "understand_verify_verdict",
@@ -441,6 +444,12 @@ def _planner(v, errs) -> dict:
             bad = sorted(set(un) - UNSTICK_KEYS)
             if bad:
                 errs.append(f"planner.unstick: unknown keys {bad} (allowed: {sorted(UNSTICK_KEYS)})")
+    dh = v.get("dialog_hold")
+    if dh is not None and not (isinstance(dh, dict) and not set(dh) - {"hold", "one_part", "max_options"}
+                               and all(isinstance(dh.get(k, False), bool) for k in ("hold", "one_part"))
+                               and (dh.get("max_options") is None or (isinstance(dh["max_options"], int)
+                                                                      and not isinstance(dh["max_options"], bool) and dh["max_options"] >= 2))):
+        errs.append("planner.dialog_hold: must be {hold: bool, one_part: bool, max_options: integer >= 2}")
     _section(v, "agree_guard", AGREE_GUARD_KEYS, errs, {"garble_ratio": lambda x: _is_number(x) and 0 < x <= 1,
                                                         "particle_chain": _is_count, "tail_chars": _is_count},
              "garble_ratio a number in (0, 1], particle_chain and tail_chars integers >= 1")

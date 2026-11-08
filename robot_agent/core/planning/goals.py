@@ -45,6 +45,10 @@ GOAL_KINDS: dict = {
                         '(or ""), from "", to = the place.'),
 }
 TEMPLATE_KINDS = ("go", "say", "deliver")
+# The slots of each kind (round 18, ``dialog_hold``): the parts of a goal the person's words can name or settle. A kind not
+# listed gets the slots it holds (object, from, to).
+SLOTS: dict = {"on": ("object", "from", "to"), "in": ("object", "from", "to"), "open": ("object",), "close": ("object",),
+               "go": ("to",), "say": ("object", "to"), "deliver": ("object", "to")}
 # Optional kinds of the understand schema (option ``understand_give_kind``): not part of the table above, so the default
 # schema and prompt do not change. A ``give`` goal is an ``on`` goal whose destination is a person (``canonical``).
 OPTIONAL_KINDS: dict = {

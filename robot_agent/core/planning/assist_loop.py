@@ -58,10 +58,11 @@ from .records import StepRecord, VerifyResult
 from . import action_model, concrete, episode_memory, goal_change
 from . import search as search_belief
 from .search_hooks import SearchHooks
+from .dialog_hold_flow import HoldFlow
 from .which_one import WhichOne
 from . import goals as goal_kinds
 from . import langdata
-from . import (action_roles, dialog_agree, dialog_converge, dialog_ext, dialog_unstick, exec_integrity, goal_filter, goal_fix, language, persons, plan_tidy,
+from . import (action_roles, dialog_agree, dialog_converge, dialog_ext, dialog_hold, dialog_unstick, exec_integrity, goal_filter, goal_fix, language, persons, plan_tidy,
                 reach_delivery,
                request_coverage, role_models, speech)
 from . import reconcile as sensed
@@ -87,7 +88,7 @@ ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify
                 "search_legs", "object_check", "detector_miss_rate", "person_goals", "accept_goals",
                 "go_steps", "kind_anchor", "name_canon", "reask_abstain",
                 "exec_integrity", "gate_strict", "endstate_check", "reset_container", "wait_on_robot", "inventory_ask",
-                "dialog_unstick", "dialog_agree", "dialog_agree2", "relook", "reach_delivery", "unapplied_change", "hazard_receiver", "kind_anchor_ask", "prompt_lang", "reask_anchor", "no_shared_listener", "understand_views",
+                "dialog_unstick", "dialog_agree", "dialog_agree2", "relook", "reach_delivery", "unapplied_change", "hazard_receiver", "dialog_hold", "noun_relabel", "kind_anchor_ask", "prompt_lang", "reask_anchor", "no_shared_listener", "understand_views",
                   "understand_goals_first", "understand_model", "understand_url", "understand_model_lang",
                 "understand_max_tokens", "understand_max_goals", "understand_schema_strict", "understand_give_kind",
                 "understand_verify_verdict", "understand_think", "repair_model", "repair_url", "repair_max_tokens",
@@ -354,7 +355,7 @@ Task: {task}{original}
 # ─────────────────────────────────────────────────────────────────────────────
 # the loop
 # ─────────────────────────────────────────────────────────────────────────────
-class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
+class AssistLoop(HoldFlow, WhichOne, SearchHooks, ClosedLoop):
     """See the module docstring."""
 
     _answer_source = "robot"          # where the last answer came from (interact.dialog: robot | typed | '')
@@ -444,10 +445,19 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
     def _v2_cfg(self, overrides) -> dict:
         """The SAGE-v2 options (docs/env.md): run option > environment > the robot's manifest > default. Round 14:
         ``dialog_agree2`` is the extension of ``dialog_agree`` and includes it."""
-        cfg = self._v2_cfg_base(overrides)
+        cfg = {**self._v2_cfg_base(overrides), **self._r18_cfg(overrides)}
         if cfg.get("dialog_agree2"):
             cfg["dialog_agree"] = True
         return cfg
+
+    def _r18_cfg(self, overrides) -> dict:
+        """Round 18 (default OFF, dialog_hold.py / dialog_hold_flow.py): hold the reading across turns (ledger of parts) and repair
+        one part at a time after a content-free answer; ``noun_relabel``: her object noun names the part."""
+        env = os.environ.get
+        return {"dialog_hold": dialog_hold.options(overrides.get("dialog_hold", env("ROBOT_AGENT_DIALOG_HOLD")),
+                                                   self._manifest_planner("dialog_hold", None)),
+                "noun_relabel": str(overrides.get("noun_relabel", env("ROBOT_AGENT_NOUN_RELABEL", str(
+                    self._manifest_planner("noun_relabel", "0"))))).lower() in ("1", "true", "yes", "on")}
 
     def _v2_cfg_base(self, overrides) -> dict:
         env = os.environ.get
@@ -1933,6 +1943,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         r.patched = None
         if patched is not None:
             r.goals, r.filtered = patched, []
+            if self._hold_on() and self._hold_led(r) is not None:
+                r.hold.sync(patched)
             return {"status": "clear", "reason": "goals edited by the person's correction", "goals": patched,
                     "question": None}, None
         r.allow_repeat = False
@@ -1944,7 +1956,10 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             u = yield from self._reask_abstention(r, u)
             if u is _STOP:
                 return _STOP
-        if self.cfg.get("dialog_unstick") and not getattr(r, "unsure_reasked", False):
+        sensed_u = self._hold_sense(r, u) if self._hold_one() and not getattr(r, "unsure_reasked", False) else None
+        if sensed_u is not None:
+            u = sensed_u
+        elif self.cfg.get("dialog_unstick") and not getattr(r, "unsure_reasked", False):
             u = yield from self._search_when_unsure(r, u)
             if u is _STOP:
                 return _STOP
@@ -1954,6 +1969,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
                 r.view_question = None
                 return _STOP
         r.goals, q = self._ground_understood(r, u)
+        if self._hold_on():
+            q = self._hold_read(r, q)
         return u, q
 
     def _ask_views(self, r):
@@ -2467,6 +2484,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         here) or always (`confirm_task`, a voice user whose command itself may be misheard).
         Returns (outcome or None, the question to ask next)."""
         unsure = getattr(r, "unsure", None)
+        if self._hold_one() and r.__dict__.get("hold") is not None and r.hold.active:
+            return (yield from self._hold_parts(r))       # a held reading: part by part, no whole read-back
         if not ((r.dialogue and r.heard and self.cfg["confirm_answers"]) or self.cfg["confirm_task"] or unsure
                 or getattr(r, "force_readback", False)):
             return _DONE, None
@@ -2498,6 +2517,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         if stop:
             yield stop; return _STOP, None
         if ok_ is True:
+            if self._hold_on() and self._hold_led(r) is not None:
+                r.hold.settle_all("yes")
             return _DONE, None
         if ok_ is None:
             yield self._finish(r, "failed", msg=f"no answer to: {cq}"); return _STOP, None
@@ -2510,11 +2531,15 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
                                                        fallback_too=bool(self.cfg.get("dialog_agree2")))})
         again = self._converge() and sig in getattr(r, "rejected", ())
         r.rejected = list(getattr(r, "rejected", ())) + [sig]
+        if self._hold_one() and (not rest or self._hold_unsure(r, ans)):         # round 18: keep the reading, repair one part at a time
+            return (yield from self._hold_repair(r))
         if not rest:                     # a bare "no": ask what instead (as a choice when this reading was refused before)
             return None, speech.LocalText("q_which_part" if again else "q_what_do")
         r.corrected = getattr(r, "corrected", 0) + 1
         r.memory.remember_answer(r.task, cq, ans)
         edit, edits = self._correction_edit(r, rest)
+        if self._hold_on() and edit is None and (yield from self._hold_whole_edit(r, rest)):
+            return _NEXT, None
         if edit == "same":               # the goal it names already has that destination
             yield r.ev("understand_check", issues=["correction restates a read-back goal"], correction="same")
             if getattr(r, "same_used", False):
@@ -2527,7 +2552,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             if patched is not None:
                 r.patched = patched      # these goals are read back next; no new understanding of the task
                 return _NEXT, None
-        elif edit is None:
+        elif edit is None and not self._hold_on():
             k = r.places.ground(rest, rest)
             if k and not re.search(r"\b(from|take|pick)\b", rest):
                 r.pin_to = k             # the destination it read back is replaced (the coverage check drops it)
@@ -2591,6 +2616,11 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
     def _ask_clarify(self, r, q):
         """Ask the user `q` (bounded by clarify_rounds): _NEXT with the answer in the dialogue, or _STOP."""
         q = self._fresh_question(r, q)
+        if self._hold_on():
+            q, blocked = self._hold_gate(r, q)
+            if blocked:
+                yield self._finish(r, "failed", msg="the user did not confirm the task")
+                return _STOP
         if r.asked >= self.cfg["clarify_rounds"] + (1 if self._essential(q) and not getattr(r, "essential_used", False) and not self.__dict__.get("_person_at") else 0):
             # (what the run says is a plain sentence, not the internal message that holds the last question)
             yield self._finish(r, "failed", msg=f"still unclear after {r.asked} questions: {q}",
@@ -2612,6 +2642,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             return _STOP
         r.memory.remember_answer(r.task, q, ans)
         r.dialogue += [("robot", q), ("user", ans)]
+        if self._hold_on():
+            self._hold_note_answer(r, q, ans)
         if self.cfg.get("dialog_agree"):                  # a choice between places, answered: the option not taken is settled
             gone = dialog_agree.settle_pair(q, ans, r.places, lambda u: self._texts_of(u))
             if gone:

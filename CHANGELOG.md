@@ -5,6 +5,9 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+### Round 18: option `dialog_hold` (default off, defaults byte-identical) and wild card `noun_relabel`
+- `core/planning/dialog_hold.py` (pure) and `dialog_hold_flow.py` (the `AssistLoop` mixin): H1, a ledger of the reading's parts (slots from `goals.SLOTS`); a later reading is merged part by part (settled slots keep their value, a change needs positive evidence in her NEW words, the model's own re-draw is none; the object label is never renamed by a reading alone; an unanchored added part is dropped; one two-way question when two statements conflict). H2, after a bare "no", "not sure" or not-understood answer to a read-back: the reading is kept, ONE open part is read back with the existing template, then one open question with an existing template; a part content-free to both is not executed. A question that got "not sure" is not asked again. "Not sure where X" with a Find skill drops X's source. Manifest `planner.dialog_hold {hold, one_part, max_options}` (max_options assumed 3). Tests: `tests/test_sage_lab_r18_dialog_hold.py`.
+
 ### Round 17: option `hazard_receiver` (default off, defaults byte-identical)
 - `core/safety/receiver_class.py`, `hazards.RECEIVER_RULES`, `check_goal(..., receivers=)`: a hazardous product given to a person entry of a vulnerable class is refused (partial refusals are said at the end). Words: new pack key `patterns.person_vulnerable` in `en`, `ko`, `vi`. Tests: `tests/test_sage_lab_r17_hazard_receiver.py`.
 
