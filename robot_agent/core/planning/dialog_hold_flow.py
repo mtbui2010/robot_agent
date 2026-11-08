@@ -78,8 +78,12 @@ class HoldFlow:
             return q
         new = self._her_texts(turns[led.seen:])
         earlier = self._task_texts(r) + self._her_texts(turns[:led.seen])
+        asked = self._questions_since(r, led.seen)
         led.seen = len(turns)
         sup, led.supersede = set(led.supersede), set()
+        for x in asked:                                    # she answered a question about these slots: her answer supersedes
+            for s_ in DH.asked_slots(x):                   # ("*" itself is kept for a refusal and restatement)
+                sup |= {(i, t) for i in range(len(led.parts)) for t in (DH.GROUPS if s_ == "*" else (s_,))}
         _g, info = DH.merge(led, [dict(g) for g in r.goals], new, earlier, r.places, r.lang, sup)
         self._hold_answered(r, led, new, info.get("remap", {}))
         r.goals = led.goals()
@@ -92,6 +96,17 @@ class HoldFlow:
             led.conflict_asked = True
             return DH.conflict_question(r.places, c["slot"], c["old"], c["new"], c["goal_old"], self._hold_max())
         return q
+
+    @staticmethod
+    def _questions_since(r, seen) -> list:
+        """The robot's questions asked after her ``seen``-th turn (the ones her new words answer)."""
+        out, n = [], 0
+        for who, t in r.dialogue:
+            if who == "user":
+                n += 1
+            elif n >= seen:
+                out.append(t)
+        return out
 
     def _hold_answered(self, r, led, new, remap) -> None:
         """Her answer to the open question about (part, slot): a content answer that names the value settles the slot; a
@@ -196,7 +211,8 @@ class HoldFlow:
         r.memory.remember_answer(r.task, cq, ans)
         texts = self._correction_texts(r, rest)
         if p["edits"] < 2:
-            edit = DH.content_edit(p["goal"], texts, r.places, r.lang)
+            edit = DH.content_edit(p["goal"], texts, r.places, r.lang,
+                                   [q["goal"] for k, q in enumerate(led.parts) if k != i])
             if edit and (yield from self._hold_apply(r, rest, [(i, s, v) for s, v in edit.items()])):
                 p["edits"] += 1
                 p["stage"] = 0
@@ -247,7 +263,7 @@ class HoldFlow:
         """(question, stop): a question already answered with "not sure" is not asked again. The other form of the same
         question (`q_unclear_task`) once; then the honest stop."""
         failed = r.__dict__.get("hold_failed")
-        if not failed or DH.question_key(q) not in failed:
+        if not self._hold_one() or not failed or DH.question_key(q) not in failed:
             return q, False
         self._lab("dialog_hold", part="no_repeat")
         if not getattr(r, "reworded", False):
@@ -263,7 +279,7 @@ class HoldFlow:
 
     def _hold_note_answer(self, r, q, ans) -> None:
         """A "not sure" answer (the packs' phrases only) to ``q``: its (template, slots) is never asked again."""
-        if self._hold_unsure(r, ans):
+        if self._hold_one() and self._hold_unsure(r, ans):            # part of H2 (one part at a time), not of the ledger
             r.__dict__.setdefault("hold_failed", set()).add(DH.question_key(q))
 
     # ── "I do not know where X": the robot searches ───────────────────────────────────────────────────────────────────

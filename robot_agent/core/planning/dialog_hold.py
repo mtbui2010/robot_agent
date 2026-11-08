@@ -280,6 +280,25 @@ def _label(g) -> str:
     return str(g.get("object") or "").strip().lower()
 
 
+MOVE_KINDS = ("on", "in")               # one family: "on" vs "in" is a property of the destination, not another part
+
+
+def _family(g):
+    t = g.get("type")
+    return "move" if t in MOVE_KINDS else t
+
+
+def refines(old, new) -> bool:
+    """Is the label ``new`` the label ``old`` made more specific (every token of ``old`` kept, at least one added:
+    mug -> black mug)? Such a pair names one thing, so it is never a conflict."""
+    a, b = _label_tokens(old), _label_tokens(new)
+    return bool(a) and set(a) < set(b)
+
+
+def _label_tokens(g) -> list:
+    return re.findall(r"[^\W_]+", _label(g).replace("_", " "))
+
+
 def _match(old, new) -> dict:
     """{new index: old index}: parts matched by (type, label), then (type, said), then (type, a destination or source), then
     by position among the parts of one type when both readings have the same number of them."""
@@ -290,16 +309,17 @@ def _match(old, new) -> dict:
             if j in out:
                 continue
             for i, o in enumerate(old):
-                if i not in used and o["goal"].get("type") == n.get("type") and pred(o["goal"], n):
+                if i not in used and _family(o["goal"]) == _family(n) and pred(o["goal"], n):
                     out[j] = i
                     used.add(i)
                     break
     go(lambda o, n: _label(o) == _label(n) and (_label(o) or o.get("to") == n.get("to")))
     go(lambda o, n: bool(o.get("said")) and o.get("said") == n.get("said"))
+    go(lambda o, n: refines(o, n) or refines(n, o))
     go(lambda o, n: bool(n.get("to")) and o.get("to") == n.get("to") or bool(n.get("from")) and o.get("from") == n.get("from"))
-    for ty in {n.get("type") for n in new}:
-        js = [j for j, n in enumerate(new) if n.get("type") == ty and j not in out]
-        is_ = [i for i, o in enumerate(old) if o["goal"].get("type") == ty and i not in used]
+    for ty in {_family(n) for n in new}:
+        js = [j for j, n in enumerate(new) if _family(n) == ty and j not in out]
+        is_ = [i for i, o in enumerate(old) if _family(o["goal"]) == ty and i not in used]
         if js and len(js) == len(is_):
             for j, i in zip(js, is_):
                 out[j] = i
@@ -339,14 +359,27 @@ def merge(ledger, new_goals, new_texts, earlier_texts, places, lang, supersede=(
             ov, nv = _group_value(o, s), _group_value(n, s)
             if ov == nv and (s != "object" or (o.get("said") or "") == (n.get("said") or "")):
                 continue
+            if not ov and nv and s != "object":           # a gap filled (a source the robot knows, a destination she gave): no drift
+                _set_group(o, s, n)
+                if s == "to" and o.get("type") in MOVE_KINDS and n.get("type") in MOVE_KINDS:
+                    o["type"] = n["type"]
+                info["changed"].append((i, s))
+                continue
             sn, so = slot_score(n, s, new_texts, places, lang), slot_score(o, s, new_texts, places, lang)
-            if sn > so:
+            answered = sup_all or (i, s) in set(supersede)
+            # her answer to a question about this part narrows the object (mug -> black mug): the narrower reading stands
+            # even when her short answer ("the black one") does not repeat the noun
+            narrower = s == "object" and answered and refines(o, n) and sn >= so
+            if sn > so or narrower:
                 before = slot_score(o, s, earlier_texts, places, lang)
-                answered = sup_all or (i, s) in set(supersede)
-                if before > 0 and not answered and not ledger.conflict_asked:
+                # a message ("say") is her words, not a name: her latest statement of it wins, no choice between two texts
+                if before > 0 and not answered and not ledger.conflict_asked and not (s == "object" and o.get("type") == "say") \
+                        and not (s == "object" and refines(o, n)):
                     info["conflicts"].append({"part": i, "slot": s, "old": ov, "new": nv, "goal_old": dict(o), "goal_new": dict(n)})
                     continue
                 _set_group(o, s, n)
+                if s == "to" and o.get("type") in MOVE_KINDS and n.get("type") in MOVE_KINDS:
+                    o["type"] = n["type"]                  # on / in follows the destination
                 info["changed"].append((i, s))
             else:
                 info["kept"].append((i, s))
@@ -354,9 +387,19 @@ def merge(ledger, new_goals, new_texts, earlier_texts, places, lang, supersede=(
     # (the model forgot it); else the reading's drop stands. ``remap``: old index -> index after the clean-up.
     seen = set(match.values())
     keep, remap = [], {}
+    held = [ledger.parts[i]["goal"] for i in seen]
+
+    def twin(g):                       # the reading folded this part into a part it kept (one object, one destination), or a
+        #                                "go" part leads to a place another kept part goes to anyway
+        return any(_family(h) == _family(g) and (_label(h) == _label(g) or (g.get("type") == "say" and h.get("to") == g.get("to")))
+                   or (g.get("type") == "go" and g.get("to") and g.get("to") in (h.get("to"), h.get("from"))) for h in held)
     for i, p in enumerate(ledger.parts):
         gone = i < n_old and i not in seen
-        if gone and not (p["status"] == SETTLED or (p["first"] and goal_anchored(p["goal"], all_texts, places, lang))):
+        # a part of the first reading that a later reading leaves out stays, unless she refused and restated the task
+        # ("*": then the drop stands when her words do not anchor the part); a reading after an answer to one question
+        # often holds only what the answer was about (the model forgot the rest)
+        first_kept = p["first"] and (not sup_all or goal_anchored(p["goal"], all_texts, places, lang))
+        if gone and (twin(p["goal"]) or not (p["status"] == SETTLED or first_kept)):
             info["dropped"].append(_label(p["goal"]) or p["goal"].get("type"))
             continue
         remap[i] = len(keep)
@@ -367,12 +410,17 @@ def merge(ledger, new_goals, new_texts, earlier_texts, places, lang, supersede=(
 
 
 # ── a content correction edits the part it names ──────────────────────────────────────────────────────────────────────
-def content_edit(goal, texts, places, lang) -> dict:
+def content_edit(goal, texts, places, lang, others=()) -> dict:
     """The change a content "no" asks for in ONE part (the part the caller read back): ``{slot: value}``. Destination or
     recipient: the one ENV key (place or person) her words name that the part does not have; open / close: the container.
-    {} when the words name no single new value (the object is then left to the re-reading and its evidence rule)."""
+    {} when the words name no single new value (the object is then left to the re-reading and its evidence rule), or when
+    they name the object of another part of the reading (``others``) and not this part's: the correction is about that part.
+    A person is never the destination of an ``in`` goal."""
     t = [x for x in texts if x]
     kind = goal.get("type")
+    if (kind not in MOVE_KINDS or object_score(goal, t, lang) == 0) and any(
+            o.get("type") in MOVE_KINDS and object_score(o, t, lang) > 0 for o in others):
+        return {}                       # (a part with no object of its own, e.g. "go", is never edited by words about another)
     keys = named_keys(t, places)
     sk = persons.speaker_key(places)
     named = {k for k in keys if k in places.env} - {"@speaker"}
@@ -383,7 +431,9 @@ def content_edit(goal, texts, places, lang) -> dict:
         return {}
     cur = goal.get("to")
     dests = {k for k in named if k != cur and k != goal.get("from")}
-    if "@speaker" in keys and sk and cur not in (sk, "me") and not dests:
+    if kind == "in":
+        dests = {k for k in dests if not persons.is_person(places, k)}
+    if "@speaker" in keys and sk and cur not in (sk, "me") and not dests and kind != "in":
         return {"to": "@speaker"}
     if len(dests) == 1 and "@speaker" not in keys:
         return {"to": next(iter(dests))}
@@ -434,6 +484,34 @@ def open_question(goal, slot, places):
     if kind in ("on", "in") and nm and not persons.is_person(places, goal.get("to")):
         return L("q_where_put", {"object": nm})
     return L("q_where_take")
+
+
+# What a core question template asks about (the slot her answer settles). The templates that ask her to say the task again
+# (q_repeat, q_what_do, q_what_exactly, q_unclear_task, q_mentioned, q_which_part, q_silence) ask about no slot: her answer is a
+# restatement and can conflict with what she said before. A read-back (q_confirm) settles nothing here: a yes settles every
+# part, a "no, <words>" goes through the correction path (which marks what her words supersede). A free question written by
+# the model asks about the whole reading; so does a choice between named options (q_which_x, q_which_place: the options may be
+# objects, sources or destinations) and a template not listed (fail open toward her latest words).
+ASKS_SLOT = {"q_what_bring": "object", "q_which_x": "*", "q_which_one": "object", "q_which_known": "object",
+             "q_did_you_mean": "object", "q_which_drawer": "object", "q_what_say": "object", "q_which_reading": "*",
+             "q_where_put": "to", "q_which_place": "*", "q_where_take": "to", "q_where_go": "to",
+             "q_where_are_you": "to", "q_where_is_person": "to", "q_where_is": "from"}
+RESTATE_KEYS = frozenset({"q_repeat", "q_what_do", "q_what_exactly", "q_unclear_task", "q_mentioned", "q_which_part",
+                          "q_silence", "q_confirm", "q_confirm_restated", "q_coverage"})
+
+
+def asked_slots(q) -> set:
+    """The slots the question ``q`` asks about: {"object"}, {"to"}, ..., {"*"} (the whole reading) or set() (a request to say
+    the task again)."""
+    key = getattr(q, "key", "") or ""
+    if key == "_join":
+        out = set()
+        for p in (getattr(q, "parts", ()) or ()):
+            out |= asked_slots(p)
+        return out
+    if key in RESTATE_KEYS:
+        return set()
+    return {ASKS_SLOT.get(key, "*")}
 
 
 def question_key(q) -> tuple:

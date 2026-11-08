@@ -7,6 +7,13 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ### Round 18: option `dialog_hold` (default off, defaults byte-identical) and wild card `noun_relabel`
 - `core/planning/dialog_hold.py` (pure) and `dialog_hold_flow.py` (the `AssistLoop` mixin): H1, a ledger of the reading's parts (slots from `goals.SLOTS`); a later reading is merged part by part (settled slots keep their value, a change needs positive evidence in her NEW words, the model's own re-draw is none; the object label is never renamed by a reading alone; an unanchored added part is dropped; one two-way question when two statements conflict). H2, after a bare "no", "not sure" or not-understood answer to a read-back: the reading is kept, ONE open part is read back with the existing template, then one open question with an existing template; a part content-free to both is not executed. A question that got "not sure" is not asked again. "Not sure where X" with a Find skill drops X's source. Manifest `planner.dialog_hold {hold, one_part, max_options}` (max_options assumed 3). Tests: `tests/test_sage_lab_r18_dialog_hold.py`.
+- Offline-replay fixes (dev 0..99 cache replay, option on only; off unchanged): her answer to a question that asks about a slot
+  (template table `dialog_hold.ASKS_SLOT`; requests to say the task again and read-backs ask about none) supersedes that slot, so it is
+  no conflict; a narrower name (mug -> black mug) is never a conflict; a message is never a two-way choice; `on` / `in` readings of one
+  object are one part (the kind follows the destination); an empty slot is filled (no drift); a part folded into a kept part, or a
+  `go` to a place another part goes to, is dropped; a first-reading part a later reading forgets stays unless she refused and restated;
+  a one-part correction that names another part's object edits nothing, and a person is never an `in` destination; the no-repeat
+  gate belongs to `one_part` (H2), so `hold` alone is the ledger only.
 
 ### Round 17: option `hazard_receiver` (default off, defaults byte-identical)
 - `core/safety/receiver_class.py`, `hazards.RECEIVER_RULES`, `check_goal(..., receivers=)`: a hazardous product given to a person entry of a vulnerable class is refused (partial refusals are said at the end). Words: new pack key `patterns.person_vulnerable` in `en`, `ko`, `vi`. Tests: `tests/test_sage_lab_r17_hazard_receiver.py`.

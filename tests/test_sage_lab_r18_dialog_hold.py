@@ -10,7 +10,7 @@ import pytest
 
 from fakes import FakeLLM, FakeRobot, ScriptedPlanner, done, steps
 from robot_agent.contract.manifest import PLANNER_KEYS
-from robot_agent.core.planning import dialog_hold as DH, langdata
+from robot_agent.core.planning import dialog_hold as DH, langdata, speech
 from robot_agent.core.planning.assist_loop import ASSIST_OPTIONS, Places
 from test_sage_lab_r12_agree import ENV, HOUSE, PLAN, READ, TASK, UNSTICK, ScriptRobot, confirms, gave_up   # noqa: F401
 
@@ -347,3 +347,109 @@ def test_korean_containment_is_no_evidence():
 def test_a_robot_without_goal_kind_slots_gets_the_slots_it_holds():
     assert DH.slots_of({"type": "made_up", "object": "x", "to": "y"}) == ("object", "to")
     assert DH.slots_of({"type": "say"}) == ("object", "to")
+
+
+# ── offline replay fixes (round 18 check; invented words only) ─────────────────────────────────────────────────────────
+def test_an_answer_to_a_which_one_question_narrows_the_label_without_a_choice():
+    """The robot asked which blick; her answer ("the red one") narrows the part. Not a conflict: no "blick or red blick?"."""
+    g = {"type": "on", "object": "blick", "from": "", "to": "me"}
+    led = ledger(g)
+    q = speech.LocalText("q_which_known", {"object": "blick", "text": "the red blick or the blue blick"})
+    assert DH.asked_slots(q) == {"object"} and DH.asked_slots(q.again()) == {"object"}
+    out, info = DH.merge(led, [{**g, "object": "red blick"}], ["The red one."], ["Bring me the blick."], Places(ENV), "en",
+                         {(0, "object")})
+    assert out[0]["object"] == "red blick" and not info["conflicts"]
+    led2 = ledger(g)                         # without the question: a narrower name she says is no conflict either
+    out, info = DH.merge(led2, [{**g, "object": "red blick"}], ["the red blick"], ["Bring me the blick."], Places(ENV), "en", set())
+    assert out[0]["object"] == "red blick" and not info["conflicts"]
+    led3 = ledger(g)                         # but the model narrowing on its own, with no question and no words, changes nothing
+    out, _ = DH.merge(led3, [{**g, "object": "red blick"}], ["Yes."], ["Bring me the blick."], Places(ENV), "en", set())
+    assert out[0]["object"] == "blick"
+
+
+def test_an_answer_to_a_which_place_question_settles_without_asking_again():
+    g = {"type": "on", "object": "blick", "from": "", "to": "sofa@living room"}
+    led = ledger(g)
+    q = speech.LocalText("q_which_place", {"options": ["sofa@living room", "dresser@bedroom"]})
+    sup = {"*"} if DH.asked_slots(q) == {"*"} else {(0, s) for s in DH.asked_slots(q)}     # as the loop builds it
+    out, info = DH.merge(led, [{**g, "to": "dresser@bedroom"}], ["The dresser."], ["the blick on the sofa"], Places(ENV), "en", sup)
+    assert out[0]["to"] == "dresser@bedroom" and not info["conflicts"]
+
+
+def test_a_restatement_request_or_a_read_back_supersedes_nothing():
+    for k in ("q_what_do", "q_repeat", "q_unclear_task", "q_confirm"):
+        assert DH.asked_slots(speech.LocalText(k)) == set()
+    assert DH.asked_slots("Which blick is it, the one on the sofa?") == {"*"}       # a free question of the model: all
+
+
+def test_a_message_is_never_a_two_way_choice():
+    g = {"type": "say", "object": "zorp wibble now", "from": "", "to": "ben@kitchen"}
+    led = ledger(g)
+    out, info = DH.merge(led, [{**g, "object": "zorp wibble"}], ["zorp wibble"], ["tell ben zorp wibble now"], Places(ENV), "en", set())
+    assert not info["conflicts"]
+
+
+def test_on_and_in_readings_of_one_object_are_one_part():
+    old = {"type": "on", "object": "blick", "from": "", "to": ""}
+    led = ledger(old)
+    out, info = DH.merge(led, [{"type": "in", "object": "blick", "from": "", "to": "fridge@kitchen"}], ["The fridge."],
+                         ["Put the blick away."], Places(ENV), "en", {(0, "to")})
+    assert len(out) == 1 and out[0]["to"] == "fridge@kitchen" and out[0]["type"] == "in" and not info["added"]
+
+
+def test_a_correction_about_another_part_does_not_edit_this_one():
+    pl = Places(ENV)
+    this = {"type": "in", "object": "blick", "from": "", "to": "fridge@kitchen"}
+    other = {"type": "on", "object": "dax", "from": "", "to": "dresser@bedroom"}
+    assert DH.content_edit(this, ["No, bring the dax to me."], pl, "en", [other]) == {}
+    assert DH.content_edit(this, ["No, give it to Ben."], pl, "en", [other]) == {}           # a person is never "in"
+    assert DH.content_edit(this, ["No, the dresser."], pl, "en", [other]) == {"to": "dresser@bedroom"}
+    go = {"type": "go", "object": "", "from": "", "to": "sofa@living room"}
+    assert DH.content_edit(go, ["No, put the dax on the dresser."], pl, "en", [other]) == {}
+    assert DH.content_edit(go, ["No, the dresser."], pl, "en", [other]) == {"to": "dresser@bedroom"}
+
+
+def test_the_ledger_only_ablation_has_no_no_repeat_gate(make_assist, env):
+    loop = make_assist(FakeRobot(env, {}), FakeLLM(), ScriptedPlanner([]), **HOLD1)
+    r = sense_ctx(loop)
+    q = DH.open_question({"type": "in", "object": "plate", "to": "fridge@kitchen"}, "object", r.places)
+    loop._hold_note_answer(r, q, "I don't know.")
+    assert loop._hold_gate(r, q) == (q, False) and not r.__dict__.get("hold_failed")
+
+
+def test_a_gap_is_filled_and_a_folded_twin_part_is_dropped():
+    pl = Places(ENV)
+    g = {"type": "on", "object": "blick", "from": "", "to": "dresser@bedroom"}
+    led = ledger(g)                    # the re-reading knows where the blick is: filling the empty source is no drift
+    out, info = DH.merge(led, [{**g, "from": "counter@kitchen"}], ["Yes."], ["the blick on the dresser"], pl, "en", set())
+    assert out[0]["from"] == "counter@kitchen" and (0, "from") in info["changed"]
+    a = {"type": "on", "object": "blick", "from": "", "to": "sofa@living room"}
+    led = ledger(a, {**a, "to": "dresser@bedroom"})          # one object, two destinations; she picks one
+    out, _ = DH.merge(led, [{**a, "to": "dresser@bedroom"}], ["The dresser."], ["the blick on the sofa or the dresser"], pl, "en", {"*"})
+    assert [o["to"] for o in out] == ["dresser@bedroom"]
+
+
+def test_a_choice_between_named_options_supersedes_the_whole_reading():
+    assert DH.asked_slots(speech.LocalText("q_which_x", {"what": "desk", "options": ["a", "b"]})) == {"*"}
+    assert DH.asked_slots(speech.LocalText("q_which_place", {"options": ["a", "b"]})) == {"*"}
+
+
+def test_a_reading_after_one_answer_does_not_lose_the_other_parts():
+    pl = Places(ENV)
+    say = {"type": "say", "object": "zorp now", "from": "", "to": "ben@kitchen"}
+    move = {"type": "on", "object": "blick", "from": "", "to": "me"}          # no words of hers anchor its English label
+    led = ledger(say, move)
+    out, info = DH.merge(led, [{**say, "object": "zorp"}], ["zorp"], ["Qa ben zorp, qa bliku."], pl, "en", {(0, "object"), (1, "object")})
+    assert [g["type"] for g in out] == ["say", "on"]
+    led = ledger(say, move)                  # after a refusal and a restatement ("*"), an unanchored part the reading drops goes
+    out, _ = DH.merge(led, [say], ["no, just tell ben"], ["Qa ben zorp, qa bliku."], pl, "en", {"*"})
+    assert [g["type"] for g in out] == ["say"]
+
+
+def test_a_go_part_to_a_place_another_part_goes_to_is_folded():
+    pl = Places(ENV)
+    go = {"type": "go", "object": "", "from": "", "to": "dresser@bedroom"}
+    move = {"type": "on", "object": "blick", "from": "", "to": "dresser@bedroom"}
+    led = ledger(go, move)
+    out, _ = DH.merge(led, [move], ["The blick."], ["go to the dresser and put the blick on the dresser"], pl, "en", {(0, "object"), (1, "object")})
+    assert [g["type"] for g in out] == ["on"]
