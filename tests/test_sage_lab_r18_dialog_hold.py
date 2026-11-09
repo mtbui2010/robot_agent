@@ -95,7 +95,8 @@ def test_a_one_part_reading_goes_straight_to_the_open_question(make_assist):
                             plan=plan, **HOLD)
     asked = [str(q) for q in robot.asked]
     assert asked[0].endswith("Is that right?") and asked[1] == "What should I bring?"
-    assert asked[2].startswith("I will put the plate")           # the part, read back once more after the answer
+    assert asked[2] == "Where should I put the plate?"          # the read-back that got the No is not asked again in the same words
+    assert asked[0] not in asked[1:]
 
 
 def test_content_free_to_both_forms_is_an_honest_stop(make_assist):
@@ -118,7 +119,7 @@ def test_a_rereading_cannot_rename_the_object(make_assist):
     loop, robot, evs = play(make_assist, llm, ["No.", "The blick.", "Yes."], task=task, plan=plan, house={"blick": "counter@kitchen"}, **HOLD)
     goals = [e for e in evs if e["event"] == "understand"][-1]["goals"]
     assert [g["object"] for g in goals] == ["blick"]
-    assert hold_log(loop, "merge")[-1]["kept"] >= 1
+    assert any(h["kept"] >= 1 for h in hold_log(loop, "merge"))
     # without the option the second reading renames it
     llm0 = FakeLLM(reading("blick"), default=reading("dax"))
     _l, _r, evs0 = play(make_assist, llm0, ["No.", "The blick.", "Yes."], task=task, plan=plan, house={"blick": "counter@kitchen"}, **S9)

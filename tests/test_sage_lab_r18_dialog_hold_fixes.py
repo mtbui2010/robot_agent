@@ -33,14 +33,15 @@ def confirms(robot):
 
 # ── A: false success ──────────────────────────────────────────────────────────────────────────────────────────────────────
 def test_a_a_part_settled_by_an_answer_is_read_back_as_a_whole(make_assist):
-    answers = ["No.", "Yes.", "No.", "The fridge.", "Yes."]      # the open part is settled by her answer, not by a yes
+    # the plate part is edited by her correction (text changes), the open part is settled by her answer, not by a yes
+    answers = ["No.", "No, put the plate on the dresser.", "Yes.", "No.", "The fridge.", "Yes."]
     loop, robot, evs = play(make_assist, FakeLLM(default=READ), answers, **NOAGREE)
-    whole = "I will put the plate on the fridge in the kitchen, then open the fridge in the kitchen. Is that right?"
+    whole = "I will put the plate on the dresser in the bedroom, then open the fridge in the kitchen. Is that right?"
     assert confirms(robot)[-1] == whole and hold_log(loop, "whole_readback") and not held(evs)
 
 
 def test_a_a_no_to_that_whole_read_back_is_not_a_success(make_assist):
-    answers = ["No.", "Yes.", "No.", "The fridge.", "No."]
+    answers = ["No.", "No, put the plate on the dresser.", "Yes.", "No.", "The fridge.", "No."]
     loop, robot, evs = play(make_assist, FakeLLM(default=READ), answers, **NOAGREE)
     assert done(evs)["status"] == "failed" and "did not confirm" in str(done(evs).get("msg")) and not held(evs)
     assert hold_log(loop, "stop")
@@ -182,10 +183,11 @@ def test_d_not_sure_or_garbled_marks_the_part_empty_and_a_value_of_its_own_settl
 
 # ── E: a No about another part ────────────────────────────────────────────────────────────────────────────────────────────
 def test_e_a_no_that_agrees_with_a_settled_part_asks_the_whole_reading(make_assist):
-    answers = ["No.", "Yes.", "No, the plate in the fridge.", "Yes."]
+    # the cup part is edited first (the whole reading's words change); then her No to the cup read-back agrees with the settled plate
+    answers = ["No.", "No, put the cup on the dresser.", "Yes.", "No, the plate in the fridge.", "Yes."]
     loop, robot, evs = play(make_assist, FakeLLM(default=TWO), answers, task=TASK2, house=HOUSE2, **HOLD)
     asked = [str(q) for q in robot.asked]
-    assert asked[-1] == "I will put the plate on the fridge in the kitchen, then put the cup on the sofa in the living room. Is that right?"
+    assert asked[-1] == "I will put the plate on the fridge in the kitchen, then put the cup on the dresser in the bedroom. Is that right?"
     assert "What should I bring?" not in asked and hold_log(loop, "whole_readback") and not hold_log(loop, "open_question")
     assert not [p for p in loop._ctx.hold.parts if p["status"] == DH.REFUSED]
 
@@ -309,3 +311,17 @@ def test_h_the_repair_rebuilds_the_ledger_from_the_read_back_goals(make_assist, 
     assert ps[1]["settled"] == {"object", "from", "to"} and set(ps[1]["prov"].values()) == {"yes"}
     assert ps[0]["settled"] == {"to"} and ps[0]["prov"] == {"to": "answer"} and ps[0]["edits"] == 1
     assert r.hold.seen == 3
+
+
+def test_e_the_first_whole_read_back_that_got_a_no_is_not_asked_again_in_the_same_words(make_assist):
+    one = {"status": "clear", "reason": "", "question": "", "goals": [READ["goals"][0]]}
+    plan = steps("MoveTo counter@kitchen", "Find plate", "Pick plate", "MoveTo fridge@kitchen", "Open fridge@kitchen", "Place fridge@kitchen")
+    # a one-part reading: the whole read-back is refused, her answer to the open question agrees; the same words are not asked
+    # again as a whole read-back (the stop tries the agreed reading instead)
+    loop, robot, evs = play(make_assist, FakeLLM(default=one), ["No.", "The plate in the fridge, please."], task="Put the plate in the fridge.",
+                            plan=plan, **HOLD)
+    cq = confirms(robot)
+    assert len(cq) == len(set(cq)), cq
+    assert [e for e in evs if e.get("correction") == "agreed"] or done(evs)["status"] == "failed"
+    off = play(make_assist, FakeLLM(default=one), ["No.", "The plate in the fridge, please."], task="Put the plate in the fridge.", plan=plan, **S9)
+    assert not hold_log(off[0])                           # option off: nothing of this runs

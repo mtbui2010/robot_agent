@@ -2530,7 +2530,7 @@ class AssistLoop(HoldFlow, WhichOne, SearchHooks, ClosedLoop):
                                                        r.lang, self._manifest_planner("unstick", None),
                                                        fallback_too=bool(self.cfg.get("dialog_agree2")))})
         again = self._converge() and sig in getattr(r, "rejected", ())
-        r.rejected = list(getattr(r, "rejected", ())) + [sig]
+        r.rejected = list(getattr(r, "rejected", ())) + [sig]; self._hold_one() and self._hold_fail(r, cq)    # r18: a No, not asked again
         if self._hold_one() and (not rest or self._hold_unsure(r, ans)):         # round 18: keep the reading, repair one part at a time
             return (yield from self._hold_repair(r))
         if not rest:                     # a bare "no": ask what instead (as a choice when this reading was refused before)
