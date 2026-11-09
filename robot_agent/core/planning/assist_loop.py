@@ -1970,7 +1970,7 @@ class AssistLoop(HoldFlow, WhichOne, SearchHooks, ClosedLoop):
                 return _STOP
         r.goals, q = self._ground_understood(r, u)
         if self._hold_on():
-            q = self._hold_read(r, q)
+            q = yield from self._hold_read(r, q)
         return u, q
 
     def _ask_views(self, r):

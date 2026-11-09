@@ -43,6 +43,22 @@ class HoldFlow:
         out = []
         for u in turns:
             out += [x for x in self._texts_of(u) if x]
+            out += self._answer_english(u)
+        return out
+
+    def _answer_english(self, u) -> list:
+        """The trusted English of what she said after her yes / no word (the key `_correction_texts` looked up: the correction
+        as `yes_no` splits it), with a leading yes / no word of the packs taken off. [] when the language layer holds none."""
+        heard = getattr(getattr(self, "language", None), "heard", None)
+        if not heard or not u:
+            return []
+        _ok, rest = self.yes_no(u)
+        out = []
+        for key in dict.fromkeys(x for x in (str(rest or "").strip(), str(u).strip()) if x):
+            h = heard.get(key)
+            en = DH.strip_lead_word(getattr(h, "english", "")) if h is not None and getattr(h, "trusted", False) else ""
+            if en and en not in out:
+                out.append(en)
         return out
 
     def _task_texts(self, r) -> list:
@@ -85,7 +101,11 @@ class HoldFlow:
             for s_ in DH.asked_slots(x):                   # ("*" itself is kept for a refusal and restatement)
                 sup |= {(i, t) for i in range(len(led.parts)) for t in (DH.GROUPS if s_ == "*" else (s_,))}
         _g, info = DH.merge(led, [dict(g) for g in r.goals], new, earlier, r.places, r.lang, sup)
-        self._hold_answered(r, led, new, info.get("remap", {}))
+        rm = info.get("remap", {})
+        for i in [i for i, _s in info["changed"]] + list(info.get("added_idx", ())):
+            if rm.get(i) is not None:                      # a part her yes did not cover in this form: read it back again
+                led.parts[rm[i]]["changed_since_yes"] = True
+        yield from self._hold_answered(r, led, new, rm, {(rm.get(i), s_) for i, s_ in info["changed"]})
         r.goals = led.goals()
         if led.active:
             r.allow_repeat = True                      # the refused-reading machinery does not apply to a held reading
@@ -108,20 +128,37 @@ class HoldFlow:
                 out.append(t)
         return out
 
-    def _hold_answered(self, r, led, new, remap) -> None:
-        """Her answer to the open question about (part, slot): a content answer that names the value settles the slot; a
-        garbled or content-free answer settles nothing."""
+    def _hold_answered(self, r, led, new, remap, changed=frozenset()):
+        """Her answer to the open question about (part, slot). A value she names that the part does not have is applied as a
+        content correction (`DH.content_edit`, the asked slot only); a value of the part's own that the merge just changed is not
+        settled; the part stays OPEN and is read back (a one-part read-back follows). Only a not-sure, a garbled answer or no
+        named value marks the part ``empty``. Else a value of the part's own that she names settles the slot."""
         ask, led.asked_slot = led.asked_slot, None
         j = remap.get(ask[0]) if ask else None
         if j is None:
             return
-        p = led.parts[j]
+        p, slot, ans = led.parts[j], ask[1], (self._her_turns(r) or [""])[-1]
         guard = self._hold_guard(r)
-        if not new or (guard is not None and guard.garbled(new)):
-            p["empty"] = True                              # nothing said, or a garble: settles nothing
-        elif DH.slot_score(p["goal"], ask[1], new, r.places, r.lang) > 0:
-            led.settle(j, [ask[1]], "answer")
-        elif not any(DH.slot_score(p["goal"], s, new, r.places, r.lang) > 0 for s in DH.slots_of(p["goal"])):
+        if not new or (guard is not None and guard.garbled(new)) or self._hold_unsure(r, ans):
+            p["empty"] = True                              # nothing said, a garble or a not-sure: settles nothing
+            return
+        g = p["goal"]
+        if DH.slot_score(g, slot, new, r.places, r.lang) > 0:
+            if (j, slot) in changed:                       # the merge changed this slot with her words: read it back first
+                p["opened"] = True
+            else:
+                led.settle(j, [slot], "answer")
+            return
+        own = {g.get(k) for k in ("to", "from", "object")}
+        foreign = DH.named_keys(new, r.places) - {"@speaker"} - own
+        span = DH.object_span(ans, r.places, r.lang) if slot == "object" else None
+        if foreign or (span and DH.object_score(g, [span], r.lang) == 0):
+            edit = DH.content_edit(g, new, r.places, r.lang, [q["goal"] for k, q in enumerate(led.parts) if k != j])
+            edit = {s_: v for s_, v in edit.items() if s_ == slot}
+            if edit and (yield from self._hold_apply(r, ans, [(j, s_, v) for s_, v in edit.items()])):
+                p["edits"] += 1
+            p["opened"] = True                             # open: its one-part read-back follows
+        elif not any(DH.slot_score(g, s_, new, r.places, r.lang) > 0 for s_ in DH.slots_of(g)):
             p["empty"] = True                              # names no slot of the part: content-free
 
     # ── H2: one part at a time ────────────────────────────────────────────────────────────────────────────────────────
@@ -130,8 +167,28 @@ class HoldFlow:
         led = self._hold_led(r)
         if led is None:
             return None, speech.LocalText("q_what_do")
+        led = self._hold_rebuild(r, led)
         led.active = True
         return (yield from self._hold_parts(r))
+
+    def _hold_rebuild(self, r, led):
+        """The ledger of exactly the parts that were just read back (``r.goals``). A part the read-back had keeps what the old
+        ledger knew of it (settled slots, provenance, counters); a part it did not have is dropped: the robot never reads back
+        one part of a reading it did not read back."""
+        if not r.goals:
+            return led
+        new = DH.Ledger(r.goals, seen=led.seen)
+        for k in ("conflict_asked", "failed", "asked_slot", "supersede"):
+            setattr(new, k, getattr(led, k))
+        for j, i in DH._match(led.parts, r.goals).items():
+            old, p = led.parts[i], new.parts[j]
+            p.update({k: old[k] for k in ("first", "edits", "opens", "opened", "changed_since_yes", "empty") if k in old})
+            p["settled"], p["prov"] = set(old["settled"]), dict(old["prov"])
+            new._status(p)
+            if old["status"] == DH.REFUSED:
+                p["status"] = DH.REFUSED
+        r.hold = new
+        return new
 
     def _hold_unverified(self, r) -> tuple:
         try:
@@ -144,6 +201,12 @@ class HoldFlow:
         if i is not None:
             r.hold.refuse(i)
         self._lab("dialog_hold", part="stop", refused=i)
+        if self.cfg.get("dialog_agree") and not self._agree_state(r)["tried"]:
+            r.goals = r.hold.goals()                       # the stop is where s8 tries its agreed reading
+            r.part_asked = True                            # (the parts were asked about one by one: its which-part question)
+            out = yield from self._agreed_reading(r)
+            if out is not None:
+                return out, None
         yield self._finish(r, "failed", msg="the user did not confirm the task")
         return _STOP, None
 
@@ -156,6 +219,8 @@ class HoldFlow:
                 if not led.all_settled():
                     return (yield from self._hold_stop(r))
                 r.goals = led.goals()
+                if not self._hold_all_yes(led):               # a slot settled other than by a yes to a read-back: read it back
+                    return (yield from self._hold_whole(r))
                 said = speech.LocalText.join(speech.LocalText("rb_restated"), self.summary(r.goals, r.places))
                 self._lab("dialog_hold", part="all_settled")
                 yield r.ev("understand_check", issues=["every part of the reading is settled"], correction="held", say=said,
@@ -175,7 +240,7 @@ class HoldFlow:
             if p.get("opens", 0) >= 2:                        # content-free to the read-back and to the open question
                 return (yield from self._hold_stop(r, i))
             p["opens"] = p.get("opens", 0) + 1
-            slot = DH.least_anchored_slot(p["goal"], texts, r.places, r.lang)
+            slot = DH.least_anchored_slot(p["goal"], texts, r.places, r.lang, p["settled"])
             q = DH.open_question(p["goal"], slot, r.places)
             p["stage"], led.asked_slot = 2, (i, slot)
             led.supersede.add((i, slot))
@@ -191,6 +256,8 @@ class HoldFlow:
         p["stage"] = 1
         rb = self.summary([p["goal"]], r.places)
         cq = speech.LocalText("q_confirm", {"summary": rb}, text=f"{rb} Is that right?")
+        if DH.question_key(cq) in r.__dict__.get("hold_failed", ()):
+            return None                                     # this read-back got a No with no edit: not asked again
         self._lab("dialog_hold", part="one_part_readback")
         yield r.ev("clarify", question=cq, round=r.confirms, kind="confirm", part=i)
         ans, ok_, rest = self._ask_yes_no(r, cq)
@@ -206,13 +273,14 @@ class HoldFlow:
             return _STOP, None
         r.dialogue += [("robot", cq), ("user", ans)]
         if not rest or self._hold_unsure(r, ans):
+            self._hold_fail(r, cq)
             return None
         r.corrected = getattr(r, "corrected", 0) + 1
         r.memory.remember_answer(r.task, cq, ans)
         texts = self._correction_texts(r, rest)
         if p["edits"] < 2:
-            edit = DH.content_edit(p["goal"], texts, r.places, r.lang,
-                                   [q["goal"] for k, q in enumerate(led.parts) if k != i])
+            others = [q["goal"] for k, q in enumerate(led.parts) if k != i]
+            edit = DH.content_edit(p["goal"], texts, r.places, r.lang, others)
             if edit and (yield from self._hold_apply(r, rest, [(i, s, v) for s, v in edit.items()])):
                 p["edits"] += 1
                 p["stage"] = 0
@@ -221,8 +289,80 @@ class HoldFlow:
                 p["edits"] += 1
                 p["stage"] = 0
                 return "next"
+            if not edit:
+                named = DH.other_parts_named(p["goal"], texts, r.lang, others)
+                if named:                                   # her words are about another part: this one is not refused
+                    p["stage"] = 0
+                    k = named[0] + (named[0] >= i)               # position among the other parts -> ledger index
+                    res = yield from self._hold_named_part(r, i, k, rest, texts)
+                    if res == "next":                           # her No brought an edit (of the other part)
+                        return res
+                    self._hold_fail(r, cq)
+                    if res is not None:
+                        return res
+                    p["stage"] = 1
+        self._hold_fail(r, cq)
         led.supersede |= {(i, s) for s in DH.slots_of(p["goal"])}
         return None
+
+    def _hold_named_part(self, r, i, k, rest, texts):
+        """Her No to the read-back of part ``i`` names part ``k``. A settled part her words agree with: the whole held reading
+        is read back once (not the open question). Else her words correct part ``k`` (`DH.content_edit`). "next", a pair, or
+        None (no edit: the earlier path)."""
+        led = r.hold
+        pk = led.parts[k]
+        if pk["status"] == DH.SETTLED and DH.agrees_with(pk["goal"], texts, r.places, r.lang):
+            return (yield from self._hold_whole(r))
+        if pk["edits"] < 2:
+            edit = DH.content_edit(pk["goal"], texts, r.places, r.lang, [q["goal"] for m, q in enumerate(led.parts) if m != k])
+            if edit and (yield from self._hold_apply(r, rest, [(k, s, v) for s, v in edit.items()])):
+                pk["edits"] += 1
+                pk["stage"] = 0
+                return "next"
+        return None
+
+    def _hold_fail(self, r, q) -> None:
+        """A read-back that got a No with no edit is never asked again (the gate and `_hold_part_readback` read this)."""
+        r.__dict__.setdefault("hold_failed", set()).add(DH.question_key(q))
+
+    @staticmethod
+    def _hold_all_yes(led) -> bool:
+        """Is every slot of every part settled by a yes to a read-back, with no change since?"""
+        return all(not p.get("changed_since_yes") and all(p["prov"].get(s) == "yes" for s in DH.slots_of(p["goal"]))
+                   for p in led.parts)
+
+    def _hold_whole(self, r):
+        """One read-back of the whole held reading (the existing template). Yes: every part settles by a yes, _DONE. A content
+        No: `_hold_whole_edit`, then the edited reading is read back. Anything else: the stop."""
+        led = r.hold
+        n = r.__dict__.get("hold_wholes", 0)
+        r.goals = led.goals()
+        rb = self.summary(r.goals, r.places)
+        cq = speech.LocalText("q_confirm", {"summary": rb}, text=f"{rb} Is that right?")
+        if n >= 3 or DH.question_key(cq) in r.__dict__.get("hold_failed", ()):
+            return (yield from self._hold_stop(r))
+        r.hold_wholes = n + 1
+        self._lab("dialog_hold", part="whole_readback")
+        yield r.ev("clarify", question=cq, round=r.confirms, kind="confirm")
+        ans, ok_, rest = self._ask_yes_no(r, cq)
+        stop = self._cancelled(r)
+        if stop:
+            yield stop
+            return _STOP, None
+        if ok_ is True:
+            led.settle_all("yes")
+            return _DONE, None
+        if ok_ is None:
+            yield self._finish(r, "failed", msg=f"no answer to: {cq}")
+            return _STOP, None
+        r.dialogue += [("robot", cq), ("user", ans)]
+        self._hold_fail(r, cq)
+        if rest and not self._hold_unsure(r, ans):
+            r.corrected = getattr(r, "corrected", 0) + 1
+            r.memory.remember_answer(r.task, cq, ans)
+            if (yield from self._hold_whole_edit(r, rest)):
+                return _NEXT, None
+        return (yield from self._hold_stop(r))
 
     def _hold_apply(self, r, rest, edits):
         """Apply ``[(part, slot, value)]`` to the reading: a destination or recipient through `_patch_goals` (grounded as any
@@ -240,6 +380,8 @@ class HoldFlow:
             if s == "object":
                 goals[i] = DH.apply_edit(goals[i], {"object": v})
         led.sync(goals)
+        for i, _s, _v in edits:
+            led.parts[i]["changed_since_yes"] = True        # an edit is a change no yes has covered
         r.goals = led.goals()
         self._lab("dialog_hold", part="edit", slots=[s for _i, s, _v in edits])
         return True

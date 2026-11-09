@@ -209,6 +209,7 @@
   ]
  },
  "grammar": {
+  "noun_endings": ["이에요", "예요", "이요", "요", "입니다"],
   "noun_particles": [
    "이랑",
    "에서",

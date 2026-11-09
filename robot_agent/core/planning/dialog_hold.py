@@ -111,16 +111,42 @@ def _articles(lang) -> set:
 
 
 def token_forms(text, lang) -> set:
-    """The tokens of ``text`` and each token with a case particle of the pack taken off its end (``grammar.noun_particles``):
-    whole tokens only, so 컵 is not found inside 머그컵. A language without particles: the tokens."""
+    """The tokens of ``text`` and each token with a case particle of the pack taken off its end (``grammar.noun_particles``),
+    and, after that, one copula / polite ending of the pack (``grammar.noun_endings``: "우유요" is the noun 우유):
+    whole tokens only, so 컵 is not found inside 머그컵. A language without particles or endings: the tokens."""
     toks = re.findall(r"[^\W_]+", str(text or "").lower())
     out = set(toks)
-    parts = sorted((str(p) for p in (langdata.grammar((lang or "en")[:2], "noun_particles", []) or []) if p), key=len, reverse=True)
+    lg = (lang or "en")[:2]
+    parts = sorted((str(p) for p in (langdata.grammar(lg, "noun_particles", []) or []) if p), key=len, reverse=True)
+    ends = sorted((str(e) for e in (langdata.grammar(lg, "noun_endings", []) or []) if e), key=len, reverse=True)
+
+    def strip_one(t, words):
+        for w in words:
+            if t.endswith(w) and len(t) > len(w):
+                return t[:-len(w)]
+        return None
     for t in toks:
         for p in parts:
             if t.endswith(p) and len(t) > len(p):
                 out.add(t[:-len(p)])
+        e = strip_one(t, ends)
+        if e:
+            out.add(e)
+            for p in parts:                                # "우유를요": the ending, then the particle
+                if e.endswith(p) and len(e) > len(p):
+                    out.add(e[:-len(p)])
     return out
+
+
+def strip_lead_word(text, lang_codes=None) -> str:
+    """``text`` without ONE leading yes / no word of the packs (``dialogue.yes`` / ``dialogue.no``, every language with a pack
+    unless ``lang_codes`` is given) and the punctuation after it. The text as it is when it starts with none."""
+    words = sorted({str(w).lower() for k in ("yes", "no") for w in langdata.dialogue_all(k, lang_codes) if w}, key=len, reverse=True)
+    t = str(text or "").strip()
+    if not words:
+        return t
+    m = re.match(r"^(?:" + "|".join(re.escape(w) for w in words) + r")(?![^\W_])[\s,.!?;:-]*", t, flags=re.I)
+    return t[m.end():].strip() if m else t
 
 
 def _name_tokens(name, lang) -> list:
@@ -227,6 +253,8 @@ class Ledger:
         for s in (slots if slots is not None else slots_of(p["goal"])):
             p["settled"].add(s)
             p["prov"][s] = why
+        if why == "yes":
+            p.pop("changed_since_yes", None)
         self._status(p)
 
     def _status(self, p) -> None:
@@ -261,11 +289,12 @@ class Ledger:
         return min(todo, key=rank)
 
 
-def least_anchored_slot(goal, texts, places, lang) -> str:
+def least_anchored_slot(goal, texts, places, lang, settled=()) -> str:
     """The slot to ask about for ``goal``: the object when her words do not name it, else the destination, else the source;
-    when everything is anchored, the object (or the destination of a goal without an object)."""
+    when everything is anchored, the object (or the destination of a goal without an object). A slot in ``settled`` is not
+    asked about again."""
     an = anchor_of(goal, texts, places, lang)
-    slots = slots_of(goal)
+    slots = [s for s in slots_of(goal) if s not in set(settled)]
     for s in ORDER:
         if s in slots and s != "from" and an.get(s) is False:
             return s
@@ -336,11 +365,12 @@ def merge(ledger, new_goals, new_texts, earlier_texts, places, lang, supersede=(
 
     Returns ``(goals, info)``: the merged goals (plan order of the ledger, then the added anchored parts) and
     ``info = {"changed": [...], "kept": [...], "dropped": [...], "added": [...], "conflicts": [{part, slot, old, new}]}``."""
-    info = {"changed": [], "kept": [], "dropped": [], "added": [], "conflicts": []}
+    info = {"changed": [], "kept": [], "dropped": [], "added": [], "added_idx": [], "conflicts": []}
     match = _match(ledger.parts, new_goals)
     n_old = len(ledger.parts)
     sup_all = "*" in set(supersede)
     all_texts = list(earlier_texts) + list(new_texts)
+    added_j = {}                                       # ledger index of an added part -> its index in the new reading
     for j, n in enumerate(new_goals):
         i = match.get(j)
         if i is None:
@@ -348,6 +378,8 @@ def merge(ledger, new_goals, new_texts, earlier_texts, places, lang, supersede=(
                 ledger.parts.append({"goal": dict(n), "status": OPEN, "settled": set(), "first": False, "prov": {},
                                      "stage": 0, "edits": 0, "empty": False})
                 info["added"].append(_label(n) or n.get("type"))
+                info["added_idx"].append(len(ledger.parts) - 1)
+                added_j[len(ledger.parts) - 1] = j
             else:
                 info["dropped"].append(_label(n) or n.get("type"))
             continue
@@ -383,6 +415,13 @@ def merge(ledger, new_goals, new_texts, earlier_texts, places, lang, supersede=(
                 info["changed"].append((i, s))
             else:
                 info["kept"].append((i, s))
+    info["remap"] = _clean_up(ledger, match, n_old, sup_all, all_texts, new_texts, places, lang, added_j, info)
+    return ledger.goals(), info
+
+
+def _clean_up(ledger, match, n_old, sup_all, all_texts, new_texts, places, lang, added_j, info) -> dict:
+    """The last step of `merge`: drop the old parts the reading no longer has (unless kept), then put the parts in the order of
+    the new reading. Returns ``remap`` (old index -> index after the clean-up)."""
     # a part the reading no longer has: kept when settled, or when the first reading had it and her words anchor it
     # (the model forgot it); else the reading's drop stands. ``remap``: old index -> index after the clean-up.
     seen = set(match.values())
@@ -396,20 +435,59 @@ def merge(ledger, new_goals, new_texts, earlier_texts, places, lang, supersede=(
     for i, p in enumerate(ledger.parts):
         gone = i < n_old and i not in seen
         # a part of the first reading that a later reading leaves out stays, unless she refused and restated the task
-        # ("*": then the drop stands when her words do not anchor the part); a reading after an answer to one question
-        # often holds only what the answer was about (the model forgot the rest)
-        first_kept = p["first"] and (not sup_all or goal_anchored(p["goal"], all_texts, places, lang))
+        # ("*": then the drop stands); a part her NEW words anchor stays unless she refused it (a corrected part the reading
+        # lost); a reading after an answer to one question often holds only what the answer was about (the model forgot the rest)
+        first_kept = (p["first"] and not sup_all) or (
+            goal_anchored(p["goal"], new_texts or all_texts, places, lang) and p["status"] != REFUSED)
         if gone and (twin(p["goal"]) or not (p["status"] == SETTLED or first_kept)):
             info["dropped"].append(_label(p["goal"]) or p["goal"].get("type"))
             continue
-        remap[i] = len(keep)
-        keep.append(p)
-    ledger.parts = keep
-    info["remap"] = remap
-    return ledger.goals(), info
+        keep.append((i, p))
+    # the order of the new reading: a matched or added part takes its index there; a kept part the reading does not have
+    # goes just after its nearest earlier old part
+    at_new = {i: j for j, i in match.items()}
+    at_new.update(added_j)
+    last, key = None, {}
+    for i, _p in enumerate(ledger.parts):
+        if i in at_new:
+            key[i] = (at_new[i], 0, i)
+            if i < n_old:
+                last = at_new[i]
+        else:
+            key[i] = ((-1 if last is None else last) + 0.5, 1, i)
+    keep.sort(key=lambda ip: key[ip[0]])
+    for pos, (i, _p) in enumerate(keep):
+        remap[i] = pos
+    ledger.parts = [p for _i, p in keep]
+    return remap
 
 
 # ── a content correction edits the part it names ──────────────────────────────────────────────────────────────────────
+def other_parts_named(goal, texts, lang, others=()) -> list:
+    """Positions in ``others`` (goals) of the move parts whose object her ``texts`` name, when they are about another part and
+    not about ``goal``: a part with no object of its own (a "go") or whose object she does not name."""
+    t = [x for x in texts if x]
+    if goal.get("type") in MOVE_KINDS and object_score(goal, t, lang) > 0:
+        return []
+    return [k for k, o in enumerate(others) if o.get("type") in MOVE_KINDS and object_score(o, t, lang) > 0]
+
+
+def names_other_part(goal, texts, lang, others=()) -> bool:
+    return bool(other_parts_named(goal, texts, lang, others))
+
+
+def agrees_with(goal, texts, places, lang) -> bool:
+    """Do her ``texts`` agree with the part ``goal``? They name its object and no place or person it does not have."""
+    t = [x for x in texts if x]
+    if object_score(goal, t, lang) == 0:
+        return False
+    keys = named_keys(t, places) - {"@speaker"}
+    own = {goal.get(s) for s in ("to", "from", "object")} | {persons.speaker_key(places)}
+    if "@speaker" in named_keys(t, places) and goal.get("to") not in ("me", "user", "@speaker", persons.speaker_key(places)):
+        return False
+    return not (keys - own)
+
+
 def content_edit(goal, texts, places, lang, others=()) -> dict:
     """The change a content "no" asks for in ONE part (the part the caller read back): ``{slot: value}``. Destination or
     recipient: the one ENV key (place or person) her words name that the part does not have; open / close: the container.
@@ -418,8 +496,7 @@ def content_edit(goal, texts, places, lang, others=()) -> dict:
     A person is never the destination of an ``in`` goal."""
     t = [x for x in texts if x]
     kind = goal.get("type")
-    if (kind not in MOVE_KINDS or object_score(goal, t, lang) == 0) and any(
-            o.get("type") in MOVE_KINDS and object_score(o, t, lang) > 0 for o in others):
+    if names_other_part(goal, t, lang, others):
         return {}                       # (a part with no object of its own, e.g. "go", is never edited by words about another)
     keys = named_keys(t, places)
     sk = persons.speaker_key(places)
