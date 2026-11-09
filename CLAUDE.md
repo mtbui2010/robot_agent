@@ -38,3 +38,9 @@ Full rule text and reasons: [docs/rules.md](docs/rules.md). Docs index: [docs/RE
 - [docs/observe.md](docs/observe.md): RunRecord, metrics, replay, event schema
 - [docs/action_model_divergence.md](docs/action_model_divergence.md): the one action model
 - Planning-layer specs: [closed loop](docs/CLOSED_LOOP_ARCHITECTURE.md), [action mapper](docs/ACTION_MAPPER_SPEC.md), [records / verify / voice](docs/TRACKING_VERIFY_VOICE.md)
+
+## Quy tắc phát triển chung (skill `dev-principles`)
+Chi tiết và lint: `~/.claude/skills/dev-principles/SKILL.md`; cấu hình repo: `.dev-principles.json`.
+1. **Tổng quát hóa:** không đặt dữ kiện riêng của một robot, ngôn ngữ, miền hay benchmark trong lõi; chúng là dữ liệu khai báo (manifest, gói ngôn ngữ, hồ sơ robot) có nhãn nguồn `sourced`/`assumed`; thiếu dữ liệu thì tính năng không làm gì. Luật an toàn và quyền hạn là cấu hình theo từng robot.
+2. **Mô-đun:** mỗi tính năng/tùy chọn là một mô-đun đăng ký vào lõi; phân tầng, giới hạn kích thước hàm/file (baseline trong `.dev-principles.baseline.json`: không được tăng); khi tái cấu trúc phải chứng minh hành vi giống hệt (phát lại từng byte).
+3. **Trước khi báo xong hoặc merge:** `python3 ~/.claude/skills/dev-principles/scripts/layers.py .`, `size_baseline.py . --check`, `literal_scan.py <thư mục lõi> --check --baseline .dev-principles.literals.json`.
