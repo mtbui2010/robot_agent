@@ -482,6 +482,32 @@ def edit_distance(a: str, b: str) -> int:
     return prev[-1]
 
 
+def typo_distance(a: str, b: str) -> int:
+    """``edit_distance`` where swapping two neighbouring characters costs ONE edit (a typing slip: 'toolobx' for 'toolbox'), not two
+    (optimal string alignment). Used by ``fuzzy_place`` / ``fuzzy_room``; the rule is fixed a priori, not tuned on any data."""
+    a, b = str(a or ""), str(b or "")
+    rows = [list(range(len(b) + 1))]
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            v = min(rows[-1][j] + 1, cur[j - 1] + 1, rows[-1][j - 1] + (ca != cb))
+            if i > 1 and j > 1 and ca == b[j - 2] and a[i - 2] == cb:
+                v = min(v, rows[-2][j - 2] + 1)
+            cur.append(v)
+        rows.append(cur)
+        rows = rows[-2:] if len(rows) > 2 else rows
+    return rows[-1][-1]
+
+
+def near_distance(a: str, b: str) -> int:
+    """``typo_distance``, but a word that is the whole name plus 1-2 more letters (a plural or an ending: 'workbenches' for
+    'workbench') costs one edit; the name must have 4+ letters so a short name does not match a longer word."""
+    d = typo_distance(a, b)
+    if len(b) >= 4 and 1 <= len(a) - len(b) <= 2 and a.startswith(b):
+        d = min(d, 1)
+    return d
+
+
 def near_name(word: str, names, max_edits: int = 2) -> str:
     """The one name of ``names`` within ``max_edits`` of ``word`` (not equal), '' when none or several."""
     w = _norm(word)
@@ -521,7 +547,7 @@ def fuzzy_room(places, text: str, threshold: float = 0.25):
         a = _jamo(n)
         for sp in spans:
             b = _jamo(sp)
-            d = edit_distance(a, b) / max(len(a), len(b))
+            d = near_distance(a, b) / max(len(a), len(b))
             if d <= threshold and (rm not in best or d < best[rm]):
                 best[rm] = d
     top = sorted(best.items(), key=lambda kv: kv[1])
@@ -551,7 +577,7 @@ def fuzzy_place(places, text: str, threshold: float = 0.25):
                 if not sp:
                     continue
                 a, b = _jamo(sp), _jamo(n)
-                d = edit_distance(a, b) / max(len(a), len(b))
+                d = near_distance(a, b) / max(len(a), len(b))
                 if d <= threshold and (k not in best or d < best[k][0]):
                     best[k] = (d, n)
     if len(best) != 1:

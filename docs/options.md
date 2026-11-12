@@ -112,6 +112,14 @@ Answers that name no place (each its own key, default off; they act on the answe
   threshold 0.25; two rooms equally near = no guess); a yes is used as `use_room` does ("OK, I will look in the study room."). "Story Room" is
   0.2 from "study room", "Stoney Room" is 0.27 (not near enough): key `near_threshold` (float, default 0.25, `ROBOT_AGENT_ASK_SOURCE_NEAR_THRESHOLD`)
   moves the room threshold; the place threshold stays 0.25.
+  The measure (`understand.near_distance`, fixed a priori, not tuned on any data): Levenshtein with a swap of two neighbouring letters costing ONE edit
+  (`toolobx` for `toolbox`), and a word that is a whole name of 4+ letters plus 1-2 letters (`workbenches`) costing one edit; divided by the longer
+  length, at most `near_threshold`. Cut forms such as `laun. shelf` or `the study dsk` match through the other words of the span; a different word
+  (`over there`, `garage`) stays far.
+* `hedged` (`ask_source_hedged`): a hedged answer that still names a place ("I am not sure, maybe near the washr") is used, not dropped as an "I don't
+  know": when the answer holds an "I don't know" phrase and names no place exactly, the nearly-named place (then room) is offered ("Did you mean the X?",
+  as `confirm_near`, also when that key is off). A bare "I am not sure", or a hedge naming nothing near, stays an "I don't know". An exact place in a hedge is
+  used already (the "I don't know" phrase never blocked it).
 * `clarify_unusable` (`ask_source_clarify`): the answer names nothing usable and is not an "I don't know" (`dialog_unstick.unsure_answer`: the
   `answer_unsure` phrases of the language pack and of the robot pack's i18n; a language without any never triggers the question). One question,
   "Which room, or which piece of furniture, is it in?" (`q_where_in_home`); its answer goes through the same steps; still nothing usable = "I don't know".

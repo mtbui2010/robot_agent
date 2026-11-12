@@ -85,7 +85,7 @@ PLANNER_KEYS = {"seed_memory", "notes", "llm_budget", "translate_model", "transl
                 "search_legs", "search_total", "input_pivot", "detector_miss_rate", "person_goals", "accept_goals",
                 "go_steps", "kind_anchor", "name_canon", "reask_abstain", "action_roles", "coverage_limits",
                 "exec_integrity", "gate_strict", "endstate_check", "reset_container", "wait_on_robot", "inventory_ask",
-                "dialog_unstick", "dialog_agree", "dialog_agree2", "relook", "reach_delivery", "unapplied_change", "ask_source", "ask_source_room", "ask_source_near", "ask_source_clarify", "confirm_look", "translate_retry", "prompt_lang", "restates", "person_snapshot", "agree_guard", "room_names", "canonical_lang", "label_tokens", "recovery", "kind_anchor_ask", "unstick",
+                "dialog_unstick", "dialog_agree", "dialog_agree2", "relook", "reach_delivery", "unapplied_change", "ask_source", "ask_source_room", "ask_source_near", "ask_source_hedged", "ask_source_clarify", "confirm_look", "translate_retry", "prompt_lang", "restates", "person_snapshot", "agree_guard", "room_names", "canonical_lang", "label_tokens", "recovery", "kind_anchor_ask", "unstick",
                 "reask_anchor", "no_shared_listener", "understand_views", "understand_goals_first",
                 "understand_model", "understand_url", "understand_model_lang", "understand_max_tokens",
                 "understand_max_goals", "understand_schema_strict", "understand_give_kind", "understand_verify_verdict",

@@ -274,3 +274,44 @@ def test_room_only_answer_to_the_re_asked_where_is_it_is_used_not_dropped(run, m
     planner, events = go2("off", ask_source="1", ask_source_reask="1")
     assert any("could not find the mug" in str(e.get("msg", "")) for e in events if e.get("event") == "done"), \
         [e for e in events if e.get("event") == "done"]
+
+
+
+def _washer_run(make_assist, env, answers, **opts):
+    robot = FakeRobot(env, {"mug": "washer@laundry room"}, answers=list(answers))
+    plan = steps("MoveTo washer@laundry room", "Find mug", "Pick mug", f"MoveTo {DT}", f"Place {DT}")
+    loop = make_assist(robot, FakeLLM(default=understood()), ScriptedPlanner(plan), ask_source="1", **opts)
+    return [str(q) for q in questions(run_task(loop, TASK, max_events=3000))]
+
+
+def test_hedged_answer_with_a_noisy_place_is_confirmed_when_the_key_is_on(run, make_assist, env):
+    qs = _washer_run(make_assist, env, ["I am not sure, maybe near the washr", "yes"], ask_source_hedged="1")
+    assert len(qs) == 2 and qs[1].startswith("Did you mean the"), qs
+
+
+def test_hedged_answer_is_dropped_as_i_do_not_know_by_default(run, make_assist, env):
+    qs = _washer_run(make_assist, env, ["I am not sure, maybe near the washr", "yes"])
+    assert len(qs) == 1, qs
+
+
+def test_hedged_bare_i_do_not_know_is_still_an_unknown(run, make_assist, env):
+    qs = _washer_run(make_assist, env, ["I am not sure", "yes"], ask_source_hedged="1")
+    assert len(qs) == 1, qs
+
+
+def test_hedged_answer_naming_a_word_that_is_no_place_is_not_confirmed(run, make_assist, env):
+    qs = _washer_run(make_assist, env, ["I am not sure, maybe over there", "yes"], ask_source_hedged="1")
+    assert len(qs) == 1, qs
+
+
+def test_hedged_answer_with_an_exact_place_is_used_without_a_question(run, make_assist, env):
+    _robot, events = go(make_assist, env, answers=["I am not sure, maybe on the desk in the study room"], ask_source="1", ask_source_hedged="1")
+    assert len(questions(events)) == 1
+    assert any(e.get("event") == "done" and e.get("status") == "success" for e in events)
+
+
+def test_hedged_plural_of_a_place_name_is_a_near_match():
+    from robot_agent.core.planning.assist_loop import Places
+    from robot_agent.core.planning.understand import fuzzy_place
+    P = Places({"bench@workshop": {"aliases": ["workbench"]}})
+    assert fuzzy_place(P, "I am not sure, maybe near the workbenches")[0] == "bench@workshop"

@@ -23,8 +23,13 @@ Answers that name no place (all default off, each its own key; they act on the a
   pack's and the robot pack's ``answer_unsure`` phrases; a language without them never triggers it): ONE clarifying question ("Which room,
   or which piece of furniture, is it in?"), whose answer goes through the same steps; still nothing usable = "I don't know".
 
+* ``hedged``: a hedged answer that still names a place ("I am not sure, maybe near the washr") is not read as "I don't know": when the
+  answer is an "I don't know" phrase AND names no place exactly, the nearly-named place (then room) is offered as a guess ("Did you
+  mean the X?", as ``confirm_near`` does, whether or not that key is on); a yes uses it. A bare "I am not sure" or a hedge that
+  names nothing near stays an "I don't know" (no extra question).
+
 Hook: ``on_goals``. Keys: ``enabled`` (legacy name ``ask_source``), ``reask_on_miss`` (legacy ``ask_source_reask``), ``use_room``,
-``confirm_near``, ``near_threshold``, ``clarify_unusable``.
+``confirm_near``, ``near_threshold``, ``hedged``, ``clarify_unusable``.
 """
 
 from __future__ import annotations
@@ -38,6 +43,7 @@ SPEC = OptionSpec(
           Key("use_room", "bool", False, aliases=("ask_source_room",)),
           Key("confirm_near", "bool", False, aliases=("ask_source_near",)),
           Key("near_threshold", "float", 0.25),
+          Key("hedged", "bool", False, aliases=("ask_source_hedged",)),
           Key("clarify_unusable", "bool", False, aliases=("ask_source_clarify",))),
     hooks=("on_goals", "on_where_answer"),
     order=30,
@@ -59,7 +65,7 @@ class AskSource(Option):
             room, keys = self.svc.room_places(run, ans)
             if keys:
                 return None, keys, room
-        if self.cfg.get("confirm_near"):
+        if self.cfg.get("confirm_near") or (self.cfg.get("hedged") and self.svc.is_unsure(run, ans)):
             place = yield from self.svc.confirm_near(run, ans)
             if not place:                                  # not a place: a room? ("Story Room" = the study room), same yes / no
                 room, keys = yield from self.svc.confirm_near_room(run, ans, self.cfg.get("near_threshold"))
@@ -93,7 +99,7 @@ class AskSource(Option):
         """The answer to the engine's own re-asked "I couldn't find the X. Where is it?" (after the first look missed): a room (``use_room``)
         or an unusable answer (``clarify_unusable``) is handled as for the first question. The place to go to, or None (the engine then
         goes on as it always did)."""
-        if not (self.cfg.get("use_room") or self.cfg.get("clarify_unusable")):
+        if not (self.cfg.get("use_room") or self.cfg.get("clarify_unusable") or self.cfg.get("hedged")):
             return None
         from robot_agent.core.planning import speech
         place, keys, room, _ans, stop = yield from self._answer(run, obj, ans)
