@@ -60,8 +60,29 @@ def _llm(llm_cfg: dict | None = None):
 
 def translate(text: str, to_language: str = 'korean', llm_cfg: dict | None = None) -> str:
     """Translate *text* into *to_language* using the active LLM."""
-    return _llm(llm_cfg).chat(
-        prompt=f'Translate to daily {to_language}. Output result only: {text}')
+    import threading
+    from .core import run_control          # a Stop interrupts the wait (legacy open-loop path); the closed loop does not call this
+    box: dict = {}
+    done = threading.Event()
+
+    def work():
+        try:
+            box['v'] = _llm(llm_cfg).chat(prompt=f'Translate to daily {to_language}. Output result only: {text}')
+        except BaseException as e:      # noqa: BLE001 - re-raised below
+            box['e'] = e
+        finally:
+            done.set()
+    threading.Thread(target=work, name='translate', daemon=True).start()
+    while not done.wait(0.05):
+        if run_control.cancel_requested():
+            try:
+                from .interact.run_manager import RunCancelled as _Stop
+            except Exception:           # noqa: BLE001
+                _Stop = RuntimeError
+            raise _Stop('translate interrupted by Stop')
+    if 'e' in box:
+        raise box['e']
+    return box['v']
 
 
 # ---------------------------------------------------------------------------
