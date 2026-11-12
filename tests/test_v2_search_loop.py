@@ -138,3 +138,24 @@ def test_stale_memory_in_prior_mode_is_used_as_before(make_assist, env, tmp_path
     evs = run_task(make_assist(FakeRobot(env, HOUSE), llm, ScriptedPlanner([]), search_rank="prior"),
                    "Bring the apple to the dining table.", plan_only=True)
     assert next(e for e in evs if e["event"] == "understand")["goals"][0]["from"] == DS and ranks(llm) == 0
+
+
+def test_a_place_the_env_marks_not_searchable_is_never_looked_at(make_assist, env):
+    env[SK]["search"] = False                                   # a keep-out region / the charger: not a place to look
+    robot = FakeRobot(env, dict(HOUSE, apple=DS))
+    planner = ObsPlanner(steps(f"MoveTo {CT}", "Find apple", "Pick apple", f"MoveTo {DT}", f"Place {DT}"), replans=[DESK] * 3)
+    llm = FakeLLM(APPLE, (RANK, {"places": [SK, CT, DS]}), default=APPLE)        # the ranking names the keep-out place first
+    evs = run_task(make_assist(robot, llm, planner), "Bring the apple to the dining table.")
+    assert SK not in looked_at(robot)
+    assert done(evs)["status"] == "success"
+
+
+def test_an_open_that_fails_on_a_search_leg_gives_the_container_up_and_the_search_goes_on(make_assist, env):
+    robot = FakeRobot(env, dict(HOUSE, apple=DS), faults=[{"skill": "open_drawer", "kind": "fail", "nth": "all", "msg": "the drawer is locked"}])
+    plan = steps(f"MoveTo {CT}", "Find apple", "Pick apple", f"MoveTo {DT}", f"Place {DT}")      # a miss at the counter: the belief's next look is the drawer
+    planner = ObsPlanner(plan, replans=[DESK] * 3)
+    llm = FakeLLM(APPLE, (RANK, {"places": [DR, DS]}), default=APPLE)
+    evs = run_task(make_assist(robot, llm, planner, search_legs=1), "Bring the apple to the dining table.")
+    opens = [t for t in robot.trace if t[0] == "open_drawer"]
+    assert 1 <= len(opens) <= 3 and DS in looked_at(robot)
+    assert done(evs)["status"] == "success", done(evs)

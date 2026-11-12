@@ -13,6 +13,7 @@ optional; an ENV without the optional fields keeps the earlier behaviour (pinned
 | `aliases` | other names, in any language (the robot says the first one in the user's script) |
 | `openable` | the place opens (a drawer, a fridge) |
 | `surface` | `true`: a support surface things can be put down on (table, shelf, counter); `false`: a seat, a bed, the floor. Without the field anywhere, every place that does not open counts |
+| `search` | `false`: the search never looks here (a keep-out lane, the charger, a place the robot may not enter); absent or `true`: a place to look. The safety profile still decides what the robot may be asked to do; this only keeps the search's own choice away |
 | `category` | an optional class name the robot's map knows (read by `core/safety/place_class.py` against the profile's place classes) |
 
 The core never reads a `tags` field.
@@ -146,3 +147,8 @@ options together with the sentence that applies.
 
 The sensitivity runs that would put numbers on these (the assumed values and control rows that change the simulator constant) are
 planned, not run: homeloop_bench `docs/experiments.md`, round 16.
+
+## Speech recogniser hint (environment, default off)
+`ROBOT_AGENT_STT_HINT=1` sends the ENV's place and room names (in the run language) as the transcription `prompt`; `ROBOT_AGENT_STT_HINT_CHARS` (default 400)
+bounds it. Details: [options.md](options.md#not-a-loop-option-the-speech-recognisers-vocabulary-hint-robot_agent_stt_hint-default-off). The names are the ENV's
+own (heads, aliases; persons and the speaker excluded), so a robot without aliases in a language sends only what its ENV spells in that script.

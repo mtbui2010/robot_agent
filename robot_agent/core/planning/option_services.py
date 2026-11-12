@@ -39,6 +39,11 @@ class LoopServices:
         run.asked += 1
         return ans
 
+    def look_for(self, run, obj):
+        """One more Find of `obj`, made the way the end-of-run goal check makes it: (seen: bool, the skill)."""
+        res, skill = self._lp._look(run, {"action": "Find", "object": obj})
+        return bool(res is not None and res.ok), skill
+
     def cancelled(self, run):
         return self._lp._cancelled(run)
 
@@ -59,6 +64,92 @@ class LoopServices:
 
     def reread_change(self, run, text):
         return self._lp._llm_goal_change(run, text)
+
+    # ── asking where an object is (option ask_source) ──
+    def remembered(self, run, obj):
+        """Where the object memory puts `obj` while that sighting is still trusted, else None."""
+        return self._lp._remembered(run.memory, obj)
+
+    def said_of(self, run, obj) -> str:
+        """The object in the person's own words (what the question should say)."""
+        return self._lp._said_of(run, obj)
+
+    def ground_place(self, run, text):
+        """The ENV place a spoken answer names, or None."""
+        return run.places.ground(text, text) if text else None
+
+    def note_answer(self, run, question, answer, obj, place) -> None:
+        """Remember that the person said `obj` is at `place` (a sighting the search may trust), and the exchange."""
+        run.memory.remember_answer(run.task, question, answer)
+        run.memory.see(obj, place, "user said")
+
+    def mark_asked_where(self, run, obj) -> None:
+        """The person was already asked where `obj` is: the search does not ask the same thing again after misses."""
+        run.__dict__.setdefault("pre_helped", set()).add(("where", obj))      # carried into the run's `helped` when the execution starts
+
+
+    def ask_again_on_miss(self, run, obj) -> None:
+        """The person named a place for `obj`: the first look that does not see it asks them again (the search's "where is it?"),
+        instead of searching on alone until `search_max` misses."""
+        run.__dict__.setdefault("pre_fails", {})[obj] = int(self._lp.cfg["search_max"])
+
+    # ── an answer that names no place (option ask_source: use_room, clarify_unusable, confirm_near) ──
+    def room_places(self, run, text) -> tuple:
+        """(room, the searchable places in it) when the answer names a room and no place in it, else ("", [])."""
+        c = run.places.candidates(text, text) if text else []
+        if len(c) != 1 or not c[0].startswith("@"):
+            return "", []
+        return c[0][1:], self.places_of_room(run, c[0][1:])
+
+    def prefer_places(self, run, obj, keys) -> None:
+        """The search looks at ``keys`` first for ``obj`` (the belief's ``prefer``; applied when the run's belief is built)."""
+        run.__dict__.setdefault("pre_prefer", {})[obj] = list(keys)
+
+    def prefer_now(self, run, obj, keys) -> None:
+        """``prefer_places`` for a run whose search belief already exists (the person answered the re-asked "where is it?")."""
+        self.prefer_places(run, obj, keys)
+        belief = getattr(run, "search", None)
+        if belief is not None:
+            belief.prefer(obj, keys)
+
+    def first_unsearched(self, run, obj, keys):
+        """The best of ``keys`` the search has not looked at yet (the belief's order from where the robot stands), else the first key."""
+        belief = getattr(run, "search", None)
+        if belief is None:
+            return keys[0] if keys else None
+        done = set(run.searched or ())
+        return next((p for p in belief.order(obj, run.world.arrived) if p in keys and p not in done), keys[0] if keys else None)
+
+    def is_unsure(self, run, text) -> bool:
+        """Is the answer an "I don't know" (the pack's and the language's phrases, ``dialog_unstick.unsure_answer``)?"""
+        from . import dialog_unstick
+        lp = self._lp
+        return dialog_unstick.unsure_answer(text, run.places, lp._unsure_data(run), run.lang, lp._manifest_planner("unstick", None))
+
+    def confirm_near(self, run, text):
+        """Flow: the one place the answer nearly names (``understand.fuzzy_place``), confirmed with a yes / no question; None."""
+        return self._lp._confirm_near(run, text)
+
+    def confirm_near_room(self, run, text, threshold: float = 0.25):
+        """Flow: the one room the answer nearly names (``understand.fuzzy_room``), confirmed with a yes / no question; (room, its places)
+        or ("", [])."""
+        from .understand import fuzzy_room
+        room = fuzzy_room(run.places, text, threshold) if text else None
+        if not room:
+            return "", []
+        said = room.replace("_", " ")
+        q = speech.LocalText("q_did_you_mean", {"object": said, "place": "@" + room})
+        yield run.ev("clarify", question=q, round=0, kind="did_you_mean_room")
+        _a, ok_, _rest = self._lp._ask_yes_no(run, q)
+        if ok_ is not True:
+            return "", []
+        return said, self.places_of_room(run, room)
+
+    @staticmethod
+    def places_of_room(run, room) -> list:
+        """The searchable places of ``room`` (not persons, not ``search: false``)."""
+        return [k for k in run.places.in_room(room) if not (e := run.places.env.get(k) or {}).get("person")
+                and e.get("search", True) is not False]
 
 
 def option_dispatcher(loop, overrides=None, environ=None):

@@ -18,6 +18,9 @@ class Services(Protocol):
     def hand_action(self) -> Optional[str]: ...       # the robot's hand-over (release) action, or None
     def finish(self, run, status: str, **kw) -> dict: ...                       # the ``done`` event
     def ask(self, run, question) -> Optional[str]: ...                          # one question to the person, the answer
+    def look_for(self, run, obj: str) -> Any: ...                              # one more Find of ``obj`` as the goal check makes it: (seen, skill)
+    def prefer_now(self, run, obj: str, keys) -> None: ...                      # look at ``keys`` first for ``obj``, also in a search under way
+    def first_unsearched(self, run, obj: str, keys) -> Optional[str]: ...        # the best of ``keys`` not looked at yet
     def cancelled(self, run) -> Optional[dict]: ...                             # the stop event if the run was cancelled
     def replan_or_fail(self, run, step, reason: str, msg: str): ...            # generator: the replan / give-up path
     def say_name(self, places, key: str) -> str: ...

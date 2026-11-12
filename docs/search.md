@@ -117,6 +117,7 @@ never gets an Open step from the search.
 | `ROBOT_AGENT_SEARCH_TRUST` | | `0.5` | a sighting at least this confident is believed without a ranking |
 | `ROBOT_AGENT_SEARCH_RANK_WEIGHT` | | `0.5` | weight of the ranking against the prior |
 | `ROBOT_AGENT_SEARCH_HABIT_WEIGHT` | `search_habit_weight` | `0.75` | weight of the experience prior; `0`: off (the v2 search) |
+| `ROBOT_AGENT_SEARCH_ROUTE_WEIGHT` | `search_route_weight` | `0` | `>0`: among likely places the nearer one (from where the robot stands) is looked at first; the cost is the distance as a share of the farthest place, times this weight. Needs `loc: {x, y}` in the ENV places; without positions, or at `0`, the order is unchanged (`core/planning/search_route.py`) |
 | `ROBOT_AGENT_DETECTOR_MISS_RATE` | `detector_miss_rate` | manifest `planner.detector_miss_rate`, else `0.1` | the detector's false-negative rate (posterior of a place after a miss; second-look budget) |
 
 The ranking counts against the run's LLM budget (`ROBOT_AGENT_LLM_BUDGET`); a failed or
@@ -136,3 +137,10 @@ is the extra looks at places already searched and the wrong next guesses.
   that follow (they are excluded by the hard constraint instead).
 * The memory keeps one place per object; older sightings are lost when it is overwritten.
 * `ClosedLoop` (planner `grace`) has no search belief; only the SAGE + assist loop has.
+
+## A room the person named (option `ask_source`, key `use_room`)
+
+`SearchBelief.prefer(obj, places)` puts the places the person pointed at first in `order()` (`(not preferred, -score, ENV order)`); the route
+weight and the scores still order them among themselves, and the other places follow as the fallback once the preferred ones are searched.
+`first_place(obj, here)` returns a preferred place even when no score is above 0. The option stores the places in `run.pre_prefer`; `_search_start`
+hands them to the belief, asks the ranking once and gives the goal its first place as `from`.

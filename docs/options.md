@@ -14,7 +14,7 @@ CLAUDE.md rules 13-15. The reference for the flat run options and manifest keys 
 | `Registry`, `register` | `core/options/registry.py` | the list of options; built-in ones from `robot_agent/options/__init__.py`, others by entry point group `robot_agent.options` |
 | `Dispatcher` | `core/options/dispatch.py` | builds the enabled options of one loop, calls their hooks in `order` |
 | `Services` | `core/options/services.py` | the interface an option uses to ask the loop for something (`LoopServices` in `core/planning/option_services.py` implements it) |
-| the options | `robot_agent/options/<name>.py` | `hazard`, `reach_delivery`, `unapplied_change` so far |
+| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change` so far |
 
 `python -m robot_agent.core.options list` prints the registered options, their keys and hooks.
 `python -m robot_agent.core.options check MANIFEST.yaml` reports `planner.options` entries that name no option or key.
@@ -70,7 +70,8 @@ dropped. A *flow* hook is a generator (`yield from`): it may yield run events an
 |---|---|---|---|
 | `on_start(run)` | observe | run set-up, after the places are read | `reach_delivery` (time of the person snapshot) |
 | `on_ground(mode, places, to)` | transform | the delivery mode for a goal to a person | `reach_delivery` |
-| `on_goals(run)` | decide, flow | understood goals, before the read-back and the grounding | `hazard` (the gate) |
+| `on_where_answer(run, obj, ans)` | decide, flow | the answer to the engine's own re-asked "I couldn't find the X. Where is it?": the place to go to, or None | `ask_source` (`use_room`, `clarify_unusable`) |
+| `on_goals(run)` | decide, flow | understood goals, before the read-back and the grounding | `hazard` (the gate), `ask_source` (asks where an object is) |
 | `on_goal_edit(run, text)` | observe | a correction is about to be read | `unapplied_change` |
 | `on_goal_reread(run, text, understood, goals, q)` | observe | the understand LLM re-read a correction | `unapplied_change` |
 | `on_goal_unapplied(run, turn)` | decide, flow | the correction changed nothing (`turn.text`, `turn.change`) | `unapplied_change` |
@@ -78,6 +79,8 @@ dropped. A *flow* hook is a generator (`yield from`): it may yield run events an
 | `on_step_done(run, step, held)` | observe | a step succeeded (`held`: the object in the hand before it) | `reach_delivery` |
 | `on_step_failed(run, step, code, reason, action, obj)` | decide, flow | a step failed, before the recovery policy | `reach_delivery` |
 | `on_goal_check(run, obj)` | decide | the end-of-run check of one goal: `(ok, why, skill)` | `reach_delivery` |
+| `on_translation_lost(text, lost, translate)` | decide | the input translation lost a place name the person said: the English to use, or None | `translate_retry` |
+| `on_second_look(run, obj, place)` | decide | the goal check's first look missed and the second saw the object: `(ok, why, skill)` or None (the second look is believed) | `confirm_look` |
 | `on_final(run)` | decide | end of run, before the goals are checked; returns the `done` event | `unapplied_change` |
 | `on_goals_met(run)` | decide | the goals hold; returns the `done` event | `hazard` (partial refusal sentence) |
 | `on_finish(run, fields)` | observe | the fields of a `done` event, before it is built | `hazard` (`refusals`) |
@@ -86,6 +89,47 @@ Services (`OptionSpec.services`, asked with `Dispatcher.query(name, *args, defau
 `hazard.refused_goals(run)`, `hazard.gate_off()`, `reach_delivery.no_refetch()`. A query returns the first answer that is not None.
 
 ## The options
+
+### `ask_source`
+Ask where an object is, before looking for it (default off). The default SAGE behaviour is to guess, look, and ask only after misses
+(`search_max`) or when nowhere is left. With the option, an `on` / `in` goal whose source the request does not name, and whose object the
+memory does not hold as a trusted sighting, is asked about once, before planning: "Where is the mug?" (pack i18n key `q_where_is_obj`).
+A place in the answer becomes the goal's source and a sighting the search trusts; "I don't know", silence or an answer without a place
+leaves the goal as it is, so the object memory and the ranked search take over, and the question is not asked again after the first
+misses. Key `enabled` (legacy `ask_source`, `$ROBOT_AGENT_ASK_SOURCE`); key `reask_on_miss` (default off, legacy `ask_source_reask`): when the person did
+name a place and the first look there does not see the object, ask once more ("I couldn't find the X. Where is it?") instead of searching on alone;
+after "I don't know" it does not ask again. More questions mean more chances of a wrong answer: it is
+meant for a person who answers, not for the benchmark's simulated user.
+
+Answers that name no place (each its own key, default off; they act on the answer to the question above):
+* `use_room` (legacy `ask_source_room`, `$ROBOT_AGENT_ASK_SOURCE_ROOM`): the answer names a room only (`Places.candidates` gives the room marker `@room`).
+  The robot says "OK, I will look in the study room." (pack i18n key `a_look_in_room`, slot `room`, English default) and the search belief looks at
+  that room's places first (`SearchBelief.prefer`: before all others; inside the room the usual order, route included); the other places stay a
+  fallback once the room is searched. Needs the search belief (default on). The first place is the goal's `from`.
+* `confirm_near` (`ask_source_near`): the answer nearly names one place (`understand.fuzzy_place`, a cut or misspelled name): "Did you mean the X?"
+  (`q_did_you_mean`); a yes makes it the source. When no place is near, the same question is asked for a ROOM (`understand.fuzzy_room`: the ENV's
+  room names with and without "room", underscores read as spaces, and the language pack's room names `Places.ext.rooms`; same measure and
+  threshold 0.25; two rooms equally near = no guess); a yes is used as `use_room` does ("OK, I will look in the study room."). "Story Room" is
+  0.2 from "study room", "Stoney Room" is 0.27 (not near enough): key `near_threshold` (float, default 0.25, `ROBOT_AGENT_ASK_SOURCE_NEAR_THRESHOLD`)
+  moves the room threshold; the place threshold stays 0.25.
+* `clarify_unusable` (`ask_source_clarify`): the answer names nothing usable and is not an "I don't know" (`dialog_unstick.unsure_answer`: the
+  `answer_unsure` phrases of the language pack and of the robot pack's i18n; a language without any never triggers the question). One question,
+  "Which room, or which piece of furniture, is it in?" (`q_where_in_home`); its answer goes through the same steps; still nothing usable = "I don't know".
+  A hedge that contains an unsure phrase ("I am not sure, maybe near the racks") counts as "I don't know".
+
+### `confirm_look`
+A sighting that follows a miss is checked once more (default off). The end-of-run check looks for the object at its destination; when the first
+look misses it looks again and believes the second. A camera can also see what is not there (a false sighting), so with the option a third look
+decides: the goal counts as met only when the object is seen again (two looks of three). The cost is one more look, only when the first two looks
+disagree. Key `enabled` (legacy `confirm_look`, `$ROBOT_AGENT_CONFIRM_LOOK`). Hook `on_second_look`; lab flag `confirm_look`:
+`{object, place, seen_again}`. Module: `robot_agent/options/confirm_look.py`.
+
+### `translate_retry`
+A translation that lost a place name is made again (default off). The input translation of a non-English utterance is checked against the ENV names the
+person said; when the English lacks one (a Korean word for a place came out as another thing) the sentence is untrusted and the robot asks the person to
+say it again. With the option the sentence is first translated once more with each lost name already replaced by its English name from the ENV; the retry
+counts only if it keeps every name, else nothing changes. One more model call, only when a name was lost. Key `enabled` (legacy `translate_retry`,
+`$ROBOT_AGENT_TRANSLATE_RETRY`). Hook `on_translation_lost`; lab flag `translate_retry`: `{lost, ok}`. Module: `robot_agent/options/translate_retry.py`.
 
 ### `hazard`
 The robot's safety rules refuse a goal, or drop it and say so at the end. The rules are the robot's safety profile, not this option's
@@ -103,6 +147,15 @@ A delivery to a person ends within their reach or in their hand (round 15). Key 
 A correction the robot cannot apply is not dropped silently: the understand step's own question is asked once, and if the correction still
 changes nothing the run ends `failed` ("I could not apply your change") instead of `success`. Key `enabled` (legacy `unapplied_change`).
 Module: `robot_agent/options/unapplied_change.py`.
+
+## Not a loop option: the speech recogniser's vocabulary hint (`ROBOT_AGENT_STT_HINT`, default off)
+The transcription call happens outside the planning loop (`utils.speech_to_text`, used by the dashboard listen `POST /agent/listen/<id>/audio` and by
+the robot's microphone), so it is a switch of that call, not a hook. With `ROBOT_AGENT_STT_HINT=1` the ENV's room and place names (heads and
+aliases in the script of the run language, `speech.script_ok`; no person or speaker entries; deduplicated; ENV order, rooms first) are added to the
+`prompt` field (Whisper's initial prompt) after the caller's own hint, cut at a name to `ROBOT_AGENT_STT_HINT_CHARS` characters (default 400).
+Module `core/planning/stt_hint.py` (pure functions; no names in code). An ENV without names, or a language with none, sends nothing. A server that
+answers 4xx to a call with a `prompt` gets the call again without it (`connect/stt`, one warning per process). Speaches at `127.0.0.1:8000` accepts
+the field (smoke test, 2026-11-12). Whether it improves recognition is not measured (no speech sample / TTS on the machine).
 
 ## Moving an option out of the loop (the recipe)
 

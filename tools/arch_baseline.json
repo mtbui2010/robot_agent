@@ -42,7 +42,7 @@
   "private: robot_agent/rename_skill.py -> robot_agent.delete_skill._module_to_path": "robot_agent.rename_skill imports the private name _module_to_path of robot_agent.delete_skill"
  },
  "size": {
-  "file: robot_agent/core/planning/assist_loop.py": 4211,
+  "file: robot_agent/core/planning/assist_loop.py": 4210,
   "fn: robot_agent/contract/manifest.py::_planner#0": 89,
   "fn: robot_agent/core/device_manager.py::DeviceManager.add_connect#0": 240,
   "fn: robot_agent/core/plan_skill.py::run_plan_skill#0": 91,

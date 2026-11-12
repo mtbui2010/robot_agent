@@ -489,6 +489,47 @@ def near_name(word: str, names, max_edits: int = 2) -> str:
     return next(iter(c)) if len(c) == 1 else ""
 
 
+def _spans(text: str) -> set:
+    """The word spans (1-3 words, with and without the language's answer tail) of an answer, normalised."""
+    toks = _norm(re.sub(r"[.,!?]", " ", str(text or ""))).split()
+    spans = {" ".join(toks[i:j]) for i in range(len(toks)) for j in range(i + 1, min(len(toks), i + 3) + 1)}
+    tail = langdata.rx("answer_tail")
+    if tail is not None:
+        spans |= {tail.sub("", x) for x in spans}
+    return {x for x in spans if x}
+
+
+def room_names(places) -> dict:
+    """{normalised name: ENV room}: the room as the ENV spells it, with / without a trailing 'room', and the names the language
+    layer declares for it (``places.ext.rooms``); {} when the ENV has no rooms."""
+    out = {}
+    for rm in places.rooms():
+        n = _norm(rm)
+        out.update({n: rm, n + " room": rm})
+        if n.endswith(" room"):
+            out[n[:-5]] = rm
+    for n, rm in ((getattr(places, "ext", None) and places.ext.rooms) or {}).items():
+        out[_norm(n)] = rm
+    return {n: rm for n, rm in out.items() if len(n) >= 2}
+
+
+def fuzzy_room(places, text: str, threshold: float = 0.25):
+    """The one ENV room whose name is within ``threshold`` normalised edit distance of a word span of ``text`` (ASR noise:
+    'story room' for 'study room'), else None. Same measure as ``fuzzy_place``; two rooms equally near = None."""
+    spans, best = _spans(text), {}
+    for n, rm in room_names(places).items():
+        a = _jamo(n)
+        for sp in spans:
+            b = _jamo(sp)
+            d = edit_distance(a, b) / max(len(a), len(b))
+            if d <= threshold and (rm not in best or d < best[rm]):
+                best[rm] = d
+    top = sorted(best.items(), key=lambda kv: kv[1])
+    if top and (len(top) == 1 or top[0][1] < top[1][1]):
+        return top[0][0]
+    return None
+
+
 def fuzzy_place(places, text: str, threshold: float = 0.25):
     """(key, name) of the one ENV place whose name / alias is within ``threshold`` normalised edit distance of a
     word span of ``text`` (an answer with ASR noise: 식그탁 for 식탁), else (None, ''). The threshold is fixed a priori

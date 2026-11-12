@@ -25,6 +25,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable, Iterable, Optional
 
+from .search_route import route_scores
+
 # steps a planner may put between the MoveTo of a search leg and its Find
 _BETWEEN = {"Open", "Close"}
 # steps that act at the robot's place (a MoveTo there must come first)
@@ -56,6 +58,7 @@ class SearchConfig:
     rank_weight: float = 0.5          # the ranking's weight against the prior (top ranked = rank_weight)
     habit_weight: float = 0.75        # where past episodes picked the object up (all of them there = habit_weight)
     miss_rate: float = 0.1            # P(a look at the right place does not see the object): the detector's false-negative rate
+    route_weight: float = 0.0         # 0: off. >0: nearer places first among the likely ones (search_route.py)
 
     @classmethod
     def from_env(cls, overrides: Optional[dict] = None, env: Callable = os.environ.get,
@@ -72,7 +75,8 @@ class SearchConfig:
                    rank_weight=float(get("search_rank_weight", "ROBOT_AGENT_SEARCH_RANK_WEIGHT", "0.5")),
                    habit_weight=float(get("search_habit_weight", "ROBOT_AGENT_SEARCH_HABIT_WEIGHT", "0.75")),
                    miss_rate=clamp_miss_rate(get("detector_miss_rate", "ROBOT_AGENT_DETECTOR_MISS_RATE", miss_default),
-                                             miss_default))
+                                             miss_default),
+                   route_weight=float(get("search_route_weight", "ROBOT_AGENT_SEARCH_ROUTE_WEIGHT", "0")))
 
 
 def clamp_miss_rate(v, default: float = 0.1) -> float:
@@ -123,8 +127,10 @@ class SearchBelief:
 
     def __init__(self, places: Iterable[str], cfg: Optional[SearchConfig] = None,
                  openable: Optional[Callable[[str], bool]] = None, can_open: bool = False,
-                 containers: Optional[Callable[[str], list]] = None, now: Callable[[], float] = time.time):
+                 containers: Optional[Callable[[str], list]] = None, now: Callable[[], float] = time.time,
+                 locs: Optional[dict] = None):
         self.places = list(places)
+        self.locs = dict(locs or {})   # place -> (x, y), for the route weight (search_route.py)
         self.cfg = cfg or SearchConfig()
         self._openable = openable or (lambda k: False)
         self._containers = containers
@@ -138,6 +144,8 @@ class SearchBelief:
         self.stale: dict = {}          # obj -> {place: (ts, how)} sightings a miss removed (the posterior's prior)
         self.misses: dict = {}         # obj -> {place: looks there that did not see it} (kept when a place is looked at again)
         self.rank_calls = 0
+        self.preferred: dict = {}      # obj -> places the person pointed at ("in the study room"): looked at before all others
+        self.blocked: set = set()      # containers an Open failed on (locked): never a look, the search goes on without them
 
     # ── what is where ───────────────────────────────────────────────────
     def containers(self, place: str) -> list:
@@ -230,15 +238,25 @@ class SearchBelief:
             s[p] = s.get(p, 0.0) + self.cfg.rank_weight * (len(r) - i) / len(r)
         return s
 
-    def order(self, obj: str) -> list:
-        s, idx = self.scores(obj), {p: i for i, p in enumerate(self.places)}
-        return sorted(s, key=lambda p: (-s[p], idx.get(p, 1 << 20)))
+    def prefer(self, obj: str, places: Iterable[str]) -> None:
+        """The person pointed at ``places`` (a room) for ``obj``: they come first in the order, in the order the scores (and the
+        route) give; the others stay behind them as a fallback."""
+        keep = {p for p in places if p in self.places}
+        if keep:
+            self.preferred[obj] = keep
 
-    def first_place(self, obj: str) -> Optional[str]:
+    def order(self, obj: str, here: Optional[str] = None) -> list:
+        """The places, most promising first; with ``route_weight`` the ones near ``here`` (where the robot stands) come first;
+        the places the person pointed at (``prefer``) before all others."""
+        s, idx = self.scores(obj), {p: i for i, p in enumerate(self.places)}
+        s, pref = route_scores(s, self.locs, here, self.cfg.route_weight), self.preferred.get(obj) or ()
+        return sorted(s, key=lambda p: (p not in pref, -s[p], idx.get(p, 1 << 20)))
+
+    def first_place(self, obj: str, here: Optional[str] = None) -> Optional[str]:
         """Where to look first: the best scored place, None when the belief knows nothing."""
         s = self.scores(obj)
-        best = self.order(obj)[0] if s else None
-        return best if best is not None and s[best] > 0 else None
+        best = self.order(obj, here)[0] if s else None
+        return best if best is not None and (s[best] > 0 or best in (self.preferred.get(obj) or ())) else None
 
     def needs_rank_first(self, obj: str) -> bool:
         """Only stale sightings (none at least ``trust`` confident): ask the ranking before the first look."""
@@ -353,12 +371,22 @@ class SearchBelief:
         then = self.searched.get(obj, {}).get(place, set())
         if not self.can_open:
             return []
-        return [c for c in self.containers(place) if c in then and c not in opened
+        return [c for c in self.containers(place) if c in then and c not in opened and c not in self.blocked
                 and (c == place or not self.is_searched(obj, c, opened))]
+
+    def look_complete(self, obj: str, place: Optional[str], opened: Iterable[str] = ()) -> bool:
+        """Was the last look at ``place`` a whole one: no container there that was closed then and can still be opened?"""
+        return not self._closed_here(obj, place, set(opened or ())) if place else True
+
+    def block(self, place: str) -> None:
+        """An Open of ``place`` failed (a locked container): it is no place to look into for the rest of the run."""
+        self.blocked.add(place)
 
     def leg_for(self, obj: str, place: str, opened: set) -> Optional[Leg]:
         """How to look at ``place``: open it first when it is itself a closed container (None when the
-        robot cannot open it: it cannot look inside)."""
+        robot cannot open it: it cannot look inside, nor into a container an Open failed on)."""
+        if place in self.blocked:
+            return None
         if place in self.containers(place) and place not in opened:
             return Leg(obj, place, [place]) if self.can_open else None
         return Leg(obj, place)
@@ -371,7 +399,7 @@ class SearchBelief:
             inside = self._closed_here(obj, here, op)
             if inside:
                 return Leg(obj, inside[0], [inside[0]])
-        for p in self.order(obj):
+        for p in self.order(obj, here):
             if not self.is_searched(obj, p, op):
                 leg = self.leg_for(obj, p, op)
                 if leg is not None:

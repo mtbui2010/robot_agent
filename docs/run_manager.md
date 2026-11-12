@@ -187,3 +187,22 @@ Measured on the scenario suite (T1, fake robot, 10 runs each, median / max):
 - The thread binding is best effort. If another `begin_run()` (a skill command) runs between `start()`
   and the run's own `begin_run()`, that thread is bound instead. The executive then falls back to "the
   active run", which is the same run with one robot per process.
+
+
+## Cancel audit (2026-11-12): what a stop interrupts
+`POST /agent/cancel` = `run_control.request_cancel`: sets the run's flag, `CustomNode.cancel_all`, releases pending dashboard listens. Tests: `tests/test_cancel_audit.py`
+(a call of 8 s, a stop at 0.4 s, the run must end in under 2.5 s with a cancelled `done` and no step started).
+
+| a run can sit in | interrupted | how |
+|---|---|---|
+| understand / rank / which-one / coverage LLM calls (`ask_json`) | at once (10 ms poll) | `call_cancellable` |
+| planner calls (`_plan_call`, repair) | at once | `call_cancellable` |
+| input translation, output translation, glossary names, dialog model (`language.py`) | at once (fixed 2026-11-12: plain `.chat` before) | `language._chat` = `call_cancellable`; the `done` of a stopped run is said untranslated |
+| the Ask skill / answer wait (`dialog.ask`) | at once | polls the run's flag; the skill's thread is freed by `cancel_pending_listens` |
+| a dashboard listen / speak wait that opens AFTER the stop | at once (fixed: it waited its whole timeout) | `listen_dashboard` / `say_to_user` check the flag after registering the slot |
+| a question being written when the stop comes | the Ask skill is not started (fixed: it was) | `_ask_io` re-checks |
+| health wait, search legs | within 0.1 s | polling loop |
+| a robot skill in flight (MoveTo, Pick, ...) | by the robot, not Python | ROS goals cancelled by `cancel_all`; a skill declared `interruptible: false` finishes first (at most 30 s); the run ends at the step boundary; not testable without ROS |
+| legacy `utils.translate` in `UnifiedAgent.run` (non-closed-loop path) | no | gap, not used by the closed loops |
+
+The next run starts clean: `begin_run` clears the flag unless the active run is being cancelled, a run has its own flag, and the listen slots are removed in `finally`.

@@ -84,7 +84,7 @@ ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify
                 "goal_check", "health_wait_s", "understand_retries", "understand_samples", "llm_budget",
                 "goal_readback", "understand_temperature", "understand_seed", "understand_sample_temperature",
                 "yes_no_reasks", "search", "search_rank", "search_half_life_s", "vlm_verify", "sensor_health",
-                "reconcile", "search_habit_weight", "edit_reserve", "plan_tidy",
+                "reconcile", "search_habit_weight", "search_route_weight", "edit_reserve", "plan_tidy",
                 "goal_filter", "sage_subgoals", "translate_model", "translate_url", "translate_budget",
                 "gate_complete", "person_seat_m", "person_surface_m", "search_total",
                 "search_legs", "object_check", "detector_miss_rate", "person_goals", "accept_goals",
@@ -161,7 +161,7 @@ class Places:
         if not w:
             return []
         try:
-            from robot_agent.env_names import resolve_env_name
+            from robot_agent.env_names import alias_beats_head, resolve_env_name
             k = resolve_env_name(w, self.env)
         except Exception:
             k = None
@@ -170,12 +170,12 @@ class Places:
             if w == k.lower() or "@" in w or w in {normalize(x) for x in self.env[k].get("aliases") or []}:
                 return [k]
         # 'dining table', 'kitchen counter', 'shelf in the restroom'
-        room = next((r for r in self.rooms() if r in w), "")
-        rest = (w.replace(room, " ") if room else w).replace(" in the ", " ").replace(" in ", " ").replace(" at ", " ")
+        room = next((r for r in self.rooms() if words(r) in w), "")      # "tool crib" says the room tool_crib
+        rest = (w.replace(words(room), " ") if room else w).replace(" in the ", " ").replace(" in ", " ").replace(" at ", " ")
         # a whole answer ("It is on the kitchen counter.") grounded to the room: the filler words and the full
         # stop kept 'counter' from matching (sim 2026-10-23)
         rest = re.sub(r"[.,!?;:]", " ", rest)
-        rest = " ".join(t for t in rest.split() if t not in ("the", "of", "on", "kitchen's", "it", "is", "it's",
+        rest = " ".join(t for t in rest.split() if t not in ("the", "of", "on", "in", "at", "kitchen's", "it", "is", "it's",
                                                              "its", "there", "a", "an"))
         phrase = lambda h: bool(h) and re.search(r"(?<!\w)" + re.escape(h) + r"(?!\w)", rest)      # noqa: E731
         hd = lambda k: words(self.head(k))                                                     # noqa: E731
@@ -186,18 +186,18 @@ class Places:
         hits = [k for k in hits if not any(h != hd(k) and phrase(hd(k))
                                            and re.search(r"(?<!\w)" + re.escape(hd(k)) + r"(?!\w)", h)
                                            for h in said_heads)]
+        hits = alias_beats_head(self.env, w, hits, hd) or hits           # 'bathroom shelf' is the restroom's, not the kitchen's 'shelf'
         if not hits and rest:                         # 'table' -> 'dining table', 'test table'
             hits = [k for k in self.keys if any(t == x for t in rest.split() for x in self.head(k).split())]
-        if not hits:
-            hits = self._alias_hits(w)
+        hits = hits or self._alias_hits(w)
         if room:
             in_room = [k for k in hits if self.room(k) == room]
             if in_room:
                 hits = in_room
             elif not rest or not hits:
                 return ["@" + room]
-        if not hits and w in self.rooms():
-            return ["@" + w]
+        if not hits and (r0 := next((r for r in self.rooms() if words(r) == w), "")):
+            return ["@" + r0]
         if len(hits) > 1 and hint:
             # the user's own words name one of them: an alias (화장실 선반) or the room
             ht = words(hint)
@@ -1191,13 +1191,13 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             return ""
         # a question in the model's own words may name raw ENV keys ("... in fridge@kitchen?"): said as names (F5.1)
         said = self._in_lang(self._humanize(question), lang)
-        # what the person heard, for the understanding's dialogue (F5.5: a Korean user corrected a read-back the
-        # model only saw in English, and the model kept the object the person had just rejected)
+        from ..run_control import cancel_requested
+        if cancel_requested():                           # stopped while the question was being written: the robot asks nothing more
+            return ""
+        # what the person heard, for the understanding's dialogue (F5.5: a corrected read-back the model only saw in English)
         self.__dict__.setdefault("_said_as", {})[str(question)] = said
         params = {(spec.required_params[:1] or ["inputs"])[0]: said}
-        for k, v in (("retries", 0), ("lang", lang)):            # optional params the skill may take
-            if k in spec.param_names:
-                params[k] = v
+        params.update({k: v for k, v in (("retries", 0), ("lang", lang)) if k in spec.param_names})    # optional params the skill may take
         try:
             r = self.sr.execute(spec.name, params, node, log_fn=log_fn)
             return str((r or {}).get("text") or (r or {}).get("answer") or "").strip() if (r or {}).get("isdone") else ""
@@ -3206,7 +3206,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
     def _execute_phase(self, r):
         """Run the plan step by step. True when the run ended."""
         r.placed = {}
-        r.pick_tries, r.move_tries, r.helped, r.seen_fail, r.seen_at, r.find_fails = {}, {}, set(), {}, {}, {}
+        r.pick_tries, r.move_tries, r.helped, r.seen_fail, r.seen_at, r.find_fails = {}, {}, set(getattr(r, "pre_helped", ())), {}, {}, dict(getattr(r, "pre_fails", {}))   # pre_helped / pre_fails: set before the plan (option ask_source)
         r.queries = self._run_queries = {}            # object -> the description the person chose (which_one)
         r.refinds, r.found_at, r.relooked = {}, {}, set()
         r.completed, r.replans, r.i, r.replan_error = [], 0, 0, None
@@ -3441,9 +3441,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             # a step of the plan put it here and the release was verified: one miss of the camera is weak evidence
             # against that, so the check looks a second time before it says the goal does not hold
             again, skill2 = self._look(r, {"action": "Find", "object": o})
-            if again is not None and again.ok:
-                r.memory.see(o, place, "seen at its goal place")
-                return True, f"the {o} is seen on the {nice} (second look)", skill2
+            if again is not None and again.ok and (seen := self._second_look_seen(r, o, place, nice, skill2)):
+                return seen
             res, skill = (again, skill2) if again is not None else (res, skill)
             code = r.robot.failure_code(res, res.msg)
         if code is FailureCode.ABSENT:
@@ -3690,7 +3689,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         sig = (a, o, r.world.arrived, re.sub(r"[-\d.]+", "#", str(reason))[:160])
         r.seen_fail[sig] = r.seen_fail.get(sig, 0) + 1
         # Find has its own budget (search_max misses -> ask where -> stop); this stop kept it from the question (sim 2026-10-23)
-        if r.seen_fail[sig] > 2 and a != "Find":
+        if r.seen_fail[sig] > 2 and a != "Find" and not self._search_open(r, a):
             yield self._finish(r, "failed", msg=f"{a} {o} failed again the same way: {reason}"); return _STOP
         # ── skill-level retry in place / ask the person (not planning) ──
         # only a sensor check disagrees with the skill's own success (the layers before it passed)
@@ -3699,7 +3698,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             and any(v.layer == "sensor" and not v.ok for v in rec.verifies)
         no = refuted(rec.verifies)                     # the VLM / its Find said it did not happen: replan
         recover = None if no is not None else {"Find": self._recover_find, "Pick": self._recover_pick,
-                                               "MoveTo": self._recover_move, "Place": self._recover_place,
+                                               "MoveTo": self._recover_move, "Open": self._recover_open, "Place": self._recover_place,
                                                "PutIn": self._recover_place}.get(a)
         out, extra = (yield from recover(r, st, reason, rule)) if recover else (None, self._refuted(r, st, no))
         if out is not None:
@@ -3835,14 +3834,14 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         # the belief has nowhere left to look (searched places are never searched again): ask / give up now
         nowhere = leg is None and rule.mark_searched and getattr(r, "search", None) is not None
         r.find_fails[o] = r.find_fails.get(o, 0) + 1
-        if (r.find_fails[o] > self.cfg["search_max"] or nowhere) and self.cfg["ask_help"] and ("where", o) not in r.helped:
+        if (self._missed_enough(r, o) or nowhere) and self.cfg["ask_help"] and ("where", o) not in r.helped:
             r.helped.add(("where", o))
             q = speech.LocalText("q_where_is", {"object": self._said_of(r, o)}, text=f"I couldn't find the {o}. Where is it?")
             yield r.ev("clarify", question=q, round=0)
             ans, _n = self._ask_heard(q, r.node, self._log_fn(r.i), r.lang)   # silence: asked again (F3.8)
             k = r.places.ground(ans, ans) if ans else None
             if not k and ans:
-                k = yield from self._confirm_near(r, ans)        # a noisy answer: "Did you mean the X?" (F3.7)
+                k = (yield from self.options.decide_flow("on_where_answer", r, o, ans)) or (yield from self._confirm_near(r, ans))   # a room / unusable answer (ask_source); a noisy one: "Did you mean the X?" (F3.7)
             if not k and self.cfg.get("search_legs"):
                 return (yield from self._search_on(r, o))       # "I don't know": search the likely rest (F6.2)
             if not k:

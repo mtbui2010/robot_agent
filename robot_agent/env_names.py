@@ -155,3 +155,13 @@ def describe_env(env) -> str:
         al = [a for a in al if isinstance(a, str) and a.strip()] if isinstance(al, list) else []
         lines.append(f'- {key}' + (f' (also: {", ".join(al)})' if al else ''))
     return '\n'.join(lines)
+
+
+def alias_beats_head(env: dict, said: str, hits: list, head) -> list:
+    """The one place whose alias the words ``said`` name in full and longer than the head that matched ``hits`` ('bathroom shelf' is
+    the restroom's shelf, not the kitchen's 'shelf'); [] when there is none or it is ambiguous."""
+    import re
+    top = max((len(head(h)) for h in hits), default=0)
+    found = {k for k in env for a in env[k].get("aliases") or [] if len(normalize(a)) > top and k not in hits
+             and re.search(r"(?<!\w)" + re.escape(normalize(a)) + r"(?!\w)", said)}
+    return list(found) if len(found) == 1 else []

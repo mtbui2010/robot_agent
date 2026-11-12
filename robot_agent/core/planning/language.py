@@ -143,6 +143,19 @@ def localized(text, lang: str, per_language: bool = False) -> bool:
     return sum(1 for c in letters if not c.isascii()) / len(letters) >= floor
 
 
+def _chat(client, **kw) -> str:
+    """One model call a stop does not wait for (``run_control.call_cancellable``: ``RunCancelled`` within a poll of the stop)."""
+    from ..run_control import call_cancellable
+    return call_cancellable(client.chat, **kw)
+
+
+def _pass_cancel(e) -> None:
+    """Inside an ``except Exception`` that makes a failed call a fallback: the run's stop is not a failed call."""
+    from ..run_control import is_cancel
+    if is_cancel(e):
+        raise e
+
+
 class LanguageAdapter:
     """See the module doc. ``host``: the AssistLoop (cfg, robot, _llm_cfg, _llm(), and the run's ``_env_places``,
     ``_tr_budget``, ``_llm_unreachable``)."""
@@ -202,14 +215,14 @@ class LanguageAdapter:
         is returned as it is)."""
         dm = self.dialog_model(lg)
         if not dm:
-            return str(self.translator().chat(prompt=prompt, temperature=0, seed=0))
+            return str(_chat(self.translator(), prompt=prompt, temperature=0, seed=0))
         h = self.host
         cap = (h.cfg or {}).get("dialog_max_tokens")
         out, why = "", ""
         try:
             kw = {"num_predict": int(cap)} if cap else {}
-            out = str(role_models.role_client(h, "dialog", dm, h.cfg.get("dialog_url"), h.cfg.get("dialog_think"))
-                      .chat(prompt=prompt, temperature=0, seed=0, **kw))
+            out = str(_chat(role_models.role_client(h, "dialog", dm, h.cfg.get("dialog_url"), h.cfg.get("dialog_think")),
+                            prompt=prompt, temperature=0, seed=0, **kw))
             why = role_models.runaway(out, cap) or ("" if ok is None or ok(out.strip().strip('"')) else "rejected")
         except Exception as e:                       # noqa: BLE001 - a model that cannot answer: the translator writes it
             from ..run_control import is_cancel
@@ -221,7 +234,7 @@ class LanguageAdapter:
         h._lab("dialog_model", fallback=why, model=dm, lang=lg)
         if not self._take():
             return out
-        return str(self.translator().chat(prompt=prompt, temperature=0, seed=0))
+        return str(_chat(self.translator(), prompt=prompt, temperature=0, seed=0))
 
     def _take(self, keep: int = 0) -> bool:
         """One translation call from the translate budget, leaving ``keep`` calls; False when there is none."""
@@ -416,7 +429,13 @@ class LanguageAdapter:
     # ── OUT: the one function every spoken text passes ───────────────────
     def speak(self, text, lang, kind: str = "") -> str:
         """``text`` as the user hears it. See the module doc."""
-        out = self._speak(text, lang, kind)
+        try:
+            out = self._speak(text, lang, kind)
+        except Exception as e:                           # noqa: BLE001
+            from ..run_control import is_cancel
+            if not is_cancel(e):
+                raise
+            out = str(text)                              # stopped: the line is said as it is (the `done` of a stopped run), nothing cached
         self.spoken.append(str(out))
         del self.spoken[:-400]
         return out
@@ -481,7 +500,8 @@ class LanguageAdapter:
                 prompt = base if why is None else base.replace(" Output only", f" (Your last answer was wrong: {why}.) Output only")
                 out = self.chat_out(lg, f"{prompt}\n{text}",
                                     ok=lambda o: speech.guard(o, lg, keep=list(gl.values())) is None).strip().strip('"')
-            except Exception:
+            except Exception as e:
+                _pass_cancel(e)
                 break
             why = speech.guard(out, lg, keep=list(gl.values()))
             if why is None:
@@ -543,8 +563,9 @@ class LanguageAdapter:
         if getattr(self.host, "_llm_unreachable", False) or not self._take(keep=self.reserve):
             return Heard(t, trusted=True, why="no translation")       # the original only (pivot none)
         try:
-            out = str(self.translator().chat(prompt=f"{prompt}\n{t}", temperature=0, seed=0)).strip().strip('"')
-        except Exception:
+            out = self._chat_in(prompt, t)
+        except Exception as e:
+            _pass_cancel(e)
             return Heard(t, trusted=True, why="no translation")
         if not out or out.upper().strip(". ") == UNCLEAR:
             return Heard(t, "", False, "the text is not an understandable sentence")
@@ -553,8 +574,24 @@ class LanguageAdapter:
         low = out.lower()
         lost = [a for a, en in gl.items() if not all(w in low for w in _head_words(en))]
         if lost:
-            return Heard(t, out, False, "the translation lost " + ", ".join(lost), lost)
+            again = self._retry_lost(prompt, t, {a: gl[a] for a in lost})
+            return Heard(t, again) if again else Heard(t, out, False, "the translation lost " + ", ".join(lost), lost)
         return Heard(t, out)
+
+    def _chat_in(self, prompt: str, text: str) -> str:
+        return str(_chat(self.translator(), prompt=f"{prompt}\n{text}", temperature=0, seed=0)).strip().strip('"')
+
+    def _retry_lost(self, prompt: str, t: str, lost: dict) -> str:
+        """An option (``on_translation_lost``) may translate again; its English counts only when it keeps every lost name. "" else."""
+        opts = getattr(self.host, "options", None)
+        try:
+            out = opts.decide("on_translation_lost", t, lost, lambda s: self._chat_in(prompt, s)) if opts is not None else None
+        except Exception as e:
+            _pass_cancel(e)
+            return ""
+        low = str(out or "").lower()
+        ok = out and not _non_latin(str(out)) and all(w in low for en in lost.values() for w in _head_words(en))
+        return str(out) if ok else ""
 
     def untrusted(self, utterance: str) -> Optional[str]:
         """Why the translation of ``utterance`` cannot be trusted (None: it can, or there is none)."""
