@@ -35,6 +35,9 @@ CORE_PHRASES = {
     "q_where_are_you": "Where are you?",
     "q_where_is_person": "Where is {person}?",
     "q_where_is": "I couldn't find the {object}. Where is it?",
+    "q_where_is_obj": "Where is the {object}?",
+    "q_where_in_home": "Which room, or which piece of furniture, is it in?",
+    "a_look_in_room": "OK, I will look in the {room}.",
     "q_repeat": "Sorry, I didn't catch that. Could you say it again?",
     "q_silence": "Sorry, I didn't hear you.",
     "q_did_you_mean": "Did you mean the {object}?",
@@ -317,3 +320,8 @@ def guard(text: str, lang: str, keep=()) -> Optional[str]:
 
 
 __all__ = ["CORE_PHRASES", "APOLOGY_KEYS", "calm", "LocalText", "say_name", "phrase", "render", "guard"]
+
+
+def script_ok(alias: str, lang: str) -> bool:
+    """Public form of the script test: is ``alias`` a name in the script of ``lang`` (see ``_script_ok``)?"""
+    return _script_ok(alias, lang)

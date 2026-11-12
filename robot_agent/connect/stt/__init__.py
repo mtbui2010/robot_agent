@@ -16,6 +16,7 @@ expect (와인잔, 머그컵, …), which steers it on names it would otherwise 
 from __future__ import annotations
 
 import io
+import logging
 import re
 import wave
 from collections import Counter
@@ -105,9 +106,15 @@ class WhisperClient:
             form['language'] = lang
         if prompt:
             form['prompt'] = prompt
-        r = self._session.post(f'{self.url}/v1/audio/transcriptions', data=form,
-                               files={'file': (name, data, mime)},
-                               timeout=(3.0, self.timeout))   # a dead host fails in 3 s (fallback to the next server)
+        r = self._post(form, name, data, mime)
+        if prompt and 400 <= r.status_code < 500 and r.status_code not in (401, 403, 404, 408, 429):
+            # the server rejects the prompt field: transcribe without it, say so once
+            if not WhisperClient._prompt_warned:
+                WhisperClient._prompt_warned = True
+                logging.getLogger(__name__).warning('stt server %s rejected the prompt (HTTP %s): this call goes on without it',
+                                                    self.url, r.status_code)
+            form.pop('prompt', None)
+            r = self._post(form, name, data, mime)
         r.raise_for_status()
         out = r.json()
         # Per segment: drop repetition loops (high compression ratio — '아, 아,
@@ -122,6 +129,13 @@ class WhisperClient:
         text = clean_transcript(kept)
         self.last_dropped = raw if raw and not text else ''
         return text
+
+    _prompt_warned = False
+
+    def _post(self, form, name, data, mime):
+        return self._session.post(f'{self.url}/v1/audio/transcriptions', data=form,
+                                  files={'file': (name, data, mime)},
+                                  timeout=(3.0, self.timeout))   # a dead host fails in 3 s (fallback to the next server)
 
     def close(self):
         self._session.close()
