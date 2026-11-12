@@ -42,6 +42,13 @@ class OkText(Ok):
     text: Optional[str] = None
 
 
+# --- robot -------------------------------------------------------------------
+class RobotLanguages(_Open):
+    robot: str
+    language: str                 # the default language (manifest `language`)
+    languages: list[str]          # every language it talks in, the default first (manifest `languages`)
+
+
 # --- skills ------------------------------------------------------------------
 class SkillInfo(_Open):
     name: str

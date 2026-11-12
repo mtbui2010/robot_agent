@@ -24,7 +24,8 @@ The dependency only goes one way. The robot package imports
 ```yaml
 robot: kaair
 version: "1.0"
-language: ko
+language: ko                   # the default language
+languages: [ko, en]            # optional: every language the robot talks in (default: just `language`)
 capabilities: {base: true, arms: 1, hands: [right], lift: true, head: true, drawer: true}
 geometry: {arrive_tol_m: 0.3, reach_m: 0.78, reach_far_m: 1.0}
 skills:
@@ -53,6 +54,14 @@ Optional planner data: `planner: {seed_memory: ../planner/seed_memory.jsonl}` (p
 relative to the manifest; `Manifest.seed_memory`; see `memory.md`) and `planner.notes`: a list of
 short strings the direct planner's prompt shows as the robot's notes
 ([direct_prompt.md](direct_prompt.md); each a non-empty string, at most 300 characters).
+
+Languages: `language` is the robot's default (two- or three-letter code, `ko`); `languages` lists every
+language it talks in and must include `language` (absent = `[language]`; a bad code, a duplicate or a list
+without the default is a `ManifestError`). `Manifest.supported_languages` gives them default first. The core
+names no language: `GET /robot/languages` returns `{robot, language, languages}` for clients (the dashboard
+builds its picker from it), and a run that names none (`/ws/agent` without `lang`) uses `language`. A
+robot whose manifest cannot be read talks English only. The skills decide what they can say: a language in
+`languages` that a skill has no phrases for is that skill's refusal, not the manifest's.
 
 Optional prompt text: a top-level `description:` (one or two sentences about the robot's body;
 `Manifest.description`) and a skill-level `description:` (what the skill does). The planner

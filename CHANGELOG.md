@@ -5,6 +5,12 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+### Languages per robot (manifest `language` / `languages`)
+- `manifest.yaml` may list `languages: [ko, en]` (every language the robot talks in; must include `language`, the
+  default). `Manifest.languages` / `supported_languages`; validated by field. New `GET /robot/languages` ->
+  `{robot, language, languages}` (`api/robot.py`, `core/languages.py`); `/ws/agent` without `lang` now uses the
+  manifest's `language` (was `en`). Test: `tests/test_robot_languages.py`. `docs/contract.md`.
+
 ### Direct planner steps run in the closed loops (docs/direct_prompt.md "Steps and binding")
 - `llm_direct` steps keep the robot's call (`skill`, `params` read as Structured mode reads them, `flags`)
   and carry the skill's manifest action (`move` -> `MoveTo`; `""` for a skill with no plan action). Binding
