@@ -138,14 +138,17 @@ def bootstrap(robot_pkg: str,
         common_dir, locations_dir, location, log_dir = _resolve_layout(
             robot_pkg, data_dir, config_dir, location, log_dir)
 
-        try:
-            import rclpy
-            if not rclpy.ok():
-                rclpy.init()
-        except ImportError:
-            print('ERROR: ROS2 not found. Source /opt/ros/*/setup.bash before running.',
-                  file=sys.stderr)
-            raise
+        # ROBOT_AGENT_ROS=off: a simulated robot package needs no ROS 2 (no rclpy import, no node).
+        # Default stays on, so real robots behave as before.
+        if os.environ.get('ROBOT_AGENT_ROS', 'on').strip().lower() not in ('0', 'off', 'false', 'no'):
+            try:
+                import rclpy
+                if not rclpy.ok():
+                    rclpy.init()
+            except ImportError:
+                print('ERROR: ROS2 not found. Source /opt/ros/*/setup.bash before running '
+                      '(or set ROBOT_AGENT_ROS=off for a simulated robot).', file=sys.stderr)
+                raise
 
         from .logging_config import setup_logging
         setup_logging(log_dir=log_dir, log_name=robot_pkg)

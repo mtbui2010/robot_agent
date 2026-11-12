@@ -5,6 +5,11 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+### `ROBOT_AGENT_ROS=off`: boot without ROS 2 for a simulated robot package
+- `runtime.bootstrap` skips the `rclpy` import and `rclpy.init()` when the environment variable `ROBOT_AGENT_ROS` is
+  `off` / `0` / `false` / `no`. Default unchanged (on). The "ROS2 not found" message names the switch. Test:
+  `tests/test_ros_off.py` (a subprocess with `rclpy` blocked: boots with the switch, still fails without it).
+
 ### Direct planner steps run in the closed loops (docs/direct_prompt.md "Steps and binding")
 - `llm_direct` steps keep the robot's call (`skill`, `params` read as Structured mode reads them, `flags`)
   and carry the skill's manifest action (`move` -> `MoveTo`; `""` for a skill with no plan action). Binding
