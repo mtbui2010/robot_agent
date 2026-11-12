@@ -539,15 +539,16 @@ def room_names(places) -> dict:
     return {n: rm for n, rm in out.items() if len(n) >= 2}
 
 
-def fuzzy_room(places, text: str, threshold: float = 0.25):
+def fuzzy_room(places, text: str, threshold: float = 0.25, typo: bool = False):
     """The one ENV room whose name is within ``threshold`` normalised edit distance of a word span of ``text`` (ASR noise:
-    'story room' for 'study room'), else None. Same measure as ``fuzzy_place``; two rooms equally near = None."""
+    'story room' for 'study room'), else None. Same measure as ``fuzzy_place`` (``typo``: see there); two rooms equally near = None."""
+    dist = near_distance if typo else edit_distance
     spans, best = _spans(text), {}
     for n, rm in room_names(places).items():
         a = _jamo(n)
         for sp in spans:
             b = _jamo(sp)
-            d = near_distance(a, b) / max(len(a), len(b))
+            d = dist(a, b) / max(len(a), len(b))
             if d <= threshold and (rm not in best or d < best[rm]):
                 best[rm] = d
     top = sorted(best.items(), key=lambda kv: kv[1])
@@ -556,10 +557,12 @@ def fuzzy_room(places, text: str, threshold: float = 0.25):
     return None
 
 
-def fuzzy_place(places, text: str, threshold: float = 0.25):
+def fuzzy_place(places, text: str, threshold: float = 0.25, typo: bool = False):
     """(key, name) of the one ENV place whose name / alias is within ``threshold`` normalised edit distance of a
     word span of ``text`` (an answer with ASR noise: 식그탁 for 식탁), else (None, ''). The threshold is fixed a priori
-    (one wrong unit in a four-unit name) and not tuned on any benchmark (SAGE-v2 F3.7)."""
+    (one wrong unit in a four-unit name) and not tuned on any benchmark (SAGE-v2 F3.7). ``typo`` (default off; only the
+    option-gated callers set it) measures with ``near_distance``: a swap of neighbours = 1 edit, a name plus 1-2 letters = 1."""
+    dist = near_distance if typo else edit_distance
     t = _norm(re.sub(r"[.,!?]", " ", str(text or "")))
     toks = t.split()
     spans = {" ".join(toks[i:j]) for i in range(len(toks)) for j in range(i + 1, min(len(toks), i + 3) + 1)}
@@ -577,7 +580,7 @@ def fuzzy_place(places, text: str, threshold: float = 0.25):
                 if not sp:
                     continue
                 a, b = _jamo(sp), _jamo(n)
-                d = near_distance(a, b) / max(len(a), len(b))
+                d = dist(a, b) / max(len(a), len(b))
                 if d <= threshold and (k not in best or d < best[k][0]):
                     best[k] = (d, n)
     if len(best) != 1:

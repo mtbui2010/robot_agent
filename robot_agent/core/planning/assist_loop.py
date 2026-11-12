@@ -3998,11 +3998,11 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         return next((g.get("said") for g in getattr(r, "goals", []) or [] if g.get("object") == obj and g.get("said")),
                     obj)
 
-    def _confirm_near(self, r, ans):
+    def _confirm_near(self, r, ans, typo=False):
         """The one place an answer with ASR noise nearly names (understand.fuzzy_place), confirmed with a yes /
         no question; None."""
         from .understand import fuzzy_place
-        k, _n = fuzzy_place(r.places, ans)
+        k, _n = fuzzy_place(r.places, ans, typo=typo)
         if not k:
             return None
         q = speech.LocalText("q_did_you_mean", {"object": self._say_name(r.places, k), "place": k})

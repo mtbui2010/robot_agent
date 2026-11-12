@@ -314,4 +314,24 @@ def test_hedged_plural_of_a_place_name_is_a_near_match():
     from robot_agent.core.planning.assist_loop import Places
     from robot_agent.core.planning.understand import fuzzy_place
     P = Places({"bench@workshop": {"aliases": ["workbench"]}})
-    assert fuzzy_place(P, "I am not sure, maybe near the workbenches")[0] == "bench@workshop"
+    assert fuzzy_place(P, "I am not sure, maybe near the workbenches", typo=True)[0] == "bench@workshop"
+
+
+def test_default_fuzzy_place_keeps_the_plain_edit_distance():
+    """Every option off: a swapped pair or a name plus letters is NOT near (the benchmark path); only typo=True (the option flows) says so."""
+    from robot_agent.core.planning.assist_loop import Places
+    from robot_agent.core.planning.understand import fuzzy_place, fuzzy_room
+    P = Places({"toolbox@workshop": {}, "bench@garage": {"aliases": ["workbench"]}})
+    assert fuzzy_place(P, "the toolobx") == (None, "")
+    assert fuzzy_place(P, "the toolobx", typo=True)[0] == "toolbox@workshop"
+    assert fuzzy_place(P, "near the benches") == (None, "")
+    assert fuzzy_place(P, "near the benches", typo=True)[0] == "bench@garage"
+    assert fuzzy_room(Places({"a@kitchen": {}}), "kithcen") is None
+    assert fuzzy_room(Places({"a@kitchen": {}}), "kithcen", typo=True) == "kitchen"
+
+
+def test_default_path_asks_no_did_you_mean_for_a_transposed_answer(run, make_assist, env):
+    robot = FakeRobot(env, {"mug": "washer@laundry room"}, answers=["the wahser", "yes"])
+    plan = steps("MoveTo washer@laundry room", "Find mug", "Pick mug", f"MoveTo {DT}", f"Place {DT}")
+    loop = make_assist(robot, FakeLLM(default=understood()), ScriptedPlanner(plan))
+    assert not any("Did you mean" in str(q) for q in questions(run_task(loop, TASK, max_events=3000)))

@@ -128,13 +128,13 @@ class LoopServices:
 
     def confirm_near(self, run, text):
         """Flow: the one place the answer nearly names (``understand.fuzzy_place``), confirmed with a yes / no question; None."""
-        return self._lp._confirm_near(run, text)
+        return self._lp._confirm_near(run, text, typo=True)
 
     def confirm_near_room(self, run, text, threshold: float = 0.25):
         """Flow: the one room the answer nearly names (``understand.fuzzy_room``), confirmed with a yes / no question; (room, its places)
         or ("", [])."""
         from .understand import fuzzy_room
-        room = fuzzy_room(run.places, text, threshold) if text else None
+        room = fuzzy_room(run.places, text, threshold, typo=True) if text else None
         if not room:
             return "", []
         said = room.replace("_", " ")
