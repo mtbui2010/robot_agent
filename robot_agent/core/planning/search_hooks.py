@@ -8,7 +8,6 @@ miss, steer a replan's suffix, update it after a step. ``AssistLoop`` calls them
 
 from __future__ import annotations
 
-import time
 from typing import Optional
 
 from ..options import NEXT
@@ -33,7 +32,7 @@ class SearchHooks:
         if not place or not sc.enabled or sc.rank != "llm":
             return place
         e = memory.data["objects"].get(_words(obj)) or {}
-        conf = search_belief.confidence(time.time() - float(e.get("ts") or 0), sc.half_life_s)
+        conf = search_belief.confidence(self._now() - float(e.get("ts") or 0), sc.half_life_s)
         return place if conf >= sc.trust else None
 
     def _search_start(self, r):
@@ -47,7 +46,7 @@ class SearchHooks:
         # people are not places to search (SAGE-v2 F2.4: a person entry was searched like a shelf), nor is a place the ENV marks `search: false`
         keys = [k for k in r.places.keys if not (e := r.places.env.get(k) or {}).get("person") and e.get("search", True) is not False]
         r.search = search_belief.SearchBelief(
-            keys, sc, openable=r.places.openable, can_open="Open" in r.robot.plan_actions,
+            keys, sc, now=self._now, openable=r.places.openable, can_open="Open" in r.robot.plan_actions,
             containers=(lambda k: fn(k, r.places.env.get(k) or {})) if callable(fn)
             else search_belief.containers_from_env(r.places.env, r.places.openable),
             locs=search_route.locs_from_env(r.places.env, keys))
