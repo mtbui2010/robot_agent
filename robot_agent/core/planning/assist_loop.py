@@ -1674,7 +1674,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         r.llm_budget, self._llm_unreachable = LLMBudget(self.cfg["llm_budget"]), False
         self._person_at = {}                          # {person: place they said they are at} (this run)
         self._where_asked = None                      # the person "Where are you?" was asked about (this run)
-        self._handed = set()                          # objects this run handed over (release actions)
+        self._handed = self.options.query("belief_set", default=set())      # objects this run handed over (release actions)
         self.lab_log = []                             # what the opt-in lab options did this run (see _lab)
         self._tr_budget = LLMBudget(self.cfg["translate_budget"])   # translation calls: their own cap (F5.3)
         self._say_not_in_lang, self._run_lang, self._said_as = 0, lang, {}
@@ -3205,7 +3205,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
 
     def _execute_phase(self, r):
         """Run the plan step by step. True when the run ended."""
-        r.placed = {}
+        r.placed = self.options.query("belief_table", default={})      # option object_words: looked up by the object's words
         r.pick_tries, r.move_tries, r.helped, r.seen_fail, r.seen_at, r.find_fails = {}, {}, set(getattr(r, "pre_helped", ())), {}, {}, dict(getattr(r, "pre_fails", {}))   # pre_helped / pre_fails: set before the plan (option ask_source)
         r.queries = self._run_queries = {}            # object -> the description the person chose (which_one)
         r.refinds, r.found_at, r.relooked = {}, {}, set()

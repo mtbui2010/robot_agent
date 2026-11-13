@@ -61,7 +61,7 @@ THROUGH_THE_LOOP = {"ask_source": "test_option_ask_source.py", "hazard": "test_s
                     "unapplied_change": "test_sage_lab_r15_unapplied_change.py", "confirm_look": "test_option_confirm_look.py",
                     "translate_retry": "test_option_translate_retry.py", "search_per_object": "test_option_search_per_object.py",
                     "place_find": "test_option_place_find.py", "reopen_on_miss": "test_option_reopen_on_miss.py",
-                    "end_state": "test_option_end_state.py"}
+                    "end_state": "test_option_end_state.py", "object_words": "test_option_object_words.py"}
 
 
 def _specs():

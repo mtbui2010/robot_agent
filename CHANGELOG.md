@@ -5,6 +5,8 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+- Option `object_words` (default off): the run's placed / handed-over tables are looked up by the object's words ('phone' = the plan's 'cell phone'); without it a done plan was believed unmet and the run failed with every goal true.
+
 - Option `end_state` (default off; pack data `planner.end_state`, new service `run_step`): a `go` goal to a place the pack names as an end state is made true (go there, run the pack's action) before done.
 
 - Option `reopen_on_miss` (default off; pack data `planner.recovery.reopen_on_miss`): a Find that misses right after an Open is retried once after the pack's reopen remedy.

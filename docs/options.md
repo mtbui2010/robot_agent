@@ -14,7 +14,7 @@ CLAUDE.md rules 13-15. The reference for the flat run options and manifest keys 
 | `Registry`, `register` | `core/options/registry.py` | the list of options; built-in ones from `robot_agent/options/__init__.py`, others by entry point group `robot_agent.options` |
 | `Dispatcher` | `core/options/dispatch.py` | builds the enabled options of one loop, calls their hooks in `order` |
 | `Services` | `core/options/services.py` | the interface an option uses to ask the loop for something (`LoopServices` in `core/planning/option_services.py` implements it) |
-| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state` so far |
+| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words` so far |
 
 `python -m robot_agent.core.options list` prints the registered options, their keys and hooks.
 `python -m robot_agent.core.options check MANIFEST.yaml` reports `planner.options` entries that name no option or key.
@@ -161,6 +161,14 @@ last goal, and a plain MoveTo can stand in for the pack's own action (docking, n
 there (if it is not) and runs the action before the goals are checked, up to `planner.recovery.return_tries` times (default 1); when that fails the run
 ends `failed`. No data, an action the robot lacks, or no `move` role (robot not there) = does nothing. Key `enabled` (legacy `end_state`,
 `$ROBOT_AGENT_END_STATE`). Hook `on_final`; lab flag `end_state`: `{place, action, ok, tries}`. Module: `robot_agent/options/end_state.py`.
+
+### `object_words`
+The goal checks find an object the plan names in other words (default off). The run's belief keeps what the plan did under the executor's name
+(`Pick cell phone`), the goal keeps the reader's (`phone`); the exact-name lookup found nothing, the goal was believed unmet after a plan that did
+everything, and the run replanned, fetched the object again and ended failed. With the option the two belief tables (placed, handed over) look an
+object up by its words: the single entry whose tokens contain or are contained in the asked name; several fits or none stay unmatched. Key `enabled`
+(legacy `object_words`, `$ROBOT_AGENT_OBJECT_WORDS`). Hook `on_start`; services `belief_table`, `belief_set`. Module:
+`robot_agent/options/object_words.py`.
 
 ### `translate_retry`
 A translation that lost a place name is made again (default off). The input translation of a non-English utterance is checked against the ENV names the
