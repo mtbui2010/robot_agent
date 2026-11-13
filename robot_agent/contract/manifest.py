@@ -79,6 +79,7 @@ _TOP_KEYS = {"robot", "version", "language", "capabilities", "geometry", "planne
 #   a role not declared = the part of the option that needs it does nothing), coverage_limits ({max_parts, max_steps}: integers
 #   >= 1, the caps of request_coverage; not declared = no cap), agree_guard also holds particle_chain / tail_chars (integers >= 1;
 #   not declared = that part of the guard is off), person_snapshot ({trust_s: seconds > 0}),
+#   end_state ({places: [ENV keys or heads], action: an action of the pack}: option end_state, the state a task ends in; not declared = nothing),
 #   detector_miss_rate (0 to 0.9, default 0.1: the chance that a look at the right place does not see the object;
 #   one miss is then weak evidence and the search looks again at the places the belief still holds probable)
 PLANNER_KEYS = {"seed_memory", "notes", "llm_budget", "translate_model", "translate_url", "translate_budget",
@@ -91,7 +92,7 @@ PLANNER_KEYS = {"seed_memory", "notes", "llm_budget", "translate_model", "transl
                 "understand_max_goals", "understand_schema_strict", "understand_give_kind", "understand_verify_verdict",
                 "repair_model", "repair_url", "repair_max_tokens", "repair_think", "dialog_model", "dialog_model_lang",
                 "dialog_url", "dialog_max_tokens", "dialog_think", "understand_think", "request_coverage",
-                "options"}                  # options: {<option>: {<key>: value}}, the registered options' own keys (docs/options.md)
+                "end_state", "options"}                  # options: {<option>: {<key>: value}}, the registered options' own keys (docs/options.md)
 AGREE_GUARD_KEYS = {"garble_ratio", "particle_chain", "tail_chars"}
 PERSON_SNAPSHOT_KEYS = {"trust_s"}
 ACTION_ROLE_KEYS = {"put_down", "move", "open", "close", "find"}

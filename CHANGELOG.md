@@ -5,6 +5,8 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+- Option `end_state` (default off; pack data `planner.end_state`, new service `run_step`): a `go` goal to a place the pack names as an end state is made true (go there, run the pack's action) before done.
+
 - Option `reopen_on_miss` (default off; pack data `planner.recovery.reopen_on_miss`): a Find that misses right after an Open is retried once after the pack's reopen remedy.
 
 - Option `place_find` (default off, hook `on_plan`, new action role `find`): a Find of a place the robot is at or moves to is dropped from the plan.

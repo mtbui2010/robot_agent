@@ -44,6 +44,10 @@ class LoopServices:
         res, skill = self._lp._look(run, {"action": "Find", "object": obj})
         return bool(res is not None and res.ok), skill
 
+    def run_step(self, run, step: dict):
+        """One more step of the end-of-run check (MoveTo, or the pack's end action), its effect applied on success: the skill result or None."""
+        return self._lp._look(run, dict(step))[0]
+
     def cancelled(self, run):
         return self._lp._cancelled(run)
 

@@ -14,7 +14,7 @@ CLAUDE.md rules 13-15. The reference for the flat run options and manifest keys 
 | `Registry`, `register` | `core/options/registry.py` | the list of options; built-in ones from `robot_agent/options/__init__.py`, others by entry point group `robot_agent.options` |
 | `Dispatcher` | `core/options/dispatch.py` | builds the enabled options of one loop, calls their hooks in `order` |
 | `Services` | `core/options/services.py` | the interface an option uses to ask the loop for something (`LoopServices` in `core/planning/option_services.py` implements it) |
-| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss` so far |
+| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state` so far |
 
 `python -m robot_agent.core.options list` prints the registered options, their keys and hooks.
 `python -m robot_agent.core.options check MANIFEST.yaml` reports `planner.options` entries that name no option or key.
@@ -153,6 +153,14 @@ fails `absent`, the pack's remedy runs on the container once (no miss is counted
 (a list of the pack's actions, e.g. `[Close, Open]`) and `planner.action_roles` `find` and `open`; any missing, or an action the robot lacks = does
 nothing. Key `enabled` (legacy `reopen_on_miss`, `$ROBOT_AGENT_REOPEN_ON_MISS`). Hook `on_step_failed`; lab flag `reopen_on_miss`: `{container, object}`.
 Module: `robot_agent/options/reopen_on_miss.py`.
+
+### `end_state`
+The state a task ends in is part of the goal (default off). The engine holds a `go` goal ("go back to the dock") to where the plan ENDS only when it is the
+last goal, and a plain MoveTo can stand in for the pack's own action (docking, not only arriving). With the option and the pack's data
+`planner.end_state: {places: [ENV key or head, ...], action: <an action of the pack>}`, when a `go` goal is for one of those places, the robot goes
+there (if it is not) and runs the action before the goals are checked, up to `planner.recovery.return_tries` times (default 1); when that fails the run
+ends `failed`. No data, an action the robot lacks, or no `move` role (robot not there) = does nothing. Key `enabled` (legacy `end_state`,
+`$ROBOT_AGENT_END_STATE`). Hook `on_final`; lab flag `end_state`: `{place, action, ok, tries}`. Module: `robot_agent/options/end_state.py`.
 
 ### `translate_retry`
 A translation that lost a place name is made again (default off). The input translation of a non-English utterance is checked against the ENV names the
