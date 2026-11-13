@@ -10,7 +10,7 @@ whose word tokens contain, or are contained in, the asked name ('phone' / 'cell 
 'green book' remain different. Only the lookup changes (writes keep the executor's name); no object name in the code. The plan-simulation
 checks (``_missing``, ``_reaches``) already match this way.
 
-Services: ``belief_table()`` and ``belief_set()`` (the run's tables). Keys: ``enabled`` (legacy ``object_words``). Lab flag ``object_words``.
+Services: ``belief_table()`` and ``belief_set()`` (the run's tables). Keys: ``enabled`` (legacy ``object_words``).
 """
 
 from __future__ import annotations
@@ -63,7 +63,7 @@ class WordSet(set):
 
 class ObjectWords(Option):
     def on_start(self, run) -> None:
-        self.svc.lab(SPEC.name, on=True)
+        """No state to set up: the option provides the run's tables; the registry asks every option to declare a hook."""
 
     def belief_table(self):
         return WordTable()

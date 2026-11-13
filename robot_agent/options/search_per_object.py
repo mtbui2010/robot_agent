@@ -26,7 +26,7 @@ SPEC = OptionSpec(
 
 class SearchPerObject(Option):
     def on_start(self, run) -> None:
-        self.svc.lab("search_per_object", on=True)
+        """No state to set up: the option answers ``looks_made``; the registry asks every option to declare a hook."""
 
     def looks_made(self, run, obj):
         """Looks the search for ``obj`` has made (places marked searched for it); None = no belief, the engine counts the run."""

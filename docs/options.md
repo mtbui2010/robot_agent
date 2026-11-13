@@ -136,8 +136,7 @@ disagree. Key `enabled` (legacy `confirm_look`, `$ROBOT_AGENT_CONFIRM_LOOK`). Ho
 ### `search_per_object`
 Each object has its own search budget (default off). `search_total` counts the places missed in the whole run, so the first object's misses are
 charged to the second one, which then gives up with looks left. With the option the count for an object is the places the search belief has marked
-searched for it (no belief = the run-wide count, as before). Key `enabled` (legacy `search_per_object`, `$ROBOT_AGENT_SEARCH_PER_OBJECT`). Hook `on_start` (lab
-flag `search_per_object`); service `looks_made(run, obj)`. Module: `robot_agent/options/search_per_object.py`.
+searched for it (no belief = the run-wide count, as before). Key `enabled` (legacy `search_per_object`, `$ROBOT_AGENT_SEARCH_PER_OBJECT`). Hook `on_start` (a no-op marker: an option declares a hook); service `looks_made(run, obj)`. Module: `robot_agent/options/search_per_object.py`.
 
 ### `place_find`
 A Find of a place is dropped (default off). The planner sometimes writes `MoveTo P, Find P, Open P`; a Find looks for a thing, and a look at a place key
@@ -167,7 +166,7 @@ The goal checks find an object the plan names in other words (default off). The 
 (`Pick cell phone`), the goal keeps the reader's (`phone`); the exact-name lookup found nothing, the goal was believed unmet after a plan that did
 everything, and the run replanned, fetched the object again and ended failed. With the option the two belief tables (placed, handed over) look an
 object up by its words: the single entry whose tokens contain or are contained in the asked name; several fits or none stay unmatched. Key `enabled`
-(legacy `object_words`, `$ROBOT_AGENT_OBJECT_WORDS`). Hook `on_start`; services `belief_table`, `belief_set`. Module:
+(legacy `object_words`, `$ROBOT_AGENT_OBJECT_WORDS`). Hook `on_start` (a no-op marker); services `belief_table`, `belief_set`. Module:
 `robot_agent/options/object_words.py`.
 
 ### `translate_retry`
