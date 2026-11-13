@@ -257,8 +257,8 @@ class Places:
 class Memory:
     _lock = threading.Lock()
 
-    def __init__(self, path: Path):
-        self.path = Path(path)
+    def __init__(self, path: Path, clock=None):
+        self.path, self.clock = Path(path), clock       # clock: the host's (AssistLoop._now), None: wall time
         try:
             self.data = json.loads(self.path.read_text())
         except Exception:
@@ -273,13 +273,13 @@ class Memory:
     def see(self, obj: str, place: Optional[str], how: str):
         if not obj:
             return
-        self.data["objects"][words(obj)] = {"place": place, "ts": time.time(), "how": how}
+        self.data["objects"][words(obj)] = {"place": place, "ts": (self.clock or time.time)(), "how": how}
         self.save()
 
     def remember_answer(self, task: str, question: str, answer: str):
         if answer:
             self.data["answers"] = (self.data["answers"] + [{"task": task, "q": question, "a": answer,
-                                                              "ts": time.time()}])[-30:]
+                                                              "ts": (self.clock or time.time)()}])[-30:]
             self.save()
 
     def objects_text(self) -> str:
@@ -1670,7 +1670,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             r.places.ext = dialog_ext.build(lang, r.places, getattr(self.robot.manifest, "planner", None))
         self._env_places = r.places
         r.verifier = self._verifier(r.node, r.places.env)
-        r.memory = Memory(self.cfg["memory_path"])
+        r.memory = Memory(self.cfg["memory_path"], clock=self._now)
         r.llm_budget, self._llm_unreachable = LLMBudget(self.cfg["llm_budget"]), False
         self._person_at = {}                          # {person: place they said they are at} (this run)
         self._where_asked = None                      # the person "Where are you?" was asked about (this run)

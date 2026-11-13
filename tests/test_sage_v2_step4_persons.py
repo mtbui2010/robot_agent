@@ -230,6 +230,7 @@ def test_search_skips_person_entries():
 
     class L(SearchHooks):
         cfg = {"search": search_belief.SearchConfig(enabled=True, rank="prior"), "live_path": None}
+        _now = lambda self: 0.0
     r = R()
     list(L()._search_start(r))
     assert "auntie" not in r.search.order("mug") and "nephew" not in r.search.order("mug")
