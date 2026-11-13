@@ -60,7 +60,7 @@ def test_the_option_interface_and_the_option_layer_hold_no_language_or_domain_li
 THROUGH_THE_LOOP = {"ask_source": "test_option_ask_source.py", "hazard": "test_sage_lab_r17_hazard_receiver.py", "reach_delivery": "test_sage_lab_r15_reach_delivery.py",
                     "unapplied_change": "test_sage_lab_r15_unapplied_change.py", "confirm_look": "test_option_confirm_look.py",
                     "translate_retry": "test_option_translate_retry.py", "search_per_object": "test_option_search_per_object.py",
-                    "place_find": "test_option_place_find.py"}
+                    "place_find": "test_option_place_find.py", "reopen_on_miss": "test_option_reopen_on_miss.py"}
 
 
 def _specs():

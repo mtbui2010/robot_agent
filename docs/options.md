@@ -14,7 +14,7 @@ CLAUDE.md rules 13-15. The reference for the flat run options and manifest keys 
 | `Registry`, `register` | `core/options/registry.py` | the list of options; built-in ones from `robot_agent/options/__init__.py`, others by entry point group `robot_agent.options` |
 | `Dispatcher` | `core/options/dispatch.py` | builds the enabled options of one loop, calls their hooks in `order` |
 | `Services` | `core/options/services.py` | the interface an option uses to ask the loop for something (`LoopServices` in `core/planning/option_services.py` implements it) |
-| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find` so far |
+| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss` so far |
 
 `python -m robot_agent.core.options list` prints the registered options, their keys and hooks.
 `python -m robot_agent.core.options check MANIFEST.yaml` reports `planner.options` entries that name no option or key.
@@ -145,6 +145,14 @@ A Find of a place is dropped (default off). The planner sometimes writes `MoveTo
 moved to (a MoveTo of the plan) is removed from the plan; a Find of a thing, or of a place the robot is not going to, is kept. Needs the pack's
 `planner.action_roles` `move` and `find` (none declared = does nothing). Key `enabled` (legacy `place_find`, `$ROBOT_AGENT_PLACE_FIND`). Hook `on_plan`
 (transform: the grounded plan before `plan_tidy`); lab flag `place_find`: `{place, index}`. Module: `robot_agent/options/place_find.py`.
+
+### `reopen_on_miss`
+A Find that misses inside the container just opened is made again after closing and opening it (default off). A door can report open and still not
+show what is in it; the miss then says nothing about the object. With the option, when the Find right after an Open of the container the robot is at
+fails `absent`, the pack's remedy runs on the container once (no miss is counted) and the Find is made again. Pack data: `planner.recovery.reopen_on_miss`
+(a list of the pack's actions, e.g. `[Close, Open]`) and `planner.action_roles` `find` and `open`; any missing, or an action the robot lacks = does
+nothing. Key `enabled` (legacy `reopen_on_miss`, `$ROBOT_AGENT_REOPEN_ON_MISS`). Hook `on_step_failed`; lab flag `reopen_on_miss`: `{container, object}`.
+Module: `robot_agent/options/reopen_on_miss.py`.
 
 ### `translate_retry`
 A translation that lost a place name is made again (default off). The input translation of a non-English utterance is checked against the ENV names the

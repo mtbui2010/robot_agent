@@ -109,7 +109,7 @@ language is a pack, `robot_agent/core/planning/lang/<code>.json` (`langdata.py`)
 `plural_rules`, `particles`, `name` / `register` (a translate target), `script` or `non_ascii_min` (what counts as said
 in the language). English and Korean ship; `ja` and `zh` only name themselves. A robot adds words to any language with its
 i18n phrase of the same key (`|`-separated). Numbers are the manifest's `planner` section: `unstick.*` (above),
-`recovery.return_tries` (an integer >= 1; the tries of `endstate_check`), `recovery.wait`, `recovery.blocked_putin`,
+`recovery.return_tries` (an integer >= 1; the tries of `endstate_check`), `recovery.wait`, `recovery.blocked_putin`, `recovery.reopen_on_miss` (a list of actions run on a container after a Find missed inside it right after its Open; option `reopen_on_miss`),
 `restates.{frac,word_len,min_words}` (when an answer "says the request again", defaults 0.6 / 3 / 4) and `prompt_lang` (the
 language the core's prompts are written in, default `en`; `$ROBOT_AGENT_PROMPT_LANG`).
 `agree_guard.{garble_ratio, particle_chain, tail_chars}`, `person_snapshot.trust_s`, `coverage_limits.{max_parts, max_steps}` and the
