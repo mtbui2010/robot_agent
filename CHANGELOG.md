@@ -5,6 +5,12 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+### Text to speech as audio (`GET /tts`)
+- `GET /tts?text=…&lang=…` returns the sentence as `audio/mpeg` (gTTS, `core/tts.py`, a 64-sentence cache; `lang` defaults to
+  the manifest's language; 400 empty / over 600 characters, 503 when gTTS or the internet is missing). For clients that
+  record the robot's voice: the dashboard's screen recording cannot capture the browser's speech synthesis on every
+  machine, so it plays this audio through its own recordable audio graph. Test: `tests/test_tts.py`.
+
 ### Languages per robot (manifest `language` / `languages`)
 - `manifest.yaml` may list `languages: [ko, en]` (every language the robot talks in; must include `language`, the
   default). `Manifest.languages` / `supported_languages`; validated by field. New `GET /robot/languages` ->

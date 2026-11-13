@@ -80,6 +80,7 @@ def create_app(robot_pkg: str,
     from .api.locations import router as locations_router
     from .api.planner import router as planner_router
     from .api.robot import router as robot_router
+    from .api.tts import router as tts_router
     from .api.map import router as map_router
     from .api.events import router as events_router
 
@@ -123,7 +124,7 @@ def create_app(robot_pkg: str,
     )
 
     for router in (devices_router, skills_router, configs_router, buttons_router, agent_router, camera_router,
-                   diagnostics_router, locations_router, planner_router, robot_router, map_router, events_router):
+                   diagnostics_router, locations_router, planner_router, robot_router, tts_router, map_router, events_router):
         app.include_router(router, prefix='')
 
     @app.get('/')
