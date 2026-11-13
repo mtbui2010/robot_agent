@@ -5,6 +5,8 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+- Option `search_per_object` (default off): the `search_total` budget is counted per object, not for the whole run (service `looks_made`).
+
 ### Round 19 (modular core): options are registered modules (MINOR: new manifest key `planner.options`, new modules; no behaviour change)
 - New engine package `core/options` (spec, config, registry, dispatch, services) and option layer `robot_agent/options`: `hazard`,
   `reach_delivery` (was `core/planning/reach_delivery.py`) and `unapplied_change` left `assist_loop.py` for hooks (`on_goals`, `on_step`,

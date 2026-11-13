@@ -59,7 +59,7 @@ def test_the_option_interface_and_the_option_layer_hold_no_language_or_domain_li
 # option -> the test file that runs it through AssistLoop with the option on and off (make_assist ... name="1")
 THROUGH_THE_LOOP = {"ask_source": "test_option_ask_source.py", "hazard": "test_sage_lab_r17_hazard_receiver.py", "reach_delivery": "test_sage_lab_r15_reach_delivery.py",
                     "unapplied_change": "test_sage_lab_r15_unapplied_change.py", "confirm_look": "test_option_confirm_look.py",
-                    "translate_retry": "test_option_translate_retry.py"}
+                    "translate_retry": "test_option_translate_retry.py", "search_per_object": "test_option_search_per_object.py"}
 
 
 def _specs():

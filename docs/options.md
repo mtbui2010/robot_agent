@@ -14,7 +14,7 @@ CLAUDE.md rules 13-15. The reference for the flat run options and manifest keys 
 | `Registry`, `register` | `core/options/registry.py` | the list of options; built-in ones from `robot_agent/options/__init__.py`, others by entry point group `robot_agent.options` |
 | `Dispatcher` | `core/options/dispatch.py` | builds the enabled options of one loop, calls their hooks in `order` |
 | `Services` | `core/options/services.py` | the interface an option uses to ask the loop for something (`LoopServices` in `core/planning/option_services.py` implements it) |
-| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change` so far |
+| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object` so far |
 
 `python -m robot_agent.core.options list` prints the registered options, their keys and hooks.
 `python -m robot_agent.core.options check MANIFEST.yaml` reports `planner.options` entries that name no option or key.
@@ -131,6 +131,12 @@ look misses it looks again and believes the second. A camera can also see what i
 decides: the goal counts as met only when the object is seen again (two looks of three). The cost is one more look, only when the first two looks
 disagree. Key `enabled` (legacy `confirm_look`, `$ROBOT_AGENT_CONFIRM_LOOK`). Hook `on_second_look`; lab flag `confirm_look`:
 `{object, place, seen_again}`. Module: `robot_agent/options/confirm_look.py`.
+
+### `search_per_object`
+Each object has its own search budget (default off). `search_total` counts the places missed in the whole run, so the first object's misses are
+charged to the second one, which then gives up with looks left. With the option the count for an object is the places the search belief has marked
+searched for it (no belief = the run-wide count, as before). Key `enabled` (legacy `search_per_object`, `$ROBOT_AGENT_SEARCH_PER_OBJECT`). Hook `on_start` (lab
+flag `search_per_object`); service `looks_made(run, obj)`. Module: `robot_agent/options/search_per_object.py`.
 
 ### `translate_retry`
 A translation that lost a place name is made again (default off). The input translation of a non-English utterance is checked against the ENV names the

@@ -3852,7 +3852,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             if k in r.searched:
                 r.searched.remove(k)
             return None, f"; the user says the {o} is on {k}"
-        looks = len(r.searched) + len((getattr(r, "second_looks", {}) or {}).get(o, []))
+        looks = self.options.query("looks_made", r, o, default=len(r.searched)) + len((getattr(r, "second_looks", {}) or {}).get(o, []))
         total = int(self.cfg.get("search_total", 8))
         if self.cfg.get("search_legs") and not nowhere and (
                 self._second_look(r, o, only_if_beats=True) if looks < total - self._relook_budget(r) else
@@ -3914,7 +3914,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         why = self._relook_why(r, o, here)
         if not why:
             return None
-        looks = len(r.searched) + len((getattr(r, "second_looks", {}) or {}).get(o, [])) + len(done_)
+        looks = self.options.query("looks_made", r, o, default=len(r.searched)) + len((getattr(r, "second_looks", {}) or {}).get(o, [])) + len(done_)
         if looks + 1 >= int(self.cfg.get("search_total", 8)):
             return None
         acts = {a.lower() for a in r.robot.plan_actions}
@@ -4014,7 +4014,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         """No place from the person: the search goes on over the likely places not searched yet (up to
         ``search_total`` looks in all), else the run ends naming the places looked at (F6.2)."""
         leg = r.search.next_leg(o, r.world.arrived, r.world.opened) if getattr(r, "search", None) is not None else None
-        looks = len(r.searched)
+        looks = self.options.query("looks_made", r, o, default=len(r.searched))
         looks += len((getattr(r, "second_looks", {}) or {}).get(o, []))
         if (leg is None or looks >= int(self.cfg.get("search_total", 8)) - self._relook_budget(r)) and self._second_look(r, o):
             yield r.ev("recover", at_index=r.i, kind="second_look", msg=f"looking again for the {o}")
