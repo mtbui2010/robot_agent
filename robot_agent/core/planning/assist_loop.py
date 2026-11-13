@@ -1284,9 +1284,9 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             st["object"] = o                          # the robot's own action (Say ...): its text as is
         else:
             st["object"] = _strip_article(words(o))
-            # the plan's 'cup' for the goal's 'red cup'
+            # the plan's 'cup' for the goal's 'red cup', or what was said ('grin book') for the renamed goal 'book'
             for g in goals:
-                if st["object"] and st["object"] != g["object"] and st["object"] in g["object"].split():
+                if st["object"] and st["object"] != g["object"] and (st["object"] in g["object"].split() or st["object"] == words(g.get("said") or "")):
                     st["object"] = g["object"]
             if getattr(self, "cfg", {}).get("gate_strict"):           # round 3: a token subset of exactly one goal object (any length)
                 bound = exec_integrity.bind_subset(st["object"], [g.get("object") for g in goals],
