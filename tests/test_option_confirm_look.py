@@ -51,3 +51,13 @@ def test_on_a_real_sighting_after_a_camera_miss_is_confirmed(run, make_assist, e
     faults = [{"skill": "find", "obj": "mug", "kind": "fail", "nth": 2}]             # the first check misses; the mug is on the table
     robot, events = go(make_assist, env, faults, confirm_look="1")
     assert robot.obj["mug"] == DT and done(events)["status"] == "success"
+
+
+def test_on_two_sightings_in_a_row_after_a_miss_are_believed_one_is_not(run, make_assist, env):
+    """find sequences at the goal place: [absent, seen] is not believed (the third look is absent); [absent, seen, seen] is."""
+    fake = lambda nth: {"skill": "find", "obj": "mug", "kind": "false_positive", "nth": nth}      # noqa: E731
+    base = [{"skill": "place", "kind": "place_fall", "nth": 1}]
+    _r, ev = go(make_assist, env, base + [fake(3)], confirm_look="1")
+    assert done(ev)["status"] != "success"
+    _r, ev = go(make_assist, env, base + [fake(3), fake(4)], confirm_look="1")
+    assert done(ev)["status"] == "success"
