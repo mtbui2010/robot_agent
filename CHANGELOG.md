@@ -5,6 +5,12 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+### Shortcut-button groups
+- A button has an optional `group` (a group id, `''` = Other); the groups are an ordered list in `<data_dir>/button_groups.json`
+  (`[{id, name}]`), shared and merged like `buttons.json`. New `GET/POST /buttons/groups`, `PUT/DELETE /buttons/groups/{id}`,
+  `POST /buttons/groups/reorder`; `POST /buttons` and `PUT /buttons/{id}` take `group`. Deleting a group moves its buttons to
+  Other (they are not deleted); a button of an unknown group reads as Other. `core/button_manager.py`, test `tests/test_button_groups.py`.
+
 ### Text to speech as audio (`GET /tts`)
 - `GET /tts?text=…&lang=…` returns the sentence as `audio/mpeg` (gTTS, `core/tts.py`, a 64-sentence cache; `lang` defaults to
   the manifest's language; 400 empty / over 600 characters, 503 when gTTS or the internet is missing). For clients that
