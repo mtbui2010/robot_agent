@@ -5,6 +5,8 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+- Option `place_find` (default off, hook `on_plan`, new action role `find`): a Find of a place the robot is at or moves to is dropped from the plan.
+
 - Option `search_per_object` (default off): the `search_total` budget is counted per object, not for the whole run (service `looks_made`).
 
 ### Round 19 (modular core): options are registered modules (MINOR: new manifest key `planner.options`, new modules; no behaviour change)

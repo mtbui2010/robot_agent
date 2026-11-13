@@ -75,7 +75,7 @@ _TOP_KEYS = {"robot", "version", "language", "capabilities", "geometry", "planne
 #   does not know (option ask_source, docs/options.md).
 #   unapplied_change (0 | 1, default 0: round 15). A correction the robot cannot apply asks the understand step's own question once;
 #   if it still cannot be applied the run ends failed ("I could not apply your change") instead of claiming success),
-#   action_roles ({put_down, move, open, close: an action of the pack}: round 16, the actions reach_delivery / relook splice;
+#   action_roles ({put_down, move, open, close, find: an action of the pack}: round 16, the actions reach_delivery / relook splice;
 #   a role not declared = the part of the option that needs it does nothing), coverage_limits ({max_parts, max_steps}: integers
 #   >= 1, the caps of request_coverage; not declared = no cap), agree_guard also holds particle_chain / tail_chars (integers >= 1;
 #   not declared = that part of the guard is off), person_snapshot ({trust_s: seconds > 0}),
@@ -94,7 +94,7 @@ PLANNER_KEYS = {"seed_memory", "notes", "llm_budget", "translate_model", "transl
                 "options"}                  # options: {<option>: {<key>: value}}, the registered options' own keys (docs/options.md)
 AGREE_GUARD_KEYS = {"garble_ratio", "particle_chain", "tail_chars"}
 PERSON_SNAPSHOT_KEYS = {"trust_s"}
-ACTION_ROLE_KEYS = {"put_down", "move", "open", "close"}
+ACTION_ROLE_KEYS = {"put_down", "move", "open", "close", "find"}
 COVERAGE_LIMIT_KEYS = {"max_parts", "max_steps"}
 UNSTICK_KEYS = {"fallback_words", "fallback_chars", "restate_frac", "restate_word_len", "restate_min_words",
                 "restate_min_bigrams"}

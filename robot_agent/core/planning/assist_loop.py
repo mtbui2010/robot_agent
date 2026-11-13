@@ -2895,8 +2895,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
 
     def _tidy(self, r, steps) -> tuple:
         """plan_tidy.tidy of `steps` on the belief now: (steps, notes); `plan_tidy` off: unchanged."""
-        if not self.cfg["plan_tidy"] or not steps:
-            return steps, []
+        steps = self.options.transform("on_plan", steps, r)       # e.g. place_find: a Find of the place the robot is at is dropped
+        if not self.cfg["plan_tidy"] or not steps: return steps, []
         ctx = dict(capabilities=self.robot.model_capabilities(), actions=self.robot.plan_actions,
                    openable=r.places.openable, containers=r.places.openable)
         return plan_tidy.tidy(steps, r.world, r.goals, self._reaches, ctx)
