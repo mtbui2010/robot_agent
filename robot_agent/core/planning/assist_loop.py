@@ -1485,10 +1485,10 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         out = []
         for g in goals:
             t = g["type"]
-            if t == "on" and not self._on_reached(g, on.get(g["object"])):
+            if t == "on" and not self._on_reached(g, exec_integrity.lookup_object(on, g["object"])):
                 out.append(f"{'Hand over' if g.get('hand') else 'Place'} the {g['object']} "
                            f"{'to' if g.get('hand') else 'on'} {g['to']}")
-            elif t == "in" and on.get(g["object"]) != ("PutIn", g["to"]):
+            elif t == "in" and exec_integrity.lookup_object(on, g["object"]) != ("PutIn", g["to"]):
                 out.append(f"PutIn the {g['object']} into {g['to']}")
             elif t == "open" and g["object"] not in opened:
                 out.append(f"Open {g['object']}")
@@ -1506,9 +1506,9 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         opened, on = AssistLoop._simulate_goals(loop, steps, world)
         for g in goals:
             t = g["type"]
-            if t == "on" and not AssistLoop._on_reached(loop, g, on.get(g["object"])):
+            if t == "on" and not AssistLoop._on_reached(loop, g, exec_integrity.lookup_object(on, g["object"])):
                 return False
-            if t == "in" and on.get(g["object"]) != ("PutIn", g["to"]):
+            if t == "in" and exec_integrity.lookup_object(on, g["object"]) != ("PutIn", g["to"]):
                 return False
             if t == "open" and g["object"] not in opened:
                 return False

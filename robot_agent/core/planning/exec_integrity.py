@@ -44,6 +44,17 @@ def bind_subset(obj: str, goal_objects, tokens: str = "words") -> str:
     return fit[0] if len(fit) == 1 else obj
 
 
+def lookup_object(table: dict, obj: str):
+    """table[obj], else the entry of the single key that names the same thing in other words: one name's word
+    tokens contain the other's ('phone' / 'cell phone'; 'red book' / 'green book' stay different). None when none
+    or several fit."""
+    if obj in table:
+        return table[obj]
+    tok = set(str(obj or "").split())
+    fit = [k for k in table if tok and set(str(k).split()) and (tok <= set(str(k).split()) or set(str(k).split()) <= tok)]
+    return table[fit[0]] if len(fit) == 1 else None
+
+
 def return_tries(declared) -> int:
     """Tries to re-achieve a go goal (``planner.recovery.return_tries``: an integer >= 1), 0 when not declared / bad."""
     return int(declared) if isinstance(declared, int) and not isinstance(declared, bool) and declared >= 1 else 0
