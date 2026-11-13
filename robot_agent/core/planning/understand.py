@@ -253,13 +253,15 @@ def without_places(text: str, places, keys) -> str:
     return t
 
 
-def _active(text: str) -> str:
+def _active(text: str, conds: bool = True) -> str:
     """*text* without the parts that are not requests: conditions ('if the drawer is open'), negations ('don't
-    touch the mug') and what a self-correction takes back ('on the stool... no wait, on the sofa')."""
+    touch the mug') and what a self-correction takes back ('on the stool... no wait, on the sofa').
+    ``conds=False`` keeps the condition clauses (a condition is not a negation: goal_filter.negated)."""
     t = _norm(text)
     out = []
     for seg in re.split(r"(?<=[.;!?])\s+", t):
-        seg = _COND.sub(" ", seg)
+        if conds:
+            seg = _COND.sub(" ", seg)
         seg = _NEG.sub(" ", seg)
         out.append(seg)
     return " ".join(out)

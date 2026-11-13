@@ -92,7 +92,7 @@ def stated_sources(goals: list, text: str, places) -> tuple:
 
 def negated(goals: list, english: str) -> tuple:
     """(goals, notes): move goals whose object the English words name only inside a negation."""
-    t, act = _norm(english), _active(english)
+    t, act = _norm(english), _active(english, conds=False)   # only a real negation drops a goal
     keep, notes = [], []
     for g in goals:
         o = _norm(g.get("object"))
