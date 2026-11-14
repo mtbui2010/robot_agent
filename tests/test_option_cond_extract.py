@@ -276,6 +276,21 @@ def test_cond_extract_the_first_plan_applies_again_to_a_later_reading_without_a_
     assert run.goals == [KEEP] and len(log.calls) == 1
 
 
+def test_cond_extract_a_corrected_reading_with_the_same_count_but_other_goals_is_not_given_the_first_plan():
+    # the class: the first plan is positional (goal 1 -> if, goal 2 -> else); a correction that changes an object or the order but not the
+    # number of goals must not move a branch (or a drop) onto another goal. The goals stand as read; no new call.
+    opt, run, log = make(answer(if_goals=[1], else_goals=[], drop=[2]))
+    go(opt, run)
+    assert [g.get("when", {}).get("present") for g in run.goals] == [True] and run.filtered == [PUT]
+    for later in ([dict(PUT), dict(KEEP)], [{**KEEP, "object": "vase"}, dict(PUT)], [dict(KEEP), {**PUT, "to": "hall"}]):
+        run.goals, run.filtered = [dict(g) for g in later], []
+        assert go(opt, run) == ([], None) and len(log.calls) == 1
+        assert run.goals == later and run.filtered == [], later                     # nothing dropped, no `when` on a goal the plan did not read
+    run.goals = [dict(KEEP), dict(PUT)]                                             # the same reading again: the plan applies
+    go(opt, run)
+    assert run.goals == [{**KEEP, "when": {"object": "urn", "at": "hall", "present": True}}] and run.filtered == [PUT]
+
+
 # ── the pack data only in the manifest, merged after the loop was built (as a host's manifest overlay does) ──────────────
 # The class: the option's keys are resolved once, at construction; data a host merges into the robot view later is not seen, so the option
 # is on and silently does nothing (no extraction call, no lab flag). ``refresh_options`` resolves the keys again against the manifest now.

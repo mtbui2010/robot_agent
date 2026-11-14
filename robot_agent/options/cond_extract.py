@@ -8,7 +8,8 @@ condition (object, place, present or not) and which goals belong to the branch w
 which only state the condition (``drop``). The option writes the ``when`` field of ``cond_goal`` on those goals; ``cond_goal`` (order 20, this one
 runs at 15) goes to the place, looks and keeps the branch that matches. No option imports the other: the ``when`` field on the goals is the hand-over.
 
-* no condition word, no prompt text, no goals, a goal that already has a ``when``, or a second pass of the same run: no extra call, goals unchanged;
+* no condition word, no prompt text, no goals, a goal that already has a ``when``, or a second pass of the same run: no extra call, goals unchanged
+  (a later reading that reads exactly as the first one, by ``goal_sig``, gets the first plan again; any other reading stands as read);
 * an answer that is not JSON, says ``conditional`` false, has bad or clashing indexes (a goal in two lists), no object, no ``present`` or no branch goal: goals unchanged (the reader's reading stands);
 * the condition is real but unclear (the model says ``unsure``, or the place is missing or not one the robot knows): the
   person is asked once (``q_unclear``, phrase key ``cond_unclear``, slot ``{object}``; no text = not asked); an answer that names a place the robot knows
@@ -25,7 +26,7 @@ is read again from the manifest at run time. Hook ``on_goals`` (order 15). Servi
 from __future__ import annotations
 
 from robot_agent.core.options import STOP, Key, Option, OptionSpec, register
-from robot_agent.core.planning import clauses, pack_data
+from robot_agent.core.planning import clauses, dialog_converge, pack_data
 
 SPEC = OptionSpec(
     name="cond_extract",
@@ -151,14 +152,15 @@ class CondExtract(Option):
             plan = {**plan, "at": at, "state": "ready"} if at else {"state": "none"}
         self.svc.lab("cond_extract", **{k: plan.get(k) for k in ("state", "object", "at", "if", "else", "drop")})
         if plan["state"] == "ready":
-            done["plan"], done["n"] = plan, len(goals)
+            done["plan"], done["sig"] = plan, dialog_converge.goal_sig(goals)
             self._apply(run, plan)
         return None
 
     def _again(self, run, done, goals):
         """A goal list read again after the first one (the person answered a question, the reader was called again): the first plan applies when the
-        list has the same number of goals and no ``when`` yet; else the goals stand (the numbers of another reading are not the plan's)."""
-        if done.get("plan") and goals and len(goals) == done.get("n") and not any("when" in g for g in goals):
+        list reads exactly as the first one did (the same goals, in the same order: ``goal_sig``) and has no ``when`` yet; else the goals stand (the
+        numbers of another reading are not the plan's: a correction that changed an object but not the count would move a branch onto another goal)."""
+        if done.get("plan") and goals and dialog_converge.goal_sig(goals) == done.get("sig") and not any("when" in g for g in goals):
             self._apply(run, done["plan"])
             self.svc.lab("cond_extract", state="again")
         return None
