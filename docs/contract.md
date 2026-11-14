@@ -55,6 +55,9 @@ relative to the manifest; `Manifest.seed_memory`; see `memory.md`) and `planner.
 short strings the direct planner's prompt shows as the robot's notes
 ([direct_prompt.md](direct_prompt.md); each a non-empty string, at most 300 characters).
 
+Detecting the user's language: the dashboard may start a run with `lang: 'auto'`; `/robot/languages` then tells it (`declared`) whether
+the manifest names any language (none: only "detect" is offered). See `core/languages.py` and `utils.speech_to_text(auto=...)`.
+
 Languages: `language` is the robot's default (two- or three-letter code, `ko`); `languages` lists every
 language it talks in and must include `language` (absent = `[language]`; a bad code, a duplicate or a list
 without the default is a `ManifestError`). `Manifest.supported_languages` gives them default first. The core

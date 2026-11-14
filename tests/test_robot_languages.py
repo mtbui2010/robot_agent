@@ -45,7 +45,7 @@ def test_robot_languages_of_a_package(monkeypatch):
     class _A:  # an adapter carrying a manifest
         manifest = Manifest.from_dict(_base(robot="demo", language="ko", languages=["ko", "en"]))
     monkeypatch.setattr("robot_agent.contract.load_adapter", lambda pkg: _A())
-    assert L.robot_languages("demo") == {"robot": "demo", "language": "ko", "languages": ["ko", "en"]}
+    assert L.robot_languages("demo") == {"robot": "demo", "language": "ko", "languages": ["ko", "en"], "declared": True}
 
 
 def test_unreadable_manifest_is_english_only(monkeypatch):
@@ -53,8 +53,8 @@ def test_unreadable_manifest_is_english_only(monkeypatch):
     def boom(pkg):
         raise ImportError("no adapter")
     monkeypatch.setattr("robot_agent.contract.load_adapter", boom)
-    assert L.robot_languages("nope") == {"robot": "nope", "language": "en", "languages": ["en"]}
-    assert L.robot_languages("") == {"robot": "", "language": "en", "languages": ["en"]}
+    assert L.robot_languages("nope") == {"robot": "nope", "language": "en", "languages": [], "declared": False}
+    assert L.robot_languages("") == {"robot": "", "language": "en", "languages": [], "declared": False}
 
 
 def test_default_language_follows_the_running_robot(monkeypatch):
@@ -75,7 +75,26 @@ def test_endpoint_lists_the_robot_languages(monkeypatch):
     class _S:
         robot_pkg = "demo"
     monkeypatch.setattr(api, "current", lambda: _S())
-    monkeypatch.setattr(api, "robot_languages", lambda pkg: {"robot": pkg, "language": "ko", "languages": ["ko", "en"]})
+    monkeypatch.setattr(api, "robot_languages", lambda pkg: {"robot": pkg, "language": "ko", "languages": ["ko", "en"], "declared": True})
     app = FastAPI(); app.include_router(api.router)
     r = TestClient(app).get("/robot/languages")
-    assert r.status_code == 200 and r.json() == {"robot": "demo", "language": "ko", "languages": ["ko", "en"]}
+    assert r.status_code == 200 and r.json() == {"robot": "demo", "language": "ko", "languages": ["ko", "en"], "declared": True}
+
+
+def test_a_manifest_that_names_no_language_is_not_declared(monkeypatch):
+    assert Manifest.from_dict(_base()).language_declared is False
+    assert Manifest.from_dict(_base(language="ko")).language_declared is True
+    assert Manifest.from_dict(_base(languages=["ko", "en"], language="ko")).language_declared is True
+    L.robot_languages.cache_clear()
+    class _A:
+        manifest = Manifest.from_dict(_base(robot="bare"))
+    monkeypatch.setattr("robot_agent.contract.load_adapter", lambda pkg: _A())
+    # no language in the manifest: nothing declared, the English fallback only as the default
+    assert L.robot_languages("bare") == {"robot": "bare", "language": "en", "languages": [], "declared": False}
+
+
+def test_the_auto_flag_is_per_run():
+    L.set_run_language_auto(True)
+    assert L.run_language_auto() is True
+    L.set_run_language_auto(False)
+    assert L.run_language_auto() is False

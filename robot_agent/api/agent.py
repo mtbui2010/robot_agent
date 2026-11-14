@@ -6,7 +6,7 @@ from typing import Any, Optional
 
 from ..state import current
 from ..core.unified_agent import _serialize_result
-from ..core.languages import default_language
+from ..core.languages import set_run_language_auto, start_run_language
 from . import models as M
 from .models import OPEN
 
@@ -436,7 +436,7 @@ async def agent_ws(websocket: WebSocket):
     try:
         data = await websocket.receive_json()
         prompt  = data.get('prompt', '')
-        lang    = data.get('lang') or default_language()   # a run that names none: the manifest's default
+        lang    = start_run_language(data.get('lang'))      # none: the manifest's default; 'auto': that, and detect the user's
         direct    = data.get('direct', False)
         planner   = data.get('planner')         # 'grace' | 'direct' | 'sage' | 'package.module:Class' | None (legacy)
         plan_only = data.get('plan_only', False) # generate plan, don't execute
@@ -507,8 +507,7 @@ async def agent_ws(websocket: WebSocket):
         except Exception:
             pass
     finally:
-        # The run is over: stop watching, so finishing normally never looks
-        # like a cancel.
+        set_run_language_auto(False)         # The run is over: stop watching (finishing normally never looks like a cancel)
         if watcher is not None:
             watcher.cancel()
         if notices is not None:

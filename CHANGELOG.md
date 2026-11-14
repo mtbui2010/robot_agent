@@ -5,6 +5,16 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+### Detect the user's language (`lang: 'auto'`)
+- `/ws/agent` with `lang: 'auto'` starts the run in the manifest's default language and switches detection on for the run
+  (`core/languages.py`: `start_run_language`, `run_language_auto`; cleared when the run ends). A skill that listens then lets Whisper
+  hear the phrase unpinned: `utils.speech_to_text(auto=True, candidates=[...])` takes the language Whisper reports (the stt client's
+  new `last_language`) when it is one of `candidates` and the phrase has at least 6 letters, else transcribes again pinned to the
+  language in use; `last_stt_language()` gives it. `listen_dashboard(auto, candidates, info_out)` and `transcribe_listen_audio`
+  carry it back to the skill.
+- `GET /robot/languages` also says `declared`: False when the manifest names no language (`languages` is then `[]`; the dashboard
+  offers only "detect"). `Manifest.language_declared`. Tests: `tests/test_detect_language.py`, `tests/test_robot_languages.py`.
+
 ### Shortcut-button groups
 - A button has an optional `group` (a group id, `''` = Other); the groups are an ordered list in `<data_dir>/button_groups.json`
   (`[{id, name}]`), shared and merged like `buttons.json`. New `GET/POST /buttons/groups`, `PUT/DELETE /buttons/groups/{id}`,

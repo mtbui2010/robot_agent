@@ -46,7 +46,8 @@ class OkText(Ok):
 class RobotLanguages(_Open):
     robot: str
     language: str                 # the default language (manifest `language`)
-    languages: list[str]          # every language it talks in, the default first (manifest `languages`)
+    languages: list[str]          # every language it talks in, the default first (manifest `languages`); [] when the manifest names none
+    declared: bool = True         # the manifest names a language at all; False: the dashboard offers only "detect"
 
 
 # --- skills ------------------------------------------------------------------

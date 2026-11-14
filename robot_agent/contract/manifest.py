@@ -96,6 +96,7 @@ class Manifest:
     capabilities: dict = field(default_factory=dict)
     language: str = "en"                              # the default language
     languages: list = field(default_factory=list)    # every language it can talk in ([] = just `language`)
+    language_declared: bool = False                  # the manifest names a language at all (`language` / `languages`)
     geometry: dict = field(default_factory=dict)
     skills: list = field(default_factory=list)        # list[SkillSpec]
     # optional planner data: {seed_memory: <path to a JSONL seed pool, relative to the manifest>}
@@ -131,6 +132,7 @@ class Manifest:
         if not isinstance(language, str) or not language.strip():
             errs.append("language: must be a language code such as 'en' or 'ko'")
         languages = _languages(d.get("languages"), language if isinstance(language, str) else "", errs)
+        declared = "language" in d or "languages" in d
         caps = d.get("capabilities") or {}
         if not isinstance(caps, dict):
             errs.append(f"capabilities: must be a mapping, got {type(caps).__name__}")
@@ -169,7 +171,7 @@ class Manifest:
 
         if errs:
             raise ManifestError(errs, source)
-        return cls(robot=robot.strip(), version=version, capabilities=dict(caps), language=language.strip(), languages=languages,
+        return cls(robot=robot.strip(), version=version, capabilities=dict(caps), language=language.strip(), languages=languages, language_declared=declared,
                    geometry=dict(geom), skills=skills, planner=planner,
                    extra={k: v for k, v in d.items() if k not in _TOP_KEYS}, source=source)
 

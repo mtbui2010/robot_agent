@@ -74,6 +74,7 @@ class WhisperClient:
         # it. Without it, 2 s of silence came back as "다음 영상에서 만나요."
         self.vad_filter = bool(vad_filter)
         self.last_dropped = ''           # the raw text of the last rejected transcript
+        self.last_language = ''          # the language Whisper reported for the last call ('ko'; '' when not a code)
         self._session = requests.Session()
         if api_key:
             self._session.headers['Authorization'] = f'Bearer {api_key}'
@@ -121,6 +122,8 @@ class WhisperClient:
                             if float(sg.get('compression_ratio') or 0) <= 2.4).strip()
         else:
             raw = kept = str(out.get('text', '') or '').strip()
+        heard = str(out.get('language') or '').strip().lower()
+        self.last_language = heard if 2 <= len(heard) <= 3 and heard.isalpha() else ''
         text = clean_transcript(kept)
         self.last_dropped = raw if raw and not text else ''
         return text
