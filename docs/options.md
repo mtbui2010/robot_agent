@@ -59,6 +59,14 @@ the nested form wins over the flat legacy key; an empty value counts as no value
 registered option's keys (`cfg["hazard_rules"]`, `cfg["reach_delivery"]`, ...), so readers of `loop.cfg` (the benchmark adapter) see the
 same values.
 
+The keys are resolved ONCE, when the loop is built (`AssistLoop._resolve_options_cfg`). A host that merges pack data into a built loop's robot
+view (the benchmark's manifest overlay) calls `refresh_options(loop, run_options)` (`core/planning/option_services.py`) before the run: the
+keys are resolved again against the manifest as it is now, the options are made again and mirrored into `loop.cfg`; an unchanged manifest gives
+the same keys. Without it an option whose data is only in the merged part is on and silently does nothing: in D3, `cond_extract` made no
+extraction call in any run because its `prompt` was in the overlay only (`tests/test_option_refresh.py` checks every registered key). The engine
+never calls it itself (the default path is unchanged). The late `resolve_key` reads of `precond_repair`, `hw_wait`, `search_budget`,
+`lang_words`, `plan_complete` and `replan_guard` were a per-option work-around of the same thing; they stay and read the same value.
+
 ## Hooks
 
 Each hook has a kind. `decide`: the first option that returns something other than None ends the chain and its value is the answer.
@@ -232,6 +240,7 @@ Real but unclear (`unsure`, or the place is missing or not one the robot knows):
 completes the condition, any other answer leaves the reader's goals. Pack data (manifest `planner.options.cond_extract.<key>`): `prompt` (slots `{request}`, `{goals}`), `clauses` (`{lang: {"condition": regex | [regex], "source" | "assumed": true}}`, added to the
 language packs' `patterns.condition`; an entry with neither label is not used), `q_unclear`. Empty pack = the option does nothing. Use `cond_goal` WITHOUT its `prompt` key with it (and its `q_where`, `q_unsure`). Keys `enabled` (legacy `cond_extract`),
 `ask_when_unsure`, `prompt`, `clauses`, `q_unclear`. Hook `on_goals`; lab flag `cond_extract`: `{state, object, at, if, else, drop}`. Module: `robot_agent/options/cond_extract.py`.
+Its pack data is read through its keys: a host that merges it into a loop already built calls `refresh_options` ("Keys and where they come from"), else the option makes no call.
 
 ### `gate_prune`
 An Open / Close of a place the ENV declares not openable is dropped (default off). The planner opens a shelf or a table; the skill refuses and the run replans or gives up.

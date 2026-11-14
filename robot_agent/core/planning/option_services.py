@@ -208,3 +208,19 @@ def option_dispatcher(loop, overrides=None, environ=None):
     from ..options import Dispatcher
     planner = getattr(getattr(getattr(loop, "robot", None), "manifest", None), "planner", None)
     return Dispatcher(LoopServices(loop), overrides or {}, os.environ if environ is None else environ, planner)
+
+
+def refresh_options(loop, overrides=None, environ=None, registry=None):
+    """Resolve the option keys of a built ``loop`` again, against its manifest NOW, and mirror them into ``loop.cfg``.
+
+    The keys are resolved once, when the loop is built (``AssistLoop._resolve_options_cfg``). A host that merges pack data into
+    the loop's robot view afterwards (a manifest overlay) calls this with the run options it built the loop with; without it an
+    option whose data is only in that overlay keeps its default (empty) value and does nothing. Call it before a run: the option
+    instances are made again (their per-run state lives in ``run.opt``). A manifest that did not change gives the same keys."""
+    import os
+    from ..options import REGISTRY, Dispatcher
+    planner = getattr(getattr(getattr(loop, "robot", None), "manifest", None), "planner", None)
+    loop.options = Dispatcher(LoopServices(loop), overrides or {}, os.environ if environ is None else environ, planner,
+                              registry=REGISTRY if registry is None else registry)
+    loop.cfg.update(loop.options.mirror())
+    return loop.options
