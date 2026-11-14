@@ -44,6 +44,7 @@ HOOKS: Dict[str, Tuple[str, bool]] = {
     "on_planner_kwargs": ("transform", False),  # the constructor keys the planner is built with (a dict): options add the ones the planner backend accepts
     "on_goal_replan": ("decide", False),     # the goals changed mid-run, before the plan is repaired: sub-goals for the rest of the plan, or None
     "on_replan_findings": ("transform", False),  # a replan's suffix, after the engine's own findings (a list): options add findings (one refine, then the run ends uncertified)
+    "on_listener_rule": ("decide", False),   # a delivery to a person who is also a message's listener (run, goals, words): (goals, notes) of an option's rule in place of the engine's, or None
 }
 
 _PYTYPES = {"bool": bool, "int": int, "float": float, "str": str, "dict": dict}

@@ -43,9 +43,9 @@ def make(ask=True, phrase=True):
 
 
 def run_it(text, goals=None, **kw):
-    """(goals, notes, conflicts) of the engine's rule with the option's evidence rule installed."""
+    """(goals, notes, conflicts) of the option's evidence rule (hook ``on_listener_rule``, asked in place of the engine's rule)."""
     opt, run, svc = make(**kw)
-    got, notes = goal_fix.shared_listener([dict(g) for g in (goals or [SAY, GIVE])], text, run.places)
+    got, notes = opt.on_listener_rule(run, [dict(g) for g in (goals or [SAY, GIVE])], text)
     return got, notes, run.recipient_conflicts, svc
 
 
@@ -106,7 +106,7 @@ def _ask(answer, ask=True, dialogue=()):
     asked = []
     svc.ask = lambda r, q: asked.append(str(q)) or answer
     svc.cancelled = lambda r: None
-    goal_fix.shared_listener(run.goals, "tell tolo to come and bring tolo the urn, not me", run.places)
+    opt.on_listener_rule(run, run.goals, "tell tolo to come and bring tolo the urn, not me")
     evs = list(opt.on_goals(run))
     return evs, run.goals, asked
 
@@ -126,6 +126,25 @@ def test_an_empty_or_foreign_pack_keeps_the_reader_recipient_empty(monkeypatch):
     opt, run, _ = make()
     run.places = Places({"desk@den": {}, "tolo@den": {"person": True}})                 # no speaker in the world: nothing to move to
     opt.on_start(run)
-    assert goal_fix.shared_listener([dict(SAY), dict(GIVE)], "bring me the urn", run.places) == ([SAY, GIVE], [])
-    assert goal_fix.shared_listener([], "bring me", run.places) == ([], [])
+    assert opt.on_listener_rule(run, [dict(SAY), dict(GIVE)], "bring me the urn") == ([SAY, GIVE], [])
+    assert opt.on_listener_rule(run, [], "bring me") == ([], [])
     assert speaker_evidence("", None) is False and speaker_evidence("xyz", None) is False
+
+
+def test_the_rule_is_a_declared_decide_hook_the_places_carry_no_rule_and_off_nothing_answers_it(make_assist, env):
+    from robot_agent.core.options import HOOKS
+    assert HOOKS["on_listener_rule"] == ("decide", False) and "on_listener_rule" in SPEC.hooks
+    opt, run, _ = make()
+    assert not hasattr(run.places, "listener_rule")                                  # the rule is no attribute: the registry sees it
+    off = make_assist(FakeRobot(env, {}), FakeLLM(default={}), ScriptedPlanner([]))
+    assert not off.options.provides("on_listener_rule") and off.options.decide("on_listener_rule", run, [SAY, GIVE], "x") is None
+    on = make_assist(FakeRobot(env, {}), FakeLLM(default={}), ScriptedPlanner([]), recipient_keep="1")
+    assert on.options.provides("on_listener_rule")
+    assert opt.on_listener_rule(NS(places=None), [SAY, GIVE], "bring me the urn") is None                     # no places: not answered
+
+
+def test_give_regression_a_pronoun_recipient_reaches_the_goal_through_the_hook_in_the_loop(make_assist, env, tmp_path):
+    task = "Hand the urn to tolo, then tell him to come over."
+    assert _go(make_assist, task)[1] == ["vexa@den"]                                    # off: the engine's rule moves it to the speaker
+    assert _go(make_assist, task, recipient_keep="1")[1] == ["tolo@den"]                # on: the option's rule, asked through the hook, keeps it
+    assert _go(make_assist, task, recipient_keep="1", no_shared_listener="1")[1] == ["tolo@den"]   # the engine switch skips both rules as before

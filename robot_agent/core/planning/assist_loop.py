@@ -2228,7 +2228,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             r.filtered += echo
         goals, rq = goal_fix.relay_check(goals, r.task, r.places)           # F4.6
         if not self.cfg.get("no_shared_listener"):
-            goals, shared = goal_fix.shared_listener(goals, words_, r.places)    # a listener is not also the recipient
+            goals, shared = self.options.decide("on_listener_rule", r, goals, words_) or goal_fix.shared_listener(goals, words_, r.places)  # a listener is not also the recipient
             r.filtered += shared
         goals, q = self._ground_v2(r, goals, q, words_)
         q = q or (speech.LocalText("q_what_say") if rq else None)

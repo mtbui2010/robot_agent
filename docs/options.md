@@ -88,6 +88,7 @@ dropped. A *flow* hook is a generator (`yield from`): it may yield run events an
 | `on_planner_kwargs(kwargs)` | transform | the constructor keys of the planner (a dict) the loop builds; a key must also be in the backend's whitelist (`_GRACE_KWARGS`) | `replan_guard` (`replan_block_fix`) |
 | `on_goal_replan(run)` | decide | the goals changed mid-run, before the plan is repaired: sub-goals for the rest of the plan (the planner's `replan(subgoals=)`), or None | `replan_guard` |
 | `on_replan_findings(bad, run, suffix)` | transform | a replan's suffix (and its refine), after the engine's own findings: the list; a finding makes the one refine, then the uncertified end | `replan_guard` |
+| `on_listener_rule(run, goals, words)` | decide | a delivery to a person who is also a message's listener, in grounding: `(goals, notes)` of the option's rule in place of `goal_fix.shared_listener`, or None (the engine's rule) | `recipient_keep` |
 | `on_goal_edit(run, text)` | observe | a correction is about to be read | `unapplied_change` |
 | `on_goal_reread(run, text, understood, goals, q)` | observe | the understand LLM re-read a correction | `unapplied_change` |
 | `on_goal_unapplied(run, turn)` | decide, flow | the correction changed nothing (`turn.text`, `turn.change`) | `unapplied_change` |
@@ -173,8 +174,8 @@ that person is also a message's listener and the words name them once ("bring hi
 language packs (`lexicon.RECIPIENT` and the robot's `recipient_words` phrase) that is itself a first-person word (`lexicon.FIRST_PERSON`: "me", "get me", a first-person pronoun with its case
 particle); a delivery verb or "here" alone says nothing about who gets the object. Without evidence the reader's recipient stays. With evidence and the person named twice the two readings disagree:
 one question in `on_goals` (the existing `q_which_reading` phrase; the answer decides by the same evidence) when the run has no answer yet and `ask_when_unsure` is on. No pack data of its own; no
-first-person words in the packs = the recipient always stays. Keys `enabled` (legacy `recipient_keep`), `ask_when_unsure` (true). Hooks `on_start` (sets `places.listener_rule`, which
-`goal_fix.shared_listener` runs in place of its own rule), `on_goals` (the question). Lab flag `recipient_keep`: `{rule, person}`. Module: `robot_agent/options/recipient_keep.py`.
+first-person words in the packs = the recipient always stays. Keys `enabled` (legacy `recipient_keep`), `ask_when_unsure` (true). Hooks `on_start` (the run's cases of two readings),
+`on_listener_rule` (decide: the evidence rule, asked by the loop in place of `goal_fix.shared_listener`; until 2026-11-15 an attribute `places.listener_rule` the registry could not see), `on_goals` (the question). Lab flag `recipient_keep`: `{rule, person}`. Module: `robot_agent/options/recipient_keep.py`.
 
 ### `replan_guard`
 A replan repairs the failed step's own block, is built from the new goals after a goal change, and does not run a suffix the action model rejects (default off; D3 layer L12; D1 layer `replan_block`). Three parts, each a bool key

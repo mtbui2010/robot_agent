@@ -12,8 +12,8 @@ the reader's recipient stays. When the words hold such a word and also name the 
 once ("I will hand it to you, or I will hand it to X") if the pack has the phrase data and no answer was given yet (key ``ask_when_unsure``).
 No speaker-recipient data (an empty pack): the recipient always stays as the reader gave it, nothing is asked.
 
-``on_start`` gives the run's places the rule (``places.listener_rule``, which that ``goal_fix`` rule runs instead of its own when it is set); the question
-of the two readings is asked in ``on_goals``, before the read-back; the answer decides by the same evidence. Hooks ``on_start``, ``on_goals``. Keys:
+The evidence rule answers the hook ``on_listener_rule`` (decide: the loop asks it in place of that ``goal_fix`` rule); the question of the two readings
+is asked in ``on_goals``, before the read-back; the answer decides by the same evidence. Hooks ``on_start``, ``on_listener_rule``, ``on_goals``. Keys:
 ``enabled`` (legacy ``recipient_keep``), ``ask_when_unsure`` (true). Lab flag ``recipient_keep``: ``{rule, person}``. No pack data of its own.
 """
 
@@ -25,7 +25,7 @@ from robot_agent.core.planning import lexicon
 SPEC = OptionSpec(
     name="recipient_keep",
     keys=(Key("enabled", "bool", False, aliases=("recipient_keep",)), Key("ask_when_unsure", "bool", True)),
-    hooks=("on_start", "on_goals"),
+    hooks=("on_start", "on_listener_rule", "on_goals"),
     order=88,
     enabled="enabled",
     doc="A delivery's recipient moves to the speaker only when the words hold a speaker-recipient word of the language pack; else the reader's recipient stays.",
@@ -59,11 +59,16 @@ def mentions(text: str, person: str, places) -> int:
 
 class RecipientKeep(Option):
     def on_start(self, run) -> None:
-        """Give the run's places the evidence rule (it replaces the engine's own rule for a delivery to a message's listener)."""
-        places = getattr(run, "places", None)
-        if places is not None:
+        """The run's cases of two readings start empty."""
+        run.recipient_conflicts = []
+
+    def on_listener_rule(self, run, goals, words):
+        """(goals, notes) of the evidence rule, in place of the engine's own rule for a delivery to a message's listener; None without places."""
+        if getattr(run, "places", None) is None:
+            return None
+        if not hasattr(run, "recipient_conflicts"):
             run.recipient_conflicts = []
-            places.listener_rule = lambda goals, text: self.decide(run, goals, text)
+        return self.decide(run, goals, words)
 
     def decide(self, run, goals, words):
         """(goals, notes): the evidence rule; the cases with two readings are kept for ``on_goals`` to ask."""
