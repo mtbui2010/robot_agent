@@ -212,3 +212,10 @@ def test_shipped_korean_pack_declares_the_unit_and_a_hole_pattern():
     assert name_recover.unit_fn(("ko",))("가") != "가"                       # letters inside a syllable
     assert guard("내 를 가져와", lang="ko")[0] is not None          # a determiner directly before a case particle
     assert guard("내 컵을 가져와", lang="ko")[0] is None
+
+
+def test_hole_her_is_an_object_pronoun_and_a_hyphenated_word_is_no_hole():
+    for text in ("tell her to bring the cup", "give the cup to her in the lamp room", "ask her for the remote", "hand it to her and come back",
+                 "give the cup to her", "bring her in", "ask her", "add a to-do note"):
+        assert guard(text)[0] is None, text
+    assert guard("bring his to the table")[0] is not None            # a possessive that stays a possessive

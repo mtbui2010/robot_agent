@@ -152,7 +152,7 @@
  },
  "asr": {
   "hole": [
-   "(?<![\uac00-\ud7a3])(?:\ub0b4|\uc81c|\ub124|\uc6b0\ub9ac|\uadf8|\uc774|\uc800)\\s+(?:\uc744|\ub97c|\uc5d0\uc11c|\uc5d0\uac8c|\ud55c\ud14c)(?![\uac00-\ud7a3])"
+   "(?<![가-힣])(?:내|제|네|우리|그|이|저)\\s+(?:을|를|에서|에게|한테)(?![가-힣])"
   ],
   "distance_unit": "jamo",
   "assumed": true,
