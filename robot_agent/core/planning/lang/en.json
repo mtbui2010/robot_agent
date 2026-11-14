@@ -123,6 +123,14 @@
    "(?:\\.\\.\\.|,|-)?\\s*\\b(?:no wait|wait,? no|no,? i mean|i mean|actually|sorry|rather)\\b"
   ]
  },
+ "asr": {
+  "hole": [
+   "\\b(?:the|an?|my|your|his|her|our|their)\\s+(?:to|in|on|onto|at|from|into|and|or|of|for|with|then|by)\\b",
+   "\\b(?:the|an?|my|your|his|her|our|their)\\s*[.,!?]*\\s*$"
+  ],
+  "assumed": true,
+  "source": "assumed: general grammar, an article or possessive directly followed by a function word or the end of the request"
+ },
  "patterns": {
   "into_before": "\\b(?:in|into|inside)\\s+(?:the\\s+|my\\s+|your\\s+|a\\s+|our\\s+|her\\s+|his\\s+)?(?:[\\w'-]+\\s+){0,2}$",
   "ontop_before": "\\bon\\s+top\\s+of\\s+(?:the\\s+|my\\s+|your\\s+)?(?:[\\w'-]+\\s+){0,2}$|\\bonto\\s+(?:the\\s+)?(?:[\\w'-]+\\s+){0,2}$",

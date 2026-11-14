@@ -48,6 +48,10 @@ class LoopServices:
         """One more step of the end-of-run check (MoveTo, or the pack's end action), its effect applied on success: the skill result or None."""
         return self._lp._look(run, dict(step))[0]
 
+    def ask_clarify(self, run, question):
+        """Flow: ask ``question`` as the loop's own clarify step (the answer joins the dialogue); the step's result (go on reading, or stop)."""
+        return self._lp._ask_clarify(run, question)
+
     def cancelled(self, run):
         return self._lp._cancelled(run)
 

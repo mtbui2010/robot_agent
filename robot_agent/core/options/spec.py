@@ -26,6 +26,7 @@ HOOKS: Dict[str, Tuple[str, bool]] = {
     "on_where_answer": ("decide", True),     # the answer to the engine's own "I couldn't find the X. Where is it?": a place to go to, or None
     "on_understand_schema": ("transform", False),  # the understand call's output schema (a dict): options add optional fields; None = unchanged
     "on_understand_prompt": ("transform", False),  # the understand prompt template (before ``.format``; escape braces): options add lines; None = unchanged
+    "on_heard": ("decide", True),            # the heard request, before the reader is called: the option may ask instead (the loop's next step, via ``ask_clarify``) or None
     "on_goals": ("decide", True),            # the understood goals, before the read-back: refuse or drop some
     "on_issues": ("transform", False),       # the read-back's issues (what the words ask for that the goals do not cover): options drop or add some
     "on_goal_edit": ("observe", False),      # a goal change (correction) is about to be read

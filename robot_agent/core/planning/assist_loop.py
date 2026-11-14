@@ -1815,12 +1815,12 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
     def _understand_round(self, r):
         """One understanding of the task: _DONE (goals settled), _NEXT (asked something) or _STOP."""
         yield r.ev("status", msg="Understanding the task...")
-        bad = self._distrusted(r)
-        if bad:                           # the language layer: a translation that cannot be trusted is asked again
+        if bad := self._distrusted(r):    # the language layer: a translation that cannot be trusted is asked again
             r.pivot_asked = True
             yield r.ev("understand_check", issues=[f"translation not trusted: {bad}"], repeat=True)
             r.repeat_asked = True
             return (yield from self._ask_clarify(r, speech.LocalText("q_repeat")))
+        if (said := (yield from self.options.decide_flow("on_heard", r))) is not None: return said     # asr_guard: empty or holed words, asked again
         took = yield from self._take_understanding(r)
         if took is _STOP:
             return _STOP

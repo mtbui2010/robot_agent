@@ -14,7 +14,7 @@ CLAUDE.md rules 13-15. The reference for the flat run options and manifest keys 
 | `Registry`, `register` | `core/options/registry.py` | the list of options; built-in ones from `robot_agent/options/__init__.py`, others by entry point group `robot_agent.options` |
 | `Dispatcher` | `core/options/dispatch.py` | builds the enabled options of one loop, calls their hooks in `order` |
 | `Services` | `core/options/services.py` | the interface an option uses to ask the loop for something (`LoopServices` in `core/planning/option_services.py` implements it) |
-| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words`, `cond_goal`, `recipient_keep`, `plan_complete`, `ask_agree`, `replan_guard` so far |
+| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words`, `cond_goal`, `recipient_keep`, `plan_complete`, `ask_agree`, `replan_guard`, `name_recover`, `asr_guard` so far |
 
 `python -m robot_agent.core.options list` prints the registered options, their keys and hooks.
 `python -m robot_agent.core.options check MANIFEST.yaml` reports `planner.options` entries that name no option or key.
@@ -74,6 +74,7 @@ dropped. A *flow* hook is a generator (`yield from`): it may yield run events an
 | `on_where_answer(run, obj, ans)` | decide, flow | the answer to the engine's own re-asked "I couldn't find the X. Where is it?": the place to go to, or None | `ask_source` (`use_room`, `clarify_unusable`) |
 | `on_understand_schema(schema)` | transform | the understand call's output schema (a fresh dict): options add optional fields; None = unchanged | `cond_goal` (`when`) |
 | `on_understand_prompt(text)` | transform | the understand prompt template, before `.format` (escape braces): options add lines; None = unchanged | `cond_goal` |
+| `on_heard(run)` | decide | the heard request, before the reader is called: a question to ask instead of reading (the engine asks it, sets `repeat_asked`), or None | `asr_guard` |
 | `on_goals(run)` | decide, flow | understood goals, before the read-back and the grounding | `hazard` (the gate), `ask_source` (asks where an object is), `cond_goal` (looks at the place of a `when`), `goal_words` (asks when a name is an object and a place) |
 | `on_issues(issues, run, goals)` | transform | the read-back's issues (`understand.find_issues` plus the loop's extras): the list, or None (unchanged) | `ask_focus`, `entity_cover`, `ask_agree` |
 | `on_planner_kwargs(kwargs)` | transform | the constructor keys of the planner (a dict) the loop builds; a key must also be in the backend's whitelist (`_GRACE_KWARGS`) | `replan_guard` (`replan_block_fix`) |
@@ -176,6 +177,20 @@ to the new goals' text; before, the old block was repaired with the old task. (3
 pack declares, so the one existing refine is told and, if they remain, the run ends uncertified. Pack data `planner.options.replan_guard.critical`: `{"codes": [<action-model code>], "source": "<label>"}` (or `"assumed": true`);
 no codes or no label = part 3 does nothing. A recipient the goal names has no action-model code and is not covered. Keys `enabled` (legacy `replan_guard`), `block_fix`, `goal_rebuild`, `critical_refine`, `critical` (dict).
 Lab flag `replan_guard`: `{part, subgoals | findings}`. Module: `robot_agent/options/replan_guard.py`.
+
+### `name_recover`
+An object name the speech recogniser garbled is matched to the robot's object catalogue (default off; D3 layer L11). After the goals are read (`on_goals`), a goal object (not a `say` goal, not a place or person of the ENV)
+that is not in the catalogue (object memory and `limits.objects`) and is not, as whole words, part of a catalogue name or holding one, is compared with the catalogue names by `understand.near_distance`
+(a swap of neighbours is one edit, a name plus 1-2 letters is one) in the pack's unit: characters, or the letters inside a syllable when the language pack declares `asr.distance_unit: "jamo"`. ONE name within
+`max_edits` (2) and `max_ratio` (0.34 of the longer name) is taken (the read-back says it as for any goal); two or more are asked once per run ("Did you mean A or B?"), an answer that names exactly one decides, any
+other answer keeps the goal as read; none: nothing changes, nothing is asked. A name shorter than `min_len` (4) units is never matched. Not recoverable: a word that sounds alike but is spelled in another script or language,
+and a garble of more edits than the limit; those stay as read. Keys `enabled` (legacy `name_recover`), `max_edits`, `max_ratio`, `min_len`, `ask` (true), all assumed. Pack data: `asr.distance_unit` (assumed, label in the pack).
+Lab flag `name_recover`: `{said, took | asked}`. Module: `robot_agent/options/name_recover.py`.
+
+### `asr_guard`
+A request the recogniser lost is asked again, once, without calling the reader (default off; D3 layer L11, switched on with `name_recover`). New hook `on_heard` runs at the start of an understand round: an EMPTY request
+(the task and the person's answers hold no word) or one with a HOLE (the language pack's `asr.hole` regexes, per language: an article or possessive directly followed by a function word or by the end) gives the repeat phrase
+`q_repeat`; once per run (`repeat_asked`). No `asr.hole` data = only the empty check. Keys `enabled` (legacy `asr_guard`), `empty` (true), `hole` (true). Lab flag `asr_guard`: `{what}`. Module: `robot_agent/options/asr_guard.py`.
 
 ### `plan_complete`
 A plan that stops short of the step its goal needs is completed from the pack's declared rules (default off; D3 layer L13). Three classes: (1) the plan picks an object and

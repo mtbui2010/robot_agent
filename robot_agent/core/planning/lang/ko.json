@@ -150,6 +150,14 @@
    ]
   }
  },
+ "asr": {
+  "hole": [
+   "(?<![가-힣])(?:내|제|네|우리|그|이|저)\\s+(?:을|를|에서|에게|한테)(?![가-힣])"
+  ],
+  "distance_unit": "jamo",
+  "assumed": true,
+  "source": "assumed: general grammar, a determiner directly followed by a case particle; the name distance counts the letters inside a syllable"
+ },
  "patterns": {
   "into_after": "^\\s*(?:의\\s*)?(?:안|속|안쪽)|^(?:에|에다|에다가)?\\s*(?:\\S+\\s+){0,2}?\\S*넣",
   "ontop_after": "^\\s*(?:의\\s*)?위",
