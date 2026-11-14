@@ -2218,17 +2218,17 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         r.filtered += more
         said_ = " ".join([without_places(" ".join([r.task, self.original or ""]), r.places, getattr(r, "replaced", ()))]
                          + answers)
-        goals, fixed = goal_fix.repair_destination(goals, said_, r.places)          # F4.7
+        goals, fixed = goal_fix.repair_destination(goals, said_, r.places, self.options.query("goal_guard", r, goals))          # F4.7
         r.repaired = list(getattr(r, "repaired", [])) + fixed
         goals, _kinds = goal_fix.kind_from_destination(goals, words_, r.places, "PutIn" in self.robot.plan_actions)
-        goals, invented = goal_fix.drop_invented(goals, words_, r.places)    # F4.4
+        goals, invented = goal_fix.drop_invented(goals, words_, r.places, self.options.query("goal_guard", r, goals))    # F4.4
         r.filtered += invented
         if self.cfg.get("understand_give_kind"):                # a say to the speaker that repeats the request is no message
             goals, echo = goal_fix.drop_echo_say(goals, r.task, r.places)
             r.filtered += echo
         goals, rq = goal_fix.relay_check(goals, r.task, r.places)           # F4.6
         if not self.cfg.get("no_shared_listener"):
-            goals, shared = goal_fix.shared_listener(goals, words_, r.places)    # a listener is not also the recipient
+            goals, shared = goal_fix.shared_listener(goals, words_, r.places, self.options.query("goal_guard", r, goals))    # a listener is not also the recipient
             r.filtered += shared
         goals, q = self._ground_v2(r, goals, q, words_)
         q = q or (speech.LocalText("q_what_say") if rq else None)

@@ -78,15 +78,15 @@ def drop_empty(goals: list) -> tuple:
     return keep, [g for g in goals if g not in keep]
 
 
-def drop_invented(goals: list, text: str, places) -> tuple:
-    """(goals, dropped): F4.4 (see the module doc)."""
+def drop_invented(goals: list, text: str, places, guard=None) -> tuple:
+    """(goals, dropped): F4.4 (see the module doc). ``guard`` (option goal_words): its ``place(name)`` says which ENV place a name is."""
     t = _norm(text)
     said = set().union(*(m[3] for m in place_mentions(t, places))) if place_mentions(t, places) else set()
     out, dropped = [], []
     for g in goals:
         typ, obj = g.get("type"), str(g.get("object") or "")
         if typ in ("on", "in") and obj:
-            k = places.ground(obj, obj)
+            k = guard.place(obj) if guard else places.ground(obj, obj)
             if k and k in places.env and not (places.env.get(k) or {}).get("person"):
                 verb = "open" if _hit("open_verb", t, re.I) else ("close" if _hit("close_verb", t, re.I) else None)
                 if verb and not any(h.get("type") == verb and h.get("object") == k for h in goals):
@@ -127,7 +127,7 @@ def unsaid_speaker(goals: list, text: str, places, robot=None) -> tuple:
     return out, notes
 
 
-def shared_listener(goals: list, text: str, places) -> tuple:
+def shared_listener(goals: list, text: str, places, guard=None) -> tuple:
     """(goals, notes): a person the words name once cannot be both the listener of a message and the recipient of a
     delivery: "tell X to ..., and bring me the cup" names X once, the recipient of the cup is the speaker. A
     delivery goal to a person who is also a say goal's listener, with only that one mention of them in the words
@@ -140,7 +140,8 @@ def shared_listener(goals: list, text: str, places) -> tuple:
     out, notes = [], []
     for g in goals:
         to = g.get("to")
-        if g.get("type") in ("on", "in") and to in listeners and to != sk and (places.env.get(to) or {}).get("person"):
+        if g.get("type") in ("on", "in") and to in listeners and to != sk and (places.env.get(to) or {}).get("person") \
+                and not (guard and guard.frozen(g)):
             n = sum(1 for _s, _e, _p, keys, _src in place_mentions(_norm(text), places) if to in keys)
             if n < 2:
                 g = {**g, "to": sk}
@@ -156,7 +157,7 @@ def _from_after(rest: str) -> bool:
     return bool(r and r.match(rest))
 
 
-def repair_destination(goals: list, text: str, places) -> tuple:
+def repair_destination(goals: list, text: str, places, guard=None) -> tuple:
     """(goals, notes): F4.7 symbolic destination repair. The model put an object somewhere the person never
     named, while the person named exactly one place (one ENV key, not a source, not a person) that no goal
     uses: that place is the destination. Only with one such move goal (two goals and one place: which one is
@@ -171,7 +172,8 @@ def repair_destination(goals: list, text: str, places) -> tuple:
     free = {next(iter(keys)) for _s, e, _p, keys, src in ms
             if len(keys) == 1 and not src and not _from_after(t[e:]) and not person(next(iter(keys)))} - used
     movers = [k for k, g in enumerate(goals) if g.get("type") in ("on", "in") and g.get("to") in places.env
-              and not person(g["to"]) and g["to"] not in said and not g.get("near_person") and not g.get("hand")]
+              and not person(g["to"]) and g["to"] not in said and not g.get("near_person") and not g.get("hand")
+              and not (guard and guard.frozen(g))]
     if len(free) != 1 or len(movers) != 1:
         return goals, []
     k, dst = movers[0], next(iter(free))
