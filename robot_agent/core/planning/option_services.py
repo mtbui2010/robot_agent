@@ -130,6 +130,14 @@ class LoopServices:
         lp = self._lp
         return dialog_unstick.unsure_answer(text, run.places, lp._unsure_data(run), run.lang, lp._manifest_planner("unstick", None))
 
+    def request_english(self, run) -> str:
+        """The request's words in the prompt language: the task itself, or the language layer's trusted reading of it (no new call); "" if none."""
+        from . import langdata
+        if langdata.is_prompt_lang(getattr(run, "lang", None) or "en"):
+            return run.task or ""
+        h = self._lp.language.hear(run.task)
+        return h.english if h.trusted else ""
+
     def confirm_near(self, run, text):
         """Flow: the one place the answer nearly names (``understand.fuzzy_place``), confirmed with a yes / no question; None."""
         return self._lp._confirm_near(run, text, typo=True)

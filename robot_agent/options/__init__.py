@@ -5,4 +5,4 @@ Layer rule: an option imports the engine (``robot_agent.core``, ``robot_agent.co
 import it. A new option is a new module plus one line below.
 """
 
-from . import ask_focus, ask_source, confirm_look, end_state, goal_words, hazard, object_words, place_find, precond_repair, reach_delivery, reopen_on_miss, search_per_object, translate_retry, unapplied_change   # noqa: F401  (importing a module registers its option)
+from . import ask_focus, ask_source, confirm_look, end_state, entity_cover, goal_words, hazard, object_words, place_find, precond_repair, reach_delivery, reopen_on_miss, search_per_object, translate_retry, unapplied_change   # noqa: F401  (importing a module registers its option)

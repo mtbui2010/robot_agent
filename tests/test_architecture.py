@@ -63,7 +63,8 @@ THROUGH_THE_LOOP = {"ask_source": "test_option_ask_source.py", "hazard": "test_s
                     "place_find": "test_option_place_find.py", "reopen_on_miss": "test_option_reopen_on_miss.py",
                     "end_state": "test_option_end_state.py", "object_words": "test_option_object_words.py",
                     "precond_repair": "test_option_precond_repair.py", "goal_words": "test_option_goal_words.py",
-                    "ask_focus": "test_option_ask_focus.py"}
+                    "ask_focus": "test_option_ask_focus.py",
+                    "entity_cover": "test_option_entity_cover.py"}
 
 
 def _specs():
