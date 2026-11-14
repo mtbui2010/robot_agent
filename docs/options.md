@@ -14,7 +14,7 @@ CLAUDE.md rules 13-15. The reference for the flat run options and manifest keys 
 | `Registry`, `register` | `core/options/registry.py` | the list of options; built-in ones from `robot_agent/options/__init__.py`, others by entry point group `robot_agent.options` |
 | `Dispatcher` | `core/options/dispatch.py` | builds the enabled options of one loop, calls their hooks in `order` |
 | `Services` | `core/options/services.py` | the interface an option uses to ask the loop for something (`LoopServices` in `core/planning/option_services.py` implements it) |
-| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words`, `cond_goal`, `cond_extract`, `recipient_keep`, `plan_complete`, `ask_agree`, `replan_guard`, `name_recover`, `asr_guard` so far |
+| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words`, `cond_goal`, `cond_extract`, `recipient_keep`, `plan_complete`, `ask_agree`, `replan_guard`, `name_recover`, `asr_guard`, `plan_release` so far |
 
 `python -m robot_agent.core.options list` prints the registered options, their keys and hooks.
 `python -m robot_agent.core.options check MANIFEST.yaml` reports `planner.options` entries that name no option or key.
@@ -78,7 +78,7 @@ dropped. A *flow* hook is a generator (`yield from`): it may yield run events an
 |---|---|---|---|
 | `on_start(run)` | observe | run set-up, after the places are read | `reach_delivery` (time of the person snapshot) |
 | `on_ground(mode, places, to)` | transform | the delivery mode for a goal to a person | `reach_delivery` |
-| `on_plan(steps, run)` | transform | the grounded plan, before `plan_tidy`: the steps, or None (unchanged) | `place_find`, `precond_repair`, `gate_prune`, `replan_guard` (`release_dedupe`) |
+| `on_plan(steps, run)` | transform | the grounded plan, before `plan_tidy`: the steps, or None (unchanged) | `place_find`, `precond_repair`, `gate_prune`, `replan_guard` (`release_dedupe`), `plan_complete`, `plan_release` |
 | `on_where_answer(run, obj, ans)` | decide, flow | the answer to the engine's own re-asked "I couldn't find the X. Where is it?": the place to go to, or None | `ask_source` (`use_room`, `clarify_unusable`) |
 | `on_understand_schema(schema)` | transform | the understand call's output schema (a fresh dict): options add optional fields; None = unchanged | `cond_goal` (`when`) |
 | `on_understand_prompt(text)` | transform | the understand prompt template, before `.format` (escape braces): options add lines; None = unchanged | `cond_goal` |
@@ -221,6 +221,20 @@ listener, and a speech step that names the listener instead of the message is re
 Pack data `planner.options.plan_complete.needs`: `{"rules": {<Action>: {"near": bool, "achieves": "in" | "hand"}}, "source": "<label>"}` (or `"assumed": true`). Roles read: `move`, `open`,
 `close`, `say`, `pick`, `put_down`; one not declared skips that repair. No rules, no label, no goal of the kind = the plan is unchanged. Keys `enabled` (legacy `plan_complete`), `needs`
 (dict, manifest only). Hook `on_plan` (order 86, after `precond_repair`). Lab flag `plan_complete`: `{action, need, index}`. Module: `robot_agent/options/plan_complete.py`.
+
+### `plan_release`
+The held object's own release goes before the Close of the place its `in` goal names, whatever other object the plan releases later (default off; D4 layer L15, class
+plan_missing_step). The plan is replayed with one simulated hand: at a Close of the place C of the held object X's `in` goal, when X's NEXT release (the first release before
+another Pick) is not at C and the plan does not pick X again later (staging), the skill declared `achieves: in` goes before the Close (after a MoveTo C when the robot is elsewhere).
+The release that splice leaves with an empty hand: the one goal object (`on` / `in`, not a hand goal) of its place that no step picks gets `Find, Pick` before it (before the MoveTo
+that leads there); when every goal object of that place is picked and a later step releases there again, the empty release is removed; otherwise it stays (no guess). A Place into
+the goal container is NOT swapped to the put-in skill (the gate's `op_action` / `op_putin` do it; `op_putin` also opens a closed container). Why a new option and not
+`plan_complete`'s guard: that guard skips the splice when ANY later release exists (a put-down of another object too), and changing it would change the D3 arm.
+Pack data `planner.options.plan_release.needs`: `{"rules": {<Action>: {"achieves": "in" | "on" | "hand"}}, "source": "<label>"}` (or `"assumed": true`); the declared actions, the
+`put_down` role and the hand-over action are releases. A goal's object matches the plan's in other words (`exec_integrity.lookup_object`). Roles read: `move`, `find`, `pick`,
+`close`, `put_down`. No rule that achieves `in`, no `pick` / `close` role, or two hands or more = the plan is unchanged. Keys `enabled` (legacy `plan_release`), `needs` (dict, manifest
+only). Hooks `on_start`, `on_plan` (order 87, after `precond_repair` and `plan_complete`: a Close they completed holds nothing, so no step is added twice). Lab flag `plan_release`:
+`{object, place, fix}` (`splice`, `pick_step`, `removed`), once per distinct edit in a run. Module: `robot_agent/options/plan_release.py`.
 
 ### `cond_goal`
 A request with a condition ("if the spoon is on the table, put it away; if not, leave it") is decided by the robot looking, not by the reader guessing (default off).
