@@ -18,7 +18,7 @@ Pack data ``planner.options.plan_release.needs``::
     {"rules": {<Action>: {"achieves": "in" | "on" | "hand"}}, "source": "<label>"}      # or "assumed": true instead of source
 
 A declared action, the ``put_down`` role and the robot's hand-over action are releases in the replay; no skill name is in the code. A goal's object
-is the plan's object in the same or other words (``exec_integrity.lookup_object``: 'phone' / 'cell phone'; a plural is not matched). Roles read:
+is the plan's object in the same or other words (``exec_integrity.lookup_object``: 'lid' / 'jar lid'; a plural is not matched). Roles read:
 ``move``, ``find``, ``pick``, ``close``, ``put_down`` (no ``find``: no fetch). Hook ``on_plan`` at order 87, after ``precond_repair`` (85) and
 ``plan_complete`` (86): a Close they already completed holds nothing and is left alone, so no step is added twice. Lab flag ``plan_release``:
 ``{object, place, fix}`` (fix: ``splice``, ``pick_step``, ``removed``), once per distinct edit in a run (the gate scores many candidates).
