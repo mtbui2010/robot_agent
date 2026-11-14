@@ -74,6 +74,20 @@ class LoopServices:
         """The planner's sub-goals for the run's goals now (one per goal), or None when the planner decomposes itself."""
         return self._lp._subgoals(run)
 
+    def ask_model(self, run, prompt, schema):
+        """ONE extra call to the planner's model (no repair call, stoppable, counted in the run's LLM budget): the JSON answer as a dict, or None
+        (model unavailable, budget used up, no JSON). A stop of the run is raised as it is."""
+        from ..run_control import call_cancellable, is_cancel
+        from .understand import ask_json
+        lp = self._lp
+        try:
+            return ask_json(lp._llm(), prompt, schema, budget=getattr(run, "llm_budget", None), retries=0, where="option",
+                            call=call_cancellable, passthrough=is_cancel, options=lp._sampling())
+        except Exception as e:
+            if is_cancel(e):
+                raise
+            return None
+
     def reread_change(self, run, text):
         return self._lp._llm_goal_change(run, text)
 

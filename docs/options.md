@@ -14,7 +14,7 @@ CLAUDE.md rules 13-15. The reference for the flat run options and manifest keys 
 | `Registry`, `register` | `core/options/registry.py` | the list of options; built-in ones from `robot_agent/options/__init__.py`, others by entry point group `robot_agent.options` |
 | `Dispatcher` | `core/options/dispatch.py` | builds the enabled options of one loop, calls their hooks in `order` |
 | `Services` | `core/options/services.py` | the interface an option uses to ask the loop for something (`LoopServices` in `core/planning/option_services.py` implements it) |
-| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words`, `cond_goal`, `recipient_keep`, `plan_complete`, `ask_agree`, `replan_guard`, `name_recover`, `asr_guard` so far |
+| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words`, `cond_goal`, `cond_extract`, `recipient_keep`, `plan_complete`, `ask_agree`, `replan_guard`, `name_recover`, `asr_guard` so far |
 
 `python -m robot_agent.core.options list` prints the registered options, their keys and hooks.
 `python -m robot_agent.core.options check MANIFEST.yaml` reports `planner.options` entries that name no option or key.
@@ -75,7 +75,7 @@ dropped. A *flow* hook is a generator (`yield from`): it may yield run events an
 | `on_understand_schema(schema)` | transform | the understand call's output schema (a fresh dict): options add optional fields; None = unchanged | `cond_goal` (`when`) |
 | `on_understand_prompt(text)` | transform | the understand prompt template, before `.format` (escape braces): options add lines; None = unchanged | `cond_goal` |
 | `on_heard(run)` | decide | the heard request, before the reader is called: a question to ask instead of reading (the engine asks it, sets `repeat_asked`), or None | `asr_guard` |
-| `on_goals(run)` | decide, flow | understood goals, before the read-back and the grounding | `hazard` (the gate), `ask_source` (asks where an object is), `cond_goal` (looks at the place of a `when`), `goal_words` (asks when a name is an object and a place) |
+| `on_goals(run)` | decide, flow | understood goals, before the read-back and the grounding | `hazard` (the gate), `ask_source` (asks where an object is), `cond_extract` (writes the `when` of `cond_goal` after one extra model call), `cond_goal` (looks at the place of a `when`), `goal_words` (asks when a name is an object and a place) |
 | `on_issues(issues, run, goals)` | transform | the read-back's issues (`understand.find_issues` plus the loop's extras): the list, or None (unchanged) | `ask_focus`, `entity_cover`, `ask_agree` |
 | `on_planner_kwargs(kwargs)` | transform | the constructor keys of the planner (a dict) the loop builds; a key must also be in the backend's whitelist (`_GRACE_KWARGS`) | `replan_guard` (`replan_block_fix`) |
 | `on_goal_replan(run)` | decide | the goals changed mid-run, before the plan is repaired: sub-goals for the rest of the plan (the planner's `replan(subgoals=)`), or None | `replan_guard` |
@@ -215,6 +215,17 @@ neither schema nor prompt), `q_where` (phrase key `cond_where`, slot `{object}`)
 (`cond_not_seen`); an empty text = not asked / not said; the other languages come from the pack's i18n under the phrase key. Use it with a reader trained on `when` (an older reader may ignore it or
 use it wrongly: measure it on requests with no condition before turning it on). Keys `enabled` (legacy `cond_goal`), `looks`, `ask_when_unsure`, `prompt`, `q_where`, `q_unsure`, `say_seen`,
 `say_not_seen`. Hooks `on_understand_schema`, `on_understand_prompt`, `on_goals`; lab flag `cond_goal`: `{object, at, place, seen, holds}`. Module: `robot_agent/options/cond_goal.py`.
+
+### `cond_extract`
+A request with a condition word is split by ONE extra model call and handed to `cond_goal` (default off; D3 layer L9). The reader stays unchanged (it has no `when` field; an untrained reader turns "if X is at P, do A,
+otherwise B" into plain goals). When the request (as said, and its English reading) holds a condition word of its language, the pack's prompt is sent once to the planner's model (service `ask_model`: no repair call, stoppable, in the
+run's LLM budget) with the request and the reader's numbered goals; the fixed JSON answer (`conditional`, `object`, `at`, `present`, `if_goals`, `else_goals`, `drop`, `unsure`) becomes the `when` field of `cond_goal` on the goals of each branch
+(the else branch gets the opposite `present`); goals in `drop` only state the condition and are removed (listed in `run.filtered`); a goal in no list is unconditional. It runs at order 15, before `cond_goal` (20): the `when` field is the hand-over, no option imports another.
+No condition word, no prompt, no goals, a goal with a `when` already, or a second pass of the same run: no extra call. Non-JSON, `conditional` false, bad or clashing indexes, no object / `present` / branch goal: goals unchanged.
+Real but unclear (`unsure`, or the place is missing or not one the robot knows): the person is asked once (`q_unclear`, phrase key `cond_unclear`, slot `{object}`; no text or `ask_when_unsure` false = not asked); a place the robot knows in the answer
+completes the condition, any other answer leaves the reader's goals. Pack data (manifest `planner.options.cond_extract.<key>`): `prompt` (slots `{request}`, `{goals}`), `clauses` (`{lang: {"condition": regex | [regex], "source" | "assumed": true}}`, added to the
+language packs' `patterns.condition`; an entry with neither label is not used), `q_unclear`. Empty pack = the option does nothing. Use `cond_goal` WITHOUT its `prompt` key with it (and its `q_where`, `q_unsure`). Keys `enabled` (legacy `cond_extract`),
+`ask_when_unsure`, `prompt`, `clauses`, `q_unclear`. Hook `on_goals`; lab flag `cond_extract`: `{state, object, at, if, else, drop}`. Module: `robot_agent/options/cond_extract.py`.
 
 ### `gate_prune`
 An Open / Close of a place the ENV declares not openable is dropped (default off). The planner opens a shelf or a table; the skill refuses and the run replans or gives up.
