@@ -14,7 +14,7 @@ CLAUDE.md rules 13-15. The reference for the flat run options and manifest keys 
 | `Registry`, `register` | `core/options/registry.py` | the list of options; built-in ones from `robot_agent/options/__init__.py`, others by entry point group `robot_agent.options` |
 | `Dispatcher` | `core/options/dispatch.py` | builds the enabled options of one loop, calls their hooks in `order` |
 | `Services` | `core/options/services.py` | the interface an option uses to ask the loop for something (`LoopServices` in `core/planning/option_services.py` implements it) |
-| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words`, `cond_goal`, `recipient_keep`, `plan_complete` so far |
+| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words`, `cond_goal`, `recipient_keep`, `plan_complete`, `ask_agree` so far |
 
 `python -m robot_agent.core.options list` prints the registered options, their keys and hooks.
 `python -m robot_agent.core.options check MANIFEST.yaml` reports `planner.options` entries that name no option or key.
@@ -75,7 +75,7 @@ dropped. A *flow* hook is a generator (`yield from`): it may yield run events an
 | `on_understand_schema(schema)` | transform | the understand call's output schema (a fresh dict): options add optional fields; None = unchanged | `cond_goal` (`when`) |
 | `on_understand_prompt(text)` | transform | the understand prompt template, before `.format` (escape braces): options add lines; None = unchanged | `cond_goal` |
 | `on_goals(run)` | decide, flow | understood goals, before the read-back and the grounding | `hazard` (the gate), `ask_source` (asks where an object is), `cond_goal` (looks at the place of a `when`), `goal_words` (asks when a name is an object and a place) |
-| `on_issues(issues, run, goals)` | transform | the read-back's issues (`understand.find_issues` plus the loop's extras): the list, or None (unchanged) | `ask_focus`, `entity_cover` |
+| `on_issues(issues, run, goals)` | transform | the read-back's issues (`understand.find_issues` plus the loop's extras): the list, or None (unchanged) | `ask_focus`, `entity_cover`, `ask_agree` |
 | `on_goal_edit(run, text)` | observe | a correction is about to be read | `unapplied_change` |
 | `on_goal_reread(run, text, understood, goals, q)` | observe | the understand LLM re-read a correction | `unapplied_change` |
 | `on_goal_unapplied(run, turn)` | decide, flow | the correction changed nothing (`turn.text`, `turn.change`) | `unapplied_change` |
@@ -227,6 +227,21 @@ and one more after a correction, so the default only caps the `dialog_converge` 
 `ask_focus`), `max_confirms`. Hook `on_issues`, services `confirm_limit(run)`, `unrefused(run, ans)`; lab flag `ask_focus`: `{rule, ...}`.
 "I don't know" is no refusal only when the answer says nothing else (service `unsure_leftover(run, text)`: the answer without its "not sure" phrases; a no, a correction or a reason is a refusal). Articles from the language pack.
 Module: `robot_agent/options/ask_focus.py`.
+
+### `ask_agree`
+Read-back dialogue (default off, D3 layer L14). Closes the ask loops and the answers accepted although they contradict the person. (1) A bare no, then the same request:
+the refused reading comes back from the person's restatement; instead of "which part is wrong?" and a stop, hook `on_goals` sets the run's `allow_repeat` once, so the reading
+is read back ONE more time as a yes / no question (only a yes acts; a second no or silence stops as before). Only after a refusal that was a bare no (a "no, the X" is no
+case), while the engine's own two read-backs are not used up (key `restate_confirm`, default true). (2) Service `unrefused` (order 78, before `ask_focus`): an "I don't know"
+leaves the reading standing only when it is clean: the answer says nothing but "not sure" (service `unsure_leftover`; each leftover word is a filler, a first-person word, a
+whole word of an unsure phrase of the pack, from `answer_unsure` or `dialogue_ext.answer_unsure`, or such a word with one declared ending, `dialogue_ext.polite_endings` or
+`patterns.answer_tail`; a no-word or any other word is a refusal), the read-back did not carry the robot's own doubt (`run.unsure`), and no answer changed the reading since its
+first read-back. (3) Either-or (key `either_or`, default true): when the reading changed exactly one value (object, `to` or `from` of one goal) and the person had said the earlier
+value, the "I don't know" asks once, "I can read that two ways: A, or B", as a declared choice; the answer that names one reading decides (the current one stands; the earlier one
+is put back in `run.patched` with `allow_repeat`, read back again, and the place given up is no "you mentioned X" question: hook `on_issues`); a plain yes or no names neither,
+nothing is picked and the answer is a refusal. Pack data: the language pack's own (`dialogue.fillers` / `no` / `polite`, `words.first_person`, the unsure phrases, the endings);
+none = nothing is claimed. Keys `enabled` (legacy `ask_agree`), `restate_confirm`, `either_or`. Hooks `on_goals`, `on_issues`, service `unrefused(run, ans)`; lab flag `ask_agree`:
+`{rule}`. It does not edit `ask_focus`: with `ask_focus` on and this off, the D2 behaviour is unchanged. Module: `robot_agent/options/ask_agree.py`.
 
 ### `entity_cover`
 Entity coverage (default off). Closes the class "the run says done after dropping one clause of the request": every object the request names must
