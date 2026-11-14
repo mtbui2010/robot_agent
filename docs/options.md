@@ -14,7 +14,7 @@ CLAUDE.md rules 13-15. The reference for the flat run options and manifest keys 
 | `Registry`, `register` | `core/options/registry.py` | the list of options; built-in ones from `robot_agent/options/__init__.py`, others by entry point group `robot_agent.options` |
 | `Dispatcher` | `core/options/dispatch.py` | builds the enabled options of one loop, calls their hooks in `order` |
 | `Services` | `core/options/services.py` | the interface an option uses to ask the loop for something (`LoopServices` in `core/planning/option_services.py` implements it) |
-| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `goal_words`, `ask_focus`, `entity_cover` so far |
+| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait` so far |
 
 `python -m robot_agent.core.options list` prints the registered options, their keys and hooks.
 `python -m robot_agent.core.options check MANIFEST.yaml` reports `planner.options` entries that name no option or key.
@@ -191,6 +191,29 @@ an `object` issue, so the read-back asks about it once (the engine's `issue_aske
 A noun the catalogue does not know is ignored. No pack data. Keys `enabled` (legacy `entity_cover`), `ask_reasoned`. Hook `on_issues`, service
 `request_english`; lab flag `entity_cover`: `{what, reason}`. Limit: a drop the person meant (a negation) is asked about too while `ask_reasoned` is on.
 Module: `robot_agent/options/entity_cover.py`.
+
+### `hw_wait`
+
+Hardware-fault wait. One fixed schedule (`planner.recovery.wait`, for example 2+4+8 s) and the policy table's retry counts serve every kind of
+failure; a run stops at a fault another wait would have cleared, or sends wait commands for a fault no wait clears. With the option on, the
+pack declares, per failure code of the contract, the schedule, the number of tries and the first answer:
+
+```yaml
+planner:
+  options:
+    hw_wait:
+      kinds:
+        perception_unavailable: {schedule_s: [1, 3], tries: 4, action: wait_health}   # tries >= 1; action wait_health | health_check | stop
+        hw_fault: {schedule_s: []}                                                     # an empty list: no wait command for this kind
+        assumed: true                                                                  # or source: "<label>"
+```
+
+`schedule_s` replaces the `recovery.wait` schedule for that kind (the wait action is still the pack's `recovery.wait.action`; read where
+`wait_on_robot` runs the wait). An empty list sends no wait command: the pack says waiting does not help. `tries` and `action` replace the
+policy table's `retries` and first answer for that kind. A kind with no entry, a bad entry or no data: the engine's behaviour, unchanged.
+Hook `on_start` (no effect), services `wait_schedule(run, schedule)`, `recovery_rule(run, code, rule)`. Keys `enabled` (legacy `hw_wait`), `kinds` (dict, manifest only). Lab flag `hw_wait`:
+`{kind, schedule_s, tries, action}`. Limit: the schedule needs `wait_on_robot` and a declared `recovery.wait`; without them the poll stays.
+Module: `robot_agent/options/hw_wait.py`.
 
 ### `reopen_on_miss`
 A Find that misses inside the container just opened is made again after closing and opening it (default off). A door can report open and still not

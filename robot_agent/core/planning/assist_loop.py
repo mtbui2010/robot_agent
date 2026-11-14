@@ -3738,7 +3738,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         the same step again in place), HEALTH_CHECK (an unhealthy robot stops the run). None: go on."""
         key = (code, st.get("action"), st.get("object"))
         r.code_tries[key] = n = r.code_tries.get(key, 0) + 1
-        todo = rule.next_after(n)
+        todo = self.options.query("recovery_rule", r, code, rule, default=rule).next_after(n)   # option hw_wait: tries per kind
         ev_ = r.failures[-1]["evidence"]
         if todo is Recovery.STOP:
             if r.health is not None:
@@ -3777,8 +3777,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
                 return None
         except Unbindable:
             return None
-        h = r.robot.health(r.node)
-        waited = []
+        sched = self.options.query("wait_schedule", r, sched, default=sched)             # option hw_wait: the schedule of this failure kind
+        h, waited = r.robot.health(r.node), []
         for secs in sched:
             if h.get("ok") is True:
                 break
