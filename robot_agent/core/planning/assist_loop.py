@@ -1665,6 +1665,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         fixed = self._reconcile(r, "start")              # adapter.reconcile + the declared sensors
         from robot_agent.skill_configs import ENV
         r.places = Places(dict(ENV), openable=r.robot.openable)
+        self.lab_log = []                             # what the opt-in lab options did this run (see _lab), on_start's included
         self.options.observe("on_start", r)           # the options' per-run state
         if self.cfg.get("dialog_agree2"):
             r.places.ext = dialog_ext.build(lang, r.places, getattr(self.robot.manifest, "planner", None))
@@ -1675,7 +1676,6 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         self._person_at = {}                          # {person: place they said they are at} (this run)
         self._where_asked = None                      # the person "Where are you?" was asked about (this run)
         self._handed = self.options.query("belief_set", default=set())      # objects this run handed over (release actions)
-        self.lab_log = []                             # what the opt-in lab options did this run (see _lab)
         self._tr_budget = LLMBudget(self.cfg["translate_budget"])   # translation calls: their own cap (F5.3)
         self._say_not_in_lang, self._run_lang, self._said_as = 0, lang, {}
         self.language.reset()
@@ -2860,7 +2860,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             blocks=blocks or None, join=rep.join_blocks if blocks else None, ground=ground,
             complete=str(self.cfg.get("gate_complete", "0")) in ("1", "true", "True"),
             person_goals=bool(self.cfg.get("person_goals")), reached=self._reaches,
-            no_refetch=bool(self.options.query("no_refetch")), keep_end=bool(self.options.query("keep_after_dedupe")))
+            no_refetch=bool(self.options.query("no_refetch")), keep_end=self.options.query("keep_after_dedupe") or False)
         acc = r.__dict__.setdefault("repaired_by_op", {})
         for k, v in counts.items():
             acc[k] = acc.get(k, 0) + v

@@ -42,7 +42,8 @@ def test_a_made_up_language_clause_words_are_read_from_its_pack(zq):
     opt, run, svc = make(zq)
     opt.on_start(run)
     assert run.places.clauses is not None
-    act = understand._active("take the fig. nuvo the lid is up, shut it. take the plum kelu the fig", places=run.places)
+    assert svc.labs == [(("lang_words",), {"lang": "zq", "condition": True, "negation": True})]
+    act =understand._active("take the fig. nuvo the lid is up, shut it. take the plum kelu the fig", places=run.places)
     assert "fig" in act and "plum" in act and "lid" not in act                       # the condition clause is taken out
     assert act.count("fig") == 1 and "kelu" not in act                               # the negation clause too
     kept = understand._active("nuvo the lid is up, shut it kelu the pan", conds=False, places=run.places)
@@ -73,10 +74,11 @@ def test_a_language_without_data_leaves_the_places_alone_empty(monkeypatch):
     for lang in ("xx", "", None, "q"):
         opt, run, svc = make(lang)
         opt.on_start(run)
-        assert getattr(run.places, "clauses", None) is None
+        assert getattr(run.places, "clauses", None) is None and svc.labs == []      # nothing given: no lab event
     opt, run, svc = make("en")
     run.places = None
     opt.on_start(run)                                                               # no places: nothing to set, no error
+    assert svc.labs == []
     assert clauses.of(None) is None and clauses.build(None) is None
 
 
@@ -126,6 +128,21 @@ def test_the_loop_gives_the_run_its_clauses_when_on(make_assist, env, monkeypatc
     run_task(loop, "Put the mug on the dining table, but not the plate.", max_events=3000)
     assert loop._env_places.clauses.cond is not None and loop._env_places.clauses.neg is not None
     assert isinstance(loop._env_places.clauses, clauses.Clauses)
+
+
+def test_loop_the_on_start_lab_event_reaches_the_runs_final_lab_log_and_the_off_run_has_none(make_assist, env):
+    """Regression (a layer whose only act is at run set-up looked silent): the loop cleared its lab log AFTER ``on_start``, so the event of an
+    option that acts there never reached the run's log. Both runs end the same way; only the on run carries the event."""
+    und = {"status": "clear", "reason": "", "question": "", "goals": [{"type": "on", "object": "quill", "from": "counter", "to": "dining table"}]}
+    plan = steps("MoveTo counter@kitchen", "Find quill", "Pick quill", "MoveTo dining table@kitchen", "Place dining table@kitchen")
+    out = {}
+    for on in (True, False):
+        robot = FakeRobot(env, {"quill": "counter@kitchen"}, start="counter@kitchen")
+        loop = make_assist(robot, FakeLLM(default=und), ScriptedPlanner(plan), detector_miss_rate=0, **({"lang_words": "1"} if on else {}))
+        evs = run_task(loop, "Put the quill on the dining table.", max_events=3000)
+        out[on] = (evs[-1].get("status"), robot.obj["quill"], [e for e in loop.lab_log if e["flag"] == "lang_words"])
+    assert out[True][:2] == out[False][:2] == ("success", "dining table@kitchen")                  # the final state: the same with and without
+    assert out[True][2] == [{"flag": "lang_words", "lang": "en", "condition": True, "negation": True}] and out[False][2] == []
 
 
 def test_clause_words_of_the_robot_pack_with_no_label_are_not_used_empty():

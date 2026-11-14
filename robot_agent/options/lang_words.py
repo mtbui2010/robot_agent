@@ -12,7 +12,8 @@ Data: the language packs (``lang/<code>.json``, ``patterns``: ``condition`` and 
 the clause's end) and the robot pack (``planner.options.lang_words.clauses``: ``{lang: {"condition": ..., "negation": ..., "source": ...}}``, added to
 the pack's words of that language; a language with no pack file is declared there). A language whose pack declares neither, or an option on a run with no such pack: nothing changes, the engine's own reading
 stands (fail open). A pack that declares one kind takes nothing out for the other. Hook ``on_start`` (sets ``run.places.clauses``).
-Keys: ``enabled`` (legacy ``lang_words``), ``clauses`` (dict, from the manifest). No lab flag: the run's ``lab_log`` is cleared after ``on_start``; read ``places.clauses``.
+Keys: ``enabled`` (legacy ``lang_words``, off by default: the engine's own words), ``clauses`` (dict, from the manifest). Lab flag ``lang_words``:
+``{lang, condition, negation}`` (the kinds given to the places) when the run gets clause words.
 """
 
 from __future__ import annotations
@@ -46,6 +47,7 @@ class LangWords(Option):
         if places is None or cl is None:
             return
         places.clauses = cl
+        self.svc.lab(SPEC.name, lang=getattr(run, "lang", None), condition=cl.cond is not None, negation=cl.neg is not None)
 
 
 register(SPEC, LangWords)
