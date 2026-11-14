@@ -24,6 +24,12 @@ def make(known=("pail", "lamp"), answer="", goals=()):
     return GoalWords(cfg, svc), run, svc, asks
 
 
+def guarded(guard):
+    p = Places(ENV)
+    p.guard = guard
+    return p
+
+
 def goal(obj, to="stool", typ="on"):
     return {"type": typ, "object": obj, "from": "", "to": to}
 
@@ -43,14 +49,14 @@ def test_a_name_inside_a_longer_place_name_is_not_that_place_substring():
     assert g.place("lamp") == ""                    # "lamp" is inside "lampshelf" only as letters
     assert g.place("lampshelf") == "lampshelf@loft"
     assert goal_fix.drop_invented([goal("lamp")], "put the lamp on the stool", PLACES)[1], "the old matcher drops it (the class)"
-    out, dropped = goal_fix.drop_invented([goal("lamp")], "put the lamp on the stool", PLACES, g)
+    out, dropped = goal_fix.drop_invented([goal("lamp")], "put the lamp on the stool", guarded(g))
     assert out and not dropped
 
 
 def test_a_whole_word_match_is_a_place_and_the_goal_is_dropped_as_before():
     opt, run, _, _ = make(known=())
     g = opt.goal_guard(run, [goal("lampshelf")])
-    out, dropped = goal_fix.drop_invented([goal("lampshelf")], "put the lampshelf on the stool", PLACES, g)
+    out, dropped = goal_fix.drop_invented([goal("lampshelf")], "put the lampshelf on the stool", guarded(g))
     assert not out and len(dropped) == 1
     assert place_keys("The Pail", PLACES) == ["rack@barn"]                # an alias, articles and case ignored
 
@@ -58,7 +64,7 @@ def test_a_whole_word_match_is_a_place_and_the_goal_is_dropped_as_before():
 def test_the_catalogue_comes_first_and_the_goal_is_kept():
     opt, run, _, _ = make(known=("pail",))
     assert opt.goal_guard(run, []).place("pail") == ""
-    out, dropped = goal_fix.drop_invented([goal("pail")], "carry the pail to the stool", PLACES, opt.goal_guard(run, []))
+    out, dropped = goal_fix.drop_invented([goal("pail")], "carry the pail to the stool", guarded(opt.goal_guard(run, [])))
     assert out and not dropped
     run.memory.data["objects"] = {"the kettle": {}}
     assert "kettle" in catalogue(run, opt.svc.robot)
@@ -87,7 +93,7 @@ def test_a_shared_object_keeps_its_receiver_through_the_receiver_repairs():
     opt, run, _, _ = make(known=())
     g = opt.goal_guard(run, two)
     assert g.frozen(two[0]) and not g.frozen(goal("mug"))
-    got, _ = goal_fix.shared_listener(two + [say], "tell tom hi and give the cup", PLACES, g)
+    got, _ = goal_fix.shared_listener(two + [say], "tell tom hi and give the cup", guarded(g))
     assert [x["to"] for x in got[:2]] == ["tom@loft", "stool"]
     got0, _ = goal_fix.shared_listener(two + [say], "tell tom hi and give the cup", PLACES)
     assert got0[0]["to"] == "zed@loft", "without the option the receiver is changed (the class)"

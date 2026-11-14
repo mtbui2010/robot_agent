@@ -5,7 +5,7 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
-- 2026-11-14 Option `goal_words` (default off, service `goal_guard`, hook `on_goals`; `goal_fix.drop_invented`, `repair_destination`, `shared_listener` take an optional guard): the goal filter compares whole words, trusts the object catalogue first, asks when a name is both an object and a place and keeps the receiver of a shared object; switched on for D1 through `HOMELOOP_D1_LAYERS`.
+- 2026-11-14 Option `goal_words` (default off, service `goal_guard`, hook `on_goals`; `goal_fix.drop_invented`, `repair_destination`, `shared_listener` read an optional `places.guard`): the goal filter compares whole words, trusts the object catalogue first, asks when a name is both an object and a place and keeps the receiver of a shared object; switched on for D1 through `HOMELOOP_D1_LAYERS`.
 - 2026-11-14 Option `precond_repair` (default off, hook `on_plan`, new action role `pick`, pack data `planner.options.precond_repair.needs`): a plan that lacks a step its next skill needs (a held object, a free hand, being at the object) gets it before the gate; switched on for D1 through `HOMELOOP_D1_LAYERS`.
 
 - Option `object_words` (default off): the run's placed / handed-over tables are looked up by the object's words ('phone' = the plan's 'cell phone'); without it a done plan was believed unmet and the run failed with every goal true.

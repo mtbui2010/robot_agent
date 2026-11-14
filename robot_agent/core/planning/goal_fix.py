@@ -78,8 +78,9 @@ def drop_empty(goals: list) -> tuple:
     return keep, [g for g in goals if g not in keep]
 
 
-def drop_invented(goals: list, text: str, places, guard=None) -> tuple:
-    """(goals, dropped): F4.4 (see the module doc). ``guard`` (option goal_words): its ``place(name)`` says which ENV place a name is."""
+def drop_invented(goals: list, text: str, places) -> tuple:
+    """(goals, dropped): F4.4 (see the module doc). ``places.guard`` (option goal_words) says which ENV place a name is."""
+    guard = getattr(places, "guard", None)
     t = _norm(text)
     said = set().union(*(m[3] for m in place_mentions(t, places))) if place_mentions(t, places) else set()
     out, dropped = [], []
@@ -127,13 +128,13 @@ def unsaid_speaker(goals: list, text: str, places, robot=None) -> tuple:
     return out, notes
 
 
-def shared_listener(goals: list, text: str, places, guard=None) -> tuple:
+def shared_listener(goals: list, text: str, places) -> tuple:
     """(goals, notes): a person the words name once cannot be both the listener of a message and the recipient of a
     delivery: "tell X to ..., and bring me the cup" names X once, the recipient of the cup is the speaker. A
     delivery goal to a person who is also a say goal's listener, with only that one mention of them in the words
     and the speaker known from the ENV, goes to the speaker (the model took the last person it had read)."""
     from .persons import speaker_key
-    sk = speaker_key(places)
+    sk, guard = speaker_key(places), getattr(places, "guard", None)
     if not sk:
         return goals, []
     listeners = {g.get("to") or g.get("person") for g in goals if g.get("type") == "say"} - {None, ""}
@@ -157,12 +158,13 @@ def _from_after(rest: str) -> bool:
     return bool(r and r.match(rest))
 
 
-def repair_destination(goals: list, text: str, places, guard=None) -> tuple:
+def repair_destination(goals: list, text: str, places) -> tuple:
     """(goals, notes): F4.7 symbolic destination repair. The model put an object somewhere the person never
     named, while the person named exactly one place (one ENV key, not a source, not a person) that no goal
     uses: that place is the destination. Only with one such move goal (two goals and one place: which one is
     unclear, the read-back asks). Example: "put the towel in the cabinet" understood as "in the drawer"."""
     from .understand import _active, _corr_of, _drop_corrected
+    guard = getattr(places, "guard", None)
     t = _active(text)
     ms = _drop_corrected(t, place_mentions(t, places), _corr_of(places))
     person = lambda k: bool((places.env.get(k) or {}).get("person"))
