@@ -3834,7 +3834,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         # the belief has nowhere left to look (searched places are never searched again): ask / give up now
         nowhere = leg is None and rule.mark_searched and getattr(r, "search", None) is not None
         r.find_fails[o] = r.find_fails.get(o, 0) + 1
-        if (self._missed_enough(r, o) or nowhere) and self.cfg["ask_help"] and ("where", o) not in r.helped:
+        if (self._missed_enough(r, o) or nowhere or self._search_over(r, o, True)) and self.cfg["ask_help"] and ("where", o) not in r.helped:
             r.helped.add(("where", o))
             q = speech.LocalText("q_where_is", {"object": self._said_of(r, o)}, text=f"I couldn't find the {o}. Where is it?")
             yield r.ev("clarify", question=q, round=0)
@@ -3853,7 +3853,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
                 r.searched.remove(k)
             return None, f"; the user says the {o} is on {k}"
         looks = self.options.query("looks_made", r, o, default=len(r.searched)) + len((getattr(r, "second_looks", {}) or {}).get(o, []))
-        total = int(self.cfg.get("search_total", 8))
+        total = self._search_total(r, o)
         if self.cfg.get("search_legs") and not nowhere and (
                 self._second_look(r, o, only_if_beats=True) if looks < total - self._relook_budget(r) else
                 self._second_look(r, o)):
@@ -3862,7 +3862,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             return _NEXT, ""
         # with search legs the search ends when the places run out or `search_total` looks were made, not after
         # a fixed count of misses while likely places remain (the miss count is the pre-v2 stop)
-        stop = nowhere or looks >= total if self.cfg.get("search_legs") else (
+        stop = nowhere or looks >= total or self._search_over(r, o) if self.cfg.get("search_legs") else (
             r.find_fails[o] > self.cfg["search_max"] + 1 or nowhere)
         if stop:
             if nowhere and self._second_look(r, o):
@@ -3915,7 +3915,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         if not why:
             return None
         looks = self.options.query("looks_made", r, o, default=len(r.searched)) + len((getattr(r, "second_looks", {}) or {}).get(o, [])) + len(done_)
-        if looks + 1 >= int(self.cfg.get("search_total", 8)):
+        if looks + 1 >= self._search_total(r, o):
             return None
         acts = {a.lower() for a in r.robot.plan_actions}
         close_, open_ = self._role("close"), self._role("open")      # the pack's actions; none declared = no reopen
@@ -4016,10 +4016,10 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         leg = r.search.next_leg(o, r.world.arrived, r.world.opened) if getattr(r, "search", None) is not None else None
         looks = self.options.query("looks_made", r, o, default=len(r.searched))
         looks += len((getattr(r, "second_looks", {}) or {}).get(o, []))
-        if (leg is None or looks >= int(self.cfg.get("search_total", 8)) - self._relook_budget(r)) and self._second_look(r, o):
+        if (leg is None or looks >= self._search_total(r, o) - self._relook_budget(r)) and self._second_look(r, o):
             yield r.ev("recover", at_index=r.i, kind="second_look", msg=f"looking again for the {o}")
             return _NEXT, ""
-        if leg is None or looks >= int(self.cfg.get("search_total", 8)):
+        if leg is None or looks >= self._search_total(r, o) or self._search_over(r, o):
             named = ", ".join(self._say_name(r.places, k) for k in r.searched) or "nowhere"
             yield self._finish(r, "failed", msg=f"could not find the {o} (looked at {', '.join(r.searched)})",
                                say=f"I couldn't find the {o}. I looked at: {named}.")

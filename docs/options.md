@@ -14,7 +14,7 @@ CLAUDE.md rules 13-15. The reference for the flat run options and manifest keys 
 | `Registry`, `register` | `core/options/registry.py` | the list of options; built-in ones from `robot_agent/options/__init__.py`, others by entry point group `robot_agent.options` |
 | `Dispatcher` | `core/options/dispatch.py` | builds the enabled options of one loop, calls their hooks in `order` |
 | `Services` | `core/options/services.py` | the interface an option uses to ask the loop for something (`LoopServices` in `core/planning/option_services.py` implements it) |
-| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait` so far |
+| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget` so far |
 
 `python -m robot_agent.core.options list` prints the registered options, their keys and hooks.
 `python -m robot_agent.core.options check MANIFEST.yaml` reports `planner.options` entries that name no option or key.
@@ -214,6 +214,28 @@ policy table's `retries` and first answer for that kind. A kind with no entry, a
 Hook `on_start` (no effect), services `wait_schedule(run, schedule)`, `recovery_rule(run, code, rule)`. Keys `enabled` (legacy `hw_wait`), `kinds` (dict, manifest only). Lab flag `hw_wait`:
 `{kind, schedule_s, tries, action}`. Limit: the schedule needs `wait_on_robot` and a declared `recovery.wait`; without them the poll stays.
 Module: `robot_agent/options/hw_wait.py`.
+
+### `search_budget`
+
+Search budget per object (default off). One budget for the whole run charges the places a first object used up to the next one; a search goes on over
+places nothing points to; a robot gives up without telling the person, or asks again after "I don't know". With the option on and pack data declared
+(`planner.options.search_budget.budget`):
+
+```yaml
+planner:
+  options:
+    search_budget:
+      budget: {looks_per_object: 8, stop_probability: 0.1, ask: once, assumed: true}     # or source: "<label>"; every field optional
+```
+
+`looks_per_object` (an int >= 1) replaces `search_total` and counts the places searched FOR THAT OBJECT. `stop_probability` (0 < p < 1): the search is
+over when the share of the belief (sightings, habits, ranking, floor) on the places not yet looked at is under it. When the search is over the engine's
+where-question is asked once per object (`ask: never` skips it); the answer is looked at, and a further miss, or "I don't know", ends the run naming
+the places looked at. An "I don't know" given earlier does not repeat the question and does not end the search while looks are left. No data, no search
+belief or off: the engine's behaviour, unchanged. Needs search legs (a legs-less search keeps `search_max`). Engine hooks added: `_search_total`
+and `_search_over` (in `search_hooks.py`) ask services `search_limit(run, obj)` and `search_over(run, obj, ask)`; the option also answers
+`looks_made(run, obj)`. Hook `on_start` (no effect). Keys `enabled` (legacy `search_budget`), `budget` (dict, manifest only). Lab flag `search_budget`:
+`{object, looks, remaining, why}` once per object. Module: `robot_agent/options/search_budget.py`.
 
 ### `reopen_on_miss`
 A Find that misses inside the container just opened is made again after closing and opening it (default off). A door can report open and still not

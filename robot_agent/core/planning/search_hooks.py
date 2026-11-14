@@ -95,6 +95,14 @@ class SearchHooks:
         yield from self._search_rank(r, o)
         return s.next_leg(o, r.world.arrived, r.world.opened)
 
+    def _search_total(self, r, o) -> int:
+        """Looks the search for ``o`` may make: the engine's ``search_total``, or what an option (``search_budget``) declares per object."""
+        return int(self.options.query("search_limit", r, o) or self.cfg.get("search_total", 8))
+
+    def _search_over(self, r, o, ask=False) -> bool:
+        """Is the search for ``o`` over by an option's own measure (``search_budget``: looks, remaining probability)? ``ask``: is the question due."""
+        return bool(self.options.query("search_over", r, o, ask, default=False))
+
     def _missed_enough(self, r, o) -> bool:
         """Have the misses of ``o`` passed ``search_max`` (time to ask where it is)? The one miss that option ask_source's ``reask_on_miss``
         counted in advance (the person named the place) is enough only when that look was complete: a container there that was closed

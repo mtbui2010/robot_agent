@@ -52,7 +52,7 @@
   "fn: robot_agent/core/unified_agent.py::UnifiedAgent.run_direct._blocking#0": 81
  },
  "wiring": {
-  "cfg_branches": 67,
-  "cfg_keys": 66
+  "cfg_branches": 64,
+  "cfg_keys": 65
  }
 }
