@@ -14,6 +14,8 @@ Three classes of the read-back dialogue (``AssistLoop._read_back`` asks "Is that
 * **The either-or.** When the reading changed exactly one value (an object or a place of one goal) since it was first read back, and the person had said the
   earlier value, an "I don't know" asks once more, naming both readings (a declared choice). The answer that names one reading decides: the current one
   stands, the earlier one is read back again (``run.patched``, ``allow_repeat``). A plain yes or no names neither: nothing is picked and the answer is a refusal.
+  The question is asked from the read-back's query service: its ``clarify`` event goes through the service ``emit``, the turn is counted in ``run.asked``
+  (service ``ask``) and a run stopped meanwhile decides nothing.
 
 Pack data: the language pack's ``dialogue.fillers`` / ``no`` / ``polite``, ``words.first_person``, ``answer_unsure`` and ``dialogue_ext.answer_unsure`` (both
 places), ``dialogue_ext.polite_endings`` and ``patterns.answer_tail`` (the endings). No data: nothing is claimed, the engine's path stands.
@@ -183,7 +185,9 @@ class AskAgree(Option):
         a, b = phrase(old, run.places), phrase(new, run.places)
         q = speech.LocalText("q_which_reading", {"first": a, "second": b}, ask={"intent": "choose", "options": [str(a), str(b)], "about": ""},
                              text=f"I can read that two ways: I will {a}, or I will {b}. Which one do you mean?")
-        ans = ask(run, q)
+        ans = self._ask_either(run, q)
+        if ans is None:                                       # the run was stopped while asking: nothing is decided
+            return False
         run.dialogue += [("robot", q), ("user", ans)]
         named = [o for o in (str(a), str(b)) if dialog_agree.names_option([ans], o, [str(a), str(b)])] if ans else []
         self.svc.lab(SPEC.name, rule="either_or", picked=len(named) == 1)
@@ -195,6 +199,20 @@ class AskAgree(Option):
             if k != "object" and new.get(k):                  # the place the person gave up is no coverage doubt any more (``on_issues``)
                 st.setdefault("gave_up", set()).add(new[k])
         return False
+
+    def _ask_either(self, run, q):
+        """Ask the either-or from the read-back's query service (it cannot yield): its ``clarify`` event through the service ``emit`` (logged
+        with the run's events, pushed live when the host has a channel), the turn counted by ``ask`` (``run.asked``); None when the run was
+        stopped meanwhile."""
+        emit = getattr(self.svc, "emit", None)
+        if emit is not None:
+            emit(run, "clarify", question=q, round=getattr(run, "asked", 0) + 1, kind=SPEC.name)
+        ans = self.svc.ask(run, q)
+        cancelled = getattr(self.svc, "cancelled", None)
+        if cancelled is not None and cancelled(run):
+            self.svc.lab(SPEC.name, rule="either_or_stopped")
+            return None
+        return ans
 
 
 register(SPEC, AskAgree)

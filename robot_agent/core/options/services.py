@@ -18,6 +18,7 @@ class Services(Protocol):
     def hand_action(self) -> Optional[str]: ...       # the robot's hand-over (release) action, or None
     def finish(self, run, status: str, **kw) -> dict: ...                       # the ``done`` event
     def ask(self, run, question) -> Optional[str]: ...                          # one question to the person, the answer
+    def emit(self, run, event: str, **fields) -> dict: ...                      # an event from a non-flow hook / service: logged, pushed live if the host can
     def look_for(self, run, obj: str) -> Any: ...                              # one more Find of ``obj`` as the goal check makes it: (seen, skill)
     def prefer_now(self, run, obj: str, keys) -> None: ...                      # look at ``keys`` first for ``obj``, also in a search under way
     def first_unsearched(self, run, obj: str, keys) -> Optional[str]: ...        # the best of ``keys`` not looked at yet

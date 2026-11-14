@@ -169,6 +169,36 @@ def test_either_or_names_both_readings_and_the_earlier_value_is_read_back_again_
     assert opt2.unrefused(run2, "no idea") is True and run2.patched is None          # the current reading was picked: it stands
 
 
+def test_either_or_emits_its_clarify_event_and_a_stopped_run_decides_nothing():
+    first, now = [g("mug", "stool@loft")], [g("mug", "rack@loft")]
+    opt, run, svc = make(first=first, goals=now, answer="no idea", pick="the stool")
+    run.readings, run.asked, events = ["a", "b"], 0, []
+    svc.emit = lambda r, name, **f: events.append({"event": name, **f})
+    svc.cancelled = lambda r: None
+    assert opt.unrefused(run, "no idea") is False and run.patched == [g("mug", "stool@loft")]
+    assert [(e["event"], e["kind"], e["round"]) for e in events] == [("clarify", "ask_agree", 1)] and events[0]["question"] is svc.asked[0]
+    opt, run, svc = make(first=first, goals=now, answer="no idea", pick="the stool")
+    run.readings, dialogue = ["a", "b"], list(run.dialogue)
+    svc.cancelled = lambda r: {"event": "done", "status": "cancelled"}
+    assert opt.unrefused(run, "no idea") is False and len(svc.asked) == 1
+    assert run.patched is None and run.allow_repeat is False and run.dialogue == dialogue          # stopped: no answer kept, nothing picked
+    assert [k for _a, k in svc.labs if k.get("rule") == "either_or_stopped"]
+
+
+def test_the_emit_service_logs_the_event_and_pushes_it_live_only_when_the_host_has_a_channel():
+    from robot_agent.core.planning.option_services import LoopServices
+    logged, pushed = [], []
+    run = NS(ev=lambda name, **f: logged.append({"event": name, **f}) or logged[-1])
+    assert LoopServices(NS(_emit=None)).emit(run, "clarify", kind="toy") == {"event": "clarify", "kind": "toy"} and not pushed
+    LoopServices(NS(_emit=pushed.append)).emit(run, "clarify", kind="toy")
+    assert pushed == [{"event": "clarify", "kind": "toy"}] and len(logged) == 2
+
+
+def test_the_loop_counts_the_either_or_as_a_question_of_the_run(make_assist, env):
+    loop, d = _loop(make_assist, env, on=True, answers=["no, put it on the counter", "no idea", "the dining table"])
+    assert d["status"] == "success" and loop._ctx.asked == 1, (d, loop._ctx.asked)               # the either-or, through the service ``ask``
+
+
 def test_either_or_a_plain_yes_or_no_never_picks_one_and_it_is_asked_once():
     first, now = [g("mug", "stool@loft")], [g("mug", "rack@loft")]
     for pick in ("yes", "no", "", "the plinth"):

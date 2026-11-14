@@ -39,6 +39,15 @@ class LoopServices:
         run.asked += 1
         return ans
 
+    def emit(self, run, event: str, **fields) -> dict:
+        """An event from a hook or service that cannot yield (not a flow hook): logged with the run's events (``run.ev``) and pushed through the
+        host's live channel when it has one (``emit`` of the loop, the one ``plan_step`` uses). The event."""
+        ev = run.ev(event, **fields)
+        push = getattr(self._lp, "_emit", None)
+        if push is not None:
+            push(ev)
+        return ev
+
     def look_for(self, run, obj):
         """One more Find of `obj`, made the way the end-of-run goal check makes it: (seen: bool, the skill)."""
         res, skill = self._lp._look(run, {"action": "Find", "object": obj})

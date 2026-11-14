@@ -305,7 +305,9 @@ whole word of an unsure phrase of the pack, from `answer_unsure` or `dialogue_ex
 first read-back. (3) Either-or (key `either_or`, default true): when the reading changed exactly one value (object, `to` or `from` of one goal) and the person had said the earlier
 value, the "I don't know" asks once, "I can read that two ways: A, or B", as a declared choice; the answer that names one reading decides (the current one stands; the earlier one
 is put back in `run.patched` with `allow_repeat`, read back again, and the place given up is no "you mentioned X" question: hook `on_issues`); a plain yes or no names neither,
-nothing is picked and the answer is a refusal. Pack data: the language pack's own (`dialogue.fillers` / `no` / `polite`, `words.first_person`, the unsure phrases, the endings);
+nothing is picked and the answer is a refusal. The either-or is asked from the read-back's query service (it cannot yield): its `clarify` event goes through the
+engine service `emit(run, event, **fields)` (logged with the run's events, pushed through the host's live channel when there is one), the turn counts in `run.asked`
+(service `ask`), and a run stopped while asking decides nothing. Pack data: the language pack's own (`dialogue.fillers` / `no` / `polite`, `words.first_person`, the unsure phrases, the endings);
 none = nothing is claimed. Keys `enabled` (legacy `ask_agree`), `restate_confirm`, `either_or`. Hooks `on_goals`, `on_issues`, service `unrefused(run, ans)`; lab flag `ask_agree`:
 `{rule}`. It does not edit `ask_focus`: with `ask_focus` on and this off, the D2 behaviour is unchanged. Module: `robot_agent/options/ask_agree.py`.
 
