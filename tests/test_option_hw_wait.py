@@ -124,7 +124,7 @@ def test_declared_tries_are_honoured_when_the_robot_stays_unhealthy(make_assist,
     kinds = {"perception_unavailable": {"schedule_s": [1], "tries": 3}, "assumed": True}
     evs, robot, loop = _loop(make_assist, env, monkeypatch, kinds, fails=(1, 2), health=False, more=True)
     assert done(evs)["status"] == "success" and waits(robot) == ["1", "1"]          # two bad health checks, still tries left
-    assert [e for e in loop.lab_log if e["flag"] == "hw_wait" and e.get("tried") == 1]
+    assert [e for e in loop.lab_log if e["flag"] == "hw_wait.more_tries" and e.get("tried") == 1]
     evs, robot, _ = _loop(make_assist, env, monkeypatch, kinds, fails=(1, 2, 3, 4), health=False, more=True)
     assert done(evs)["status"] != "success"                                          # the tries are used up: it stops
     evs, robot, _ = _loop(make_assist, env, monkeypatch, kinds, fails=(1, 2), health=False)

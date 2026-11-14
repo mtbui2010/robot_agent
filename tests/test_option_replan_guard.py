@@ -341,7 +341,7 @@ def test_the_declared_near_need_gives_the_release_its_move_and_no_refine_is_need
     d = done(run_task(loop, "Put the spool on the side table.", max_events=3000))
     assert d["status"] == "success", d
     assert len([c for c in planner.calls if c[0] == "replan"]) == 1                # the suffix was repaired before any refine
-    assert [e for e in loop.lab_log if e.get("flag") == "precond_repair" and e.get("need") == "near"]
+    assert [e for e in loop.lab_log if e.get("flag") == "precond_repair.near" and e.get("need") == "near"]
     assert not [e for e in loop.lab_log if e.get("flag") == "replan_guard" and e.get("part") == "critical"]
 
 

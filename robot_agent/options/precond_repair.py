@@ -18,7 +18,8 @@ Pack data ``planner.options.precond_repair.needs``::
 
 Roles used (``planner.action_roles``): ``move``, ``find``, ``pick``, ``put_down``; a role not declared = that repair is skipped (fail open). No
 rules, no label, an action not in the rules, a plan that already meets the rule = the plan is returned unchanged. Hook ``on_plan``.
-Keys: ``enabled`` (legacy ``precond_repair``), ``needs`` (dict, from the manifest). Lab flag ``precond_repair``: ``{action, need, index}``.
+Keys: ``enabled`` (legacy ``precond_repair``), ``needs`` (dict, from the manifest). Lab flag ``precond_repair``: ``{action, need, index}``;
+a MoveTo for the ``near`` need has its own flag ``precond_repair.near`` (same fields), so a pack that declares ``near`` apart can tell its effect.
 """
 
 from __future__ import annotations
@@ -52,6 +53,11 @@ SPEC = OptionSpec(
     enabled="enabled",
     doc="A plan that lacks a step the next skill needs (a held object, a free hand, being next to the object) gets it, from the pack's declared skill needs.",
 )
+
+
+def lab_flag(need) -> str:
+    """The lab flag of a splice: the option's name, ``<name>.near`` for the ``near`` need."""
+    return f"{SPEC.name}.{need}" if need == "near" else SPEC.name
 
 
 class _State:
@@ -91,7 +97,7 @@ class PrecondRepair(Option):
         for i, st in enumerate(steps):
             for need, add in self._missing(st, rules.get(st.get("action"), {}), state, steps, run, roles, out):
                 out.extend(add)
-                self.svc.lab(SPEC.name, action=st.get("action"), need=need, index=i)
+                self.svc.lab(lab_flag(need), action=st.get("action"), need=need, index=i)
             out.append(st)
             state.apply(st)
         out.extend(self._finish(state, rules, run, roles, out))

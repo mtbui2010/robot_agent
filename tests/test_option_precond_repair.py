@@ -46,6 +46,15 @@ def test_missing_approach_is_inserted():
     assert acts(opt.on_plan(steps("Chirp ana@hall"), run)) == [("Walk", "ana@hall"), ("Chirp", "ana@hall")]
 
 
+def test_the_near_need_has_its_own_lab_flag_and_the_other_needs_keep_the_options():
+    opt, run, svc = make(at="bin@yard")
+    opt.on_plan(steps("Chirp ana@hall"), run)
+    assert svc.labs == [(("precond_repair.near",), {"action": "Chirp", "need": "near", "index": 0})]
+    opt, run, svc = make()
+    opt.on_plan(steps("Walk ana@hall", "Offer ana@hall"), run)
+    assert [a[0] for a, _k in svc.labs] == ["precond_repair"]                       # holding: the option's own flag
+
+
 def test_a_precondition_already_true_inserts_nothing():
     opt, run, _ = make(hold="gizmo", at="ana@hall")
     assert opt.on_plan(steps("Offer ana@hall"), run) is None

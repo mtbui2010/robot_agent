@@ -18,7 +18,7 @@ Pack data ``planner.options.hw_wait.kinds`` (a failure code of the contract is t
 A kind with no entry, a bad entry, no ``recovery.wait`` declaration (the schedule only) or no data at all: the engine's own behaviour, byte for
 byte. The schedule is read where ``wait_on_robot`` runs the wait; without that option the engine's own poll stays.
 Hook ``on_start`` (no effect). Services ``wait_schedule``, ``recovery_rule``, ``more_tries`` (an unhealthy robot after a wait does not stop the run while declared tries are left). Keys: ``enabled`` (legacy ``hw_wait``), ``kinds`` (dict, from the manifest), ``more_tries`` (bool, default off, legacy ``hw_more_tries``: the unhealthy-robot rule of ``more_tries``; off = as in D2).
-Lab flag ``hw_wait``: ``{kind, schedule_s, tries, action}``.
+Lab flag ``hw_wait``: ``{kind, schedule_s, tries, action}``; the key ``more_tries`` has its own flag ``hw_wait.more_tries``: ``{kind, tries, tried}``.
 """
 
 from __future__ import annotations
@@ -118,7 +118,7 @@ class HwWait(Option):
         tries = tries_of(self._entry(code)) if self.cfg.get("more_tries") else None
         if tries is None or n >= tries:
             return None
-        self.svc.lab(SPEC.name, kind=FailureCode.parse(code).value, tries=tries, tried=n)
+        self.svc.lab(f"{SPEC.name}.more_tries", kind=FailureCode.parse(code).value, tries=tries, tried=n)
         return True
 
 
