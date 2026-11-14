@@ -15,16 +15,17 @@ runs at 15) goes to the place, looks and keeps the branch that matches. No optio
   completes the condition, any other answer leaves the goals as the reader gave them. Never a guess;
 * what a place cannot complete (the cases of the first point) is not asked about: the goals stay.
 
-Pack data (manifest ``planner.options.cond_extract.<key>``, each labelled ``source`` or ``assumed: true`` by its pack): ``prompt`` (slots ``{request}``,
-``{goals}``; the model answers the fixed JSON of ``SCHEMA``), ``clauses`` (``{lang: {"condition": regex | [regex], "source" | "assumed": true}}``),
-``q_unclear``. Hook ``on_goals`` (order 15). Service ``ask_model``. Keys: ``enabled`` (legacy ``cond_extract``), ``ask_when_unsure`` (true),
-``prompt``, ``clauses``, ``q_unclear``. Lab flag ``cond_extract``: ``{state, object, at, if, else, drop}``.
+Pack data (manifest ``planner.options.cond_extract.<key>``): ``prompt`` (slots ``{request}``, ``{goals}``; the model answers the fixed JSON of
+``SCHEMA``) and ``q_unclear``, used only when the section (or the run options) carries ``source`` (a string) or ``assumed: true``, else the option
+does nothing; ``clauses`` (``{lang: {"condition": regex | [regex], "source" | "assumed": true}}``, each entry labelled). A key the loop resolved empty
+is read again from the manifest at run time. Hook ``on_goals`` (order 15). Service ``ask_model``. Keys: ``enabled`` (legacy ``cond_extract``),
+``ask_when_unsure`` (true), ``prompt``, ``clauses``, ``q_unclear``, ``source``, ``assumed``. Lab flag ``cond_extract``: ``{state, object, at, if, else, drop}``.
 """
 
 from __future__ import annotations
 
 from robot_agent.core.options import STOP, Key, Option, OptionSpec, register
-from robot_agent.core.planning import clauses
+from robot_agent.core.planning import clauses, pack_data
 
 SPEC = OptionSpec(
     name="cond_extract",
@@ -32,7 +33,9 @@ SPEC = OptionSpec(
           Key("ask_when_unsure", "bool", True),
           Key("prompt", "str", ""),
           Key("clauses", "dict", {}, sources=("manifest",)),
-          Key("q_unclear", "str", "")),
+          Key("q_unclear", "str", ""),
+          Key("source", "str", ""),
+          Key("assumed", "bool", False)),
     hooks=("on_goals",),
     order=15,
     enabled="enabled",
@@ -80,14 +83,20 @@ class CondExtract(Option):
         en = getattr(self.svc, "request_english", lambda r: "")(run)
         return [t for t in dict.fromkeys([str(getattr(run, "task", "") or ""), str(en or "")]) if t.strip()]
 
-    def _has_condition(self, run) -> bool:
-        rx = condition_regex(getattr(run, "lang", None), self.cfg.get("clauses"))
+    def _data(self) -> dict:
+        """The pack's texts (used only when labelled) and clause words, read again from the manifest when the resolved keys are empty."""
+        planner = pack_data.planner_of(self.svc)
+        return {**pack_data.labelled_keys(SPEC, self.cfg, planner, ("prompt", "q_unclear")),
+                "clauses": pack_data.fresh(SPEC, self.cfg, planner, "clauses")}
+
+    def _has_condition(self, run, data) -> bool:
+        rx = condition_regex(getattr(run, "lang", None), data["clauses"])
         return bool(rx) and any(rx.search(t) for t in self._texts(run))
 
-    def _prompt(self, run) -> str:
+    def _prompt(self, run, text) -> str:
         goals = "\n".join(f"{i}. {self._phrase(run, g)}" for i, g in enumerate(run.goals, 1))
         request = " / ".join(self._texts(run))
-        return self.cfg["prompt"].replace("{request}", request).replace("{goals}", goals)
+        return text.replace("{request}", request).replace("{goals}", goals)
 
     def _phrase(self, run, g) -> str:
         fn = getattr(self.svc, "goal_phrase", None)
@@ -99,10 +108,9 @@ class CondExtract(Option):
     def _place_of(self, run, text):
         return self.svc.ground_place(run, text) if text else None
 
-    def _ask_place(self, run, plan):
+    def _ask_place(self, run, plan, text):
         """Flow: one question (pack text) when the condition is real but unclear; the place the answer names (words), else None."""
         from robot_agent.core.planning import speech
-        text = self.cfg["q_unclear"]
         if not text or not self.cfg["ask_when_unsure"]:
             return None
         en = text.replace("{object}", plan["object"])
@@ -129,12 +137,13 @@ class CondExtract(Option):
         done = run.__dict__.setdefault("opt", {}).setdefault("cond_extract", {})
         if done.get("seen"):                                 # a later reading of the same request: the plan of the first one is applied again, no new call
             return self._again(run, done, goals)
-        if not goals or not self.cfg["prompt"].strip() or any("when" in g for g in goals) or not self._has_condition(run):
+        data = self._data() if goals else {}
+        if not goals or not data["prompt"].strip() or any("when" in g for g in goals) or not self._has_condition(run, data):
             return None
         done["seen"] = True                                  # one extra call per run, whatever the reader reads next
-        plan = parse(self.svc.ask_model(run, self._prompt(run), SCHEMA), len(goals))
+        plan = parse(self.svc.ask_model(run, self._prompt(run, data["prompt"]), SCHEMA), len(goals))
         if plan["state"] == "unsure" or (plan["state"] == "ready" and not self._place_of(run, plan["at"])):
-            at = self._ask_place(run, plan)
+            at = self._ask_place(run, plan, data["q_unclear"])
             stop = self.svc.cancelled(run)
             if stop:
                 yield stop

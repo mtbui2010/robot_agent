@@ -64,7 +64,7 @@ def test_cond_goal_empty_pack_enabled_without_prompt_changes_neither_schema_nor_
 
 def test_cond_goal_on_with_prompt_adds_when_after_content_and_the_lines_before_task(make_assist, env):
     _r, off = loop_with(make_assist, env, {}, [])
-    _r, on = loop_with(make_assist, env, {}, [], cond_goal="1", **{"cond_goal.prompt": PROMPT})
+    _r, on = loop_with(make_assist, env, {}, [], cond_goal="1", **{"cond_goal.prompt": PROMPT, "cond_goal.assumed": "1"})
     items = on._understand_schema()["properties"]["goals"]["items"]
     keys = list(items["properties"])
     assert keys[-1] == "when" and keys.index("content") < keys.index("when")
@@ -102,7 +102,7 @@ def stub(seen_seq=(True,), remembered=None, role="MoveTo", answer="", at="desk@s
              ground_place=lambda run, t: at if t in ("desk", at) else None, remembered=lambda run, o: remembered,
              run_step=lambda run, st: (log.steps.append(st), NS(ok=True))[1], cancelled=lambda run: None,
              in_lang=lambda t, lang: t, finish=lambda run, status, **kw: {"event": "done", "status": status, **kw})
-    cfg = resolve(SPEC, {"cond_goal": "1", "cond_goal.q_unsure": "Is the {object} at {place}?",
+    cfg = resolve(SPEC, {"cond_goal": "1", "cond_goal.assumed": "1", "cond_goal.q_unsure": "Is the {object} at {place}?",
                          "cond_goal.q_where": "Where should I look for the {object}?"}, {}, None)
     run = NS(goals=[], world=NS(arrived=""), filtered=[], ev=lambda e, **k: {"event": e, **k}, lang="en")
     return CondGoal(cfg, svc), run, log
@@ -201,7 +201,7 @@ def test_cond_goal_empty_pack_texts_ask_nothing_and_say_nothing():
 
 
 # ── through the loop ─────────────────────────────────────────────────────────────────────────────────────────────────
-OPTS = {"cond_goal": "1", "cond_goal.prompt": PROMPT}
+OPTS = {"cond_goal": "1", "cond_goal.prompt": PROMPT, "cond_goal.assumed": "1"}
 
 
 def test_cond_goal_through_the_loop_a_mug_on_the_desk_keeps_the_goal(make_assist, env):
@@ -225,3 +225,34 @@ def test_cond_goal_through_the_loop_off_a_when_in_the_answer_changes_nothing_of_
     robot, loop = loop_with(make_assist, env, {"mug": DS}, [dict(GOAL)])
     evs = run_task(loop, TASK, max_events=3000)
     assert [e["flag"] for e in loop.lab_log if e["flag"] == "cond_goal"] == [] and evs[-1]["event"] == "done"
+
+
+# ── the texts are pack data: used only with a label, read from the manifest when the loop resolved them empty ─────────────
+def test_cond_goal_unlabelled_texts_are_not_used_no_prompt_no_question_empty(make_assist, env):
+    _r, on = loop_with(make_assist, env, {}, [], cond_goal="1", **{"cond_goal.prompt": PROMPT})          # no source, no assumed
+    assert on.options.transform("on_understand_prompt", UNDERSTAND_PROMPT) == UNDERSTAND_PROMPT
+    assert "when" not in on._understand_schema()["properties"]["goals"]["items"]["properties"]
+    opt, run, log = stub((False, True), answer="yes")
+    opt.cfg["assumed"] = False
+    run.goals = [{**GOAL, "when": WHEN}]
+    evs, res = drain(opt.on_goals(run))
+    assert log.asked == [] and res == "stop" and "say" not in evs[-1]                 # unsure, no labelled question: ends, says nothing
+
+
+def test_cond_goal_a_source_label_is_a_label_too():
+    opt, run, log = stub((False, True), answer="yes")
+    opt.cfg["assumed"], opt.cfg["source"] = False, "made-up test pack"
+    run.goals = [{**GOAL, "when": WHEN}]
+    drain(opt.on_goals(run))
+    assert log.asked == ["Is the mug at desk@study room?"]
+
+
+def test_cond_goal_labelled_texts_only_in_the_manifest_are_read_at_run_time_without_a_refresh(make_assist, env, monkeypatch):
+    _r, loop = loop_with(make_assist, env, {}, [], cond_goal="1")
+    planner = dict(loop.robot.manifest.planner or {})
+    options = {**(planner.get("options") or {}), "cond_goal": {"prompt": PROMPT, "assumed": True}}
+    monkeypatch.setattr(loop.robot.manifest, "planner", {**planner, "options": options})          # merged after the build, no refresh_options
+    assert loop.options.configs["cond_goal"]["prompt"] == ""
+    assert "when" in loop._understand_schema()["properties"]["goals"]["items"]["properties"]
+    options["cond_goal"] = {"prompt": PROMPT}                                                     # the same text without its label: not used
+    assert "when" not in loop._understand_schema()["properties"]["goals"]["items"]["properties"]

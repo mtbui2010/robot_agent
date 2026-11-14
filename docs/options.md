@@ -230,9 +230,11 @@ grounded even after the one `q_where`: UNKNOWN, a third state: no branch is kept
 the read-back counts them as covered) and `goal_dropped(run, goal)` (a re-sampled reading does not bring them back). If no goal is left the run ends `success` with nothing done. An incomplete `when` (a missing key, a non-boolean) is no condition.
 Pack data (manifest `planner.options.cond_goal.<key>`, or a run option `cond_goal.<key>`; no language in the code): `prompt` (lines added to the understand prompt before `Task:`; none = the option changes
 neither schema nor prompt), `q_where` (phrase key `cond_where`, slot `{object}`), `q_unsure` (`cond_unsure`, slots `{object}`, `{place}`), `say_seen` (`cond_seen`), `say_not_seen`
-(`cond_not_seen`); an empty text = not asked / not said; the other languages come from the pack's i18n under the phrase key. Use it with a reader trained on `when` (an older reader may ignore it or
+(`cond_not_seen`); an empty text = not asked / not said; the other languages come from the pack's i18n under the phrase key. The texts are used only when labelled: `source` (a string) or `assumed: true`
+in the section `planner.options.cond_goal` (or the run options `cond_goal.source` / `cond_goal.assumed`); unlabelled texts count as none. A text the loop resolved empty is read again from the manifest at run time
+(as the D2 options do), so pack data a host merges after the loop is built is seen without `refresh_options`. Use it with a reader trained on `when` (an older reader may ignore it or
 use it wrongly: measure it on requests with no condition before turning it on). Keys `enabled` (legacy `cond_goal`), `looks`, `ask_when_unsure`, `prompt`, `q_where`, `q_unsure`, `say_seen`,
-`say_not_seen`. Hooks `on_understand_schema`, `on_understand_prompt`, `on_goals`; lab flag `cond_goal`: `{object, at, place, seen, holds}`. Module: `robot_agent/options/cond_goal.py`.
+`say_not_seen`, `source`, `assumed`. Hooks `on_understand_schema`, `on_understand_prompt`, `on_goals`; lab flag `cond_goal`: `{object, at, place, seen, holds}`. Module: `robot_agent/options/cond_goal.py`.
 
 ### `cond_extract`
 A request with a condition word is split by ONE extra model call and handed to `cond_goal` (default off; D3 layer L9). The reader stays unchanged (it has no `when` field; an untrained reader turns "if X is at P, do A,
@@ -242,9 +244,11 @@ run's LLM budget) with the request and the reader's numbered goals; the fixed JS
 No condition word, no prompt, no goals, a goal with a `when` already, or a second pass of the same run: no extra call (a later reading of the same run with the same number of goals gets the first plan applied again). Non-JSON, `conditional` false, bad or clashing indexes, no object / `present` / branch goal: goals unchanged.
 Real but unclear (`unsure`, or the place is missing or not one the robot knows): the person is asked once (`q_unclear`, phrase key `cond_unclear`, slot `{object}`; no text or `ask_when_unsure` false = not asked); a place the robot knows in the answer
 completes the condition, any other answer leaves the reader's goals. Pack data (manifest `planner.options.cond_extract.<key>`): `prompt` (slots `{request}`, `{goals}`), `clauses` (`{lang: {"condition": regex | [regex], "source" | "assumed": true}}`, added to the
-language packs' `patterns.condition`; an entry with neither label is not used), `q_unclear`. Empty pack = the option does nothing. Use `cond_goal` WITHOUT its `prompt` key with it (and its `q_where`, `q_unsure`). Keys `enabled` (legacy `cond_extract`),
-`ask_when_unsure`, `prompt`, `clauses`, `q_unclear`. Hook `on_goals`; lab flag `cond_extract`: `{state, object, at, if, else, drop}`. Module: `robot_agent/options/cond_extract.py`.
-Its pack data is read through its keys: a host that merges it into a loop already built calls `refresh_options` ("Keys and where they come from"), else the option makes no call.
+language packs' `patterns.condition`; an entry with neither label is not used), `q_unclear`. `prompt` and `q_unclear` are used only when labelled: `source` (a string) or `assumed: true` in the section
+`planner.options.cond_extract` (or the run options `cond_extract.source` / `cond_extract.assumed`); unlabelled = the option does nothing. Empty pack = the option does nothing. Use `cond_goal` WITHOUT its `prompt` key with it (and its `q_where`, `q_unsure`). Keys `enabled` (legacy `cond_extract`),
+`ask_when_unsure`, `prompt`, `clauses`, `q_unclear`, `source`, `assumed`. Hook `on_goals`; lab flag `cond_extract`: `{state, object, at, if, else, drop}`. Module: `robot_agent/options/cond_extract.py`.
+Its pack data is read through its keys, and a key the loop resolved empty is read again from the manifest at run time (as the D2 options do): a host that merges the data into a loop already built gets a working option with or
+without `refresh_options` ("Keys and where they come from").
 
 ### `gate_prune`
 An Open / Close of a place the ENV declares not openable is dropped (default off). The planner opens a shelf or a table; the skill refuses and the run replans or gives up.

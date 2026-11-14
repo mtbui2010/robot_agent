@@ -14,16 +14,19 @@ read-back counts them as covered and a re-sampled reading does not bring them ba
 Generic: no object, place or word of a language. All the texts are pack data (manifest ``planner.options.cond_goal.<key>``, localised by the
 phrase key like every robot phrase): ``prompt`` (the lines added to the understand prompt before ``Task:``), ``q_where`` (``cond_where``,
 slot ``{object}``), ``q_unsure`` (``cond_unsure``, slots ``{object}``, ``{place}``), ``say_seen`` (``cond_seen``), ``say_not_seen``
-(``cond_not_seen``). No ``prompt`` = the option changes neither the schema nor the prompt; an empty question = not asked; an empty sentence =
-nothing said. Needs the pack's action role ``move`` (none = the condition is read as absent). Use it with a reader trained on ``when``.
+(``cond_not_seen``). The texts are used only when the section (or the run options) carries ``source`` (a string) or ``assumed: true``; unlabelled
+texts count as none. A text the loop resolved empty is read again from the manifest at run time. No ``prompt`` = the option changes neither the
+schema nor the prompt; an empty question = not asked; an empty sentence = nothing said. Needs the pack's action role ``move`` (none = the
+condition is read as absent). Use it with a reader trained on ``when``.
 
 Hooks: ``on_understand_schema``, ``on_understand_prompt``, ``on_goals``. Keys: ``enabled`` (legacy ``cond_goal``), ``looks`` (2),
-``ask_when_unsure`` (true), ``prompt``, ``q_where``, ``q_unsure``, ``say_seen``, ``say_not_seen``. Lab flag ``cond_goal``.
+``ask_when_unsure`` (true), ``prompt``, ``q_where``, ``q_unsure``, ``say_seen``, ``say_not_seen``, ``source``, ``assumed``. Lab flag ``cond_goal``.
 """
 
 from __future__ import annotations
 
 from robot_agent.core.options import STOP, Key, Option, OptionSpec, register
+from robot_agent.core.planning import pack_data
 
 SPEC = OptionSpec(
     name="cond_goal",
@@ -34,7 +37,9 @@ SPEC = OptionSpec(
           Key("q_where", "str", ""),
           Key("q_unsure", "str", ""),
           Key("say_seen", "str", ""),
-          Key("say_not_seen", "str", "")),
+          Key("say_not_seen", "str", ""),
+          Key("source", "str", ""),
+          Key("assumed", "bool", False)),
     hooks=("on_understand_schema", "on_understand_prompt", "on_goals"),
     services=("refused_goals", "goal_dropped"),
     order=20,
@@ -65,18 +70,22 @@ def without_when(g) -> dict:
 
 
 class CondGoal(Option):
+    def _text(self, key) -> str:
+        """The pack text ``key``: only when labelled (``source`` / ``assumed``), read again from the manifest when the resolved key is empty."""
+        return str(pack_data.labelled_keys(SPEC, self.cfg, pack_data.planner_of(self.svc), (key,))[key] or "")
+
     # ── what the reader is asked for ─────────────────────────────────────
     def on_understand_schema(self, schema):
         """``schema`` with the optional ``when`` after the goal's last property; None (unchanged) without pack prompt text."""
         items = ((schema.get("properties") or {}).get("goals") or {}).get("items")
-        if not self.cfg["prompt"].strip() or not isinstance(items, dict) or "properties" not in items:
+        if not self._text("prompt").strip() or not isinstance(items, dict) or "properties" not in items:
             return None
         items["properties"]["when"] = {**_WHEN, "properties": dict(_WHEN["properties"])}
         return schema
 
     def on_understand_prompt(self, text):
         """The prompt template with the pack's lines before ``Task:`` (braces escaped: the template is formatted next)."""
-        extra = self.cfg["prompt"].strip()
+        extra = self._text("prompt").strip()
         if not extra or _MARK not in text:
             return None
         return text.replace(_MARK, "\n" + extra.replace("{", "{{").replace("}", "}}") + "\n" + _MARK, 1)
@@ -123,7 +132,7 @@ class CondGoal(Option):
         obj = w["object"]
         place = self.svc.ground_place(run, w["at"])
         if not place:
-            place = self.svc.ground_place(run, self._ask(run, "cond_where", self.cfg["q_where"], object=obj))
+            place = self.svc.ground_place(run, self._ask(run, "cond_where", self._text("q_where"), object=obj))
         seen = self._go_and_look(run, obj, place) if place else None
         stop = self.svc.cancelled(run)
         if stop:
@@ -131,13 +140,13 @@ class CondGoal(Option):
             return STOP
         holds = _UNKNOWN if not place else bool(seen) and seen[-1]
         if place and (seen is None or self._unsure(run, obj, place, seen)):
-            said = yes_no(self._ask(run, "cond_unsure", self.cfg["q_unsure"], object=obj, place=place))[0]
+            said = yes_no(self._ask(run, "cond_unsure", self._text("q_unsure"), object=obj, place=place))[0]
             holds = _UNKNOWN if said is None else said
         self.svc.lab("cond_goal", object=obj, at=w["at"], place=place or "", seen=seen, holds=holds)
         return holds
 
     def _say(self, run, holds, obj, place):
-        key, text = ("cond_seen", self.cfg["say_seen"]) if holds else ("cond_not_seen", self.cfg["say_not_seen"])
+        key, text = ("cond_seen", self._text("say_seen")) if holds else ("cond_not_seen", self._text("say_not_seen"))
         ph = self._phrase(key, text, object=obj, place=place)
         return [run.ev("status", msg=str(ph), say=self.svc.in_lang(ph, run.lang))] if ph else []
 
@@ -155,7 +164,7 @@ class CondGoal(Option):
 
     def _cannot_tell(self, run, w):
         """Flow: the run ends as failed, saying the question: the robot does not know the condition and does not guess."""
-        ph = self._phrase("cond_unsure", self.cfg["q_unsure"], object=w["object"], place=w["at"])
+        ph = self._phrase("cond_unsure", self._text("q_unsure"), object=w["object"], place=w["at"])
         yield self.svc.finish(run, "failed", msg=f"cannot tell whether the {w['object']} is at {w['at']}",
                               **({"say": self.svc.in_lang(ph, run.lang)} if ph else {}))
         return STOP

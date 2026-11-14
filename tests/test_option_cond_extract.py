@@ -24,7 +24,7 @@ def answer(**kw):
 
 
 def make(reply, task="if the urn is in the hall, put it on the shelf, otherwise in the crate", lang="en", answers=(), prompt=PROMPT, ask=ASK,
-         declared=None, **opts):
+         declared=None, label=True, **opts):
     """(option, run, log): a stub of the services; ``reply`` is the model's answer (a dict, or None = no answer)."""
     log = NS(calls=[], asked=[], labs=[])
     ans = list(answers)
@@ -41,7 +41,7 @@ def make(reply, task="if the urn is in the hall, put it on the shelf, otherwise 
              ground_place=lambda run, t: t if t in PLACES else None, goal_phrase=lambda g, places: f"put {g['object']} to {g['to']}",
              request_english=lambda run: "")
     planner = {"options": {"cond_extract": {"clauses": declared}}} if declared else None
-    keys = {"cond_extract": "1", "cond_extract.prompt": prompt, "cond_extract.q_unclear": ask, **opts}
+    keys = {"cond_extract": "1", "cond_extract.prompt": prompt, "cond_extract.q_unclear": ask, **({"cond_extract.assumed": "1"} if label else {}), **opts}
     run = NS(task=task, lang=lang, goals=[dict(KEEP), dict(PUT)], places=NS(), filtered=[])
     return CondExtract(resolve(SPEC, keys, {}, planner), svc), run, log
 
@@ -75,6 +75,15 @@ def test_cond_extract_empty_pack_no_prompt_or_no_condition_words_does_nothing_em
     opt, run, log = make(answer())
     run.goals = []
     assert go(opt, run) == ([], None) and log.calls == []
+
+
+def test_cond_extract_unlabelled_prompt_and_question_are_not_used_empty():
+    opt, run, log = make(answer(), label=False)                                    # run options without source / assumed: no extraction
+    assert go(opt, run) == ([], None) and log.calls == [] and run.goals == [KEEP, PUT]
+    opt, run, log = make(answer(), label=False, **{"cond_extract.source": "  "})    # a blank source is no label
+    assert go(opt, run) == ([], None) and log.calls == []
+    opt, run, log = make(answer(), label=False, **{"cond_extract.source": "made-up pack, test"})
+    assert go(opt, run) == ([], None) and len(log.calls) == 1
 
 
 # ── the extraction ────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -196,7 +205,7 @@ TASK = "If the urn is not on the dining table, put it on the dining table."
 GOAL = {"type": "on", "object": "mug", "from": "", "to": "dining table"}
 EXTRACT = {"conditional": True, "object": "mug", "at": "dining table", "present": False, "if_goals": [1], "else_goals": [], "drop": [], "unsure": False}
 PLAN = steps(f"MoveTo {DS}", "Find mug", "Pick mug", f"MoveTo {DT}", f"Place {DT}")
-LOOP_OPTS = {"cond_extract": "1", "cond_extract.prompt": PROMPT, "cond_goal": "1"}
+LOOP_OPTS = {"cond_extract": "1", "cond_extract.prompt": PROMPT, "cond_extract.assumed": "1", "cond_goal": "1"}
 
 
 def loop_run(make_assist, env, house, **opts):
@@ -274,13 +283,13 @@ MF_OPTS = {"cond_extract": "1", "cond_goal": "1"}                               
 UNSURE = {**EXTRACT, "at": "", "unsure": True}
 
 
-def manifest_run(make_assist, env, monkeypatch, house, task=TASK, extract=EXTRACT, refresh=True, answers=()):
+def manifest_run(make_assist, env, monkeypatch, house, task=TASK, extract=EXTRACT, refresh=True, answers=(), label=None):
     from robot_agent.core.planning.option_services import refresh_options
     llm = FakeLLM((r"EXTRACTX", extract), default={"status": "clear", "reason": "", "question": "", "goals": [GOAL]})
     robot = FakeRobot(env, house, answers=list(answers))
     loop = make_assist(robot, llm, ScriptedPlanner(PLAN), **MF_OPTS)
     planner = dict(loop.robot.manifest.planner or {})
-    options = {**(planner.get("options") or {}), "cond_extract": {"prompt": PROMPT, "q_unclear": ASK}}
+    options = {**(planner.get("options") or {}), "cond_extract": {"prompt": PROMPT, "q_unclear": ASK, **({"assumed": True} if label is None else label)}}
     monkeypatch.setattr(loop.robot.manifest, "planner", {**planner, "action_roles": {"move": "MoveTo", "find": "Find"}, "options": options})
     if refresh:
         refresh_options(loop, MF_OPTS)
@@ -299,9 +308,18 @@ def test_cond_extract_prompt_only_in_a_manifest_merged_after_build_one_call_per_
     assert not any(t[0] in ("pick", "place") for t in robot.trace)                  # the object already at the goal place stays unmoved
 
 
-def test_cond_extract_prompt_only_in_a_manifest_merged_after_build_is_inert_without_the_refresh_off(make_assist, env, monkeypatch):
+def test_cond_extract_prompt_only_in_a_manifest_merged_after_build_fires_without_the_refresh_too(make_assist, env, monkeypatch):
+    # the keys were resolved before the data was there; the option reads an empty key again from the manifest at run time (as the D2 options do)
     robot, llm, evs, lab = manifest_run(make_assist, env, monkeypatch, {"mug": DT}, refresh=False)
-    assert calls(llm) == 0 and lab == []                                  # the cause: the keys were resolved before the data was there
+    assert calls(llm) == 1 and len(lab) == 1 and evs[-1]["status"] == "success"
+
+
+@pytest.mark.parametrize("refresh", [True, False])
+def test_cond_extract_unlabelled_prompt_in_the_manifest_is_not_used_empty(make_assist, env, monkeypatch, refresh):
+    robot, llm, evs, lab = manifest_run(make_assist, env, monkeypatch, {"mug": DT}, refresh=refresh, label={})
+    assert calls(llm) == 0 and lab == [] and evs[-1]["event"] == "done"
+    robot, llm, evs, lab = manifest_run(make_assist, env, monkeypatch, {"mug": DT}, refresh=refresh, label={"source": "made-up pack, test"})
+    assert calls(llm) == 1 and len(lab) == 1
 
 
 def test_cond_extract_prompt_only_in_the_manifest_no_keyword_zero_calls(make_assist, env, monkeypatch):
