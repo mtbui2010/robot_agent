@@ -14,7 +14,7 @@ CLAUDE.md rules 13-15. The reference for the flat run options and manifest keys 
 | `Registry`, `register` | `core/options/registry.py` | the list of options; built-in ones from `robot_agent/options/__init__.py`, others by entry point group `robot_agent.options` |
 | `Dispatcher` | `core/options/dispatch.py` | builds the enabled options of one loop, calls their hooks in `order` |
 | `Services` | `core/options/services.py` | the interface an option uses to ask the loop for something (`LoopServices` in `core/planning/option_services.py` implements it) |
-| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words` so far |
+| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words`, `cond_goal` so far |
 
 `python -m robot_agent.core.options list` prints the registered options, their keys and hooks.
 `python -m robot_agent.core.options check MANIFEST.yaml` reports `planner.options` entries that name no option or key.
@@ -72,7 +72,9 @@ dropped. A *flow* hook is a generator (`yield from`): it may yield run events an
 | `on_ground(mode, places, to)` | transform | the delivery mode for a goal to a person | `reach_delivery` |
 | `on_plan(steps, run)` | transform | the grounded plan, before `plan_tidy`: the steps, or None (unchanged) | `place_find`, `precond_repair`, `gate_prune` |
 | `on_where_answer(run, obj, ans)` | decide, flow | the answer to the engine's own re-asked "I couldn't find the X. Where is it?": the place to go to, or None | `ask_source` (`use_room`, `clarify_unusable`) |
-| `on_goals(run)` | decide, flow | understood goals, before the read-back and the grounding | `hazard` (the gate), `ask_source` (asks where an object is), `goal_words` (asks when a name is an object and a place) |
+| `on_understand_schema(schema)` | transform | the understand call's output schema (a fresh dict): options add optional fields; None = unchanged | `cond_goal` (`when`) |
+| `on_understand_prompt(text)` | transform | the understand prompt template, before `.format` (escape braces): options add lines; None = unchanged | `cond_goal` |
+| `on_goals(run)` | decide, flow | understood goals, before the read-back and the grounding | `hazard` (the gate), `ask_source` (asks where an object is), `cond_goal` (looks at the place of a `when`), `goal_words` (asks when a name is an object and a place) |
 | `on_issues(issues, run, goals)` | transform | the read-back's issues (`understand.find_issues` plus the loop's extras): the list, or None (unchanged) | `ask_focus`, `entity_cover` |
 | `on_goal_edit(run, text)` | observe | a correction is about to be read | `unapplied_change` |
 | `on_goal_reread(run, text, understood, goals, q)` | observe | the understand LLM re-read a correction | `unapplied_change` |
@@ -152,6 +154,20 @@ moved to (a MoveTo of the plan) is removed from the plan; a Find of a thing, or 
 The gate's removal of a repeated fetch keeps the steps after it (default off). `plan_repair.op_dedupe` removes a Find / Pick of an object the plan already placed at its goal; with no
 release after the repeat the cut ran to the LAST step of the plan and removed the way home (the final MoveTo). With the option the cut ends at the repeat's own Find / Pick; a repeat followed
 by a release is cut as before. No pack data. Key `enabled`. Hook `on_start` (declared only); service `keep_after_dedupe()` (read by the gate's repair as `keep_end`). Module: `robot_agent/options/dedupe_keep_end.py`.
+
+### `cond_goal`
+A request with a condition ("if the spoon is on the table, put it away; if not, leave it") is decided by the robot looking, not by the reader guessing (default off).
+The understand schema gets an OPTIONAL object `when` `{object, at, present}` on a goal, written after `content` (key order: the grammar of the Ollama format follows `properties`,
+required keys first; `when` is last, so a goal with no condition is written exactly as before). Meaning: do this goal only if `object` is (`present` true) or is not (false) at `at`.
+Before the read-back the robot goes to `at` (role `move`), looks up to `looks` times (default 2, stops at the first sighting), keeps the goals whose `present` equals what it saw, drops the
+others (they are listed in `run.filtered`) and removes `when` from every goal. Unsure = the two looks differ (a miss, then a sighting), or the object memory has the object at `at` and no
+look saw it: it asks once (`ask_when_unsure`, default true) and only a yes counts. No answer, no question text, no `move` role, a place that cannot be grounded (asked once with
+`q_where`): absent, the safe side (the conditional goal is not done). If no goal is left the run ends `success` with nothing done. An incomplete `when` (a missing key, a non-boolean) is no condition.
+Pack data (manifest `planner.options.cond_goal.<key>`, or a run option `cond_goal.<key>`; no language in the code): `prompt` (lines added to the understand prompt before `Task:`; none = the option changes
+neither schema nor prompt), `q_where` (phrase key `cond_where`, slot `{object}`), `q_unsure` (`cond_unsure`, slots `{object}`, `{place}`), `say_seen` (`cond_seen`), `say_not_seen`
+(`cond_not_seen`); an empty text = not asked / not said; the other languages come from the pack's i18n under the phrase key. Use it with a reader trained on `when` (an older reader may ignore it or
+use it wrongly: measure it on requests with no condition before turning it on). Keys `enabled` (legacy `cond_goal`), `looks`, `ask_when_unsure`, `prompt`, `q_where`, `q_unsure`, `say_seen`,
+`say_not_seen`. Hooks `on_understand_schema`, `on_understand_prompt`, `on_goals`; lab flag `cond_goal`: `{object, at, place, seen, holds}`. Module: `robot_agent/options/cond_goal.py`.
 
 ### `gate_prune`
 An Open / Close of a place the ENV declares not openable is dropped (default off). The planner opens a shelf or a table; the skill refuses and the run replans or gives up.

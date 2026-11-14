@@ -660,7 +660,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         # the language layer (input_pivot): the task and the user's answers as the model reads them
         task_text, pivot_orig, dlines = self.language.understand_view(
             task, dialogue, lambda t, en: f"Robot: {t if en else self._heard_as(t)}", pivot=pivot)
-        prompt = self._flag_prompt(UNDERSTAND_PROMPT).format(
+        prompt = self.options.transform("on_understand_prompt", self._flag_prompt(UNDERSTAND_PROMPT)).format(
             abilities=self.robot.robot_description(), cannot=self._cannot_line(),
             goal_kinds=goal_kinds.prompt_lines(self._kinds()),
             # no object memory here: a 7B model refused / asked about every object it did not list
@@ -930,7 +930,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             schema["properties"] = {k: schema["properties"][k] for k in
                                     list(first) + [k for k in schema["properties"] if k not in first]}
             schema["required"] = list(first) + [k for k in schema["required"] if k not in first]
-        return schema
+        return self.options.transform("on_understand_schema", schema)       # e.g. cond_goal: the optional `when`
 
     def _cannot_do(self, goals) -> Optional[str]:
         """Why the robot cannot do these goals (an action a goal kind needs is not in its manifest),
