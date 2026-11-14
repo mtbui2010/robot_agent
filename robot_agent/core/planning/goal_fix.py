@@ -133,6 +133,9 @@ def shared_listener(goals: list, text: str, places) -> tuple:
     delivery: "tell X to ..., and bring me the cup" names X once, the recipient of the cup is the speaker. A
     delivery goal to a person who is also a say goal's listener, with only that one mention of them in the words
     and the speaker known from the ENV, goes to the speaker (the model took the last person it had read)."""
+    rule = getattr(places, "listener_rule", None)        # option recipient_keep: its evidence rule takes the place of this one
+    if rule is not None:
+        return rule(goals, text)
     from .persons import speaker_key
     sk, guard = speaker_key(places), getattr(places, "guard", None)
     if not sk:

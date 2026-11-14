@@ -14,7 +14,7 @@ CLAUDE.md rules 13-15. The reference for the flat run options and manifest keys 
 | `Registry`, `register` | `core/options/registry.py` | the list of options; built-in ones from `robot_agent/options/__init__.py`, others by entry point group `robot_agent.options` |
 | `Dispatcher` | `core/options/dispatch.py` | builds the enabled options of one loop, calls their hooks in `order` |
 | `Services` | `core/options/services.py` | the interface an option uses to ask the loop for something (`LoopServices` in `core/planning/option_services.py` implements it) |
-| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words`, `cond_goal` so far |
+| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words`, `cond_goal`, `recipient_keep` so far |
 
 `python -m robot_agent.core.options list` prints the registered options, their keys and hooks.
 `python -m robot_agent.core.options check MANIFEST.yaml` reports `planner.options` entries that name no option or key.
@@ -155,6 +155,15 @@ The gate's removal of a repeated fetch keeps the steps after it (default off). `
 release after the repeat the cut ran to the LAST step of the plan and removed the way home (the final MoveTo). With the option the cut ends at the repeat's own Find / Pick; a repeat followed
 by a release is cut as before. No pack data. Key `enabled`. Hook `on_start` (declared only); service `keep_after_dedupe()` (read by the gate's repair as `keep_end`). Module: `robot_agent/options/dedupe_keep_end.py`.
 
+### `recipient_keep`
+A delivery's recipient moves to the speaker only on evidence (default off; D3 layer L10). The engine rule `goal_fix.shared_listener` moved the recipient of a delivery to the speaker whenever
+that person is also a message's listener and the words name them once ("bring him the cup, and let him know": the pronoun is no mention). With the option the move needs a recipient word of the
+language packs (`lexicon.RECIPIENT` and the robot's `recipient_words` phrase) that is itself a first-person word (`lexicon.FIRST_PERSON`: "me", "get me", a first-person pronoun with its case
+particle); a delivery verb or "here" alone says nothing about who gets the object. Without evidence the reader's recipient stays. With evidence and the person named twice the two readings disagree:
+one question in `on_goals` (the existing `q_which_reading` phrase; the answer decides by the same evidence) when the run has no answer yet and `ask_when_unsure` is on. No pack data of its own; no
+first-person words in the packs = the recipient always stays. Keys `enabled` (legacy `recipient_keep`), `ask_when_unsure` (true). Hooks `on_start` (sets `places.listener_rule`, which
+`goal_fix.shared_listener` runs in place of its own rule), `on_goals` (the question). Lab flag `recipient_keep`: `{rule, person}`. Module: `robot_agent/options/recipient_keep.py`.
+
 ### `cond_goal`
 A request with a condition ("if the spoon is on the table, put it away; if not, leave it") is decided by the robot looking, not by the reader guessing (default off).
 The understand schema gets an OPTIONAL object `when` `{object, at, present}` on a goal, written after `content` (key order: the grammar of the Ollama format follows `properties`,
@@ -242,7 +251,7 @@ planner:
 `schedule_s` replaces the `recovery.wait` schedule for that kind (the wait action is still the pack's `recovery.wait.action`; read where
 `wait_on_robot` runs the wait). An empty list sends no wait command: the pack says waiting does not help. `tries` and `action` replace the
 policy table's `retries` and first answer for that kind. A kind with no entry, a bad entry or no data: the engine's behaviour, unchanged.
-Hook `on_start` (no effect), services `wait_schedule(run, schedule)`, `recovery_rule(run, code, rule)`. Keys `enabled` (legacy `hw_wait`), `kinds` (dict, manifest only). Lab flag `hw_wait`:
+Hook `on_start` (no effect), services `wait_schedule(run, schedule)`, `recovery_rule(run, code, rule)`, `more_tries(run, code, n)` (D3: an unhealthy robot after a wait does not stop the run while the declared `tries` are left). Keys `enabled` (legacy `hw_wait`), `kinds` (dict, manifest only). Lab flag `hw_wait`:
 `{kind, schedule_s, tries, action}`. Limit: the schedule needs `wait_on_robot` and a declared `recovery.wait`; without them the poll stays.
 Data with neither `source` nor `assumed: true` (on the block or on a kind) is not used. Module: `robot_agent/options/hw_wait.py`.
 
