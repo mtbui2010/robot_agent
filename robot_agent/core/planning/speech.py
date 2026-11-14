@@ -41,6 +41,7 @@ CORE_PHRASES = {
     "q_repeat": "Sorry, I didn't catch that. Could you say it again?",
     "q_silence": "Sorry, I didn't hear you.",
     "q_did_you_mean": "Did you mean the {object}?",
+    "q_which_name": "Did you mean {options}?",
     "q_what_bring": "What should I bring?",
     "q_coverage": "You also asked me for this, but I have not done it: {what}. Should I do it now?",
     "q_confirm": "{summary} Is that right?",
@@ -226,11 +227,15 @@ def _fmt(s: str, slots: dict) -> str:
 
 
 def phrase(robot, key: str, lang: str) -> Optional[str]:
-    """The robot's phrase for ``key`` in ``lang`` (its i18n), the core English one for en, else None."""
+    """The robot's phrase for ``key`` in ``lang`` (its i18n), else the language pack's own (block ``speech``, labelled data of the pack),
+    the core English one for en, else None."""
     lg = (lang or "en")[:2]
     by = ((getattr(getattr(robot, "i18n", None), "phrases", None) or {}).get(key) or {}) if robot is not None else {}
     if by.get(lg):
         return by[lg]
+    own = langdata.block(lg, "speech").get(key)
+    if isinstance(own, str) and own:
+        return own
     return CORE_PHRASES.get(key) if lg == "en" else None
 
 

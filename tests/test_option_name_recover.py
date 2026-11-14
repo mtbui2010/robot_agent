@@ -7,7 +7,7 @@ import pytest
 from fakes import FakeLLM, FakeRobot, ScriptedPlanner, run_task, steps
 from robot_agent.core.options import REGISTRY, STOP
 from robot_agent.core.options.config import resolve
-from robot_agent.core.planning import langdata
+from robot_agent.core.planning import langdata, speech
 from robot_agent.core.planning.assist_loop import ASSIST_OPTIONS, Places
 from robot_agent.options import asr_guard, name_recover
 from robot_agent.options.asr_guard import SPEC as GSPEC, AsrGuard
@@ -16,7 +16,8 @@ from robot_agent.options.name_recover import SPEC, NameRecover
 PLACES = Places({"stool@loft": {"aliases": ["perch"]}})
 CAT = ("kettle", "ladle", "red mug", "teapot")
 # a made-up script: the letters of a name are "syllables" of three code points; ``zq`` declares the letters inside one as the unit
-ZQ = {"asr": {"hole": [r"\bkal\s+(?:ze|mo)\b", r"\bkal\s*$"], "distance_unit": "jamo"}}
+ZQ = {"asr": {"hole": [r"\bkal\s+(?:ze|mo)\b", r"\bkal\s*$"], "distance_unit": "jamo"},
+      "speech": {"q_did_you_mean": "zq {object} ru?", "q_which_name": "zq {options} ru?", "assumed": True}}
 
 
 @pytest.fixture
@@ -57,12 +58,62 @@ def test_registered_default_off_and_the_off_path_changes_nothing_off(make_assist
     assert not cfg["enabled"]
 
 
-def test_a_unique_near_name_is_recovered_one_wrong_letter_and_two():
+def test_a_unique_near_name_is_asked_and_a_yes_takes_it_one_wrong_letter_and_two():
     opt, run, svc = make()
+    svc.answer = "yes"
     gs = [goal("kettel"), goal("tealpot")]                    # a swap of neighbours; one letter too many
     go(opt, run, gs)
-    assert [g["object"] for g in gs] == ["kettle", "teapot"] and not svc.asked
+    assert [g["object"] for g in gs] == ["kettle", "teapot"]
+    assert svc.asked == ["Did you mean the kettle?", "Did you mean the teapot?"]
     assert [k for a, k in svc.labs if k.get("took") == "kettle"]
+
+
+def test_a_real_word_near_a_catalogue_name_is_asked_never_renamed_silently():
+    """The catalogue is only what the robot has seen (object memory): a real word one letter from a known name ("handle" / "candle")
+    may be a thing the robot has not seen yet. Without a declared complete catalogue and word list it is asked, and a no keeps it."""
+    opt, run, svc = make(())
+    run.memory = NS(data={"objects": {"candle": {}, "kettle": {}}})
+    svc.answer = "no"
+    gs = [goal("handle"), goal("nettle")]
+    go(opt, run, gs)
+    assert [g["object"] for g in gs] == ["handle", "nettle"] and len(svc.asked) == 2
+    go(opt, run, [goal("handle")])                                                  # settled for the run: not asked again
+    assert len(svc.asked) == 2
+
+
+def test_one_near_name_is_taken_without_a_question_only_for_a_complete_catalogue_and_no_word_of_the_language(zq, monkeypatch):
+    cat = ("가나다", "라마바")
+    monkeypatch.setitem(langdata._CACHE, "zq", {**ZQ, "asr": {**ZQ["asr"], "words": ["라마비"]}})
+    opt, run, svc = make(cat, lang="zq", complete=True)
+    gs = [goal("가난다"), goal("라마비")]                          # a garble, and a word of the language near a catalogue name
+    go(opt, run, gs)
+    assert gs[0]["object"] == cat[0] and gs[1]["object"] == "라마비" and len(svc.asked) == 1
+    opt, run, svc = make(cat, lang="zq")                                              # not declared complete: asked
+    gs = [goal("가난다")]
+    go(opt, run, gs)
+    assert gs[0]["object"] == "가난다" and len(svc.asked) == 1
+    opt, run, svc = make(complete=True)                                               # complete, but no word list declared: asked
+    go(opt, run, [goal("kettel")])
+    assert len(svc.asked) == 1
+
+
+def test_the_questions_are_phrases_korean_renders_from_its_pack_and_no_text_means_no_question():
+    q2 = name_recover.question(["lamp", "limp"])
+    assert q2.key == "q_which_name" and str(q2) == "Did you mean lamp or limp?" and q2.ask["options"] == ["lamp", "limp"]
+    assert speech.render(q2, "ko") == "lamp 아니면 limp 말씀하시는 거예요?"            # the pack's phrase: no translation call
+    q1 = name_recover.question(["kettle"])
+    assert q1.key == "q_did_you_mean" and str(q1) == "Did you mean the kettle?"
+    opt, run, svc = make(lang="xx")                                                   # no text for the question in the language
+    gs = [goal("kettel"), goal("lomp")]
+    assert go(opt, run, gs)[0] is None and gs[0]["object"] == "kettel" and not svc.asked
+
+
+def test_pack_phrase_comes_after_the_robots_own_and_a_pack_without_phrases_changes_nothing_empty(zq, monkeypatch):
+    robot = NS(i18n=NS(phrases={"q_which_name": {"zq": "own {options}"}}))
+    assert speech.phrase(robot, "q_which_name", "zq") == "own {options}" and speech.phrase(None, "q_which_name", "zq") == "zq {options} ru?"
+    monkeypatch.setitem(langdata._CACHE, "zq", {"asr": ZQ["asr"]})
+    assert speech.phrase(None, "q_which_name", "zq") is None and speech.phrase(None, "q_repeat", "zq") is None
+    assert speech.phrase(None, "q_which_name", "en") == speech.CORE_PHRASES["q_which_name"]
 
 
 def test_an_exact_name_or_a_name_that_holds_one_is_untouched_and_a_short_name_never_matched():
@@ -97,10 +148,11 @@ def test_none_within_the_limit_asks_nothing_and_changes_nothing():
 def test_made_up_script_the_unit_is_the_letters_inside_a_syllable(zq):
     cat = ("가나다", "라마바")                          # made-up names of three syllables each
     opt, run, svc = make(cat, lang="zq")
+    svc.answer = "yes"
     near_one = "가난다"                                             # one letter inside the middle syllable differs
     gs = [goal(near_one), goal("가버다")]                           # the second differs in two letters of one syllable
     go(opt, run, gs)
-    assert gs[0]["object"] == cat[0] and not svc.asked
+    assert gs[0]["object"] == cat[0] and gs[1]["object"] == cat[0] and len(svc.asked) == 2   # two letters of one syllable: within the limit
     assert name_recover.unit_fn(("zq",)) is not name_recover.unit_fn(("xx",))       # the unit is the pack's: letters inside a syllable, or characters
     assert name_recover.unit_fn(("xx",))(near_one) == near_one
 
@@ -109,10 +161,15 @@ def test_empty_catalogue_or_foreign_data_does_nothing_empty():
     opt, run, svc = make(objects=())
     gs = [goal("kettel")]
     assert go(opt, run, gs)[0] is None and gs[0]["object"] == "kettel"
-    opt, run, svc = make(lang="xx")                                         # a language with no pack: letters, the catalogue still holds
+    opt, run, svc = make()
+    svc.answer = "yes"
     gs = [goal("kettel"), goal("hello", typ="say"), goal("perch")]
     go(opt, run, gs)
     assert [g["object"] for g in gs] == ["kettle", "hello", "perch"]       # a say goal and a place of the ENV are not names to recover
+    opt, run, svc = make(lang="xx")                                         # a language with no pack and no phrase: nothing asked, nothing changed
+    gs = [goal("kettel")]
+    go(opt, run, gs)
+    assert gs[0]["object"] == "kettel" and not svc.asked
 
 
 def test_a_cancel_while_asking_stops():

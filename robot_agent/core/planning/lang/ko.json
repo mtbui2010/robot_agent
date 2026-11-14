@@ -158,6 +158,11 @@
   "assumed": true,
   "source": "assumed: general grammar, a determiner directly followed by a case particle; the name distance counts the letters inside a syllable"
  },
+ "speech": {
+  "q_which_name": "{options} 말씀하시는 거예요?",
+  "assumed": true,
+  "source": "assumed: the robot's own questions in plain polite Korean, said when the robot pack has no phrase of its own for the key (the robot's i18n wins)"
+ },
  "patterns": {
   "into_after": "^\\s*(?:의\\s*)?(?:안|속|안쪽)|^(?:에|에다|에다가)?\\s*(?:\\S+\\s+){0,2}?\\S*넣",
   "ontop_after": "^\\s*(?:의\\s*)?위",

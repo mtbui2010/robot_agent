@@ -195,10 +195,14 @@ Lab flag `replan_guard`: `{part, subgoals | findings | dropped}`. Module: `robot
 An object name the speech recogniser garbled is matched to the robot's object catalogue (default off; D3 layer L11). After the goals are read (`on_goals`), a goal object (not a `say` goal, not a place or person of the ENV)
 that is not in the catalogue (object memory and `limits.objects`) and is not, as whole words, part of a catalogue name or holding one, is compared with the catalogue names by `understand.near_distance`
 (a swap of neighbours is one edit, a name plus 1-2 letters is one) in the pack's unit: characters, or the letters inside a syllable when the language pack declares `asr.distance_unit: "jamo"`. ONE name within
-`max_edits` (2) and `max_ratio` (0.34 of the longer name) is taken (the read-back says it as for any goal); two or more are asked once per run ("Did you mean A or B?"), an answer that names exactly one decides, any
-other answer keeps the goal as read; none: nothing changes, nothing is asked. A name shorter than `min_len` (4) units is never matched. Not recoverable: a word that sounds alike but is spelled in another script or language,
-and a garble of more edits than the limit; those stay as read. Keys `enabled` (legacy `name_recover`), `max_edits`, `max_ratio`, `min_len`, `ask` (true), all assumed. Pack data: `asr.distance_unit` (assumed, label in the pack).
-Lab flag `name_recover`: `{said, took | asked}`. Module: `robot_agent/options/name_recover.py`.
+`max_edits` (2) and `max_ratio` (0.34 of the longer name) is asked ("Did you mean the X?", core phrase `q_did_you_mean`; a yes or the name said takes it, anything else keeps the goal as read): the catalogue is often only
+what the robot has seen, so a real word near a known name may be something it has not seen yet. It is taken without a question only when the robot declares its catalogue `complete` AND the language packs declare their
+words (`asr.words`) and no word of the name is one. Two or more are asked ("Did you mean A or B?", phrase `q_which_name`), an answer that names exactly one decides, any other answer keeps the goal as read; none: nothing
+changes, nothing is asked. A word is settled once per run (a later reading takes the same answer without a second question). The questions are phrases: the robot's i18n, else the language pack's `speech` block
+(`speech.phrase` reads it; Korean declares `q_which_name`), else the core English; no text in the run's language or `ask` off: nothing asked, nothing changed (fail open). A name shorter than `min_len` (4) units is never
+matched. Not recoverable: a word that sounds alike but is spelled in another script or language, and a garble of more edits than the limit; those stay as read. Keys `enabled` (legacy `name_recover`), `max_edits`,
+`max_ratio`, `min_len`, `ask` (true), `complete` (false), all assumed. Pack data: `asr.distance_unit`, `asr.words`, `speech` (assumed, labels in the pack).
+Lab flag `name_recover`: `{said, took, asked | near}`. Module: `robot_agent/options/name_recover.py`.
 
 ### `asr_guard`
 A request the recogniser lost is asked again, once, without calling the reader (default off; D3 layer L11, switched on with `name_recover`). New hook `on_heard` runs at the start of an understand round: an EMPTY request
