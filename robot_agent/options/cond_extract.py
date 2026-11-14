@@ -127,7 +127,9 @@ class CondExtract(Option):
         """Flow: the goals of a request with a condition word get the ``when`` of ``cond_goal`` (one model call); the person is asked once when unclear."""
         goals = getattr(run, "goals", None) or []
         done = run.__dict__.setdefault("opt", {}).setdefault("cond_extract", {})
-        if done.get("seen") or not goals or not self.cfg["prompt"].strip() or any("when" in g for g in goals) or not self._has_condition(run):
+        if done.get("seen"):                                 # a later reading of the same request: the plan of the first one is applied again, no new call
+            return self._again(run, done, goals)
+        if not goals or not self.cfg["prompt"].strip() or any("when" in g for g in goals) or not self._has_condition(run):
             return None
         done["seen"] = True                                  # one extra call per run, whatever the reader reads next
         plan = parse(self.svc.ask_model(run, self._prompt(run), SCHEMA), len(goals))
@@ -140,7 +142,16 @@ class CondExtract(Option):
             plan = {**plan, "at": at, "state": "ready"} if at else {"state": "none"}
         self.svc.lab("cond_extract", **{k: plan.get(k) for k in ("state", "object", "at", "if", "else", "drop")})
         if plan["state"] == "ready":
+            done["plan"], done["n"] = plan, len(goals)
             self._apply(run, plan)
+        return None
+
+    def _again(self, run, done, goals):
+        """A goal list read again after the first one (the person answered a question, the reader was called again): the first plan applies when the
+        list has the same number of goals and no ``when`` yet; else the goals stand (the numbers of another reading are not the plan's)."""
+        if done.get("plan") and goals and len(goals) == done.get("n") and not any("when" in g for g in goals):
+            self._apply(run, done["plan"])
+            self.svc.lab("cond_extract", state="again")
         return None
 
 

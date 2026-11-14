@@ -148,11 +148,20 @@ def test_cond_goal_a_miss_then_a_sighting_asks_once_and_a_yes_decides():
     assert log.asked == ["Is the mug at desk@study room?"] and [g["object"] for g in run.goals] == ["mug"]
 
 
-def test_cond_goal_unsure_and_no_answer_is_absent():
+def test_cond_goal_unsure_and_no_answer_is_unknown_no_branch_is_kept_and_the_run_ends_with_the_question():
     opt, run, log = stub((False, True), answer="")
-    run.goals = [{**GOAL, "when": WHEN}]
+    run.goals = [{**GOAL, "when": WHEN}, {**GOAL, "object": "cup", "when": {**WHEN, "present": False}}]
     evs, res = drain(opt.on_goals(run))
-    assert res == "stop" and evs[-1]["status"] == "success" and run.goals == []        # nothing to do: a done event, not a question
+    assert res == "stop" and evs[-1]["status"] == "failed" and "Is the mug at desk?" in str(evs[-1]["say"])
+    assert len(log.asked) == 1                                                          # asked once, and no guess about either branch
+
+
+def test_cond_goal_dropped_goals_are_served_as_refused_and_recognised_when_read_again():
+    opt, run, log = stub((True,))
+    run.goals = [{**GOAL, "when": WHEN}, {**GOAL, "object": "cup", "when": {**WHEN, "present": False}}]
+    drain(opt.on_goals(run))
+    assert opt.refused_goals(run) == [{**GOAL, "object": "cup"}]
+    assert opt.goal_dropped(run, {**GOAL, "object": "cup"}) is True and opt.goal_dropped(run, GOAL) is None
 
 
 def test_cond_goal_memory_says_there_but_the_looks_do_not_asks():
@@ -162,15 +171,19 @@ def test_cond_goal_memory_says_there_but_the_looks_do_not_asks():
     assert len(log.asked) == 1 and [g["object"] for g in run.goals] == ["cup"]
 
 
-def test_cond_goal_no_move_role_or_no_place_reads_the_condition_as_absent_without_moving():
+def test_cond_goal_no_move_role_or_no_place_cannot_tell_asks_and_keeps_no_branch_without_moving():
     opt, run, log = stub(role=None)
     run.goals = [{**GOAL, "when": WHEN}, {**GOAL, "object": "cup", "when": {**WHEN, "present": False}}]
+    evs, res = drain(opt.on_goals(run))
+    assert res == "stop" and evs[-1]["status"] == "failed" and log.steps == [] and log.looks == 0 and len(log.asked) == 1
+    opt, run, log = stub(role=None, answer="yes")                                       # the person says it is there: that decides, no look needed
+    run.goals = [{**GOAL, "when": WHEN}]
     drain(opt.on_goals(run))
-    assert [g["object"] for g in run.goals] == ["cup"] and log.steps == [] and log.looks == 0
+    assert [g["object"] for g in run.goals] == ["mug"] and log.looks == 0
     opt, run, log = stub(at="nowhere")
     run.goals = [{**GOAL, "when": {**WHEN, "at": "attic"}}]
     evs, res = drain(opt.on_goals(run))
-    assert log.asked == ["Where should I look for the mug?"] and res == "stop" and log.looks == 0
+    assert log.asked == ["Where should I look for the mug?"] and res == "stop" and evs[-1]["status"] == "failed" and log.looks == 0
 
 
 def test_cond_goal_an_incomplete_when_is_no_condition_the_goal_stays():

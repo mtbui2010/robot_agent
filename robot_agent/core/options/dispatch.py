@@ -84,6 +84,13 @@ class Dispatcher:
                 return res
         return default
 
+    def collect(self, name: str, *args) -> list:
+        """The lists every active option that serves ``name`` returns, joined in option order (a query stops at the first answer; this one asks all)."""
+        out: list = []
+        for o in self._by_service.get(name, ()):
+            out += list(getattr(o, name)(*args) or [])
+        return out
+
     def provides(self, hook: str) -> bool:
         return bool(self._by_hook[hook])
 

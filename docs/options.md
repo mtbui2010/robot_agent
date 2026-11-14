@@ -96,7 +96,7 @@ dropped. A *flow* hook is a generator (`yield from`): it may yield run events an
 `goal_words` also answers the service `goal_guard(run, goals)` (a guard with `place(name)` and `frozen(goal)`) that the engine puts on `places.guard` before the goal repairs (`goal_fix.drop_invented`, `repair_destination`, `shared_listener` read it; None = old behaviour).
 
 Services (`OptionSpec.services`, asked with `Dispatcher.query(name, *args, default=...)`): `hazard.forbids(goal, places)`,
-`hazard.refused_goals(run)`, `hazard.gate_off()`, `reach_delivery.no_refetch()`, `dedupe_keep_end.keep_after_dedupe()`. A query returns the first answer that is not None.
+`hazard.refused_goals(run)`, `hazard.gate_off()`, `reach_delivery.no_refetch()`, `dedupe_keep_end.keep_after_dedupe()`. A query returns the first answer that is not None; `Dispatcher.collect(name, *args)` joins the lists of every option that serves `name` (`refused_goals`: `hazard` and `cond_goal`).
 
 ## The options
 
@@ -208,8 +208,9 @@ The understand schema gets an OPTIONAL object `when` `{object, at, present}` on 
 required keys first; `when` is last, so a goal with no condition is written exactly as before). Meaning: do this goal only if `object` is (`present` true) or is not (false) at `at`.
 Before the read-back the robot goes to `at` (role `move`), looks up to `looks` times (default 2, stops at the first sighting), keeps the goals whose `present` equals what it saw, drops the
 others (they are listed in `run.filtered`) and removes `when` from every goal. Unsure = the two looks differ (a miss, then a sighting), or the object memory has the object at `at` and no
-look saw it: it asks once (`ask_when_unsure`, default true) and only a yes counts. No answer, no question text, no `move` role, a place that cannot be grounded (asked once with
-`q_where`): absent, the safe side (the conditional goal is not done). If no goal is left the run ends `success` with nothing done. An incomplete `when` (a missing key, a non-boolean) is no condition.
+look saw it, or the robot cannot go and look: it asks once (`ask_when_unsure`, default true); a yes or no decides. Any other answer, no answer, no question text, no `move` role and no answer, a place that cannot be
+grounded even after the one `q_where`: UNKNOWN, a third state: no branch is kept or dropped and the run ends `failed` saying the question (D3: before, this read as absent, a guess). Services `refused_goals(run)` (the goals it dropped:
+the read-back counts them as covered) and `goal_dropped(run, goal)` (a re-sampled reading does not bring them back). If no goal is left the run ends `success` with nothing done. An incomplete `when` (a missing key, a non-boolean) is no condition.
 Pack data (manifest `planner.options.cond_goal.<key>`, or a run option `cond_goal.<key>`; no language in the code): `prompt` (lines added to the understand prompt before `Task:`; none = the option changes
 neither schema nor prompt), `q_where` (phrase key `cond_where`, slot `{object}`), `q_unsure` (`cond_unsure`, slots `{object}`, `{place}`), `say_seen` (`cond_seen`), `say_not_seen`
 (`cond_not_seen`); an empty text = not asked / not said; the other languages come from the pack's i18n under the phrase key. Use it with a reader trained on `when` (an older reader may ignore it or
@@ -221,7 +222,7 @@ A request with a condition word is split by ONE extra model call and handed to `
 otherwise B" into plain goals). When the request (as said, and its English reading) holds a condition word of its language, the pack's prompt is sent once to the planner's model (service `ask_model`: no repair call, stoppable, in the
 run's LLM budget) with the request and the reader's numbered goals; the fixed JSON answer (`conditional`, `object`, `at`, `present`, `if_goals`, `else_goals`, `drop`, `unsure`) becomes the `when` field of `cond_goal` on the goals of each branch
 (the else branch gets the opposite `present`); goals in `drop` only state the condition and are removed (listed in `run.filtered`); a goal in no list is unconditional. It runs at order 15, before `cond_goal` (20): the `when` field is the hand-over, no option imports another.
-No condition word, no prompt, no goals, a goal with a `when` already, or a second pass of the same run: no extra call. Non-JSON, `conditional` false, bad or clashing indexes, no object / `present` / branch goal: goals unchanged.
+No condition word, no prompt, no goals, a goal with a `when` already, or a second pass of the same run: no extra call (a later reading of the same run with the same number of goals gets the first plan applied again). Non-JSON, `conditional` false, bad or clashing indexes, no object / `present` / branch goal: goals unchanged.
 Real but unclear (`unsure`, or the place is missing or not one the robot knows): the person is asked once (`q_unclear`, phrase key `cond_unclear`, slot `{object}`; no text or `ask_when_unsure` false = not asked); a place the robot knows in the answer
 completes the condition, any other answer leaves the reader's goals. Pack data (manifest `planner.options.cond_extract.<key>`): `prompt` (slots `{request}`, `{goals}`), `clauses` (`{lang: {"condition": regex | [regex], "source" | "assumed": true}}`, added to the
 language packs' `patterns.condition`; an entry with neither label is not used), `q_unclear`. Empty pack = the option does nothing. Use `cond_goal` WITHOUT its `prompt` key with it (and its `q_where`, `q_unsure`). Keys `enabled` (legacy `cond_extract`),

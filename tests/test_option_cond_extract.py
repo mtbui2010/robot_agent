@@ -231,3 +231,37 @@ def loop_lab(evs):
 
 def test_cond_extract_json_of_the_schema_is_a_plain_object():
     assert json.loads(json.dumps(SCHEMA))["required"] and set(SCHEMA["properties"]) >= {"conditional", "if_goals", "else_goals", "drop"}
+
+
+# ── the branch that does not hold stays dropped through the read-back and a re-read ────────────────────────────────────
+TASK2 = "If the mug is on the dining table, put it on the desk, otherwise put it in the chest."
+G_A, G_B = {"type": "on", "object": "mug", "from": "", "to": "desk"}, {"type": "on", "object": "mug", "from": "", "to": "chest"}
+EXTRACT2 = {"conditional": True, "object": "mug", "at": "dining table", "present": True, "if_goals": [1], "else_goals": [2], "drop": [], "unsure": False}
+PLAN2 = steps(f"MoveTo {DT}", "Find mug", "Pick mug", f"MoveTo {DS}", f"Place {DS}")
+
+
+def two_branch(make_assist, env, **opts):
+    llm = FakeLLM((r"EXTRACTX", EXTRACT2), default={"status": "clear", "reason": "", "question": "", "goals": [G_A, G_B]})
+    robot = FakeRobot(env, {"mug": DT})
+    loop = make_assist(robot, llm, ScriptedPlanner(PLAN2), **LOOP_OPTS, **opts)
+    loop.robot.manifest.planner["action_roles"] = {"move": "MoveTo", "find": "Find"}
+    return robot, llm, run_task(loop, TASK2, max_events=3000)
+
+
+@pytest.mark.parametrize("samples", [2, 0])
+def test_cond_extract_two_branches_the_dropped_branch_is_not_asked_about_nor_brought_back_by_the_read_back(make_assist, env, samples):
+    robot, llm, evs = two_branch(make_assist, env, understand_samples=samples)
+    assert evs[-1]["event"] == "done" and evs[-1]["status"] == "success", evs[-1]
+    assert not [e for e in evs if e.get("event") == "clarify"]                      # no question about the chest the robot just dropped
+    assert any(t[0] == "place" for t in robot.trace) and not any("chest" in str(t) for t in robot.trace)
+
+
+def test_cond_extract_the_first_plan_applies_again_to_a_later_reading_without_a_new_call():
+    opt, run, log = make(answer())
+    go(opt, run)
+    run.goals = [dict(KEEP), dict(PUT)]                                             # the reader is called again: both branches come back
+    assert go(opt, run) == ([], None) and len(log.calls) == 1
+    assert [g["when"]["present"] for g in run.goals] == [True, False]
+    run.goals = [dict(KEEP)]                                                        # another number of goals: not the plan's reading, it stands
+    go(opt, run)
+    assert run.goals == [KEEP] and len(log.calls) == 1

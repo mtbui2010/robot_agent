@@ -5,8 +5,11 @@ The understand schema gets an OPTIONAL object ``when`` {object, at, present} on 
 backend grammar, docs/home/bench/lora.md "The JSON key order": the goals without a condition are written as before). It means: do this
 goal only if ``object`` is (``present`` true) or is not (false) at ``at``. Before the read-back the robot goes to ``at``, looks (up to
 ``looks`` times), keeps the goals whose ``present`` equals what it saw, drops the others (listed in ``run.filtered``) and removes the
-``when`` field. Unsure (the two looks differ, or the object memory put it there but the look did not see it): asks the person once, if the
-pack has the question; an answer that is not a yes, no answer, or no question = absent (the safe side: the conditional goal is not done).
+``when`` field. Unsure (the two looks differ, or the object memory put it there but the look did not see it, or the robot cannot go and look): asks
+the person once, if the pack has the question. A yes or no decides. Any other answer, no answer, no question, or a place the robot does not know
+even after asking is a third state, UNKNOWN: no branch is kept, none is dropped, the run ends as failed with the question said (never a guess).
+Service ``refused_goals`` answers with the goals this option dropped, and ``goal_dropped`` says whether a goal equals one of them, so the engine's
+read-back counts them as covered and a re-sampled reading does not bring them back.
 
 Generic: no object, place or word of a language. All the texts are pack data (manifest ``planner.options.cond_goal.<key>``, localised by the
 phrase key like every robot phrase): ``prompt`` (the lines added to the understand prompt before ``Task:``), ``q_where`` (``cond_where``,
@@ -33,6 +36,7 @@ SPEC = OptionSpec(
           Key("say_seen", "str", ""),
           Key("say_not_seen", "str", "")),
     hooks=("on_understand_schema", "on_understand_prompt", "on_goals"),
+    services=("refused_goals", "goal_dropped"),
     order=20,
     enabled="enabled",
     doc="A goal with a condition (when: object at place, present or not) is decided by the robot looking at the place, not by the reader.",
@@ -42,6 +46,9 @@ _MARK = "\nTask: {task}"
 _WHEN = {"type": "object",
          "properties": {"object": {"type": "string"}, "at": {"type": "string"}, "present": {"type": "boolean"}},
          "required": ["object", "at", "present"]}
+
+
+_UNKNOWN = "unknown"          # neither present nor absent: the robot could not tell and the person did not say
 
 
 def valid_when(g):
@@ -111,7 +118,7 @@ class CondGoal(Option):
         return seen == [False, True] or (not any(seen) and self.svc.remembered(run, obj) == place)
 
     def _decide(self, run, w):
-        """Flow: does ``w.object`` hold at ``w.at`` (True / False), or STOP. Unsure and unanswered = False."""
+        """Flow: does ``w.object`` hold at ``w.at`` (True / False), _UNKNOWN when it cannot be told, or STOP."""
         from robot_agent.core.run_control import yes_no
         obj = w["object"]
         place = self.svc.ground_place(run, w["at"])
@@ -122,9 +129,10 @@ class CondGoal(Option):
         if stop:
             yield stop
             return STOP
-        holds = bool(seen) and seen[-1]
-        if seen is not None and self._unsure(run, obj, place, seen):
-            holds = yes_no(self._ask(run, "cond_unsure", self.cfg["q_unsure"], object=obj, place=place))[0] is True
+        holds = _UNKNOWN if not place else bool(seen) and seen[-1]
+        if place and (seen is None or self._unsure(run, obj, place, seen)):
+            said = yes_no(self._ask(run, "cond_unsure", self.cfg["q_unsure"], object=obj, place=place))[0]
+            holds = _UNKNOWN if said is None else said
         self.svc.lab("cond_goal", object=obj, at=w["at"], place=place or "", seen=seen, holds=holds)
         return holds
 
@@ -132,6 +140,25 @@ class CondGoal(Option):
         key, text = ("cond_seen", self.cfg["say_seen"]) if holds else ("cond_not_seen", self.cfg["say_not_seen"])
         ph = self._phrase(key, text, object=obj, place=place)
         return [run.ev("status", msg=str(ph), say=self.svc.in_lang(ph, run.lang))] if ph else []
+
+    def _dropped(self, run) -> list:
+        return run.__dict__.setdefault("opt", {}).setdefault("cond_goal_dropped", [])
+
+    def refused_goals(self, run):
+        """The goals this option dropped because their condition did not hold (counted as covered by the read-back's issue check)."""
+        return list(self._dropped(run))
+
+    def goal_dropped(self, run, goal):
+        """True when ``goal`` reads like one this option dropped (the same type, object, places and words); None otherwise."""
+        from robot_agent.core.planning.dialog_converge import goal_sig
+        return True if goal_sig([goal])[0] in goal_sig(self._dropped(run)) else None
+
+    def _cannot_tell(self, run, w):
+        """Flow: the run ends as failed, saying the question: the robot does not know the condition and does not guess."""
+        ph = self._phrase("cond_unsure", self.cfg["q_unsure"], object=w["object"], place=w["at"])
+        yield self.svc.finish(run, "failed", msg=f"cannot tell whether the {w['object']} is at {w['at']}",
+                              **({"say": self.svc.in_lang(ph, run.lang)} if ph else {}))
+        return STOP
 
     def on_goals(self, run):
         """Flow: the goals with a ``when`` are kept or dropped by what the robot sees; the ``when`` field is removed from all."""
@@ -149,10 +176,13 @@ class CondGoal(Option):
                 done[key] = yield from self._decide(run, w)
                 if done[key] is STOP:
                     return STOP
+                if done[key] == _UNKNOWN:
+                    return (yield from self._cannot_tell(run, w))
                 for ev in self._say(run, done[key], w["object"], w["at"]):
                     yield ev
             (kept if done[key] == w["present"] else dropped).append(without_when(g))
         run.goals = kept
+        self._dropped(run).extend(dropped)
         run.filtered = list(getattr(run, "filtered", None) or []) + dropped      # goal dicts, as the engine's own filters record
         if kept:
             return None

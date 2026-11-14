@@ -2306,7 +2306,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         answers = [t for w_, t in r.dialogue if w_ == "user"]
         # a place the person replaced in a read-back correction no longer counts as asked for (docs/dialog.md)
         said = without_places(" ".join([r.task, self.original or ""]), r.places, getattr(r, "replaced", ()))
-        goals = list(goals) + self.options.query("refused_goals", r, default=[])   # refused for safety: covered
+        goals = list(goals) + self.options.collect("refused_goals", r)   # refused for safety or by a condition: covered
         issues = find_issues(goals, " ".join([said] + answers), r.places,
                              english=self._object_source(r, answers), user_words=_USER_WORDS)   # objects: own words only
         if not answers and verb_lost(r.task):             # the request's verb was lost: the goals are a guess
@@ -2343,8 +2343,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             if agreed is _STOP:
                 return _STOP
             if agreed is not None:
-                keep = [g for g in agreed if not self._forbids(g, r.places)]
-                r.goals, r.unsure = (keep or r.goals), []          # a re-sample never brings back a refused goal
+                keep = [g for g in agreed if not self._forbids(g, r.places) and not self.options.query("goal_dropped", r, g)]
+                r.goals, r.unsure = (keep or r.goals), []          # a re-sample never brings back a refused or condition-dropped goal
                 return None
         if not issues or getattr(r, "issue_asked", False):
             return None
