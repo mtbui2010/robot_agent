@@ -19,7 +19,9 @@ runs at 15) goes to the place, looks and keeps the branch that matches. No optio
 Pack data (manifest ``planner.options.cond_extract.<key>``): ``prompt`` (slots ``{request}``, ``{goals}``; the model answers the fixed JSON of
 ``SCHEMA``) and ``q_unclear``, used only when the section (or the run options) carries ``source`` (a string) or ``assumed: true``, else the option
 does nothing; ``clauses`` (``{lang: {"condition": regex | [regex], "source" | "assumed": true}}``, each entry labelled). A key the loop resolved empty
-is read again from the manifest at run time. Hook ``on_goals`` (order 15). Service ``ask_model``. Keys: ``enabled`` (legacy ``cond_extract``),
+is read again from the manifest at run time. Hook ``on_goals`` (order 15). Uses the service ``ask_model``; serves ``refused_goals`` and
+``goal_dropped`` for the goals it dropped (as ``cond_goal`` does for its branches), so the read-back counts them as covered and a re-sampled
+reading does not bring them back. Keys: ``enabled`` (legacy ``cond_extract``),
 ``ask_when_unsure`` (true), ``prompt``, ``clauses``, ``q_unclear``, ``source``, ``assumed``. Lab flag ``cond_extract``: ``{state, object, at, if, else, drop}``.
 """
 
@@ -38,6 +40,7 @@ SPEC = OptionSpec(
           Key("source", "str", ""),
           Key("assumed", "bool", False)),
     hooks=("on_goals",),
+    services=("refused_goals", "goal_dropped"),
     order=15,
     enabled="enabled",
     doc="A request with a condition word is split by one extra model call into condition / goals-if / goals-else and handed to cond_goal as `when`.",
@@ -131,6 +134,18 @@ class CondExtract(Option):
                 out.append(g)
         run.goals = out
         run.filtered = list(getattr(run, "filtered", None) or []) + dropped
+        self._dropped(run).extend(g for g in dropped if g not in self._dropped(run))
+
+    def _dropped(self, run) -> list:
+        return run.__dict__.setdefault("opt", {}).setdefault("cond_extract_dropped", [])
+
+    def refused_goals(self, run):
+        """The goals this option dropped as a statement of the condition (the read-back counts them as covered)."""
+        return list(self._dropped(run))
+
+    def goal_dropped(self, run, goal):
+        """True when ``goal`` reads like one this option dropped (``goal_sig``), so a re-sampled reading does not bring it back; None otherwise."""
+        return True if dialog_converge.goal_sig([goal])[0] in dialog_converge.goal_sig(self._dropped(run)) else None
 
     def on_goals(self, run):
         """Flow: the goals of a request with a condition word get the ``when`` of ``cond_goal`` (one model call); the person is asked once when unclear."""

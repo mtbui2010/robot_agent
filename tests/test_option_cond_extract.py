@@ -291,6 +291,40 @@ def test_cond_extract_a_corrected_reading_with_the_same_count_but_other_goals_is
     assert run.goals == [{**KEEP, "when": {"object": "urn", "at": "hall", "present": True}}] and run.filtered == [PUT]
 
 
+# ── a goal that only states the condition stays dropped through the read-back's re-sample ─────────────────────────────────
+def test_cond_extract_serves_the_goals_it_dropped_as_refused_and_recognises_them_when_read_again():
+    third = {"type": "on", "object": "urn", "from": "", "to": "hall"}
+    opt, run, log = make(answer(drop=[3]))
+    assert opt.refused_goals(run) == [] and opt.goal_dropped(run, third) is None                   # nothing dropped yet: no answer
+    run.goals.append(dict(third))
+    go(opt, run)
+    assert opt.refused_goals(run) == [third] and opt.goal_dropped(run, {**third, "from": ""}) is True
+    assert opt.goal_dropped(run, KEEP) is None and opt.goal_dropped(run, {**third, "to": "shelf"}) is None
+    assert set(SPEC.services) == {"refused_goals", "goal_dropped"}
+
+
+TASK3 = "If the urn is on the desk, put the vase on the dining table and the bowl on the sofa."
+SO = "sofa@living room"
+G_URN, G_VASE, G_BOWL = ({"type": "on", "object": o, "from": "", "to": t} for o, t in (("urn", "dining table"), ("vase", "dining table"), ("bowl", "sofa")))
+EXTRACT3 = {"conditional": True, "object": "urn", "at": "desk", "present": True, "if_goals": [2], "else_goals": [], "drop": [1], "unsure": False}
+PLAN3 = steps(f"MoveTo {DS}", "Find vase", "Pick vase", f"MoveTo {DT}", f"Place {DT}", f"MoveTo {DS}", "Find bowl", "Pick bowl", f"MoveTo {SO}", f"Place {SO}")
+
+
+def test_cond_extract_a_dropped_condition_goal_is_not_brought_back_by_the_read_back_resample(make_assist, env):
+    # the class: the first reading holds the condition's object as a goal and misses a branch goal; the extraction drops the condition goal,
+    # the read-back's issue (the missed goal) re-samples the reader, and the re-sample brings the dropped goal back unless the option serves it
+    first, later = {"status": "clear", "reason": "", "question": "", "goals": [G_URN, G_VASE]}, {"status": "clear", "reason": "", "question": "", "goals": [G_URN, G_VASE, G_BOWL]}
+    llm = FakeLLM(first, (r"EXTRACTX", EXTRACT3), default=later)
+    robot = FakeRobot(env, {"urn": DS, "vase": DS, "bowl": DS})
+    loop = make_assist(robot, llm, ScriptedPlanner(PLAN3), understand_samples=2, **LOOP_OPTS)
+    loop.robot.manifest.planner["action_roles"] = {"move": "MoveTo", "find": "Find"}
+    evs = run_task(loop, TASK3, max_events=3000)
+    final = [e["goal"]["object"] for e in evs if e.get("event") == "goal_check"]
+    assert calls(llm) == 1 and sorted(final) == ["bowl", "vase"], final                 # the final goals: the branch, not the condition's object
+    assert evs[-1]["event"] == "done" and evs[-1]["status"] == "success", evs[-1]
+    assert not any(t[0] == "pick" and t[1] == "urn" for t in robot.trace)
+
+
 # ── the pack data only in the manifest, merged after the loop was built (as a host's manifest overlay does) ──────────────
 # The class: the option's keys are resolved once, at construction; data a host merges into the robot view later is not seen, so the option
 # is on and silently does nothing (no extraction call, no lab flag). ``refresh_options`` resolves the keys again against the manifest now.
