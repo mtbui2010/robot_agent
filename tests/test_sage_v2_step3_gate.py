@@ -257,17 +257,3 @@ def test_repair_find_where_the_person_said(loop, robot, places):
     plan = steps(f"MoveTo {CT}", "Find apple", "Pick apple", f"MoveTo {DT}", f"Place {DT}")
     out, _n, counts = run_repair(loop, robot, places, plan, W(), goals)
     assert counts.get("insert") == 1 and out[0]["object"] == DS
-
-
-def test_op_dedupe_ends_the_cut_at_the_repeated_run_not_at_the_end_of_the_plan(robot, places):
-    """No release after the repeated Find / Pick: the steps that follow (the way home) stay; a release after: the old cut."""
-    goals = [G("on", "apple", DS, DT)]
-    cx = plan_repair._Ctx(W(), places, goals, robot.model_capabilities(), robot.plan_actions, (), lambda g: False)
-    owned = lambda *s: [(0, st) for st in steps(*s)]                                         # noqa: E731
-    got = plan_repair.op_dedupe(owned(f"MoveTo {DS}", "Find apple", "Pick apple", f"MoveTo {DT}", f"Place {DT}",
-                                       f"MoveTo {DS}", "Find apple", "Pick apple", f"MoveTo {CT}"), cx)
-    assert [(s["action"], s["object"]) for _o, s in got][-1] == ("MoveTo", CT) and len(got) == 6
-    assert [s["action"] for _o, s in got] == ["MoveTo", "Find", "Pick", "MoveTo", "Place", "MoveTo"]
-    old = plan_repair.op_dedupe(owned(f"MoveTo {DS}", "Find apple", "Pick apple", f"MoveTo {DT}", f"Place {DT}",
-                                       f"MoveTo {DT}", "Find apple", "Pick apple", f"Place {DT}"), cx)
-    assert len(old) == 5

@@ -2860,7 +2860,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             blocks=blocks or None, join=rep.join_blocks if blocks else None, ground=ground,
             complete=str(self.cfg.get("gate_complete", "0")) in ("1", "true", "True"),
             person_goals=bool(self.cfg.get("person_goals")), reached=self._reaches,
-            no_refetch=bool(self.options.query("no_refetch")))
+            no_refetch=bool(self.options.query("no_refetch")), keep_end=bool(self.options.query("keep_after_dedupe")))
         acc = r.__dict__.setdefault("repaired_by_op", {})
         for k, v in counts.items():
             acc[k] = acc.get(k, 0) + v

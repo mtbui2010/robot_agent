@@ -111,6 +111,14 @@ def op_hoist(F, cx: _Ctx):
     return None
 
 
+def _run_end(F, i, o) -> int:
+    """Last index of the run of Find / Pick of ``o`` that starts at ``i`` (the steps after it, such as the way home, are not part of the repeat)."""
+    j = i
+    while j + 1 < len(F) and F[j + 1][1].get("action") in ("Find", "Pick") and F[j + 1][1].get("object") == o:
+        j += 1
+    return j
+
+
 def op_dedupe(F, cx: _Ctx):
     placed, holding = {}, cx.world.holding
     for i, (_o, st) in enumerate(F):
@@ -118,9 +126,8 @@ def op_dedupe(F, cx: _Ctx):
         g = cx.goal_of(o) if a in ("Find", "Pick") else None
         if g is not None and placed.get(o) == g.get("to") and holding != o:
             end = next((j for j in range(i, len(F)) if F[j][1].get("action") in RELEASES + tuple(cx.release)), None)
-            if end is None:           # no release after: the run to cut ends with its own Find / Pick, never the steps that follow
-                end = max(j for j in range(i, len(F)) if all(F[k][1].get("action") in ("Find", "Pick") and F[k][1].get("object") == o
-                                                             for k in range(i, j + 1)))
+            if end is None:
+                end = _run_end(F, i, o) if getattr(cx, "keep_end", False) else len(F) - 1
             s = i - 1 if i > 0 and F[i - 1][1].get("action") == "MoveTo" else i
             return F[:s] + F[end + 1:]
         if a == "Pick":
@@ -405,7 +412,7 @@ def write_back(blocks, F) -> None:
 def repair(steps: list, score: Callable, world, places, goals, *, caps=None, actions=(), release=(),
            hand_goal: Callable = lambda g: False, blocks=None, join=None, ground=None, complete: bool = False,
            person_goals: bool = False, reached: Optional[Callable] = None, max_edits: int = 8, only=None,
-           no_refetch: bool = False) -> tuple:
+           no_refetch: bool = False, keep_end: bool = False) -> tuple:
     """(steps, notes, counts): the plan after the operators, ``notes`` per kept edit, ``counts`` {op: n} (with
     ``completed_by_gate``). ``score(steps)``: the number of critical findings; an edit is kept only when it
     strictly lowers it. With ``blocks`` (+ ``join`` / ``ground``) the blocks are edited in place. ``only``: the
@@ -413,7 +420,7 @@ def repair(steps: list, score: Callable, world, places, goals, *, caps=None, act
     holds after the object was not there)."""
     caps = action_model.Capabilities.from_any(caps) if not hasattr(caps, "hands") else caps
     cx = _Ctx(world, places, goals, caps, actions, tuple(release or ()), hand_goal)
-    cx.no_refetch = bool(no_refetch)
+    cx.no_refetch, cx.keep_end = bool(no_refetch), bool(keep_end)
     F = owned_plan(blocks, join, ground) if blocks else [(0, dict(s)) for s in steps]
     n, notes, counts = score([s for _o, s in F]), [], {}
     ops = [("hoist", op_hoist), ("dedupe", op_dedupe), ("insert", op_insert), ("room", op_room),
