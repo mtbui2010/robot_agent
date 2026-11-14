@@ -243,11 +243,12 @@ the engine (`understand._COND`, `_NEG`), so a reading in another language took n
 gives the run's `Places` the compiled `patterns.condition` and `patterns.negation` of the run's language pack and of the prompt language's
 (`core/planning/clauses.py`: `build(lang)`, `of(places)`); `understand._active` (the object coverage, the destination repair) and
 `goal_filter.negated` read them in place of the engine's. The recipient words (`words.recipient`) and the correction markers
-(`dialogue_ext.self_correction`) were pack data already; no clause word is left in code for a run that has the data. Pack data
-(`lang/<code>.json`, `patterns`): `condition`, `negation`, each a regex or a list; the shipped English pack holds the former engine regexes (same
-reading), the Korean pack a clause shape of its own (assumed, written from general grammar, not measured). A language with neither key: the engine's
-own reading stands (fail open); a pack with one kind takes nothing out for the other. Hook `on_start` (sets `run.places.clauses`). Key `enabled`
-(legacy `lang_words`). No lab flag (`lab_log` is cleared after `on_start`). Module: `robot_agent/options/lang_words.py`.
+(`dialogue_ext.self_correction`) were pack data already; no clause word is left in code for a run that has the data. Data: the
+language packs (`lang/<code>.json`, `patterns`: `condition`, `negation`, each a regex or a list; the shipped English pack holds the former engine regexes, same
+reading) and the robot pack (`planner.options.lang_words.clauses`, `{lang: {condition, negation, source | assumed}}`, added to the pack's words of that
+language; a language with no pack file is declared there, as D1 does for Korean, assumed). A language with neither key: the engine's
+own reading stands (fail open); a pack with one kind takes nothing out for the other. Hook `on_start` (sets `run.places.clauses`). Keys `enabled`
+(legacy `lang_words`), `clauses` (dict, manifest only). No lab flag (`lab_log` is cleared after `on_start`). Module: `robot_agent/options/lang_words.py`.
 
 ### `reopen_on_miss`
 A Find that misses inside the container just opened is made again after closing and opening it (default off). A door can report open and still not

@@ -24,7 +24,7 @@ def zq(monkeypatch):
 
 
 def make(lang="en"):
-    svc = NS(lab=lambda *a, **k: svc.labs.append((a, k)), labs=[])
+    svc = NS(lab=lambda *a, **k: svc.labs.append((a, k)), labs=[], robot=NS(manifest=NS(planner={})))
     run = NS(lang=lang, places=Places(ENV))
     return LangWords(resolve(SPEC, {"lang_words": "1"}, {}, None), svc), run, svc
 
@@ -80,19 +80,28 @@ def test_a_language_without_data_leaves_the_places_alone_empty(monkeypatch):
     assert clauses.of(None) is None and clauses.build(None) is None
 
 
-def test_the_shipped_english_pack_reads_like_the_engine_and_the_korean_pack_reads_a_condition():
+def test_the_shipped_english_pack_reads_like_the_engine_and_a_robot_pack_declares_a_language_without_a_file(monkeypatch):
     en = clauses.build("en")
     sents = ["put the pear in the bowl, and if the lid is up, shut it", "do not touch the vase; bring the cup", "never move the lamp. open the box",
              "bring the tray unless the door is shut, then rest", "leave the book without the cover", "take it in case the rain starts"]
     for s in sents:
         assert understand._active(s, places=NS(clauses=en)) == understand._active(s), s
         assert understand._active(s, conds=False, places=NS(clauses=en)) == understand._active(s, conds=False), s
-    ko = clauses.build("ko")
-    assert ko.cond is not None and ko.neg is not None
-    cond = "컵을 식탁에 놓고 서랍이 열려 있으면 닫아줘"
-    assert "서랍" not in understand._active(cond, places=NS(clauses=ko)) and "컵" in understand._active(cond, places=NS(clauses=ko))
-    neg = "컵 말고 접시를 가져와"
-    assert "접시" in understand._active(neg, places=NS(clauses=ko))
+    declared = {"qq": {"condition": [r"\bsol\b[^,;.]*"], "negation": r"\bmir\b[^,;.]*", "assumed": True}, "assumed": True}
+    cl = clauses.build("qq", declared)                                           # no pack file for "qq": the robot pack's words
+    assert "lid" not in understand._active("bring the plum. sol the lid is up, shut it", places=NS(clauses=cl))
+    assert "fig" not in understand._active("bring the plum mir the fig", places=NS(clauses=cl))
+    monkeypatch.setattr(langdata, "_PROMPT_LANG", "xx")                         # no prompt-language data either
+    monkeypatch.setitem(langdata._CACHE, "xx", {})
+    assert clauses.build("qq") is None and clauses.build("qq", {"qq": {"condition": "(unclosed"}}) is None      # a bad regex is ignored
+
+
+def test_the_option_reads_the_robot_packs_clause_words_from_the_manifest_key(zq):
+    opt, run, _ = make("qq")
+    opt.svc.robot = NS(manifest=NS(planner={"options": {"lang_words": {"clauses": {"qq": {"condition": r"\bsol\b[^,;.]*"}}}}}))
+    opt.on_start(run)
+    assert run.places.clauses.cond is not None and run.places.clauses.neg is not None      # its own condition; the prompt language's negation
+    assert "lid" not in understand._active("bring the plum. sol the lid is up, shut it", places=run.places)
 
 
 def test_the_negation_filter_and_the_object_mentions_read_the_run_clauses(zq):

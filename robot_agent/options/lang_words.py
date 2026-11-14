@@ -8,20 +8,22 @@ reading of a translated answer is read too); ``understand._active`` (and so the 
 reads them in place of its own. The recipient words and the correction markers were already pack data (``words.recipient``, ``dialogue_ext.
 self_correction``); this option adds the other two kinds, so no clause word is left in code.
 
-Pack data (``lang/<code>.json``, ``patterns``): ``condition`` and ``negation``, each a regex string or a list of them (a clause runs to the
-clause's end). A language whose pack declares neither, or an option on a run with no such pack: nothing changes, the engine's own reading
+Data: the language packs (``lang/<code>.json``, ``patterns``: ``condition`` and ``negation``, each a regex string or a list of them; a clause runs to
+the clause's end) and the robot pack (``planner.options.lang_words.clauses``: ``{lang: {"condition": ..., "negation": ..., "source": ...}}``, added to
+the pack's words of that language; a language with no pack file is declared there). A language whose pack declares neither, or an option on a run with no such pack: nothing changes, the engine's own reading
 stands (fail open). A pack that declares one kind takes nothing out for the other. Hook ``on_start`` (sets ``run.places.clauses``).
-Keys: ``enabled`` (legacy ``lang_words``). No lab flag: the run's ``lab_log`` is cleared after ``on_start``; read ``places.clauses``.
+Keys: ``enabled`` (legacy ``lang_words``), ``clauses`` (dict, from the manifest). No lab flag: the run's ``lab_log`` is cleared after ``on_start``; read ``places.clauses``.
 """
 
 from __future__ import annotations
 
 from robot_agent.core.options import Key, Option, OptionSpec, register
+from robot_agent.core.options.config import resolve_key
 from robot_agent.core.planning import clauses
 
 SPEC = OptionSpec(
     name="lang_words",
-    keys=(Key("enabled", "bool", False, aliases=("lang_words",)),),
+    keys=(Key("enabled", "bool", False, aliases=("lang_words",)), Key("clauses", "dict", {}, sources=("manifest",))),
     hooks=("on_start",),
     order=60,
     enabled="enabled",
@@ -32,10 +34,15 @@ SPEC = OptionSpec(
 class LangWords(Option):
     spec = SPEC
 
+    def _declared(self) -> dict:
+        planner = getattr(getattr(self.svc.robot, "manifest", None), "planner", None)
+        v = self.cfg.get("clauses") or resolve_key(SPEC, SPEC.key("clauses"), {}, {}, planner)
+        return v if isinstance(v, dict) else {}
+
     def on_start(self, run) -> None:
         """Give the run's places the clause words of its language (nothing when no pack declares them)."""
         places = getattr(run, "places", None)
-        cl = clauses.build(getattr(run, "lang", None))
+        cl = clauses.build(getattr(run, "lang", None), self._declared())
         if places is None or cl is None:
             return
         places.clauses = cl
