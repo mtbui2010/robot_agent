@@ -125,11 +125,11 @@
  },
  "asr": {
   "hole": [
-   "\\b(?:the|an?|my|your|his|our|their)\\s+(?:to|in|on|onto|at|from|into|and|or|of|for|with|then|by)(?![\\w'-])",
-   "\\b(?:the|an?|my|your|our|their)\\s*[.,!?]*\\s*$"
+   "\\b(?:the|an|my|your|our|their)\\s+(?:(?:to|in|on|onto|at|from|into|of|for|with|then|by)(?![\\w'-])|(?:and|or)(?![\\w'-])(?!\\s+(?:my|your|his|her|our|their)\\b))",
+   "\\b(?:the|an|my|your|our|their)\\s*[.,!?]*\\s*$"
   ],
   "assumed": true,
-  "source": "assumed: general grammar, an article or a possessive that is never an object pronoun (not her: 'tell her to ...') directly followed by a function word or the end of the request"
+  "source": "assumed: general grammar, an article or a possessive that never ends a phrase itself (not her: 'tell her to ...', not his: 'the one that is his', not a bare a: a letter name, 'vitamin a') directly followed by a function word or the end of the request; and / or followed by another possessive is a coordination ('my and your boots'), not a hole"
  },
  "patterns": {
   "into_before": "\\b(?:in|into|inside)\\s+(?:the\\s+|my\\s+|your\\s+|a\\s+|our\\s+|her\\s+|his\\s+)?(?:[\\w'-]+\\s+){0,2}$",

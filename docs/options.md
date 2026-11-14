@@ -202,7 +202,7 @@ Lab flag `name_recover`: `{said, took | asked}`. Module: `robot_agent/options/na
 
 ### `asr_guard`
 A request the recogniser lost is asked again, once, without calling the reader (default off; D3 layer L11, switched on with `name_recover`). New hook `on_heard` runs at the start of an understand round: an EMPTY request
-(the task and the person's answers hold no word) or one with a HOLE (the language pack's `asr.hole` regexes, per language: an article or possessive directly followed by a function word or by the end) gives the repeat phrase
+(the task and the person's answers hold no word) or one with a HOLE (the language pack's `asr.hole` regexes, per language: an article or possessive directly followed by a function word or by the end; English leaves out the words that also end a phrase, `her`, `his` and a bare `a` (a letter name), and `and` / `or` followed by another possessive) gives the repeat phrase
 `q_repeat`; once per run (`repeat_asked`). No `asr.hole` data = only the empty check. Keys `enabled` (legacy `asr_guard`), `empty` (true), `hole` (true). Lab flag `asr_guard`: `{what}`. Module: `robot_agent/options/asr_guard.py`.
 
 ### `plan_complete`

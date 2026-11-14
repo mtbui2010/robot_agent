@@ -152,7 +152,7 @@ def test_empty_request_asks_to_repeat_without_the_reader_and_only_once_empty():
 
 
 def test_hole_a_possessive_before_a_function_word_or_the_end_asks_once():
-    for text in ("bring me the to the table", "put it in my", "move the cup onto a and then go"):
+    for text in ("bring me the to the table", "put it in my", "move the cup onto the and then go"):
         assert guard(text)[0] is not None, text
     for text in ("bring me the cup", "put it in my room", "the table is clean"):
         assert guard(text)[0] is None, text
@@ -169,7 +169,7 @@ def test_made_up_language_hole_pattern_comes_from_its_own_pack(zq):
 
 def test_asr_guard_empty_pack_data_foreign_language_does_nothing_empty(monkeypatch):
     monkeypatch.setitem(langdata._CACHE, "zq", {})
-    assert guard("a", lang="zq")[0] is not None                                       # the prompt language's pack is read as well as the run's
+    assert guard("the", lang="zq")[0] is not None                                     # the prompt language's pack is read as well as the run's
     assert asr_guard.hole_patterns(("zq",)) == []
 
 
@@ -218,4 +218,15 @@ def test_hole_her_is_an_object_pronoun_and_a_hyphenated_word_is_no_hole():
     for text in ("tell her to bring the cup", "give the cup to her in the lamp room", "ask her for the remote", "hand it to her and come back",
                  "give the cup to her", "bring her in", "ask her", "add a to-do note"):
         assert guard(text)[0] is None, text
-    assert guard("bring his to the table")[0] is not None            # a possessive that stays a possessive
+    assert guard("bring their to the table")[0] is not None            # a possessive that stays a possessive
+
+
+def test_hole_a_word_that_is_also_an_object_side_word_a_letter_name_or_a_coordinated_possessive_is_no_hole():
+    """'his' also ends a phrase ('the one that is his'), a bare 'a' is also a letter name ('vitamin a', 'block a'), and a
+    possessive coordinated with another ('my and your boots') is followed by its noun later: none of them is a lost noun."""
+    for text in ("bring the mug that is his to the desk", "put my and your boots in the cupboard", "hand me your and my keys",
+                 "take vitamin a", "go to block a.", "take vitamin a with water", "fetch our or their ladder"):
+        assert guard(text)[0] is None, text
+    for text in ("bring me the to the desk", "put it in my", "stack the and then go", "put my in the box", "give their to me",
+                 "put the and the cup away", "bring me an."):
+        assert guard(text)[0] is not None, text
