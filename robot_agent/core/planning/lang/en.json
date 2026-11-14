@@ -130,7 +130,9 @@
   "open_verb": "\\bopen\\b",
   "close_verb": "\\b(?:close|shut)\\b",
   "self_correction": "(?:\\.\\.\\.|,|-)?\\s*\\b(?:no wait|wait,? no|no,? i mean|i mean|actually|sorry|rather)\\b",
-  "addressee": "\\b(?:to|tell|ask|remind|let)\\s+(?:the\\s+|my\\s+|your\\s+)?{name}\\b"
+  "addressee": "\\b(?:to|tell|ask|remind|let)\\s+(?:the\\s+|my\\s+|your\\s+)?{name}\\b",
+  "condition": "\\b(?:if|unless|whether|in case)\\b[^,;.]*",
+  "negation": "\\b(?:don'?t|do not|never|except|without|but not|not)\\b[^,;.]*"
  },
  "dialogue": {
   "yes": [

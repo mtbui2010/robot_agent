@@ -165,7 +165,7 @@ def repair_destination(goals: list, text: str, places) -> tuple:
     unclear, the read-back asks). Example: "put the towel in the cabinet" understood as "in the drawer"."""
     from .understand import _active, _corr_of, _drop_corrected
     guard = getattr(places, "guard", None)
-    t = _active(text)
+    t = _active(text, places=places)
     ms = _drop_corrected(t, place_mentions(t, places), _corr_of(places))
     person = lambda k: bool((places.env.get(k) or {}).get("person"))
     said = set().union(*(m[3] for m in ms)) if ms else set()

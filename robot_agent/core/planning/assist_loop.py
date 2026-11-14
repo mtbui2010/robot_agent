@@ -2209,7 +2209,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         answers = [t for w_, t in r.dialogue if w_ == "user"]
         words_ = " ".join([r.task, self.original or ""] + answers)
         on = self.cfg["goal_filter"]                                        # goals not asked for (goal_filter.py)
-        raw, r.filtered = goal_filter.before_grounding(u["goals"], r.task) if on else (u["goals"], [])
+        raw, r.filtered = goal_filter.before_grounding(u["goals"], r.task, r.places) if on else (u["goals"], [])
         raw, empty = goal_fix.drop_empty(raw)                                # F3.4: no "put the ?" questions
         r.filtered += empty
         raw, _nob = goal_fix.unsaid_speaker(raw, words_, r.places, self.robot)   # F2.5: no recipient, no hand-over

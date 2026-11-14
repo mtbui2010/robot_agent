@@ -24,7 +24,7 @@ from typing import Optional
 
 from robot_agent.contract import FailureCode
 
-from . import langdata
+from . import clauses, langdata
 from .speech import LocalText
 
 
@@ -253,16 +253,20 @@ def without_places(text: str, places, keys) -> str:
     return t
 
 
-def _active(text: str, conds: bool = True) -> str:
+def _active(text: str, conds: bool = True, places=None) -> str:
     """*text* without the parts that are not requests: conditions ('if the drawer is open'), negations ('don't
     touch the mug') and what a self-correction takes back ('on the stool... no wait, on the sofa').
-    ``conds=False`` keeps the condition clauses (a condition is not a negation: goal_filter.negated)."""
+    ``conds=False`` keeps the condition clauses (a condition is not a negation: goal_filter.negated). With ``places.clauses`` (option
+    ``lang_words``) the clause words are the language packs'; a kind no pack declares takes nothing out."""
     t = _norm(text)
+    cl = clauses.of(places)
+    cond, neg = (cl.cond, cl.neg) if cl is not None else (_COND, _NEG)
     out = []
     for seg in re.split(r"(?<=[.;!?])\s+", t):
-        if conds:
-            seg = _COND.sub(" ", seg)
-        seg = _NEG.sub(" ", seg)
+        if conds and cond:
+            seg = cond.sub(" ", seg)
+        if neg:
+            seg = neg.sub(" ", seg)
         out.append(seg)
     return " ".join(out)
 
@@ -322,7 +326,7 @@ def _object_position(t: str, start: int, end: int) -> bool:
 def _object_mentions(text: str, places, user_words) -> list:
     """Nouns after a determiner in English *text* that are not places, rooms or generic words: 'tennis ball';
     only in object position (after a manipulation verb, not a clause's subject), no fillers or 1-2 letter words."""
-    t = _active(text)
+    t = _active(text, places=places)
     t = _corr_of(places).sub(" ", t)
     place_words = {w for p in _phrases(places) for w in p.split()} | {w for r in places.rooms() for w in _norm(r).split()}
     out = []
@@ -400,7 +404,7 @@ def find_issues(goals, text: str, places, english: str = "", user_words=frozense
     text = _without_messages(text, goals)
     used = _goal_places(goals)
     full = place_mentions(text, places)
-    act_t = _active(text)
+    act_t = _active(text, places=places)
     people = {k for k in places.keys if (places.env.get(k) or {}).get("person")}
     for _s, _e, p, keys, is_src in _drop_corrected(act_t, place_mentions(act_t, places), _corr_of(places)):
         if keys & used:

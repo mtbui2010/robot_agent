@@ -90,9 +90,9 @@ def stated_sources(goals: list, text: str, places) -> tuple:
     return goals, notes
 
 
-def negated(goals: list, english: str) -> tuple:
+def negated(goals: list, english: str, places=None) -> tuple:
     """(goals, notes): move goals whose object the English words name only inside a negation."""
-    t, act = _norm(english), _active(english, conds=False)   # only a real negation drops a goal
+    t, act = _norm(english), _active(english, conds=False, places=places)   # only a real negation drops a goal
     keep, notes = [], []
     for g in goals:
         o = _norm(g.get("object"))
@@ -115,10 +115,10 @@ def _keep_some(goals: list, fn) -> tuple:
     return (g2, notes) if g2 else (goals, [])
 
 
-def before_grounding(goals: list, english: str) -> tuple:
+def before_grounding(goals: list, english: str, places=None) -> tuple:
     """The negation filter on the model's goals (raw names): (goals, notes). Nothing is dropped when
     it would leave no goal."""
-    return _keep_some(list(goals), lambda g: negated(g, english))
+    return _keep_some(list(goals), lambda g: negated(g, english, places))
 
 
 def after_grounding(goals: list, words: str, places) -> tuple:

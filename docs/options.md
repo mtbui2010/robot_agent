@@ -14,7 +14,7 @@ CLAUDE.md rules 13-15. The reference for the flat run options and manifest keys 
 | `Registry`, `register` | `core/options/registry.py` | the list of options; built-in ones from `robot_agent/options/__init__.py`, others by entry point group `robot_agent.options` |
 | `Dispatcher` | `core/options/dispatch.py` | builds the enabled options of one loop, calls their hooks in `order` |
 | `Services` | `core/options/services.py` | the interface an option uses to ask the loop for something (`LoopServices` in `core/planning/option_services.py` implements it) |
-| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget` so far |
+| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words` so far |
 
 `python -m robot_agent.core.options list` prints the registered options, their keys and hooks.
 `python -m robot_agent.core.options check MANIFEST.yaml` reports `planner.options` entries that name no option or key.
@@ -236,6 +236,18 @@ belief or off: the engine's behaviour, unchanged. Needs search legs (a legs-less
 and `_search_over` (in `search_hooks.py`) ask services `search_limit(run, obj)` and `search_over(run, obj, ask)`; the option also answers
 `looks_made(run, obj)`. Hook `on_start` (no effect). Keys `enabled` (legacy `search_budget`), `budget` (dict, manifest only). Lab flag `search_budget`:
 `{object, looks, remaining, why}` once per object. Module: `robot_agent/options/search_budget.py`.
+
+### `lang_words`
+The words that open a condition ("if the drawer is open", "unless ...") or a negation ("do not touch the mug", "except ...") were English regexes in
+the engine (`understand._COND`, `_NEG`), so a reading in another language took no clause out of the request (default off). With the option, `on_start`
+gives the run's `Places` the compiled `patterns.condition` and `patterns.negation` of the run's language pack and of the prompt language's
+(`core/planning/clauses.py`: `build(lang)`, `of(places)`); `understand._active` (the object coverage, the destination repair) and
+`goal_filter.negated` read them in place of the engine's. The recipient words (`words.recipient`) and the correction markers
+(`dialogue_ext.self_correction`) were pack data already; no clause word is left in code for a run that has the data. Pack data
+(`lang/<code>.json`, `patterns`): `condition`, `negation`, each a regex or a list; the shipped English pack holds the former engine regexes (same
+reading), the Korean pack a clause shape of its own (assumed, written from general grammar, not measured). A language with neither key: the engine's
+own reading stands (fail open); a pack with one kind takes nothing out for the other. Hook `on_start` (sets `run.places.clauses`). Key `enabled`
+(legacy `lang_words`). No lab flag (`lab_log` is cleared after `on_start`). Module: `robot_agent/options/lang_words.py`.
 
 ### `reopen_on_miss`
 A Find that misses inside the container just opened is made again after closing and opening it (default off). A door can report open and still not
