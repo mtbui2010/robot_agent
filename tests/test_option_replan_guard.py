@@ -231,12 +231,22 @@ def test_a_guarded_finding_steers_the_first_call_and_is_left_to_the_run_time_che
     assert opt.on_replan_findings([], run, WRONG)                                   # the next replan steers again
 
 
-def test_a_guarded_finding_is_not_added_when_no_refine_is_left_and_the_part_off_keeps_the_old_end():
+def test_a_guarded_finding_is_kept_when_no_replan_is_left_and_the_part_off_keeps_the_old_end():
     opt, run, labs = make(goals=[GOAL])
-    run.left = 0
-    assert opt.on_replan_findings(["step 9 'X': no"], run, WRONG) is None and labs[-1][1]["part"] == "guarded"
+    run.left = 0                                                                    # no replan left: the run-time check's replan would find no budget
+    got = opt.on_replan_findings(["step 9 'X': no"], run, WRONG)
+    assert got[0] == "step 9 'X': no" and "Place" in got[1] and [k["part"] for _a, k in labs] == ["critical"]
+    assert opt.on_replan_findings([], run, WRONG)                                   # its refine (same replan) keeps it too: the suffix never runs
     opt, run, _ = make({"replan_guard.guarded_run": "0"}, goals=[GOAL])
     assert opt.on_replan_findings([], run, WRONG) and opt.on_replan_findings([], run, WRONG)     # off: both calls carry it (the run ends uncertified)
+
+
+def test_the_round_is_recorded_on_a_call_that_adds_nothing_so_its_refine_is_not_read_as_a_first_call():
+    opt, run, labs = make(goals=[GOAL])
+    assert opt.on_replan_findings(["step 1 'X': an engine finding"], run, []) is None and run.replan_guard_round == 0     # the suffix call: empty, nothing added
+    assert opt.on_replan_findings([], run, WRONG) is None and [k["part"] for _a, k in labs] == ["guarded"]             # its refine: left to the run-time check
+    opt, run, _ = make({"replan_guard.critical_refine": "0"}, goals=[GOAL])
+    assert opt.on_replan_findings([], run, WRONG) is None and run.replan_guard_round == 0                               # a part off returns early, recorded too
 
 
 def test_a_finding_the_run_time_check_cannot_catch_still_counts_in_the_refine():
@@ -290,6 +300,17 @@ def test_a_wrong_place_release_after_a_find_of_an_absent_object_runs_and_a_norma
     assert len(calls) == 3 and "rejected" in calls[1][2] and "Find" in calls[2][1]["action"]       # the refine was steered; the next replan is the Find's
     assert [e for e in loop.lab_log if e.get("part") == "guarded"]
     assert all(ok for sk, _o, ok, _m in robot.trace if sk == "place")
+
+
+def test_no_replan_left_a_guarded_finding_ends_the_run_before_the_suffix_moves_the_robot(make_assist, env):
+    tail = steps(f"MoveTo {SI}", f"Place {SI}")
+    loop, robot, planner, d = _spool_run(make_assist, env, ST, [AWAY, AWAY, tail], replan_guard="1", max_replans=2, **{"replan_guard.critical": CRIT2})
+    assert d["status"] == "failed" and "did not pass my checks" in d["msg"], d
+    assert [sk for sk, *_r in robot.trace] == ["move", "find"] and loop._ctx.world.holding is None      # the suffix never ran: nothing picked up
+    assert len([c for c in planner.calls if c[0] == "replan"]) == 2
+    loop, robot, planner, d = _spool_run(make_assist, env, ST, [AWAY, AWAY, tail], replan_guard="1", max_replans=3, **{"replan_guard.critical": CRIT2})
+    assert d["status"] == "success", d                                              # one replan left: the suffix runs, the run-time check's replan ends it
+    assert len([c for c in planner.calls if c[0] == "replan"]) == 3 and all(ok for sk, _o, ok, _m in robot.trace if sk == "place")
 
 
 def test_guarded_run_off_the_same_suffix_ends_the_run_uncertified_as_before(make_assist, env):

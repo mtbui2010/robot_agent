@@ -11,8 +11,10 @@ Three parts, each its own bool key (all on when the option is on; a key set to F
   rule for an unbindable step).
 * ``guarded_run`` (with ``critical_refine``): a finding the engine's own run-time check refuses BEFORE the step moves (``verify.symbolic_check`` on the
   belief the suffix reaches there: the guard of ``_guard`` replans at that step) only steers the one refine: it is added when a refine follows this
-  call, and a refined suffix (or one with no refine left) whose findings are all of that kind RUNS (lab ``part: "guarded"``). The run ends
-  uncertified only on findings the run-time check cannot catch. Off: such findings end the run as before.
+  call, and a refined suffix whose findings are all of that kind RUNS (lab ``part: "guarded"``) while the run has a replan left for that check's
+  own replan; with none left they stay and the run ends uncertified before the suffix moves the robot (the check's replan would find no budget,
+  after the earlier suffix steps had run). The run ends uncertified also on findings the run-time check cannot catch. Off: such findings end the
+  run as before.
 * ``release_dedupe`` (hook ``on_plan``): a release the action model refuses with an empty hand that repeats the plan's last release (same action, same
   place, nothing taken since) is dropped. A release is a step that emptied the hand in the replay; no action name is in the code.
 
@@ -67,15 +69,17 @@ class ReplanGuard(Option):
         return list(sub)
 
     def on_replan_findings(self, bad, run, suffix):
-        """The engine's findings plus the declared critical ones of the suffix simulated from the belief now; None when there is nothing to add."""
+        """The engine's findings plus the declared critical ones of the suffix simulated from the belief now; None when there is nothing to add.
+        A guarded finding is left out (the suffix runs) only on the refine and while a replan is left for the run-time check's own replan."""
+        refine, left = self._round(run) if self.cfg.get("guarded_run") else (False, 0)     # recorded before any return: an early return is a call too
         if not self.cfg.get("critical_refine") or not suffix:
             return None
         codes = codes_of(self.cfg.get("critical") or resolve_key(SPEC, SPEC.key("critical"), {}, {}, getattr(self.svc.robot.manifest, "planner", None)))
         if not codes:
             return None
-        steer = self._steers(run) if self.cfg.get("guarded_run") else True
+        steer = (not refine and left > 0) if self.cfg.get("guarded_run") else True
         new = [(f, g) for f, g in self._critical(run, suffix, set(codes)) if f not in bad]
-        if not steer and any(g for _f, g in new):
+        if not steer and left > 0 and any(g for _f, g in new):
             self.svc.lab(SPEC.name, part="guarded", findings=sum(1 for _f, g in new if g))
             new = [(f, g) for f, g in new if not g]
         if not new:
@@ -83,13 +87,13 @@ class ReplanGuard(Option):
         self.svc.lab(SPEC.name, part="critical", findings=len(new))
         return list(bad) + [f for f, _g in new]
 
-    def _steers(self, run) -> bool:
-        """Whether a refine follows this call (then the findings the run-time check refuses itself steer it; else they are left to that check).
-        The first call of a replan is its suffix; a second call with the same count of recorded replans is the refine (``replan_round``)."""
+    def _round(self, run) -> tuple:
+        """(this call is the refine of a replan, planner calls left in ``max_replans``). The first call of a replan is its suffix; a second call
+        with the same count of recorded replans is the refine (``replan_round``). Every call is recorded, also one that adds nothing."""
         n, left = self.svc.replan_round(run)
         refine = getattr(run, "replan_guard_round", None) == n
         run.replan_guard_round = n
-        return not refine and left > 0
+        return refine, left
 
     def _critical(self, run, suffix, codes) -> list:
         """(finding 'step i A o: why', guarded) for every step whose rule finding is one of ``codes``, the suffix run from the belief now;
