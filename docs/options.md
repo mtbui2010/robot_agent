@@ -227,7 +227,8 @@ The held object's own release goes before the Close of the place its `in` goal n
 plan_missing_step). The plan is replayed with one simulated hand: at a Close of the place C of the held object X's `in` goal, when X's NEXT release (the first release before
 another Pick) is not at C and the plan does not pick X again later (staging), the skill declared `achieves: in` goes before the Close (after a MoveTo C when the robot is elsewhere).
 The release that splice leaves with an empty hand: the one goal object (`on` / `in`, not a hand goal) of its place that no step picks gets `Find, Pick` before it (before the MoveTo
-that leads there); when every goal object of that place is picked and a later step releases there again, the empty release is removed; otherwise it stays (no guess). A Place into
+that leads there); the one fetch of it the plan left after the release, with nothing released after it, is brought forward the same way; when every goal object of that
+place is picked and a later step releases there again, the empty release is removed; otherwise it stays (no guess). A Place into
 the goal container is NOT swapped to the put-in skill (the gate's `op_action` / `op_putin` do it; `op_putin` also opens a closed container). Why a new option and not
 `plan_complete`'s guard: that guard skips the splice when ANY later release exists (a put-down of another object too), and changing it would change the D3 arm.
 Pack data `planner.options.plan_release.needs`: `{"rules": {<Action>: {"achieves": "in" | "on" | "hand"}}, "source": "<label>"}` (or `"assumed": true`); the declared actions, the

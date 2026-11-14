@@ -83,6 +83,14 @@ def test_pick_step_for_the_goal_object_the_plan_never_picked_before_the_move_to_
         "Stow crate@yard", "Shut crate@yard", "Spot widget", "Grab widget", "Drop bench@yard"]
 
 
+def test_pick_step_brings_forward_the_fetch_the_plan_left_after_the_release_and_ends_holding():
+    opt, run, svc = make()
+    got = acts(opt.on_plan(steps(*CLASS, "Spot widget", "Grab widget"), run))
+    assert got == ["Walk crate@yard", "Ajar crate@yard", "Spot gizmo", "Grab gizmo", "Stow crate@yard", "Shut crate@yard",
+                   "Spot widget", "Grab widget", "Walk bench@yard", "Drop bench@yard"]
+    assert opt.on_plan(steps(*got), run) is None and [k["fix"] for _a, k in svc.labs] == ["pick_step"]
+
+
 def test_an_emptied_release_whose_object_is_picked_and_released_there_later_is_removed():
     opt, run, svc = make()
     got = acts(opt.on_plan(steps(*CLASS, "Spot widget", "Grab widget", "Drop bench@yard"), run))

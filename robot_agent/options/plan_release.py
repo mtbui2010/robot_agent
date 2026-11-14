@@ -4,7 +4,8 @@ What: the plan is replayed on the belief with one simulated hand. At a Close of 
 NEXT release (the first release step before another Pick) is not at C and the plan does not pick X again later (a staging put-down), the pack's
 ``achieves: in`` skill goes before the Close (after a MoveTo C when the robot is elsewhere). The release the splice leaves with an empty hand is
 repaired too: the one goal object of its place that no step picks gets ``Find / Pick`` before it (before the MoveTo that leads there), so that
-goal keeps its delivery; when every goal object of that place is picked and a later step releases at that place again, the empty release is removed.
+goal keeps its delivery; the one fetch of it the plan left AFTER the release, with nothing released after it, is brought forward the same way; when
+every goal object of that place is picked and a later step releases at that place again, the empty release is removed; else it stays (no guess).
 Why (failure class plan_missing_step): the planner writes "Pick X, Close C, MoveTo T, Place T" for "X in C, Y on T". ``plan_complete`` splices only
 when NO later release exists (a release of any object blocks it), so the gate kept a plan its operators could not repair. A Place into the goal
 container is NOT swapped to the put-in skill here: the gate's ``op_action`` / ``op_putin`` do that, and ``op_putin`` also opens a closed container.
@@ -155,18 +156,35 @@ class PlanRelease(Option):
         return new
 
     def _orphan(self, plan, j, px):
-        """(plan, fix) for the release at ``j`` the splice emptied: fetch the one unpicked goal object of its place, or drop it."""
+        """(plan, fix) for the release at ``j`` the splice emptied: fetch the one unpicked goal object of its place, bring forward the one
+        fetch of it the plan left after the release with nothing released after it, or drop the release when the place is served later."""
         q = px.key(plan[j].get("object"))
         picked = {s.get("object"): True for s in plan if s.get("action") == px.role["pick"] and s.get("object")}
         gs = [g for g in px.goals if g.get("type") in FETCHED and not g.get("hand") and g.get("object") and q and px.key(g.get("to")) == q]
         free = [g["object"] for g in gs if not lookup_object(picked, g["object"])]
+        k = j - 1 if j and plan[j - 1].get("action") == px.role["move"] and px.key(plan[j - 1].get("object")) == q else j
         if len(free) == 1 and px.role["find"]:
-            k = j - 1 if j and plan[j - 1].get("action") == px.role["move"] and px.key(plan[j - 1].get("object")) == q else j
             fetch = [{"action": px.role["find"], "object": free[0]}, {"action": px.role["pick"], "object": free[0]}]
             return plan[:k] + fetch + plan[k:], "pick_step"
+        late = self._late_fetch(plan, j, gs, px) if len(gs) == 1 and not free else None
+        if late:
+            a, p = late
+            rest = plan[:a] + plan[p + 1:]
+            return rest[:k] + plan[a:p + 1] + rest[k:], "pick_step"
         if gs and not free and any(s.get("action") in px.releases and px.key(s.get("object")) == q for s in plan[j + 1:]):
             return plan[:j] + plan[j + 1:], "removed"
         return plan, "splice"
+
+    def _late_fetch(self, plan, j, gs, px):
+        """(start, pick index) of the only Pick of the place's one goal object when it comes after ``j`` and nothing is released after it
+        (the plan ends holding it); the start takes the Find of the same object just before. None otherwise."""
+        one = {gs[0]["object"]: True}
+        picks = [i for i, s in enumerate(plan) if s.get("action") == px.role["pick"] and lookup_object(one, s.get("object"))]
+        if len(picks) != 1 or picks[0] <= j or px.next_release(plan, picks[0] + 1) is not None:
+            return None
+        p = picks[0]
+        a = p - 1 if plan[p - 1].get("action") == px.role["find"] and plan[p - 1].get("object") == plan[p].get("object") else p
+        return a, p
 
     def _tell(self, obj, key, fix) -> None:
         """One lab event per distinct edit in a run (the gate scores many candidate plans through this hook)."""
