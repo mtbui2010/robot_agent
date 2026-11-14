@@ -265,3 +265,52 @@ def test_cond_extract_the_first_plan_applies_again_to_a_later_reading_without_a_
     run.goals = [dict(KEEP)]                                                        # another number of goals: not the plan's reading, it stands
     go(opt, run)
     assert run.goals == [KEEP] and len(log.calls) == 1
+
+
+# ── the pack data only in the manifest, merged after the loop was built (as a host's manifest overlay does) ──────────────
+# The class: the option's keys are resolved once, at construction; data a host merges into the robot view later is not seen, so the option
+# is on and silently does nothing (no extraction call, no lab flag). ``refresh_options`` resolves the keys again against the manifest now.
+MF_OPTS = {"cond_extract": "1", "cond_goal": "1"}                                      # switched on as run options, NO prompt there
+UNSURE = {**EXTRACT, "at": "", "unsure": True}
+
+
+def manifest_run(make_assist, env, monkeypatch, house, task=TASK, extract=EXTRACT, refresh=True, answers=()):
+    from robot_agent.core.planning.option_services import refresh_options
+    llm = FakeLLM((r"EXTRACTX", extract), default={"status": "clear", "reason": "", "question": "", "goals": [GOAL]})
+    robot = FakeRobot(env, house, answers=list(answers))
+    loop = make_assist(robot, llm, ScriptedPlanner(PLAN), **MF_OPTS)
+    planner = dict(loop.robot.manifest.planner or {})
+    options = {**(planner.get("options") or {}), "cond_extract": {"prompt": PROMPT, "q_unclear": ASK}}
+    monkeypatch.setattr(loop.robot.manifest, "planner", {**planner, "action_roles": {"move": "MoveTo", "find": "Find"}, "options": options})
+    if refresh:
+        refresh_options(loop, MF_OPTS)
+    evs = run_task(loop, task, max_events=3000)
+    return robot, llm, evs, [x for x in getattr(loop, "lab_log", []) if x.get("flag") == "cond_extract"]
+
+
+def calls(llm):
+    return sum("EXTRACTX" in p for p, _f in llm.calls)
+
+
+def test_cond_extract_prompt_only_in_a_manifest_merged_after_build_one_call_per_conditional_request(make_assist, env, monkeypatch):
+    robot, llm, evs, lab = manifest_run(make_assist, env, monkeypatch, {"mug": DT})
+    assert calls(llm) == 1 and len(lab) == 1                              # the option fired: one extraction call, one lab flag
+    assert evs[-1]["event"] == "done" and evs[-1]["status"] == "success"
+    assert not any(t[0] in ("pick", "place") for t in robot.trace)                  # the object already at the goal place stays unmoved
+
+
+def test_cond_extract_prompt_only_in_a_manifest_merged_after_build_is_inert_without_the_refresh_off(make_assist, env, monkeypatch):
+    robot, llm, evs, lab = manifest_run(make_assist, env, monkeypatch, {"mug": DT}, refresh=False)
+    assert calls(llm) == 0 and lab == []                                  # the cause: the keys were resolved before the data was there
+
+
+def test_cond_extract_prompt_only_in_the_manifest_no_keyword_zero_calls(make_assist, env, monkeypatch):
+    robot, llm, evs, lab = manifest_run(make_assist, env, monkeypatch, {"mug": DS}, task="Put the mug on the dining table.")
+    assert calls(llm) == 0 and lab == [] and evs[-1]["event"] == "done"
+
+
+def test_cond_extract_prompt_only_in_the_manifest_unsure_asks_once(make_assist, env, monkeypatch):
+    robot, llm, evs, lab = manifest_run(make_assist, env, monkeypatch, {"mug": DT}, extract=UNSURE, answers=["dining table"])
+    asked = [q for q in robot.asked if "look for the mug" in str(q)]
+    assert calls(llm) == 1 and len(asked) == 1, robot.asked                         # the question text is the manifest's, asked once
+    assert evs[-1]["event"] == "done"
