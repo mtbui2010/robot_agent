@@ -315,7 +315,7 @@ planner:
 `schedule_s` replaces the `recovery.wait` schedule for that kind (the wait action is still the pack's `recovery.wait.action`; read where
 `wait_on_robot` runs the wait). An empty list sends no wait command: the pack says waiting does not help. `tries` and `action` replace the
 policy table's `retries` and first answer for that kind. A kind with no entry, a bad entry or no data: the engine's behaviour, unchanged.
-Hook `on_start` (no effect), services `wait_schedule(run, schedule)`, `recovery_rule(run, code, rule)`, `more_tries(run, code, n)` (D3: an unhealthy robot after a wait does not stop the run while the declared `tries` are left). Keys `enabled` (legacy `hw_wait`), `kinds` (dict, manifest only). Lab flag `hw_wait`:
+Hook `on_start` (no effect), services `wait_schedule(run, schedule)`, `recovery_rule(run, code, rule)`, `more_tries(run, code, n)` (D3: only with the key `more_tries` on: an unhealthy robot after a wait does not stop the run while the declared `tries` are left; off, the option behaves as in D2). Keys `enabled` (legacy `hw_wait`), `kinds` (dict, manifest only), `more_tries` (bool, default off, legacy `hw_more_tries`). Lab flag `hw_wait`:
 `{kind, schedule_s, tries, action}`. Limit: the schedule needs `wait_on_robot` and a declared `recovery.wait`; without them the poll stays.
 Data with neither `source` nor `assumed: true` (on the block or on a kind) is not used. Module: `robot_agent/options/hw_wait.py`.
 

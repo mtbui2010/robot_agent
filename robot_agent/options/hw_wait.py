@@ -17,7 +17,7 @@ Pack data ``planner.options.hw_wait.kinds`` (a failure code of the contract is t
 
 A kind with no entry, a bad entry, no ``recovery.wait`` declaration (the schedule only) or no data at all: the engine's own behaviour, byte for
 byte. The schedule is read where ``wait_on_robot`` runs the wait; without that option the engine's own poll stays.
-Hook ``on_start`` (no effect). Services ``wait_schedule``, ``recovery_rule``, ``more_tries`` (an unhealthy robot after a wait does not stop the run while declared tries are left). Keys: ``enabled`` (legacy ``hw_wait``), ``kinds`` (dict, from the manifest).
+Hook ``on_start`` (no effect). Services ``wait_schedule``, ``recovery_rule``, ``more_tries`` (an unhealthy robot after a wait does not stop the run while declared tries are left). Keys: ``enabled`` (legacy ``hw_wait``), ``kinds`` (dict, from the manifest), ``more_tries`` (bool, default off, legacy ``hw_more_tries``: the unhealthy-robot rule of ``more_tries``; off = as in D2).
 Lab flag ``hw_wait``: ``{kind, schedule_s, tries, action}``.
 """
 
@@ -33,7 +33,8 @@ from robot_agent.core.planning.pack_data import labelled
 
 SPEC = OptionSpec(
     name="hw_wait",
-    keys=(Key("enabled", "bool", False, aliases=("hw_wait",)), Key("kinds", "dict", {}, sources=("manifest",))),
+    keys=(Key("enabled", "bool", False, aliases=("hw_wait",)), Key("kinds", "dict", {}, sources=("manifest",)),
+          Key("more_tries", "bool", False, aliases=("hw_more_tries",))),
     hooks=("on_start",),
     order=90,
     enabled="enabled",
@@ -112,8 +113,9 @@ class HwWait(Option):
 
     def more_tries(self, run, code, n):
         """True while the declared ``tries`` of that failure kind are not used up (``n`` failures so far): an unhealthy robot after a wait
-        does not stop the run yet, the step runs again. None when the pack declares no tries for the kind (the engine's own stop stands)."""
-        tries = tries_of(self._entry(code))
+        does not stop the run yet, the step runs again. None when the key ``more_tries`` is off (default) or the pack declares no tries for the kind
+        (the engine's own stop stands)."""
+        tries = tries_of(self._entry(code)) if self.cfg.get("more_tries") else None
         if tries is None or n >= tries:
             return None
         self.svc.lab(SPEC.name, kind=FailureCode.parse(code).value, tries=tries, tried=n)

@@ -21,9 +21,9 @@ class WaitRobot(FakeRobot):
         return super()._exec(skill, o, params)
 
 
-def make(kinds, run_failures=()):
+def make(kinds, run_failures=(), **opts):
     from types import SimpleNamespace as NS
-    cfg = resolve(SPEC, {"hw_wait": "1"}, {}, None)
+    cfg = resolve(SPEC, {"hw_wait": "1", **opts}, {}, None)
     svc = NS(robot=NS(manifest=NS(planner={"options": {"hw_wait": {"kinds": kinds}}})), lab=lambda *a, **k: svc.labs.append((a, k)), labs=[])
     return HwWait(cfg, svc), NS(failures=list(run_failures)), svc
 
@@ -32,14 +32,14 @@ def _fail(code):
     return {"code": code, "evidence": {}}
 
 
-def _loop(make_assist, env, monkeypatch, kinds, fails=(1,), on=True, wait=(2, 4, 8), msg="find: no image (camera timeout 1 Hz)", health=None):
+def _loop(make_assist, env, monkeypatch, kinds, fails=(1,), on=True, wait=(2, 4, 8), msg="find: no image (camera timeout 1 Hz)", health=None, more=False):
     from robot_agent.core.planning.robot import RobotView
     monkeypatch.setattr(RobotView, "health", lambda self, node=None: {"ok": health})
     robot = WaitRobot(env, {"apple": DS}, faults=[{"skill": "find", "obj": "apple", "kind": "fail", "nth": list(fails), "msg": msg}])
     loop = make_assist(robot, FakeLLM({"status": "clear", "reason": "", "question": "",
                                        "goals": [{"type": "on", "object": "apple", "from": "desk", "to": "dining table"}]}),
                        ScriptedPlanner(steps(f"MoveTo {DS}", "Find apple", "Pick apple", f"MoveTo {DT}", f"Place {DT}")),
-                       health_wait_s=0, wait_on_robot="1", **({"hw_wait": "1"} if on else {}))
+                       health_wait_s=0, wait_on_robot="1", **({"hw_wait": "1"} if on else {}), **({"hw_more_tries": "1"} if more else {}))
     opts = {"wait": {"action": "Wait", "schedule_s": list(wait)}}
     loop.robot.manifest.planner = dict(loop.robot.manifest.planner or {}, recovery=opts, **({"options": {"hw_wait": {"kinds": kinds}}} if kinds is not None else {}))
     orig = AssistLoop._bind
@@ -122,11 +122,13 @@ def test_no_failure_noted_yet_leaves_the_schedule_empty():
 
 def test_declared_tries_are_honoured_when_the_robot_stays_unhealthy(make_assist, env, monkeypatch):
     kinds = {"perception_unavailable": {"schedule_s": [1], "tries": 3}, "assumed": True}
-    evs, robot, loop = _loop(make_assist, env, monkeypatch, kinds, fails=(1, 2), health=False)
+    evs, robot, loop = _loop(make_assist, env, monkeypatch, kinds, fails=(1, 2), health=False, more=True)
     assert done(evs)["status"] == "success" and waits(robot) == ["1", "1"]          # two bad health checks, still tries left
     assert [e for e in loop.lab_log if e["flag"] == "hw_wait" and e.get("tried") == 1]
-    evs, robot, _ = _loop(make_assist, env, monkeypatch, kinds, fails=(1, 2, 3, 4), health=False)
+    evs, robot, _ = _loop(make_assist, env, monkeypatch, kinds, fails=(1, 2, 3, 4), health=False, more=True)
     assert done(evs)["status"] != "success"                                          # the tries are used up: it stops
+    evs, robot, _ = _loop(make_assist, env, monkeypatch, kinds, fails=(1, 2), health=False)
+    assert done(evs)["status"] != "success"                                          # key more_tries off (default): stops as in D2
 
 
 def test_unhealthy_robot_stops_at_once_without_declared_tries_or_option_off(make_assist, env, monkeypatch):
@@ -137,7 +139,13 @@ def test_unhealthy_robot_stops_at_once_without_declared_tries_or_option_off(make
     assert done(evs)["status"] != "success"
 
 
+def test_more_tries_key_is_registered_default_off_and_the_service_answers_none_off():
+    assert SPEC.key("more_tries").default is False
+    opt, run, _ = make({"timeout": {"tries": 2}, "assumed": True})
+    assert opt.more_tries(run, "timeout", 1) is None
+
+
 def test_more_tries_pure_empty_and_used_up():
-    opt, run, svc = make({"timeout": {"tries": 2}, "assumed": True})
+    opt, run, svc = make({"timeout": {"tries": 2}, "assumed": True}, hw_more_tries="1")
     assert opt.more_tries(run, "timeout", 1) is True and opt.more_tries(run, "timeout", 2) is None
     assert opt.more_tries(run, "hw_fault", 1) is None and opt.more_tries(run, "not a code", 1) is None
