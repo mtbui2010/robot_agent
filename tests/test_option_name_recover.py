@@ -31,6 +31,15 @@ def make(objects=CAT, lang="en", **keys):
     svc.lab = lambda *a, **k: svc.labs.append((a, k))
     svc.ask = lambda run, q: (svc.asked.append(str(q)), svc.answer)[1]
     svc.cancelled = lambda run: None
+    svc.gated, svc.forbid = [], ()
+
+    def safety_gate(run):                       # the loop's gate again: refuses (STOP) when every goal names a forbidden object
+        svc.gated.append([g["object"] for g in run.goals])
+        if run.goals and all(g["object"] in svc.forbid for g in run.goals):
+            yield ("done", {"status": "refused"})
+            return STOP
+        return None
+    svc.safety_gate = safety_gate
     run = NS(places=PLACES, memory=NS(data={}), lang=lang, asked=0, ev=lambda etype, **kw: (etype, kw), goals=[])
     return NameRecover(cfg, svc), run, svc
 
@@ -172,6 +181,76 @@ def test_empty_catalogue_or_foreign_data_does_nothing_empty():
     assert gs[0]["object"] == "kettel" and not svc.asked
 
 
+def test_a_name_taken_goes_through_the_safety_gate_again_and_its_refusal_stops():
+    """The gate ran on the garbled name (order 10, before this option): a name taken from the catalogue is gated again, so a forbidden
+    catalogue name is refused, not handed to the planner."""
+    opt, run, svc = make(("zorbex", "kettle"))
+    svc.answer, svc.forbid = "yes", ("zorbex",)
+    out, sent = go(opt, run, [goal("zorbix")])
+    assert out == STOP and svc.gated == [["zorbex"]] and sent[-1][0] == "done"
+    opt, run, svc = make(("zorbex", "kettle"))
+    svc.answer = "no"
+    assert go(opt, run, [goal("zorbix")])[0] is None and svc.gated == []           # nothing taken: the gate's first verdict stands
+    assert REGISTRY.get("hazard").order < SPEC.order < REGISTRY.get("cond_goal").order
+    assert REGISTRY.get("cond_extract").order < SPEC.order                          # the condition written by the extraction is there
+
+
+def test_dispatcher_decide_flow_of_runs_the_hook_of_the_options_serving_the_service_only():
+    from robot_agent.core.options import Dispatcher, Key, Option, OptionSpec, Registry
+    seen = []
+
+    class Toy(Option):
+        def on_goals(self, run):
+            seen.append(self.spec.name)
+            yield f"ev-{self.spec.name}"
+            return STOP if run == "bad" else None
+
+        def vetoes(self, run):
+            return None
+    r = Registry(builtin=None, entry_points=None)
+    for name, order, services in (("plain_toy", 5, ()), ("gate_toy", 10, ("vetoes",)), ("gate_off_toy", 20, ("vetoes",))):
+        r.register(OptionSpec(name=name, keys=(Key("enabled", "bool", False),), hooks=("on_goals",), services=services, order=order,
+                              enabled="enabled"), Toy)
+    d = Dispatcher(None, {"plain_toy.enabled": 1, "gate_toy.enabled": 1}, {}, None, registry=r)
+
+    def drive(run):
+        gen, out, evs = d.decide_flow_of("vetoes", "on_goals", run), None, []
+        try:
+            while True:
+                evs.append(next(gen))
+        except StopIteration as e:
+            out = e.value
+        return out, evs
+    assert drive("bad") == (STOP, ["ev-gate_toy"]) and seen == ["gate_toy"]           # not the option that serves nothing, not the one off
+    assert drive("ok") == (None, ["ev-gate_toy"]) and drive_none(d) == (None, [])
+
+
+def drive_none(d):
+    gen, evs = d.decide_flow_of("nobody_serves_this", "on_goals", "ok"), []
+    try:
+        while True:
+            evs.append(next(gen))
+    except StopIteration as e:
+        return e.value, evs
+
+
+def test_the_object_of_a_condition_when_is_recovered_by_the_same_rules():
+    opt, run, svc = make()
+    svc.answer = "yes"
+    g = {**goal("ladle"), "when": {"object": "kettel", "at": "stool@loft", "present": True}}
+    out, sent = go(opt, run, [g])
+    assert out is None and g["when"]["object"] == "kettle" and g["object"] == "ladle" and svc.asked == ["Did you mean the kettle?"]
+    assert svc.gated == []                                                          # a condition is looked at, not handled: no gate
+    opt, run, svc = make()
+    g = {**goal("ladle"), "when": {"object": "kettel", "at": "stool@loft", "present": True}}
+    svc.answer = "no"
+    go(opt, run, [g])
+    assert g["when"]["object"] == "kettel"                                          # a no keeps it as read
+    g2 = {**goal("ladle"), "when": "not a condition"}
+    go(make()[0], run, [g2])
+    assert g2["when"] == "not a condition"
+
+
 def test_a_cancel_while_asking_stops():
     opt, run, svc = make(("lamp", "limp"))
     svc.cancelled = lambda run: ("cancelled",)
@@ -287,3 +366,27 @@ def test_hole_a_word_that_is_also_an_object_side_word_a_letter_name_or_a_coordin
     for text in ("bring me the to the desk", "put it in my", "stack the and then go", "put my in the box", "give their to me",
                  "put the and the cup away", "bring me an."):
         assert guard(text)[0] is not None, text
+
+
+GLOW = {"profile": "made_up", "version": 1, "checks": ["on", "in"],
+        "hazard_classes": {"glow_dust": {"words": {"en": {"assumed": [r"\bzorbex\b"]}}}},
+        "place_classes": {"any_surface": {"words": {"en": [".+"]}, "provenance": "assumed"}},
+        "rules": [{"id": "glow_up", "hazard": "glow_dust", "places": ["any_surface"], "say": "glow dust stays in its tin", "provenance": "assumed"}]}
+
+
+@pytest.mark.parametrize("heard", ["zorbex", "zorbix"])
+def test_loop_a_garbled_name_of_a_forbidden_object_is_refused_like_the_name_itself(make_assist, env, monkeypatch, heard):
+    """The safety rules forbid the made-up object "zorbex". Said right, the run is refused; heard garbled ("zorbix") and confirmed as
+    "zorbex", it was picked and carried before (the gate had seen only the garbled name): now it is refused the same way."""
+    from robot_agent.core.safety import load_profile
+    prof, errs = load_profile(GLOW)
+    assert not errs
+    robot = FakeRobot(env, {"zorbex": "desk@study room"}, answers=["yes", "yes", "yes"])
+    und = {"status": "clear", "reason": "", "question": "", "goals": [{"type": "on", "object": heard, "from": "", "to": "dining table"}]}
+    plan = steps("MoveTo desk@study room", "Find zorbex", "Pick zorbex", "MoveTo dining table@kitchen", "Place dining table@kitchen")
+    loop = make_assist(robot, FakeLLM(default=und), ScriptedPlanner(plan), understand_samples=0, detector_miss_rate=0, name_recover="1")
+    monkeypatch.setattr(loop.robot.manifest, "limits", {"objects": {"zorbex": {}}})
+    monkeypatch.setattr(loop.robot.manifest, "safety_profile", prof, raising=False)
+    evs = run_task(loop, f"Put the {heard} on the dining table.", max_events=3000)
+    assert evs[-1].get("status") == "refused" and evs[-1].get("refusal") == "safety", evs[-1]
+    assert not [t for t in robot.trace if t[0] in ("pick", "move")]

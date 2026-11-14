@@ -75,6 +75,16 @@ class Dispatcher:
                 return res
         return None
 
+    def decide_flow_of(self, service: str, hook: str, *args):
+        """``decide_flow`` of ``hook`` over only the active options that serve ``service``, in option order (e.g. the safety gate again,
+        for an option that changed a goal after the gate ran)."""
+        for o in self._by_service.get(service, ()):
+            if hook in o.spec.hooks:
+                res = yield from getattr(o, hook)(*args)
+                if res is not None:
+                    return res
+        return None
+
     # ── services ─────────────────────────────────────────────────────────
     def query(self, name: str, *args, default=None):
         """What the first active option that answers ``name`` returns (None counts as no answer); ``default`` if nobody does."""

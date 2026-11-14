@@ -1,8 +1,9 @@
 """Option ``name_recover`` (default off): an object name the speech recogniser garbled is matched to the robot's object catalogue, strictly.
 
 The failure it closes: recognition turns "teapot" into "teapod" (a slip of one or two letters) and the reader hands the garbled word on as the
-goal's object; the robot searches for something it does not know or asks about it. After the goals are read (hook ``on_goals``), each goal's
-object that is NOT in the catalogue (the robot's object memory and the manifest's ``limits.objects``) is compared with the catalogue names:
+goal's object; the robot searches for something it does not know or asks about it. After the goals are read (hook ``on_goals``, order 17: after
+``cond_extract`` wrote a condition, before ``cond_goal`` looks at it), each goal's object and the object of its condition (``when``) that is NOT
+in the catalogue (the robot's object memory and the manifest's ``limits.objects``) is compared with the catalogue names:
 
 * ONE catalogue name within the limit: the person is asked "Did you mean the X?" (the core phrase ``q_did_you_mean``); a yes (or the name
   said) takes it, a no or anything else keeps the goal as read. The catalogue is often only what the robot has seen, so a real word one letter
@@ -17,7 +18,8 @@ is a distance in UNITS: ``understand.near_distance`` over letters, or over the l
 ``asr.distance_unit: "jamo"`` (Korean). A name already in the catalogue is never changed, nor one that is, as whole words, part of a catalogue name
 or holds one ("lamp" / "red lamp"), nor a place or a person of the ENV.
 
-A word is settled once per run (a later reading of the same request takes the same answer, no second question). The questions are phrases
+A goal object it changed goes through the safety gate again (service ``safety_gate``): the gate (order 10) saw only the garbled name, and a
+forbidden catalogue name must be refused or dropped as if it had been said. A word is settled once per run (a later reading of the same request takes the same answer, no second question). The questions are phrases
 (the robot's i18n, else the language pack's ``speech`` block, else the core English one); a language with no text for the question, or the key
 ``ask`` off: nothing is asked and nothing changes (fail open).
 
@@ -38,7 +40,7 @@ SPEC = OptionSpec(
     keys=(Key("enabled", "bool", False, aliases=("name_recover",)), Key("max_edits", "int", 2), Key("max_ratio", "float", 0.34),
           Key("min_len", "int", 4), Key("ask", "bool", True), Key("complete", "bool", False)),
     hooks=("on_goals",),
-    order=70,
+    order=17,
     enabled="enabled",
     doc="A goal object the catalogue lacks is asked about the catalogue names within a strict letter distance (one: did you mean X; several: A or B); none changes nothing.",
 )
@@ -120,24 +122,31 @@ class NameRecover(Option):
         cat = catalogue(run, self.svc.robot, langs)
         if not cat or not getattr(run, "goals", None):
             return None
-        for holder, word in self._slots(run, cat, langs):
+        changed = False
+        for holder, word, own in self._slots(run, cat, langs):
             took = yield from self._resolve(run, word, cat, langs)
             if took is STOP:
                 return STOP
             if took:
                 holder["object"] = took
+                changed = changed or own
+        if changed:                                     # the safety gate saw the garbled name: it sees the name taken
+            return (yield from self.svc.safety_gate(run))
         return None
 
     def _slots(self, run, cat, langs) -> list:
-        """(the dict that holds the name, the name) of every goal object to recover: not a say, not a place or person of the ENV,
-        not (as whole words) a catalogue name, part of one or holding one."""
+        """(the dict that holds the name, the name, is it the goal's own object) of every name to recover: a goal's object (not of a say)
+        and the object of its condition (``when``); not a place or person of the ENV, not (as whole words) a catalogue name, part of one or
+        holding one."""
         env = getattr(getattr(run, "places", None), "env", None) or {}
         known = {names.plain(x, langs) for k, v in env.items() for x in [run.places.head(k)] + list(v.get("aliases") or []) if x}
         out = []
-        for g in run.goals:
-            word = names.plain(g.get("object"), langs) if isinstance(g, dict) and g.get("type") != "say" else ""
-            if word and word not in known and not any(related(word, c, langs) for c in cat):
-                out.append((g, word))
+        for g in (x for x in run.goals if isinstance(x, dict)):
+            w = g.get("when")
+            for holder, own in ((g if g.get("type") != "say" else None, True), (w if isinstance(w, dict) else None, False)):
+                word = names.plain(holder.get("object"), langs) if holder is not None else ""
+                if word and word not in known and not any(related(word, c, langs) for c in cat):
+                    out.append((holder, word, own))
         return out
 
     def _resolve(self, run, word, cat, langs):

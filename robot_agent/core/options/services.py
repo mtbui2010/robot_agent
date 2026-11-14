@@ -23,6 +23,7 @@ class Services(Protocol):
     def first_unsearched(self, run, obj: str, keys) -> Optional[str]: ...        # the best of ``keys`` not looked at yet
     def run_step(self, run, step: dict) -> Any: ...                            # one step of the end-of-run check, effect applied on success: the result or None
     def cancelled(self, run) -> Optional[dict]: ...                             # the stop event if the run was cancelled
+    def safety_gate(self, run): ...                                              # generator: the goals through the safety gate again (STOP or None)
     def replan_or_fail(self, run, step, reason: str, msg: str): ...            # generator: the replan / give-up path
     def replan_round(self, run) -> tuple: ...                                   # (replans recorded, planner calls left in max_replans)
     def ask_model(self, run, prompt: str, schema: dict) -> Optional[dict]: ...  # ONE extra model call (no repair, stoppable, in the run's budget): the JSON dict or None

@@ -104,7 +104,7 @@ dropped. A *flow* hook is a generator (`yield from`): it may yield run events an
 `goal_words` also answers the service `goal_guard(run, goals)` (a guard with `place(name)` and `frozen(goal)`) that the engine puts on `places.guard` before the goal repairs (`goal_fix.drop_invented`, `repair_destination`, `shared_listener` read it; None = old behaviour).
 
 Services (`OptionSpec.services`, asked with `Dispatcher.query(name, *args, default=...)`): `hazard.forbids(goal, places)`,
-`hazard.refused_goals(run)`, `hazard.gate_off()`, `reach_delivery.no_refetch()`, `dedupe_keep_end.keep_after_dedupe()`. A query returns the first answer that is not None; `Dispatcher.collect(name, *args)` joins the lists of every option that serves `name` (`refused_goals`: `hazard` and `cond_goal`).
+`hazard.refused_goals(run)`, `hazard.gate_off()`, `reach_delivery.no_refetch()`, `dedupe_keep_end.keep_after_dedupe()`. A query returns the first answer that is not None; `Dispatcher.collect(name, *args)` joins the lists of every option that serves `name` (`refused_goals`: `hazard` and `cond_goal`). `Dispatcher.decide_flow_of(service, hook, *args)` runs a flow hook of only the options that serve `service`; the engine service `safety_gate(run)` uses it to put the goals through the safety gate again (`on_goals` of the options serving `forbids`) for an option that changed a goal after the gate ran (`name_recover`).
 
 ## The options
 
@@ -192,7 +192,7 @@ runs on a replan's suffix too), not this option's. Keys `enabled` (legacy `repla
 Lab flag `replan_guard`: `{part, subgoals | findings | dropped}`. Module: `robot_agent/options/replan_guard.py`.
 
 ### `name_recover`
-An object name the speech recogniser garbled is matched to the robot's object catalogue (default off; D3 layer L11). After the goals are read (`on_goals`), a goal object (not a `say` goal, not a place or person of the ENV)
+An object name the speech recogniser garbled is matched to the robot's object catalogue (default off; D3 layer L11). After the goals are read (`on_goals`, order 17: after `cond_extract` wrote a condition, before `cond_goal` looks at it), a goal object (not a `say` goal, not a place or person of the ENV) and the object of a goal's condition (`when`)
 that is not in the catalogue (object memory and `limits.objects`) and is not, as whole words, part of a catalogue name or holding one, is compared with the catalogue names by `understand.near_distance`
 (a swap of neighbours is one edit, a name plus 1-2 letters is one) in the pack's unit: characters, or the letters inside a syllable when the language pack declares `asr.distance_unit: "jamo"`. ONE name within
 `max_edits` (2) and `max_ratio` (0.34 of the longer name) is asked ("Did you mean the X?", core phrase `q_did_you_mean`; a yes or the name said takes it, anything else keeps the goal as read): the catalogue is often only
@@ -202,7 +202,7 @@ changes, nothing is asked. A word is settled once per run (a later reading takes
 (`speech.phrase` reads it; Korean declares `q_which_name`), else the core English; no text in the run's language or `ask` off: nothing asked, nothing changed (fail open). A name shorter than `min_len` (4) units is never
 matched. Not recoverable: a word that sounds alike but is spelled in another script or language, and a garble of more edits than the limit; those stay as read. Keys `enabled` (legacy `name_recover`), `max_edits`,
 `max_ratio`, `min_len`, `ask` (true), `complete` (false), all assumed. Pack data: `asr.distance_unit`, `asr.words`, `speech` (assumed, labels in the pack).
-Lab flag `name_recover`: `{said, took, asked | near}`. Module: `robot_agent/options/name_recover.py`.
+A goal object it changed goes through the safety gate again (service `safety_gate`: the gate at order 10 had seen only the garbled name), so a forbidden catalogue name is refused or dropped as if it had been said. Lab flag `name_recover`: `{said, took, asked | near}`. Module: `robot_agent/options/name_recover.py`.
 
 ### `asr_guard`
 A request the recogniser lost is asked again, once, without calling the reader (default off; D3 layer L11, switched on with `name_recover`). New hook `on_heard` runs at the start of an understand round: an EMPTY request

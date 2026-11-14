@@ -55,6 +55,11 @@ class LoopServices:
     def cancelled(self, run):
         return self._lp._cancelled(run)
 
+    def safety_gate(self, run):
+        """Flow: the run's goals as they are now through the safety gate once more (the ``on_goals`` of the options that serve
+        ``forbids``), for an option that changed a goal after the gate ran: what the gate returns (STOP when it refused them all), else None."""
+        return self._lp.options.decide_flow_of("forbids", "on_goals", run)
+
     def replan_or_fail(self, run, step, reason: str, msg: str):
         return self._lp._replan_or_fail(run, step, reason, msg)
 
