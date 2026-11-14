@@ -11,6 +11,10 @@ Pack data ``planner.options.precond_repair.needs``::
 * ``holding``: the hand must hold an object. Missing: the Find / Pick of the one goal object no step picks (none or several = nothing, no guess).
 * ``hand_free``: the hand must be empty. Missing: the held object is put down at the surface an ``on`` goal names for it (no such goal = nothing: a container may be closed).
 * ``near``: the robot must be at the step's object (an ENV key). Missing: a MoveTo it.
+* ``achieves`` (``"on"`` | ``"in"`` | ``"hand"``): this skill ends a goal of that kind from the held object (a put-down on a surface, a put-in a
+  container, a hand-over). End of plan: when the replay ends holding the object of a goal of that kind that no step released, the
+  skill is appended (``on`` / ``in``: after a MoveTo the goal's place, an ENV key, when the robot is not there; ``hand``: a goal with ``hand``). No such
+  rule = nothing. Two goals for the held object with different kinds: the first goal's.
 
 Roles used (``planner.action_roles``): ``move``, ``find``, ``pick``, ``put_down``; a role not declared = that repair is skipped (fail open). No
 rules, no label, an action not in the rules, a plan that already meets the rule = the plan is returned unchanged. Hook ``on_plan``.
@@ -23,6 +27,7 @@ from robot_agent.core.options import Key, Option, OptionSpec, register
 from robot_agent.core.options.config import resolve_key
 
 NEEDS = ("hand_free", "holding", "near")
+KINDS = ("on", "in", "hand")
 
 
 def rules_of(needs) -> dict:
@@ -32,7 +37,11 @@ def rules_of(needs) -> dict:
     rules = needs.get("rules")
     if not isinstance(rules, dict):
         return {}
-    return {a: {n: True for n in NEEDS if r.get(n) is True} for a, r in rules.items() if isinstance(a, str) and isinstance(r, dict)}
+    out = {a: {n: True for n in NEEDS if r.get(n) is True} for a, r in rules.items() if isinstance(a, str) and isinstance(r, dict)}
+    for a, r in rules.items():
+        if a in out and r.get("achieves") in KINDS:
+            out[a]["achieves"] = r["achieves"]
+    return out
 
 
 SPEC = OptionSpec(
@@ -75,17 +84,34 @@ class PrecondRepair(Option):
         """``steps`` with the missing steps spliced in; None when nothing is missing or nothing is declared."""
         rules = rules_of(self.cfg.get("needs") or resolve_key(SPEC, SPEC.key("needs"), {}, {}, getattr(self.svc.robot.manifest, "planner", None)))
         roles = {r: self.svc.role(r) for r in ("move", "find", "pick", "put_down")}
-        if not rules or not steps or not any(s.get("action") in rules for s in steps):
+        if not rules or not steps or not (any(s.get("action") in rules for s in steps) or any(r.get("achieves") for r in rules.values())):
             return None
         rel = getattr(self.svc.robot.model_capabilities(), "release_actions", ()) if hasattr(self.svc.robot, "model_capabilities") else ()
-        state, out = _State(run.world, roles, set(rel) | {self.svc.hand_action()} - {None}), []
+        state, out = _State(run.world, roles, set(rel) | {self.svc.hand_action()} - {None} | {a for a, r in rules.items() if r.get("achieves")}), []
         for i, st in enumerate(steps):
             for need, add in self._missing(st, rules.get(st.get("action"), {}), state, steps, run, roles, out):
                 out.extend(add)
                 self.svc.lab(SPEC.name, action=st.get("action"), need=need, index=i)
             out.append(st)
             state.apply(st)
+        out.extend(self._finish(state, rules, run, roles, out))
         return out if len(out) != len(steps) else None
+
+    def _finish(self, state, rules, run, roles, out) -> list:
+        """End of plan: the held object of a goal no step released gets the pack's skill that achieves the goal (see ``achieves``)."""
+        by_kind = {r["achieves"]: a for a, r in rules.items() if r.get("achieves")}
+        env = getattr(run.places, "env", {}) or {}
+        goals = [g for g in run.goals or [] if isinstance(g, dict) and g.get("object") == state.hold and g.get("type") in ("on", "in")]
+        if state.hold is None or not goals:
+            return []
+        g = goals[0]
+        kind = "hand" if g.get("hand") else g["type"]
+        act, key = by_kind.get(kind), _key_for(env, g.get("to"))
+        if not act or (kind != "hand" and not (key and roles["move"])):
+            return []
+        add = ([{"action": roles["move"], "object": key}] if kind != "hand" and state.at != key else []) + [{"action": act, "object": key or g.get("to")}]
+        self.svc.lab(SPEC.name, action=act, need="achieves", index=len(out))
+        return add
 
     def _missing(self, st, need, state, plan, run, roles, out):
         """(need, steps) pairs to put before ``st``; the replay state is advanced by each. A repair whose roles are not declared is skipped."""

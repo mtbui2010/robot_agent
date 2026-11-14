@@ -157,7 +157,9 @@ splices the missing step before the gate. Pack data `planner.options.precond_rep
 the surface an `on` goal names for it (no goal = nothing). `near`: a MoveTo the step's object (an ENV key). Roles read (`planner.action_roles`):
 `move`, `find`, `pick` (new role), `put_down`; one not declared skips that repair. No rules, no label, an action without rules, or a plan that already
 meets the rules = unchanged. Key `enabled` (legacy `precond_repair`), `needs` (dict, manifest only). Hook `on_plan`; lab flag `precond_repair`:
-`{action, need, index}`. Module: `robot_agent/options/precond_repair.py`. `gate_complete` was tried with it: no gain (docs/home/bench/d2_layers.md of symbolic_robot).
+`{action, need, index}`. Module: `robot_agent/options/precond_repair.py`. End of plan: a rule key `achieves` (`"on"` | `"in"` | `"hand"`) says the skill
+ends a goal of that kind; when the replay ends holding the object of such a goal that no step released, the skill is appended (`on` / `in` after a MoveTo
+the goal's ENV place, `hand` for a goal with `hand`; no rule = nothing; need `achieves` in the lab flag). `gate_complete` was tried with it: no gain (docs/home/bench/d2_layers.md of symbolic_robot).
 
 ### `goal_words`
 The goal filter compares whole words (default off). `goal_fix.drop_invented` dropped a move goal whose object it grounded to an ENV place, and the grounding

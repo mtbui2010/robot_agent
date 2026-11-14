@@ -137,3 +137,48 @@ def test_gate_complete_on_and_off_with_precond_repair_gives_the_same_result(make
     assert _status(make_assist, env, bad, gate_complete="1") == _status(make_assist, env, bad) == "failed"
     for plan in (bad, good):
         assert _status(make_assist, env, plan, precond_repair="1", gate_complete="1") == _status(make_assist, env, plan, precond_repair="1") == "success"
+
+
+# end of plan (class: the plan stops before the step that achieves its goal) ------------------------------------------------------------
+ACH = {"rules": {"Offer": {"holding": True, "near": True, "achieves": "hand"}, "Drop": {"holding": True, "achieves": "on"}}, "source": "made-up pack"}
+
+
+def test_end_of_plan_hand_goal_gets_the_achieving_skill():
+    """The plan fetched the object and walked to the person (a spot that is no ENV key) and stops: the pack's hand skill is appended."""
+    goals = [{"type": "on", "object": "gizmo", "from": "shelf", "to": "spot near me", "hand": True}]
+    opt, run, svc = make(needs=ACH, goals=goals)
+    got = opt.on_plan(steps("Walk shelf@hall", "Scan gizmo", "Seize gizmo", "Walk spot near me"), run)
+    assert acts(got)[-2:] == [("Walk", "spot near me"), ("Offer", "spot near me")] and len(got) == 5
+    assert svc.labs[-1][1]["need"] == "achieves"
+
+
+def test_end_of_plan_surface_goal_walks_then_puts_down():
+    goals = [{"type": "on", "object": "toy", "from": "", "to": "bin"}]
+    opt, run, _ = make(needs=ACH, goals=goals, hold="toy", at="shelf@hall")
+    assert acts(opt.on_plan(steps("Walk shelf@hall"), run)) == [("Walk", "shelf@hall"), ("Walk", "bin@yard"), ("Drop", "bin@yard")]
+    opt, run, _ = make(needs=ACH, goals=goals, hold="toy", at="bin@yard")
+    assert acts(opt.on_plan(steps("Walk bin@yard"), run)) == [("Walk", "bin@yard"), ("Drop", "bin@yard")]
+
+
+def test_end_of_plan_nothing_when_released_unheld_undeclared_or_foreign():
+    goals = [{"type": "on", "object": "toy", "from": "", "to": "bin"}]
+    opt, run, _ = make(needs=ACH, goals=goals, hold="toy", at="bin@yard")
+    assert opt.on_plan(steps("Drop bin@yard"), run) is None                        # already put down
+    opt, run, _ = make(needs=ACH, goals=goals, hold="other", at="bin@yard")
+    assert opt.on_plan(steps("Walk bin@yard"), run) is None                        # holds an object no goal wants
+    opt, run, _ = make(needs={"rules": {"Drop": {"holding": True}}, "source": "x"}, goals=goals, hold="toy", at="bin@yard")
+    assert opt.on_plan(steps("Walk bin@yard", "Drop bin@yard"), run) is None       # no `achieves` declared: nothing
+    opt, run, _ = make(needs={"rules": {"Offer": {"achieves": "hand"}}, "source": "x"}, goals=goals, hold="toy", at="bin@yard")
+    assert opt.on_plan(steps("Walk bin@yard", "Offer ana@hall"), run) is None      # surface goal, only a hand skill declared
+    assert rules_of({"rules": {"Drop": {"achieves": "bogus"}}, "assumed": True}) == {"Drop": {}}
+
+
+def test_end_of_plan_two_goals_the_first_is_dropped_off_and_the_second_is_completed():
+    """Shape of the failure class: goal 1 is put down by the plan, goal 2 is fetched and approached; only goal 2 lacks its last step, once."""
+    goals = [{"type": "on", "object": "toy", "from": "shelf", "to": "bin"}, {"type": "on", "object": "gizmo", "from": "shelf", "to": "spot near me", "hand": True}]
+    plan = steps("Walk shelf@hall", "Scan toy", "Seize toy", "Walk bin@yard", "Drop bin@yard", "Walk shelf@hall", "Scan gizmo", "Seize gizmo", "Walk spot near me")
+    opt, run, _ = make(needs=ACH, goals=goals)
+    got = opt.on_plan(plan, run)
+    assert acts(got)[:-1] == acts(plan) and acts(got)[-1] == ("Offer", "spot near me")
+    run2 = NS(world=run.world, places=run.places, goals=goals)
+    assert opt.on_plan(got, run2) is None                                           # idempotent
