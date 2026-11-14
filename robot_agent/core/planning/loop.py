@@ -339,6 +339,7 @@ class ClosedLoop:
     def _make_planner(self):
         name = self.cfg["planner"]
         if name == "grace":
+            opts = getattr(self, "options", None)         # options may add constructor keys (hook on_planner_kwargs)
             return get_planner(
                 "grace",
                 host=self.cfg.get("host"),
@@ -351,6 +352,7 @@ class ClosedLoop:
                 seed_memory=self.robot.seed_memory(),
                 # its plan actions + description in SAGE's prompts (ROBOT_AGENT_SAGE_ROBOT_PROMPT=0: off)
                 **robot_prompt.sage_prompt_kwargs(self.robot),
+                **(opts.transform("on_planner_kwargs", {}) if opts is not None else {}),
             )
         if name == "llm_direct":
             return get_planner(

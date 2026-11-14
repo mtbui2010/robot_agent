@@ -66,6 +66,10 @@ class LoopServices:
     def goal_phrase(self, goal, places):
         return self._lp._goal_phrase(goal, places, lambda k: speech.say_name(places, k, "en"))
 
+    def subgoals(self, run):
+        """The planner's sub-goals for the run's goals now (one per goal), or None when the planner decomposes itself."""
+        return self._lp._subgoals(run)
+
     def reread_change(self, run, text):
         return self._lp._llm_goal_change(run, text)
 

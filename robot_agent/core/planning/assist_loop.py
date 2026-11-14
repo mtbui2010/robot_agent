@@ -2971,14 +2971,10 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         ers = (f"E: {failed.get('action')} {failed.get('object')} failed. R: {reason}. "
                f"S: robot at {world.arrived}, holding {world.holding or 'nothing'}; goals: {r.goal_txt}")
         r.replan_error = None
-        suffix, ers = self._replan_suffix(r, failed, ers)
-        suffix = self._repair_suffix(r, suffix) if r.replan_error is None else suffix
-        bad = self._hard_findings(r, suffix) if r.replan_error is None else []
+        suffix, ers, bad = self._replan_suffix(r, failed, ers)
         if bad and r.replans < self.cfg["max_replans"]:
             r.replans += 1                            # one refinement with the gate's findings
-            suffix, ers = self._replan_suffix(r, failed, ers + "; the new plan was rejected: " + "; ".join(bad))
-            suffix = self._repair_suffix(r, suffix) if r.replan_error is None else suffix
-            bad = self._hard_findings(r, suffix) if r.replan_error is None else []
+            suffix, ers, bad = self._replan_suffix(r, failed, ers + "; the new plan was rejected: " + "; ".join(bad))
         if r.replan_error is not None:
             # the planner is down: the old rest of the plan is not run either (the caller ends the run with it)
             r.run.replans.append({"at_index": r.i, "failed": failed, "reason": ers, "suffix_len": 0, "problems": []})
@@ -3000,17 +2996,19 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
                     say=r.announcer.announce("replan"), world=world.to_dict())
 
     def _replan_suffix(self, r, failed, ers):
-        """The planner's suffix for the failure `ers`, grounded: (suffix, ers + any planner error)."""
+        """The planner's suffix for the failure `ers`, grounded, repaired: (suffix, ers + any planner error, its findings)."""
         from ..run_control import call_cancellable, is_cancel
         try:
             suffix, _m = self._plan_call(r, "replan", r.restated, r.completed, failed, ers, self._obs(r), [],
-                                         what="replan")
-            return self._tidy(r, self._search_steer(r, self._ground_all(r, suffix or [])))[0], ers
+                                         what="replan", subgoals=getattr(r, "replan_subgoals", None))
+            suffix = self._tidy(r, self._search_steer(r, self._ground_all(r, suffix or [])))[0]
         except Exception as e:
             if is_cancel(e):
                 raise
             r.replan_error = e                       # kept: the run ends with it (_no_replan_end)
-            return [], ers + f"; replan error: {e}"
+            return [], ers + f"; replan error: {e}", []
+        suffix = self._repair_suffix(r, suffix)
+        return suffix, ers, self.options.transform("on_replan_findings", self._hard_findings(r, suffix), r, suffix)
 
     @staticmethod
     def _no_replan(r, fail_msg) -> str:
@@ -3199,9 +3197,11 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         if self._goals_hold(r.goals, r.world, r.placed, r.completed, r.world_at_start.arrived):
             r.steps = r.steps[:r.i]
             return _NEXT
-        return (yield from self._replan_or_fail(r, {"action": "Change", "object": "goals"},
-                                                f"the user changed the goals ({said})",
-                                                f"could not replan for the changed goals: {r.goal_txt}"))
+        r.replan_subgoals = self.options.decide("on_goal_replan", r)      # e.g. replan_guard: sub-goals rebuilt from the new goals
+        out = yield from self._replan_or_fail(r, {"action": "Change", "object": "goals"}, f"the user changed the goals ({said})",
+                                              f"could not replan for the changed goals: {r.goal_txt}")
+        r.replan_subgoals = None
+        return out
 
     def _execute_phase(self, r):
         """Run the plan step by step. True when the run ended."""

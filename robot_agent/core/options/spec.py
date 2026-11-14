@@ -40,6 +40,9 @@ HOOKS: Dict[str, Tuple[str, bool]] = {
     "on_final": ("decide", False),           # the end of the run, before the goals are checked
     "on_goals_met": ("decide", False),       # the goals hold: the run may end with something to say
     "on_finish": ("observe", False),         # the ``done`` event's fields, as they are about to be sent
+    "on_planner_kwargs": ("transform", False),  # the constructor keys the planner is built with (a dict): options add the ones the planner backend accepts
+    "on_goal_replan": ("decide", False),     # the goals changed mid-run, before the plan is repaired: sub-goals for the rest of the plan, or None
+    "on_replan_findings": ("transform", False),  # a replan's suffix, after the engine's own findings (a list): options add findings (one refine, then the run ends uncertified)
 }
 
 _PYTYPES = {"bool": bool, "int": int, "float": float, "str": str, "dict": dict}

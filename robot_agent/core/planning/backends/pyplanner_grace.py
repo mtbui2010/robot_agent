@@ -55,6 +55,8 @@ _GRACE_KWARGS = (
     # versions take **kwargs and ignore them)
     "actions",
     "robot_description",
+    # which block a replan repairs (embodiplan >= the replan_block_fix key; older versions take **kwargs and ignore it)
+    "replan_block_fix",
 )
 
 
@@ -272,8 +274,9 @@ class GraceBackend:
         obs: str,
         visible_objects: list[str],
         budget: Any = None,
+        subgoals: list | None = None,
     ) -> tuple[list[dict], dict]:
-        kw, own = self._optional("replan", None, budget)
+        kw, own = self._optional("replan", subgoals, budget)
         if own is not None:
             own.take(what="replan")
         steps, metrics = self._p.replan(

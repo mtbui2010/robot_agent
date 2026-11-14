@@ -14,7 +14,7 @@ CLAUDE.md rules 13-15. The reference for the flat run options and manifest keys 
 | `Registry`, `register` | `core/options/registry.py` | the list of options; built-in ones from `robot_agent/options/__init__.py`, others by entry point group `robot_agent.options` |
 | `Dispatcher` | `core/options/dispatch.py` | builds the enabled options of one loop, calls their hooks in `order` |
 | `Services` | `core/options/services.py` | the interface an option uses to ask the loop for something (`LoopServices` in `core/planning/option_services.py` implements it) |
-| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words`, `cond_goal`, `recipient_keep`, `plan_complete`, `ask_agree` so far |
+| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words`, `cond_goal`, `recipient_keep`, `plan_complete`, `ask_agree`, `replan_guard` so far |
 
 `python -m robot_agent.core.options list` prints the registered options, their keys and hooks.
 `python -m robot_agent.core.options check MANIFEST.yaml` reports `planner.options` entries that name no option or key.
@@ -76,6 +76,9 @@ dropped. A *flow* hook is a generator (`yield from`): it may yield run events an
 | `on_understand_prompt(text)` | transform | the understand prompt template, before `.format` (escape braces): options add lines; None = unchanged | `cond_goal` |
 | `on_goals(run)` | decide, flow | understood goals, before the read-back and the grounding | `hazard` (the gate), `ask_source` (asks where an object is), `cond_goal` (looks at the place of a `when`), `goal_words` (asks when a name is an object and a place) |
 | `on_issues(issues, run, goals)` | transform | the read-back's issues (`understand.find_issues` plus the loop's extras): the list, or None (unchanged) | `ask_focus`, `entity_cover`, `ask_agree` |
+| `on_planner_kwargs(kwargs)` | transform | the constructor keys of the planner (a dict) the loop builds; a key must also be in the backend's whitelist (`_GRACE_KWARGS`) | `replan_guard` (`replan_block_fix`) |
+| `on_goal_replan(run)` | decide | the goals changed mid-run, before the plan is repaired: sub-goals for the rest of the plan (the planner's `replan(subgoals=)`), or None | `replan_guard` |
+| `on_replan_findings(bad, run, suffix)` | transform | a replan's suffix, after the engine's own findings: the list; a finding makes the one refine, then the uncertified end | `replan_guard` |
 | `on_goal_edit(run, text)` | observe | a correction is about to be read | `unapplied_change` |
 | `on_goal_reread(run, text, understood, goals, q)` | observe | the understand LLM re-read a correction | `unapplied_change` |
 | `on_goal_unapplied(run, turn)` | decide, flow | the correction changed nothing (`turn.text`, `turn.change`) | `unapplied_change` |
@@ -163,6 +166,16 @@ particle); a delivery verb or "here" alone says nothing about who gets the objec
 one question in `on_goals` (the existing `q_which_reading` phrase; the answer decides by the same evidence) when the run has no answer yet and `ask_when_unsure` is on. No pack data of its own; no
 first-person words in the packs = the recipient always stays. Keys `enabled` (legacy `recipient_keep`), `ask_when_unsure` (true). Hooks `on_start` (sets `places.listener_rule`, which
 `goal_fix.shared_listener` runs in place of its own rule), `on_goals` (the question). Lab flag `recipient_keep`: `{rule, person}`. Module: `robot_agent/options/recipient_keep.py`.
+
+### `replan_guard`
+A replan repairs the failed step's own block, is built from the new goals after a goal change, and does not run a suffix the action model rejects (default off; D3 layer L12; D1 layer `replan_block`). Three parts, each a bool key
+that is on when the option is on (set one to false to ablate): (1) `block_fix`: the planner is built with the embodiplan SAGE key `replan_block_fix` (hook `on_planner_kwargs`; the backend whitelist carries it): the failed block is found
+by lining the completed steps up with the plan's own steps, so the steps the engine added (a search, a look) or dropped do not move the repair into the next or the last block; a failed step that is no plan step gets the global replan.
+(2) `goal_rebuild`: after a goal change (`_repair_goals`) hook `on_goal_replan` gives the planner sub-goals rebuilt from the new goals (service `subgoals`, `replan(subgoals=)`; the backend forwards them) and sets the plan's task text
+to the new goals' text; before, the old block was repaired with the old task. (3) `critical_refine`: hook `on_replan_findings` simulates the replan's suffix from the belief now with the action model and adds the findings whose code the
+pack declares, so the one existing refine is told and, if they remain, the run ends uncertified. Pack data `planner.options.replan_guard.critical`: `{"codes": [<action-model code>], "source": "<label>"}` (or `"assumed": true`);
+no codes or no label = part 3 does nothing. A recipient the goal names has no action-model code and is not covered. Keys `enabled` (legacy `replan_guard`), `block_fix`, `goal_rebuild`, `critical_refine`, `critical` (dict).
+Lab flag `replan_guard`: `{part, subgoals | findings}`. Module: `robot_agent/options/replan_guard.py`.
 
 ### `plan_complete`
 A plan that stops short of the step its goal needs is completed from the pack's declared rules (default off; D3 layer L13). Three classes: (1) the plan picks an object and
