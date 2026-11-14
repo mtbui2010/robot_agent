@@ -74,6 +74,11 @@ class LoopServices:
         """The planner's sub-goals for the run's goals now (one per goal), or None when the planner decomposes itself."""
         return self._lp._subgoals(run)
 
+    def replan_round(self, run) -> tuple:
+        """(replans the run has recorded, planner calls left in its ``max_replans`` budget). The calls of one replan (its suffix and the one
+        refine) see the same first number; a refine follows a rejected suffix only while the second is above 0."""
+        return len(getattr(getattr(run, "run", None), "replans", None) or ()), int(self._lp.cfg["max_replans"]) - int(getattr(run, "replans", 0) or 0)
+
     def ask_model(self, run, prompt, schema):
         """ONE extra call to the planner's model (no repair call, stoppable, counted in the run's LLM budget): the JSON answer as a dict, or None
         (model unavailable, budget used up, no JSON). A stop of the run is raised as it is."""

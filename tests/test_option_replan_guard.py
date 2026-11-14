@@ -23,9 +23,10 @@ def make(overrides=None, critical=CODES, goals=(), holding=None):
     caps = Capabilities()
     robot = NS(model_capabilities=lambda: caps, plan_actions=["MoveTo", "Find", "Pick", "Place", "PutIn", "Open", "Close"],
                manifest=NS(planner={"options": {"replan_guard": {"critical": critical}}} if critical is not None else {}))
-    svc = NS(robot=robot, lab=lambda *a, **k: labs.append((a, k)), subgoals=lambda run: ["carry the gem to the vat"] if run.goals else None)
+    svc = NS(robot=robot, lab=lambda *a, **k: labs.append((a, k)), subgoals=lambda run: ["carry the gem to the vat"] if run.goals else None,
+             replan_round=lambda run: (len(run.recorded), run.left))
     cfg = resolve(SPEC, {"replan_guard": "1", **(overrides or {})}, {}, robot.manifest.planner)
-    run = NS(world=world, places=Places(ENV), goals=list(goals), goal_txt="gem to vat", restated="old words")
+    run = NS(world=world, places=Places(ENV), goals=list(goals), goal_txt="gem to vat", restated="old words", recorded=[], left=1)
     return ReplanGuard(cfg, svc), run, labs
 
 
@@ -39,6 +40,8 @@ def test_replan_guard_registered_and_off_by_default(make_assist, env):
     assert loop.options.transform("on_planner_kwargs", {}) == {}
     assert loop.options.decide("on_goal_replan", NS(goals=[GOAL])) is None
     assert loop.options.transform("on_replan_findings", ["x"], NS(), []) == ["x"]
+    plan = steps("Find gem", "Pick gem", "MoveTo pen@yard", "PutIn pen@yard", "PutIn pen@yard")
+    assert loop.options.transform("on_plan", plan, NS(world=SymbolicState(), places=Places(ENV))) == plan      # off: a duplicate release is kept
 
 
 def test_replan_guard_off_a_goal_change_gives_the_planner_no_sub_goals(make_assist, env):
@@ -147,7 +150,7 @@ def test_the_part_off_or_an_empty_suffix_adds_nothing():
     assert opt.on_replan_findings([], run, []) is None
 
 
-# ── loop level: a replan suffix with a declared critical finding goes to the one refine ──
+# ── loop level: a replan suffix with a declared critical finding goes to the one refine (guarded_run off: the old end) ──
 def test_a_critical_suffix_is_refined_once_then_the_run_ends_uncertified_or_runs_clean(make_assist, env):
     from fakes import ScriptedPlanner
     HOLD = {"apple": DS}
@@ -157,7 +160,7 @@ def test_a_critical_suffix_is_refined_once_then_the_run_ends_uncertified_or_runs
         robot = FakeRobot(env, HOLD, faults=[{"skill": "find", "obj": "apple", "nth": 1, "kind": "fail"}])
         planner = ScriptedPlanner(PLAN, replans=repl)
         evs = run_task(make_assist(robot, FakeLLM(APPLE), planner, replan_guard="1",
-                                   **{"replan_guard.critical": CRIT}), TASK)
+                                   **{"replan_guard.critical": CRIT, "replan_guard.guarded_run": "0"}), TASK)
         assert done(evs)["status"] == status, [e["event"] for e in evs]
         assert len([c for c in planner.calls if c[0] == "replan"]) == 2
         assert "rejected" in planner.calls[2][2] and "requires holding" in planner.calls[2][2]     # the one refine is told the finding
@@ -212,3 +215,139 @@ def start_run():
     r = run_control.manager().start(TASK, user_id="alice", role="member").run
     run_control.begin_run()
     return r
+
+
+# ── part: guarded_run (a finding the run-time check refuses itself steers the one refine, never ends the run) ──
+WRONG = steps("MoveTo rack@yard", "Find gem", "Pick gem", "Place vat@yard")         # the release away from its place: the guard refuses it before it moves
+
+
+def test_a_guarded_finding_steers_the_first_call_and_is_left_to_the_run_time_check_in_the_refine():
+    opt, run, labs = make(goals=[GOAL])
+    first = opt.on_replan_findings([], run, WRONG)
+    assert first and "Place" in first[0]                                            # the suffix: the refine is told
+    assert opt.on_replan_findings([], run, WRONG) is None                           # the refine of the same replan: the suffix runs
+    assert [k["part"] for _a, k in labs] == ["critical", "guarded"]
+    run.recorded.append("one replan done")
+    assert opt.on_replan_findings([], run, WRONG)                                   # the next replan steers again
+
+
+def test_a_guarded_finding_is_not_added_when_no_refine_is_left_and_the_part_off_keeps_the_old_end():
+    opt, run, labs = make(goals=[GOAL])
+    run.left = 0
+    assert opt.on_replan_findings(["step 9 'X': no"], run, WRONG) is None and labs[-1][1]["part"] == "guarded"
+    opt, run, _ = make({"replan_guard.guarded_run": "0"}, goals=[GOAL])
+    assert opt.on_replan_findings([], run, WRONG) and opt.on_replan_findings([], run, WRONG)     # off: both calls carry it (the run ends uncertified)
+
+
+def test_a_finding_the_run_time_check_cannot_catch_still_counts_in_the_refine():
+    crit = {"codes": ["find_wrong_place", "place_wrong_location"], "assumed": True}
+    opt, run, _ = make(critical=crit, goals=[GOAL])                                 # the gem is believed at the rack; the suffix looks at the pen
+    plan = steps("MoveTo pen@yard", "Find gem")
+    assert opt.on_replan_findings([], run, plan) and opt.on_replan_findings([], run, plan) == [opt.on_replan_findings([], run, plan)[0]]
+
+
+# ── part: release_dedupe ──
+def test_an_empty_hand_release_repeating_the_last_release_is_dropped():
+    opt, run, labs = make()
+    plan = steps("Find gem", "Pick gem", "MoveTo pen@yard", "PutIn pen@yard", "PutIn pen@yard")
+    assert opt.on_plan(plan, run) == plan[:4] and labs[-1][1] == {"part": "dedupe", "dropped": [4]}
+    plan = steps("Find gem", "Pick gem", "MoveTo pen@yard", "PutIn pen@yard", "Close pen@yard", "PutIn pen@yard", "MoveTo vat@yard")
+    assert opt.on_plan(plan, run) == plan[:5] + plan[6:]                            # a step between that fills no hand: still the same release
+
+
+def test_release_dedupe_empty_plan_or_no_repeat_changes_nothing():
+    opt, run, labs = make()
+    assert opt.on_plan([], run) is None and opt.on_plan(steps("MoveTo vat@yard"), NS(world=None)) is None
+    again = steps("Find gem", "Pick gem", "MoveTo pen@yard", "PutIn pen@yard", "Find bolt", "Pick bolt", "PutIn pen@yard")
+    assert opt.on_plan(again, run) is None                                          # the hand was filled again: a real second release
+    other = steps("Find gem", "Pick gem", "MoveTo vat@yard", "Place vat@yard", "Place rack@yard")
+    assert opt.on_plan(other, run) is None and not labs                             # another place: not a repeat (the run-time check decides)
+    opt, run, _ = make({"replan_guard.release_dedupe": "0"})
+    assert opt.on_plan(steps("Find gem", "Pick gem", "MoveTo pen@yard", "PutIn pen@yard", "PutIn pen@yard"), run) is None
+
+
+# ── loop level (regressions of the class: a suffix the run-time check would have caught ended the run) ──
+SPOOL = {"status": "clear", "reason": "", "question": "", "goals": [{"type": "on", "object": "spool", "from": "shelf", "to": "side table"}]}
+SH, ST, WA, SI = "shelf@kitchen", "stool@bedroom", "washer@laundry room", "side table@living room"
+SPLAN = steps(f"MoveTo {SH}", "Find spool", "Pick spool", f"MoveTo {SI}", f"Place {SI}")
+AWAY = steps(f"MoveTo {ST}", "Find spool", "Pick spool", f"Place {SI}")             # no MoveTo before the release
+CRIT2 = {"codes": ["place_without_holding", "place_wrong_location"], "assumed": True}
+
+
+def _spool_run(make_assist, env, at, replans, **opts):
+    from fakes import ScriptedPlanner
+    robot = FakeRobot(env, {"spool": at})
+    planner = ScriptedPlanner(SPLAN, replans=replans)
+    loop = make_assist(robot, FakeLLM(SPOOL), planner, detector_miss_rate=0, **opts)
+    return loop, robot, planner, done(run_task(loop, "Put the spool on the side table.", max_events=3000))
+
+
+def test_a_wrong_place_release_after_a_find_of_an_absent_object_runs_and_a_normal_replan_follows(make_assist, env):
+    good = steps(f"MoveTo {WA}", "Find spool", "Pick spool", f"MoveTo {SI}", f"Place {SI}")
+    loop, robot, planner, d = _spool_run(make_assist, env, WA, [AWAY, AWAY, good], replan_guard="1", **{"replan_guard.critical": CRIT2})
+    assert d["status"] == "success", d
+    calls = [c for c in planner.calls if c[0] == "replan"]
+    assert len(calls) == 3 and "rejected" in calls[1][2] and "Find" in calls[2][1]["action"]       # the refine was steered; the next replan is the Find's
+    assert [e for e in loop.lab_log if e.get("part") == "guarded"]
+    assert all(ok for sk, _o, ok, _m in robot.trace if sk == "place")
+
+
+def test_guarded_run_off_the_same_suffix_ends_the_run_uncertified_as_before(make_assist, env):
+    good = steps(f"MoveTo {WA}", "Find spool", "Pick spool", f"MoveTo {SI}", f"Place {SI}")
+    _l, robot, planner, d = _spool_run(make_assist, env, WA, [AWAY, AWAY, good], replan_guard="1",
+                                       **{"replan_guard.critical": CRIT2, "replan_guard.guarded_run": "0"})
+    assert d["status"] == "failed" and "did not pass my checks" in d["msg"]
+    assert len([c for c in planner.calls if c[0] == "replan"]) == 2 and [sk for sk, *_r in robot.trace] == ["move", "find"]
+
+
+def test_a_wrong_place_release_reached_sends_no_release_to_the_robot_and_one_replan_follows(make_assist, env):
+    back = steps(f"MoveTo {SI}", f"Place {SI}")
+    loop, robot, planner, d = _spool_run(make_assist, env, ST, [AWAY, AWAY, back], replan_guard="1", **{"replan_guard.critical": CRIT2})
+    assert d["status"] == "success", d
+    calls = [c for c in planner.calls if c[0] == "replan"]
+    assert len(calls) == 3 and "precondition" in calls[2][2] and calls[2][1]["action"] == "Place"
+    assert [(sk, o, ok) for sk, o, ok, _m in robot.trace if sk == "place"] == [("place", SI, True)]
+
+
+def test_the_declared_near_need_gives_the_release_its_move_and_no_refine_is_needed(make_assist, env):
+    from fakes import ScriptedPlanner
+    robot = FakeRobot(env, {"spool": ST})
+    planner = ScriptedPlanner(SPLAN, replans=[AWAY])
+    loop = make_assist(robot, FakeLLM(SPOOL), planner, detector_miss_rate=0, replan_guard="1", precond_repair="1", **{"replan_guard.critical": CRIT2})
+    pl = loop.robot.manifest.planner
+    pl["action_roles"] = {"move": "MoveTo", "find": "Find", "pick": "Pick", "put_down": "Place"}
+    pl["options"] = {"precond_repair": {"needs": {"rules": {"Place": {"holding": True, "near": True}}, "source": "made-up pack: place needs arrived"}}}
+    d = done(run_task(loop, "Put the spool on the side table.", max_events=3000))
+    assert d["status"] == "success", d
+    assert len([c for c in planner.calls if c[0] == "replan"]) == 1                # the suffix was repaired before any refine
+    assert [e for e in loop.lab_log if e.get("flag") == "precond_repair" and e.get("need") == "near"]
+    assert not [e for e in loop.lab_log if e.get("flag") == "replan_guard" and e.get("part") == "critical"]
+
+
+TWO = {"status": "clear", "reason": "", "question": "", "goals": [{"type": "on", "object": "spool", "from": "shelf", "to": "side table"},
+                                                                    {"type": "on", "object": "cork", "from": "stool", "to": "sofa"}]}
+SO = "sofa@living room"
+CORK = [f"MoveTo {ST}", "Find cork", "Pick cork", f"MoveTo {SO}", f"Place {SO}"]
+
+
+def _two_run(make_assist, env, dedupe):
+    from fakes import ScriptedPlanner
+    twice = steps(f"MoveTo {WA}", "Find spool", "Pick spool", f"MoveTo {SI}", f"Place {SI}", f"Place {SI}", *CORK)
+    robot = FakeRobot(env, {"spool": WA, "cork": ST})
+    planner = ScriptedPlanner(steps(*[f"MoveTo {SH}", "Find spool", "Pick spool", f"MoveTo {SI}", f"Place {SI}"], *CORK), replans=[twice, twice])
+    loop = make_assist(robot, FakeLLM(TWO), planner, detector_miss_rate=0, replan_guard="1",
+                       **{"replan_guard.critical": CRIT2, "replan_guard.guarded_run": "0", "replan_guard.release_dedupe": dedupe})
+    return loop, robot, planner, done(run_task(loop, "Put the spool on the side table and the cork on the sofa.", max_events=3000))
+
+
+def test_a_replan_suffix_with_a_repeated_empty_hand_release_runs_without_it_and_without_a_refine(make_assist, env):
+    loop, robot, planner, d = _two_run(make_assist, env, "1")
+    assert d["status"] == "success", d
+    assert len([c for c in planner.calls if c[0] == "replan"]) == 1
+    assert [e for e in loop.lab_log if e.get("part") == "dedupe"] and [sk for sk, *_r in robot.trace].count("place") == 2
+
+
+def test_release_dedupe_off_the_repeated_release_is_a_critical_finding_as_before(make_assist, env):
+    loop, robot, planner, d = _two_run(make_assist, env, "0")
+    assert d["status"] == "failed" and "did not pass my checks" in d["msg"]
+    assert len([c for c in planner.calls if c[0] == "replan"]) == 2 and not [e for e in loop.lab_log if e.get("part") == "dedupe"]

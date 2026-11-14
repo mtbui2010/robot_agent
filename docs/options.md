@@ -70,7 +70,7 @@ dropped. A *flow* hook is a generator (`yield from`): it may yield run events an
 |---|---|---|---|
 | `on_start(run)` | observe | run set-up, after the places are read | `reach_delivery` (time of the person snapshot) |
 | `on_ground(mode, places, to)` | transform | the delivery mode for a goal to a person | `reach_delivery` |
-| `on_plan(steps, run)` | transform | the grounded plan, before `plan_tidy`: the steps, or None (unchanged) | `place_find`, `precond_repair`, `gate_prune` |
+| `on_plan(steps, run)` | transform | the grounded plan, before `plan_tidy`: the steps, or None (unchanged) | `place_find`, `precond_repair`, `gate_prune`, `replan_guard` (`release_dedupe`) |
 | `on_where_answer(run, obj, ans)` | decide, flow | the answer to the engine's own re-asked "I couldn't find the X. Where is it?": the place to go to, or None | `ask_source` (`use_room`, `clarify_unusable`) |
 | `on_understand_schema(schema)` | transform | the understand call's output schema (a fresh dict): options add optional fields; None = unchanged | `cond_goal` (`when`) |
 | `on_understand_prompt(text)` | transform | the understand prompt template, before `.format` (escape braces): options add lines; None = unchanged | `cond_goal` |
@@ -79,7 +79,7 @@ dropped. A *flow* hook is a generator (`yield from`): it may yield run events an
 | `on_issues(issues, run, goals)` | transform | the read-back's issues (`understand.find_issues` plus the loop's extras): the list, or None (unchanged) | `ask_focus`, `entity_cover`, `ask_agree` |
 | `on_planner_kwargs(kwargs)` | transform | the constructor keys of the planner (a dict) the loop builds; a key must also be in the backend's whitelist (`_GRACE_KWARGS`) | `replan_guard` (`replan_block_fix`) |
 | `on_goal_replan(run)` | decide | the goals changed mid-run, before the plan is repaired: sub-goals for the rest of the plan (the planner's `replan(subgoals=)`), or None | `replan_guard` |
-| `on_replan_findings(bad, run, suffix)` | transform | a replan's suffix, after the engine's own findings: the list; a finding makes the one refine, then the uncertified end | `replan_guard` |
+| `on_replan_findings(bad, run, suffix)` | transform | a replan's suffix (and its refine), after the engine's own findings: the list; a finding makes the one refine, then the uncertified end | `replan_guard` |
 | `on_goal_edit(run, text)` | observe | a correction is about to be read | `unapplied_change` |
 | `on_goal_reread(run, text, understood, goals, q)` | observe | the understand LLM re-read a correction | `unapplied_change` |
 | `on_goal_unapplied(run, turn)` | decide, flow | the correction changed nothing (`turn.text`, `turn.change`) | `unapplied_change` |
@@ -175,8 +175,13 @@ by lining the completed steps up with the plan's own steps, so the steps the eng
 (2) `goal_rebuild`: after a goal change (`_repair_goals`) hook `on_goal_replan` gives the planner sub-goals rebuilt from the new goals (service `subgoals`, `replan(subgoals=)`; the backend forwards them) and sets the plan's task text
 to the new goals' text; before, the old block was repaired with the old task. (3) `critical_refine`: hook `on_replan_findings` simulates the replan's suffix from the belief now with the action model and adds the findings whose code the
 pack declares, so the one existing refine is told and, if they remain, the run ends uncertified. Pack data `planner.options.replan_guard.critical`: `{"codes": [<action-model code>], "source": "<label>"}` (or `"assumed": true`);
-no codes or no label = part 3 does nothing. A recipient the goal names has no action-model code and is not covered. Keys `enabled` (legacy `replan_guard`), `block_fix`, `goal_rebuild`, `critical_refine`, `critical` (dict).
-Lab flag `replan_guard`: `{part, subgoals | findings}`. Module: `robot_agent/options/replan_guard.py`.
+no codes or no label = part 3 does nothing. A recipient the goal names has no action-model code and is not covered. (4) `guarded_run` (with part 3): a finding that the engine's own run-time check refuses before the step
+moves (`verify.symbolic_check` on the belief the suffix reaches there, the check `_guard` / `_precondition` makes; it replans at that step) only steers the one refine: it is added when a refine follows the call (service
+`replan_round`: the replans recorded and the planner calls left), and a refined suffix whose findings are all of that kind runs (lab `part: "guarded"`). The uncertified end stays for findings the run-time check cannot catch
+(e.g. `find_wrong_place`, which needs the goals). Off: those findings end the run as before. (5) `release_dedupe` (hook `on_plan`, every plan): a release that the action model refuses with an empty hand and that repeats the
+plan's last release (same action and object; a release = a step that emptied the hand in the replay, no name in the code) is dropped. The MoveTo a release lacks is `precond_repair`'s declared `near` need (its `on_plan`
+runs on a replan's suffix too), not this option's. Keys `enabled` (legacy `replan_guard`), `block_fix`, `goal_rebuild`, `critical_refine`, `guarded_run`, `release_dedupe`, `critical` (dict).
+Lab flag `replan_guard`: `{part, subgoals | findings | dropped}`. Module: `robot_agent/options/replan_guard.py`.
 
 ### `name_recover`
 An object name the speech recogniser garbled is matched to the robot's object catalogue (default off; D3 layer L11). After the goals are read (`on_goals`), a goal object (not a `say` goal, not a place or person of the ENV)

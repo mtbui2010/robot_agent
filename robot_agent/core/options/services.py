@@ -24,6 +24,7 @@ class Services(Protocol):
     def run_step(self, run, step: dict) -> Any: ...                            # one step of the end-of-run check, effect applied on success: the result or None
     def cancelled(self, run) -> Optional[dict]: ...                             # the stop event if the run was cancelled
     def replan_or_fail(self, run, step, reason: str, msg: str): ...            # generator: the replan / give-up path
+    def replan_round(self, run) -> tuple: ...                                   # (replans recorded, planner calls left in max_replans)
     def ask_model(self, run, prompt: str, schema: dict) -> Optional[dict]: ...  # ONE extra model call (no repair, stoppable, in the run's budget): the JSON dict or None
     def request_english(self, run) -> str: ...                                 # the request's words in the prompt language ("" if no trusted reading)
     def unsure_leftover(self, run, text) -> Optional[str]: ...                 # an "I don't know" answer without its phrases ("" = nothing else); None = not one
