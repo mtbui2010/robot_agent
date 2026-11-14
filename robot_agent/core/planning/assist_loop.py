@@ -1571,12 +1571,12 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
 
     def _holding(self, node, default: bool) -> bool:
         """Is something in the hand? The robot's holding sensor (the one that verifies its Pick);
-        ``default`` when it has none or it cannot be read."""
+        ``default`` when it has none or it cannot be read (service ``hand_reading``: an option that reads the sensor's codes, else ``isdone``)."""
         skill = self.robot.holding_sensor()
         if skill is None:
             return default
         try:
-            return bool(self.sr.execute(skill, {}, node).get("isdone"))
+            return self.options.query("hand_reading", skill, (raw := self.sr.execute(skill, {}, node)), default, default=bool(raw.get("isdone")))
         except Exception:
             return default
 

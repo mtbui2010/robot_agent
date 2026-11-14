@@ -14,7 +14,7 @@ CLAUDE.md rules 13-15. The reference for the flat run options and manifest keys 
 | `Registry`, `register` | `core/options/registry.py` | the list of options; built-in ones from `robot_agent/options/__init__.py`, others by entry point group `robot_agent.options` |
 | `Dispatcher` | `core/options/dispatch.py` | builds the enabled options of one loop, calls their hooks in `order` |
 | `Services` | `core/options/services.py` | the interface an option uses to ask the loop for something (`LoopServices` in `core/planning/option_services.py` implements it) |
-| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words`, `cond_goal`, `cond_extract`, `recipient_keep`, `plan_complete`, `ask_agree`, `replan_guard`, `name_recover`, `asr_guard`, `plan_release` so far |
+| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words`, `cond_goal`, `cond_extract`, `recipient_keep`, `plan_complete`, `ask_agree`, `replan_guard`, `name_recover`, `asr_guard`, `plan_release`, `effect_check` so far |
 
 `python -m robot_agent.core.options list` prints the registered options, their keys and hooks.
 `python -m robot_agent.core.options check MANIFEST.yaml` reports `planner.options` entries that name no option or key.
@@ -94,8 +94,8 @@ dropped. A *flow* hook is a generator (`yield from`): it may yield run events an
 | `on_goal_unapplied(run, turn)` | decide, flow | the correction changed nothing (`turn.text`, `turn.change`) | `unapplied_change` |
 | `on_step(run, step)` | decide, flow | before a step runs; returns the step that replaces it | `reach_delivery` |
 | `on_step_done(run, step, held)` | observe | a step succeeded (`held`: the object in the hand before it) | `reach_delivery` |
-| `on_step_failed(run, step, code, reason, action, obj)` | decide, flow | a step failed, before the recovery policy | `reach_delivery` |
-| `on_goal_check(run, obj)` | decide | the end-of-run check of one goal: `(ok, why, skill)` | `reach_delivery` |
+| `on_step_failed(run, step, code, reason, action, obj)` | decide, flow | a step failed, before the recovery policy | `reach_delivery`, `reopen_on_miss`, `effect_check` |
+| `on_goal_check(run, obj)` | decide | the end-of-run check of one goal: `(ok, why, skill)` | `reach_delivery`, `effect_check` (never a verdict: it arms the search) |
 | `on_translation_lost(text, lost, translate)` | decide | the input translation lost a place name the person said: the English to use, or None | `translate_retry` |
 | `on_second_look(run, obj, place)` | decide | the goal check's first look missed and the second saw the object: `(ok, why, skill)` or None (the second look is believed) | `confirm_look` |
 | `on_final(run)` | decide | end of run, before the goals are checked; returns the `done` event | `unapplied_change` |
@@ -105,7 +105,7 @@ dropped. A *flow* hook is a generator (`yield from`): it may yield run events an
 `goal_words` also answers the service `goal_guard(run, goals)` (a guard with `place(name)` and `frozen(goal)`) that the engine puts on `places.guard` before the goal repairs (`goal_fix.drop_invented`, `repair_destination`, `shared_listener` read it; None = old behaviour).
 
 Services (`OptionSpec.services`, asked with `Dispatcher.query(name, *args, default=...)`): `hazard.forbids(goal, places)`,
-`hazard.refused_goals(run)`, `hazard.gate_off()`, `reach_delivery.no_refetch()`, `dedupe_keep_end.keep_after_dedupe()`. A query returns the first answer that is not None; `Dispatcher.collect(name, *args)` joins the lists of every option that serves `name` (`refused_goals`: `hazard`, `cond_extract` and `cond_goal`). `Dispatcher.decide_flow_of(service, hook, *args)` runs a flow hook of only the options that serve `service`; the engine service `safety_gate(run)` uses it to put the goals through the safety gate again (`on_goals` of the options serving `forbids`) for an option that changed a goal after the gate ran (`name_recover`).
+`hazard.refused_goals(run)`, `hazard.gate_off()`, `reach_delivery.no_refetch()`, `dedupe_keep_end.keep_after_dedupe()`, `effect_check.hand_reading(skill, raw, default)` (asked by the engine's `_holding`: the holding sensor's result read three-valued; no answer = `isdone` as before). A query returns the first answer that is not None; `Dispatcher.collect(name, *args)` joins the lists of every option that serves `name` (`refused_goals`: `hazard`, `cond_extract` and `cond_goal`). `Dispatcher.decide_flow_of(service, hook, *args)` runs a flow hook of only the options that serve `service`; the engine service `safety_gate(run)` uses it to put the goals through the safety gate again (`on_goals` of the options serving `forbids`) for an option that changed a goal after the gate ran (`name_recover`).
 
 ## The options
 
@@ -236,6 +236,23 @@ Pack data `planner.options.plan_release.needs`: `{"rules": {<Action>: {"achieves
 `close`, `put_down`. No rule that achieves `in`, no `pick` / `close` role, or two hands or more = the plan is unchanged. Keys `enabled` (legacy `plan_release`), `needs` (dict, manifest
 only). Hooks `on_start`, `on_plan` (order 87, after `precond_repair` and `plan_complete`: a Close they completed holds nothing, so no step is added twice). Lab flag `plan_release`:
 `{object, place, fix}` (`splice`, `pick_step`, `removed`), once per distinct edit in a run. Module: `robot_agent/options/plan_release.py`.
+
+### `effect_check`
+What a failed release left in the hand is read from the robot's declared hand sensor, not guessed (default off; D4 layer L16, classes drop_recovery, grasp_misread,
+silent_drop). (1) A step whose action the pack declares a release (the hand-over too) FAILED while the belief holds an object: the holding sensor is read once (engine
+service `hand_holds(run)`: True / False / None). Empty: the belief lets go and the contract's DROPPED rule runs (engine service `let_go(run, step)`: a 'dropped' sighting,
+then the engine's own `_refind_dropped`: the floor place of the room in the map, Find, Pick, back to the step, its retry cap); the hook returns NEXT when the refind was
+spliced in, else None (the belief is synchronised, the failure goes on). Holding or cannot be read: None, the belief keeps the object. The failure code is never read as
+"the hand is empty" (a hand-over that fails `grasp_failed` may be a person who did not take it). (2) Service `hand_reading`: the engine's `_holding` reads of the declared
+sensor are three-valued; a result that failed with a code the pack declares "cannot read" keeps the caller's default instead of reading as empty. (3) `on_goal_check`
+of an object this run released at a place (`run.placed`): the one place of that room whose head is the declared floor name goes first in the search for the object
+(`prefer_now`); a miss there then looks at that floor next. Never a verdict. No other skill result (a speech step's listeners, a hand-over's own fields) is read.
+Pack data `planner.options.effect_check.effects`: `{"sensor": {"skill": <the robot's holding sensor>, "unknown": [<failure code>, ...]}, "releases": [<Action>, ...],
+"floor": "<head of the map's floor places>", "source": "<label>"}` (or `"assumed": true`). No label = nothing; a sensor skill that is not the robot's holding sensor
+(`RobotView.holding_sensor`), no releases, no floor name: that part does nothing; two floor places in one room: no guess. Keys `enabled` (legacy `effect_check`),
+`effects` (dict, manifest only, read again at run time). Hooks `on_start`, `on_step_failed`, `on_goal_check` (order 88); service `hand_reading`. Lab flag
+`effect_check`: `{part: release, object, step, reading}`, `{part: unreadable, skill}`, `{part: floor, object, place, floor}`, once per distinct event in a run.
+Module: `robot_agent/options/effect_check.py`.
 
 ### `cond_goal`
 A request with a condition ("if the spoon is on the table, put it away; if not, leave it") is decided by the robot looking, not by the reader guessing (default off).
