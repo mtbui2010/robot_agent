@@ -19,13 +19,15 @@ is a distance in UNITS: ``understand.near_distance`` over letters, or over the l
 or holds one ("lamp" / "red lamp"), nor a place or a person of the ENV.
 
 A goal object it changed goes through the safety gate again (service ``safety_gate``): the gate (order 10) saw only the garbled name, and a
-forbidden catalogue name must be refused or dropped as if it had been said. A word is settled once per run (a later reading of the same request takes the same answer, no second question). The questions are phrases
+forbidden catalogue name must be refused or dropped as if it had been said. The read-back (hook ``on_issues``) counts the garbled word as covered
+by the name taken, and a re-read that holds the garbled word again (the read-back's re-samples) gets the issue that the name taken is not in it,
+so it does not replace the goals. A word is settled once per run (a later reading of the same request takes the same answer, no second question). The questions are phrases
 (the robot's i18n, else the language pack's ``speech`` block, else the core English one); a language with no text for the question, or the key
 ``ask`` off: nothing is asked and nothing changes (fail open).
 
 What it cannot recover: a word that SOUNDS like the object but is spelled in another script or another language (a sound-alike across scripts), or
 a garble of more than the limit's letters; those stay as the reader gave them (a question comes from the engine's own object check). Pack data:
-``asr.distance_unit``, ``asr.words``, ``speech.q_which_name``; no catalogue or no unknown object: nothing happens. Hook ``on_goals``. Keys:
+``asr.distance_unit``, ``asr.words``, ``speech.q_which_name``; no catalogue or no unknown object: nothing happens. Hooks ``on_goals``, ``on_issues``. Keys:
 ``enabled`` (legacy ``name_recover``), ``max_edits``, ``max_ratio``, ``min_len``, ``ask`` (true), ``complete`` (false). Lab flag
 ``name_recover``: ``{said, took, asked | near}``.
 """
@@ -39,7 +41,7 @@ SPEC = OptionSpec(
     name="name_recover",
     keys=(Key("enabled", "bool", False, aliases=("name_recover",)), Key("max_edits", "int", 2), Key("max_ratio", "float", 0.34),
           Key("min_len", "int", 4), Key("ask", "bool", True), Key("complete", "bool", False)),
-    hooks=("on_goals",),
+    hooks=("on_goals", "on_issues"),
     order=17,
     enabled="enabled",
     doc="A goal object the catalogue lacks is asked about the catalogue names within a strict letter distance (one: did you mean X; several: A or B); none changes nothing.",
@@ -133,6 +135,20 @@ class NameRecover(Option):
         if changed:                                     # the safety gate saw the garbled name: it sees the name taken
             return (yield from self.svc.safety_gate(run))
         return None
+
+    def on_issues(self, issues, run, goals):
+        """The read-back's issues with what the option settled: the garbled word the person said is covered by the name taken (the
+        word is not in the goals any more); a reading that holds the garbled word again (a re-sample) gets the issue that the name
+        taken is not in it, so it is not an issue-free reading that replaces the goals. None (unchanged) when nothing was taken."""
+        took = ((getattr(run, "opt", None) or {}).get(SPEC.name) or {}).get("took") or {}
+        if not took:
+            return None
+        langs = names.langs_of(run)
+        objs = {names.plain(g.get("object"), langs) for g in goals if isinstance(g, dict)}
+        settled = lambda i: i.get("kind") == "object" and any(t in objs and related(names.plain(i.get("what"), langs), s, langs)   # noqa: E731
+                                                               for s, t in took.items())
+        out = [i for i in issues if not settled(i)]
+        return out + [x for x in ({"kind": "object", "what": t} for s, t in took.items() if s in objs) if x not in out]
 
     def _slots(self, run, cat, langs) -> list:
         """(the dict that holds the name, the name, is it the goal's own object) of every name to recover: a goal's object (not of a say)

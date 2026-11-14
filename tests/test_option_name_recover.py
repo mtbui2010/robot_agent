@@ -331,17 +331,58 @@ def test_loop_asr_guard_off_the_reader_reads_the_empty_request(make_assist, env)
     assert "put the kettle" not in llm.calls[0][0]                                   # off: the reader's first call read the empty request
 
 
-def test_loop_a_garbled_name_is_read_back_as_the_catalogue_name_and_off_it_stays(make_assist, env):
-    def run_it(on):
-        robot = FakeRobot(env, {"kettle": "counter@kitchen"}, start="counter@kitchen", answers=["yes"])
-        und = {"status": "clear", "reason": "", "question": "", "goals": [{"type": "on", "object": "kettel", "from": "counter", "to": "dining table"}]}
-        plan = steps("MoveTo counter@kitchen", "Find kettle", "Pick kettle", "MoveTo dining table@kitchen", "Place dining table@kitchen")
-        loop = make_assist(robot, FakeLLM(default=und), ScriptedPlanner(plan), detector_miss_rate=0, **({"name_recover": "1"} if on else {}))
-        loop.robot.manifest.limits = {"objects": {"kettle": {}, "lamp": {}}}
-        run_task(loop, "Put the kettel on the dining table.", max_events=3000)
-        return loop
-    assert [e for e in run_it(True).lab_log if e["flag"] == "name_recover" and e.get("took") == "kettle"]
-    assert not [e for e in run_it(False).lab_log if e["flag"] == "name_recover"]
+def _garbled_run(make_assist, env, on, samples, answers=("yes", "yes", "yes")):
+    robot = FakeRobot(env, {"kettle": "counter@kitchen"}, start="counter@kitchen", answers=list(answers))
+    und = {"status": "clear", "reason": "", "question": "", "goals": [{"type": "on", "object": "kettel", "from": "counter", "to": "dining table"}]}
+    plan = steps("MoveTo counter@kitchen", "Find kettle", "Pick kettle", "MoveTo dining table@kitchen", "Place dining table@kitchen")
+    loop = make_assist(robot, FakeLLM(default=und), ScriptedPlanner(plan), detector_miss_rate=0, understand_samples=samples,
+                       **({"name_recover": "1"} if on else {}))
+    loop.robot.manifest.limits = {"objects": {"kettle": {}, "lamp": {}}}
+    evs = run_task(loop, "Put the kettel on the dining table.", max_events=3000)
+    return loop, robot, evs
+
+
+@pytest.mark.parametrize("samples", [2, 0])
+def test_loop_a_garbled_name_confirmed_stays_taken_through_the_read_back_and_its_re_sample(make_assist, env, samples):
+    """The read-back compares the goals with the person's words: the garbled word is in them, the name taken is not ("the kettel is not
+    in my plan"). With re-samples (the default 2) the reader read the garbled word again and that issue-free reading replaced the goals
+    without passing this option: the run planned for "kettel" and failed. The name taken holds to the end, with and without re-samples."""
+    loop, robot, evs = _garbled_run(make_assist, env, True, samples)
+    assert [g["object"] for g in loop._ctx.goals] == ["kettle"], loop._ctx.goals
+    assert ("pick", "kettle") in [tuple(t[:2]) for t in robot.trace] and evs[-1].get("status") == "success", evs[-1]
+    assert [e for e in loop.lab_log if e["flag"] == "name_recover" and e.get("took") == "kettle"]
+
+
+def test_loop_name_recover_off_the_garbled_name_stays_off(make_assist, env):
+    loop, robot, evs = _garbled_run(make_assist, env, False, 2)
+    assert not [e for e in loop.lab_log if e["flag"] == "name_recover"] and ("pick", "kettle") not in [tuple(t[:2]) for t in robot.trace]
+
+
+@pytest.mark.parametrize("on", [True, False])
+def test_loop_a_re_sample_that_reads_the_garbled_name_again_does_not_replace_the_name_taken(make_assist, env, on):
+    """A second issue (the first reading left out "open the drawer") still sends the read-back to its re-samples; they read the garbled
+    word again and cover the rest. Off they replace the goals (garbled name and all); on, the re-read is not clean and the name stays."""
+    robot = FakeRobot(env, {"kettle": "counter@kitchen"}, start="counter@kitchen", answers=["yes"] * 6)
+    g1 = {"type": "on", "object": "kettel", "from": "counter", "to": "dining table"}
+    one = {"status": "clear", "reason": "", "question": "", "goals": [g1]}
+    two = {**one, "goals": [g1, {"type": "open", "object": "drawer", "from": "", "to": ""}]}
+    plan = steps("MoveTo counter@kitchen", "Find kettle", "Pick kettle", "MoveTo dining table@kitchen", "Place dining table@kitchen")
+    loop = make_assist(robot, FakeLLM(one, default=two), ScriptedPlanner(plan), detector_miss_rate=0, **({"name_recover": "1"} if on else {}))
+    loop.robot.manifest.limits = {"objects": {"kettle": {}, "lamp": {}}}
+    evs = run_task(loop, "Put the kettel on the dining table and open the drawer.", max_events=3000)
+    sampled = [e for e in evs if e.get("event") == "understand_check" and e.get("samples")]
+    assert sampled and sampled[0]["agreed"] is (not on)
+    assert [g["object"] for g in loop._ctx.goals if g["type"] == "on"] == (["kettle"] if on else ["kettel"])
+
+
+def test_re_sample_issue_a_reading_that_holds_the_garbled_name_again_is_not_issue_free():
+    opt, run, svc = make()
+    svc.answer = "yes"
+    go(opt, run, [goal("kettel")])
+    mine = [{"kind": "object", "what": "kettel"}, {"kind": "verb", "what": "open"}]
+    assert opt.on_issues(list(mine), run, [goal("kettle")]) == [mine[1]]                         # the name taken covers the garbled word
+    assert {"kind": "object", "what": "kettle"} in opt.on_issues([], run, [goal("kettel")])      # a re-read with the garbled word is not clean
+    assert make()[0].on_issues(list(mine), make()[1], [goal("kettle")]) is None                    # nothing taken: issues unchanged
 
 
 def test_shipped_korean_pack_declares_the_unit_and_a_hole_pattern():
