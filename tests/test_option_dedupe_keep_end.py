@@ -40,9 +40,22 @@ def test_registered_and_off_by_default_the_cut_runs_to_the_end_of_the_plan(make_
 
 def test_on_the_way_home_after_the_repeat_stays_through_the_loop(make_assist, env):
     on = make_assist(FakeRobot(env, {}), FakeLLM(default={}), ScriptedPlanner(steps("Find urn")), dedupe_keep_end="1")
-    assert on.options.query("keep_after_dedupe") is True
-    got = plan_repair.op_dedupe(owned(*REPEAT), cx(True))
+    keep = on.options.query("keep_after_dedupe")
+    assert callable(keep)
+    got = plan_repair.op_dedupe(owned(*REPEAT), cx(keep))
     assert acts(got) == ["MoveTo", "Find", "Pick", "MoveTo", "Place", "MoveTo"] and got[-1][1]["object"] == "nook@hall"
+    assert acts(got) == acts(plan_repair.op_dedupe(owned(*REPEAT), cx(True)))                  # the function cuts as the plain True did
+    assert [e for e in on.lab_log if e["flag"] == "dedupe_keep_end"] == [{"flag": "dedupe_keep_end", "object": "urn", "kept": 1}]
+
+
+def test_dedupe_keep_end_lab_only_when_the_two_ends_differ_and_a_no_keeps_the_old_cut():
+    asked = []
+    ask = lambda o, n: asked.append((o, n)) or False                                  # noqa: E731
+    assert acts(plan_repair.op_dedupe(owned(*REPEAT), cx(ask))) == acts(plan_repair.op_dedupe(owned(*REPEAT), cx(False)))
+    assert asked == [("urn", 1)]
+    asked.clear()
+    plan_repair.op_dedupe(owned(*REPEAT[:-1]), cx(ask))                            # the repeat ends the plan: both cuts are the same, nothing asked
+    assert asked == []
 
 
 def test_a_repeat_followed_by_a_release_is_cut_the_same_on_and_off():

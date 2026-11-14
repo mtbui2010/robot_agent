@@ -2,8 +2,9 @@
 
 ``plan_repair.op_dedupe`` removes a Find / Pick of an object that the plan already placed at its goal. When no release follows the repeat, the
 cut ran to the LAST step of the plan, which removed the way home (the final MoveTo). With the option the cut ends at the repeated run's own
-Find / Pick. With a release after the repeat, nothing changes. No pack data. Service ``keep_after_dedupe()`` (asked by the gate's repair).
-Key: ``enabled``.
+Find / Pick. With a release after the repeat, nothing changes. No pack data. Service ``keep_after_dedupe()`` (asked by the gate's repair): the
+function ``(object, steps kept) -> True`` the repair calls at a cut whose two ends differ. Key: ``enabled`` (off, the default: the old cut).
+Lab flag ``dedupe_keep_end``: ``{object, kept}`` at each such cut (the gate keeps the edit only when it lowers the findings).
 """
 
 from __future__ import annotations
@@ -23,7 +24,12 @@ SPEC = OptionSpec(
 
 class DedupeKeepEnd(Option):
     def keep_after_dedupe(self):
-        """Service: True (the repair keeps the steps after a repeated fetch)."""
+        """Service: the function the repair asks at a cut (the steps after a repeated fetch stay)."""
+        return self.keep
+
+    def keep(self, obj, kept) -> bool:
+        """True: the ``kept`` steps after the repeated fetch of ``obj`` stay (recorded in the lab log)."""
+        self.svc.lab(SPEC.name, object=obj, kept=kept)
         return True
 
     def on_start(self, run) -> None:
