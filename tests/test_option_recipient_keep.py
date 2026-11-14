@@ -147,12 +147,20 @@ def test_the_rule_is_a_declared_decide_hook_the_places_carry_no_rule_and_off_not
     from robot_agent.core.options import HOOKS
     assert HOOKS["on_listener_rule"] == ("decide", False) and "on_listener_rule" in SPEC.hooks
     opt, run, _ = make()
-    assert not hasattr(run.places, "listener_rule")                                  # the rule is no attribute: the registry sees it
+    assert not hasattr(run.places, "listener_rule")                                  # the option sets nothing: the loop puts the declared hook there
     off = make_assist(FakeRobot(env, {}), FakeLLM(default={}), ScriptedPlanner([]))
     assert not off.options.provides("on_listener_rule") and off.options.decide("on_listener_rule", run, [SAY, GIVE], "x") is None
     on = make_assist(FakeRobot(env, {}), FakeLLM(default={}), ScriptedPlanner([]), recipient_keep="1")
     assert on.options.provides("on_listener_rule")
     assert opt.on_listener_rule(NS(places=None), [SAY, GIVE], "bring me the urn") is None                     # no places: not answered
+
+
+def test_the_loop_puts_the_hook_on_the_places_only_when_an_option_answers_it(make_assist, env):
+    for opts, on in (({}, False), ({"recipient_keep": "1"}, True)):
+        loop = make_assist(FakeRobot(ENV, dict(HOUSE)), FakeLLM(default=U(SAY, GIVE)), ScriptedPlanner(steps("MoveTo desk@den", "Find urn")), confirm_task=False, **opts)
+        list(loop.run_blocking("Give the urn to tolo and tell him to come over."))
+        rule = getattr(loop._ctx.places, "listener_rule", None)
+        assert (rule is not None) is on and (not on or rule([dict(SAY), dict(GIVE)], "bring him the urn")[0][1]["to"] == "tolo@den")
 
 
 def test_give_regression_a_pronoun_recipient_reaches_the_goal_through_the_hook_in_the_loop(make_assist, env, tmp_path):

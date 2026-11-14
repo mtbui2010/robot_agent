@@ -2217,6 +2217,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         goals, more = goal_filter.after_grounding(goals, " ".join([r.task] + answers), r.places) if on else (goals, [])
         r.filtered += more
         r.places.guard = self.options.query("goal_guard", r, goals)         # option goal_words: whole words, shared objects keep their receiver
+        r.places.listener_rule = (lambda g, t: self.options.decide("on_listener_rule", r, g, t)) if self.options.provides("on_listener_rule") else None
         said_ = " ".join([without_places(" ".join([r.task, self.original or ""]), r.places, getattr(r, "replaced", ()))] + answers)
         goals, fixed = goal_fix.repair_destination(goals, said_, r.places)          # F4.7
         r.repaired = list(getattr(r, "repaired", [])) + fixed
@@ -2228,7 +2229,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             r.filtered += echo
         goals, rq = goal_fix.relay_check(goals, r.task, r.places)           # F4.6
         if not self.cfg.get("no_shared_listener"):
-            goals, shared = self.options.decide("on_listener_rule", r, goals, words_) or goal_fix.shared_listener(goals, words_, r.places)  # a listener is not also the recipient
+            goals, shared = goal_fix.shared_listener(goals, words_, r.places)    # a listener is not also the recipient
             r.filtered += shared
         goals, q = self._ground_v2(r, goals, q, words_)
         q = q or (speech.LocalText("q_what_say") if rq else None)
@@ -2446,8 +2447,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         # from every earlier one is progress and earns one more read-back (two at most): the cap counts the
         # read-backs that gained nothing (R4b item 2).
         readings = getattr(r, "readings", [])
-        limit = self.options.query("confirm_limit", r)                     # option ask_focus; None: no limit of its own
-        if not dialog_converge.readback_left(r, self._converge(), limit):
+        if not dialog_converge.readback_left(r, self._converge(), self.options.query("confirm_limit", r)):     # confirm_limit: option ask_focus
             yield self._finish(r, "failed", msg="the user did not confirm the task"); return _STOP, None
         r.confirms += 1
         sig = dialog_converge.goal_sig(r.goals)
