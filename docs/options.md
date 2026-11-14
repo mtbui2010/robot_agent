@@ -14,7 +14,7 @@ CLAUDE.md rules 13-15. The reference for the flat run options and manifest keys 
 | `Registry`, `register` | `core/options/registry.py` | the list of options; built-in ones from `robot_agent/options/__init__.py`, others by entry point group `robot_agent.options` |
 | `Dispatcher` | `core/options/dispatch.py` | builds the enabled options of one loop, calls their hooks in `order` |
 | `Services` | `core/options/services.py` | the interface an option uses to ask the loop for something (`LoopServices` in `core/planning/option_services.py` implements it) |
-| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words`, `cond_goal`, `recipient_keep` so far |
+| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words`, `cond_goal`, `recipient_keep`, `plan_complete` so far |
 
 `python -m robot_agent.core.options list` prints the registered options, their keys and hooks.
 `python -m robot_agent.core.options check MANIFEST.yaml` reports `planner.options` entries that name no option or key.
@@ -163,6 +163,16 @@ particle); a delivery verb or "here" alone says nothing about who gets the objec
 one question in `on_goals` (the existing `q_which_reading` phrase; the answer decides by the same evidence) when the run has no answer yet and `ask_when_unsure` is on. No pack data of its own; no
 first-person words in the packs = the recipient always stays. Keys `enabled` (legacy `recipient_keep`), `ask_when_unsure` (true). Hooks `on_start` (sets `places.listener_rule`, which
 `goal_fix.shared_listener` runs in place of its own rule), `on_goals` (the question). Lab flag `recipient_keep`: `{rule, person}`. Module: `robot_agent/options/recipient_keep.py`.
+
+### `plan_complete`
+A plan that stops short of the step its goal needs is completed from the pack's declared rules (default off; D3 layer L13). Three classes: (1) the plan picks an object and
+then closes (opens) the place the goal puts it in with no release between: the skill declared `achieves: in` is spliced in before the Close (after the Open), after a MoveTo the place
+when the robot is elsewhere; a release later in the plan means nothing is missing. (2) Steps another repair appended after the final go-home block (the steps `planner.end_state` names) go in front
+of it, so the home goal still holds; a hand-over whose rule declares `near` gets a MoveTo the goal's person first. (3) A speech step whose rule declares `near` gets a MoveTo the say goal's
+listener, and a speech step that names the listener instead of the message is rebuilt with the goal's message (one say goal, or the goal whose listener it names; two goals and no listener = nothing).
+Pack data `planner.options.plan_complete.needs`: `{"rules": {<Action>: {"near": bool, "achieves": "in" | "hand"}}, "source": "<label>"}` (or `"assumed": true`). Roles read: `move`, `open`,
+`close`, `say`, `pick`, `put_down`; one not declared skips that repair. No rules, no label, no goal of the kind = the plan is unchanged. Keys `enabled` (legacy `plan_complete`), `needs`
+(dict, manifest only). Hook `on_plan` (order 86, after `precond_repair`). Lab flag `plan_complete`: `{action, need, index}`. Module: `robot_agent/options/plan_complete.py`.
 
 ### `cond_goal`
 A request with a condition ("if the spoon is on the table, put it away; if not, leave it") is decided by the robot looking, not by the reader guessing (default off).

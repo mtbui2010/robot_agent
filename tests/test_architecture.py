@@ -67,7 +67,7 @@ THROUGH_THE_LOOP = {"ask_source": "test_option_ask_source.py", "hazard": "test_s
                     "entity_cover": "test_option_entity_cover.py", "hw_wait": "test_option_hw_wait.py",
                     "search_budget": "test_option_search_budget.py", "lang_words": "test_option_lang_words.py",
                     "gate_prune": "test_option_gate_prune.py", "cond_goal": "test_option_cond_goal.py", "dedupe_keep_end": "test_option_dedupe_keep_end.py",
-                    "recipient_keep": "test_option_recipient_keep.py"}
+                    "recipient_keep": "test_option_recipient_keep.py", "plan_complete": "test_option_plan_complete.py"}
 
 
 def _specs():
