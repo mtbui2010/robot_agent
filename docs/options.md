@@ -173,7 +173,7 @@ A delivery's recipient moves to the speaker only on evidence (default off; D3 la
 that person is also a message's listener and the words name them once ("bring him the cup, and let him know": the pronoun is no mention). With the option the move needs a recipient word of the
 language packs (`lexicon.RECIPIENT` and the robot's `recipient_words` phrase) that is itself a first-person word (`lexicon.FIRST_PERSON`: "me", "get me", a first-person pronoun with its case
 particle); a delivery verb or "here" alone says nothing about who gets the object. Without evidence the reader's recipient stays. With evidence and the person named twice the two readings disagree:
-one question in `on_goals` (the existing `q_which_reading` phrase; the answer decides by the same evidence) when the run has no answer yet and `ask_when_unsure` is on. No pack data of its own; no
+one question in `on_goals` (the phrase `q_which_reading`, as `ask_agree`'s either-or: no text in the run's language, no question; the answer decides by the same evidence) when the run has no answer yet and `ask_when_unsure` is on. No pack data of its own; no
 first-person words in the packs = the recipient always stays. Keys `enabled` (legacy `recipient_keep`), `ask_when_unsure` (true). Hooks `on_start` (the run's cases of two readings),
 `on_listener_rule` (decide: the evidence rule, asked by the loop in place of `goal_fix.shared_listener`; until 2026-11-15 an attribute `places.listener_rule` the registry could not see), `on_goals` (the question). Lab flag `recipient_keep`: `{rule, person}`. Module: `robot_agent/options/recipient_keep.py`.
 
@@ -305,7 +305,8 @@ whole word of an unsure phrase of the pack, from `answer_unsure` or `dialogue_ex
 first read-back. (3) Either-or (key `either_or`, default true): when the reading changed exactly one value (object, `to` or `from` of one goal) and the person had said the earlier
 value, the "I don't know" asks once, "I can read that two ways: A, or B", as a declared choice; the answer that names one reading decides (the current one stands; the earlier one
 is put back in `run.patched` with `allow_repeat`, read back again, and the place given up is no "you mentioned X" question: hook `on_issues`); a plain yes or no names neither,
-nothing is picked and the answer is a refusal. The either-or is asked from the read-back's query service (it cannot yield): its `clarify` event goes through the
+nothing is picked and the answer is a refusal. Its text is the phrase `q_which_reading` (core English; another language: the robot's i18n, else the language pack's
+`speech` block, Korean declares it, `assumed`); no text in the run's language: not asked (lab `either_or_no_phrase`), no translation call. The either-or is asked from the read-back's query service (it cannot yield): its `clarify` event goes through the
 engine service `emit(run, event, **fields)` (logged with the run's events, pushed through the host's live channel when there is one), the turn counts in `run.asked`
 (service `ask`), and a run stopped while asking decides nothing. Pack data: the language pack's own (`dialogue.fillers` / `no` / `polite`, `words.first_person`, the unsure phrases, the endings);
 none = nothing is claimed. Keys `enabled` (legacy `ask_agree`), `restate_confirm`, `either_or`. Hooks `on_goals`, `on_issues`, service `unrefused(run, ans)`; lab flag `ask_agree`:

@@ -119,6 +119,18 @@ def test_the_two_readings_are_asked_once_and_the_answer_decides_by_evidence():
     assert _ask("to tolo", ask=False)[2] == [] and _ask("to me", dialogue=[("user", "x")])[2] == []        # key off, or an answer already given
 
 
+def test_the_two_readings_question_is_the_core_phrase_and_not_asked_without_a_text_in_the_language(monkeypatch):
+    from robot_agent.core.planning import speech
+    opt, run, svc = make()
+    q = opt._question(run, "urn", "tolo@den", "vexa@den")
+    assert q.key == "q_which_reading" and str(q) == speech.CORE_PHRASES["q_which_reading"].format(first="give urn to vexa@den", second="give urn to tolo@den")
+    monkeypatch.setitem(langdata._CACHE, "qv", {"words": {}})                            # a made-up language with no phrase
+    run.lang = "qv"
+    assert opt._question(run, "urn", "tolo@den", "vexa@den") is None
+    monkeypatch.setitem(langdata._CACHE, "qv", {"words": {}, "speech": {"q_which_reading": "qv {first} / {second}?", "assumed": True}})
+    assert speech.render(opt._question(run, "urn", "tolo@den", "vexa@den"), "qv") == "qv give urn to vexa@den / give urn to tolo@den?"
+
+
 def test_an_empty_or_foreign_pack_keeps_the_reader_recipient_empty(monkeypatch):
     monkeypatch.setitem(langdata._CACHE, "xx", {"words": {}})
     goals, notes, conflicts, _ = run_it("tell tolo to come and bring the urn over")     # no speaker word in the text

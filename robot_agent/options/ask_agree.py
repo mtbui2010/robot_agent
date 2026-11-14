@@ -14,7 +14,8 @@ Three classes of the read-back dialogue (``AssistLoop._read_back`` asks "Is that
 * **The either-or.** When the reading changed exactly one value (an object or a place of one goal) since it was first read back, and the person had said the
   earlier value, an "I don't know" asks once more, naming both readings (a declared choice). The answer that names one reading decides: the current one
   stands, the earlier one is read back again (``run.patched``, ``allow_repeat``). A plain yes or no names neither: nothing is picked and the answer is a refusal.
-  The question is asked from the read-back's query service: its ``clarify`` event goes through the service ``emit``, the turn is counted in ``run.asked``
+  The question is the phrase ``q_which_reading`` (the core English; another language: the robot's i18n or the language pack's ``speech`` block); with
+  no text in the run's language it is not asked. The question is asked from the read-back's query service: its ``clarify`` event goes through the service ``emit``, the turn is counted in ``run.asked``
   (service ``ask``) and a run stopped meanwhile decides nothing.
 
 Pack data: the language pack's ``dialogue.fillers`` / ``no`` / ``polite``, ``words.first_person``, ``answer_unsure`` and ``dialogue_ext.answer_unsure`` (both
@@ -41,6 +42,7 @@ SPEC = OptionSpec(
     doc="Read-back dialogue: one more yes / no after a bare no and the same request; an \"I don't know\" keeps only a clean reading; an either-or when it changed a value.",
 )
 VALUE_KEYS = ("object", "to", "from")
+Q_WHICH = "q_which_reading"          # the phrase of the either-or (speech.CORE_PHRASES; another language: the robot's i18n or the language pack's ``speech``)
 
 
 def fold(text) -> str:
@@ -181,10 +183,12 @@ class AskAgree(Option):
         old, new = st["first"][i], run.goals[i]
         if not said([run.task] + [t for w, t in run.dialogue if w == "user"], old.get(k), run.places):
             return False
+        if speech.phrase(getattr(self.svc, "robot", None), Q_WHICH, getattr(run, "lang", None) or "en") is None:
+            self.svc.lab(SPEC.name, rule="either_or_no_phrase")          # no text in the run's language: not asked (no translation call)
+            return False
         st["asked"] = True
         a, b = phrase(old, run.places), phrase(new, run.places)
-        q = speech.LocalText("q_which_reading", {"first": a, "second": b}, ask={"intent": "choose", "options": [str(a), str(b)], "about": ""},
-                             text=f"I can read that two ways: I will {a}, or I will {b}. Which one do you mean?")
+        q = speech.LocalText(Q_WHICH, {"first": a, "second": b}, ask={"intent": "choose", "options": [str(a), str(b)], "about": ""})
         ans = self._ask_either(run, q)
         if ans is None:                                       # the run was stopped while asking: nothing is decided
             return False

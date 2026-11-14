@@ -30,6 +30,7 @@ SPEC = OptionSpec(
     enabled="enabled",
     doc="A delivery's recipient moves to the speaker only when the words hold a speaker-recipient word of the language pack; else the reader's recipient stays.",
 )
+Q_WHICH = "q_which_reading"          # the phrase of the two readings (speech.CORE_PHRASES; another language: the robot's i18n or the language pack's ``speech``)
 
 
 def candidates(goals, places) -> list:
@@ -88,13 +89,13 @@ class RecipientKeep(Option):
         return out, notes
 
     def _question(self, run, obj, person, sk):
-        """The one question of two readings (the speaker, or the named person); None without the phrase machinery."""
-        if not hasattr(self.svc, "goal_phrase"):
-            return None
+        """The one question of two readings (the speaker, or the named person), the phrase ``q_which_reading`` (core English; another language:
+        the robot's i18n or the language pack's ``speech`` block); None without the phrase machinery or without a text in the run's language."""
         from robot_agent.core.planning import speech
+        if not hasattr(self.svc, "goal_phrase") or speech.phrase(getattr(self.svc, "robot", None), Q_WHICH, getattr(run, "lang", None) or "en") is None:
+            return None
         a, b = (self.svc.goal_phrase({"type": "on", "object": obj, "from": "", "to": k}, run.places) for k in (sk, person))
-        return speech.LocalText("q_which_reading", {"first": a, "second": b}, text=f"I can read that two ways: I will {a}, or I will {b}. Which one do you mean?",
-                                ask={"intent": "choose", "options": [str(a), str(b)], "about": ""})
+        return speech.LocalText(Q_WHICH, {"first": a, "second": b}, ask={"intent": "choose", "options": [str(a), str(b)], "about": ""})
 
     def on_goals(self, run):
         """Ask once when the words say both a speaker-recipient word and the person twice (the readings disagree); the answer decides by evidence."""

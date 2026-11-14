@@ -199,6 +199,34 @@ def test_the_loop_counts_the_either_or_as_a_question_of_the_run(make_assist, env
     assert d["status"] == "success" and loop._ctx.asked == 1, (d, loop._ctx.asked)               # the either-or, through the service ``ask``
 
 
+def test_either_or_is_the_core_phrase_said_from_pack_data_and_not_asked_without_a_text_in_the_language(monkeypatch):
+    from robot_agent.core.planning import speech
+    first, now = [g("mug", "stool@loft")], [g("mug", "rack@loft")]
+    opt, run, svc = make(first=first, goals=now, answer="no idea", pick="the stool")
+    run.readings = ["a", "b"]
+    opt.unrefused(run, "no idea")
+    q = svc.asked[0]
+    assert q.key == "q_which_reading" and str(q) == speech.CORE_PHRASES["q_which_reading"].format(first=q.slots["first"], second=q.slots["second"])
+    monkeypatch.setitem(langdata._CACHE, "qv", {"dialogue": {"no": ["vo"]}})            # a made-up language with no phrase of its own
+    opt, run, svc = make(first=first, goals=now, answer="no idea", pick="the stool")
+    run.readings, run.lang = ["a", "b"], "qv"
+    assert opt.unrefused(run, "no idea") is False and not svc.asked and run.patched is None
+    assert [k for _a, k in svc.labs if k.get("rule") == "either_or_no_phrase"]
+    monkeypatch.setitem(langdata._CACHE, "qv", {"dialogue": {"no": ["vo"]}, "speech": {"q_which_reading": "qv {first} ka {second} ru?", "assumed": True}})
+    opt, run, svc = make(first=first, goals=now, answer="no idea", pick="the stool")
+    run.readings, run.lang = ["a", "b"], "qv"
+    opt.unrefused(run, "no idea")
+    assert len(svc.asked) == 1 and speech.render(svc.asked[0], "qv") == "qv put the mug on the stool ka put the mug on the rack ru?"    # no translator
+
+
+def test_the_korean_pack_declares_the_two_readings_phrase_with_both_slots():
+    from robot_agent.core.planning import speech
+    ko = speech.phrase(None, "q_which_reading", "ko")
+    assert ko and "{first}" in ko and "{second}" in ko and langdata.block("ko", "speech").get("assumed") is True
+    q = speech.LocalText("q_which_reading", {"first": speech.LocalText("x", text="A"), "second": speech.LocalText("y", text="B")})
+    assert speech.phrase(None, "q_which_reading", "en") == speech.CORE_PHRASES["q_which_reading"] and str(q).startswith("I can read that two ways")
+
+
 def test_either_or_a_plain_yes_or_no_never_picks_one_and_it_is_asked_once():
     first, now = [g("mug", "stool@loft")], [g("mug", "rack@loft")]
     for pick in ("yes", "no", "", "the plinth"):

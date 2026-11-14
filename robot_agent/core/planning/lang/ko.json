@@ -160,6 +160,7 @@
  },
  "speech": {
   "q_which_name": "{options} 말씀하시는 거예요?",
+  "q_which_reading": "두 가지로 이해할 수 있어요. {first}, 아니면 {second}. 어느 쪽을 말씀하시는 거예요?",
   "assumed": true,
   "source": "assumed: the robot's own questions in plain polite Korean, said when the robot pack has no phrase of its own for the key (the robot's i18n wins)"
  },
