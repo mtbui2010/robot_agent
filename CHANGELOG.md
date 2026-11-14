@@ -5,6 +5,12 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+### Site languages (`PUT /robot/languages`)
+- The manifest says what the robot can talk in (`supported`); a site switches some off: `PUT /robot/languages` `{languages: [...]}` (a
+  non-empty subset of `supported`, else 400) saves `<configs>/languages.json`. `GET /robot/languages` now returns `supported` too;
+  `languages` is what the site has on, `language` the default (the first one on when the default was switched off). Skills that follow
+  the user's language (hri) take `current_languages()['languages']`. A language the manifest lacks can never be added.
+  `core/languages.py`: `site_languages`, `set_site_languages`, `current_languages`.
 ### Detect the user's language (`lang: 'auto'`)
 - `/ws/agent` with `lang: 'auto'` starts the run in the manifest's default language and switches detection on for the run
   (`core/languages.py`: `start_run_language`, `run_language_auto`; cleared when the run ends). A skill that listens then lets Whisper

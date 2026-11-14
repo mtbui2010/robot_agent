@@ -61,7 +61,7 @@ the manifest names any language (none: only "detect" is offered). See `core/lang
 Languages: `language` is the robot's default (two- or three-letter code, `ko`); `languages` lists every
 language it talks in and must include `language` (absent = `[language]`; a bad code, a duplicate or a list
 without the default is a `ManifestError`). `Manifest.supported_languages` gives them default first. The core
-names no language: `GET /robot/languages` returns `{robot, language, languages}` for clients (the dashboard
+names no language: `GET /robot/languages` returns `{robot, language, languages, supported, declared}` for clients (`supported`: the manifest's list; `languages`: what the site switched on, set with `PUT /robot/languages {languages}` and kept in `<configs>/languages.json`) (the dashboard
 builds its picker from it), and a run that names none (`/ws/agent` without `lang`) uses `language`. A
 robot whose manifest cannot be read talks English only. The skills decide what they can say: a language in
 `languages` that a skill has no phrases for is that skill's refusal, not the manifest's.

@@ -75,10 +75,10 @@ def test_endpoint_lists_the_robot_languages(monkeypatch):
     class _S:
         robot_pkg = "demo"
     monkeypatch.setattr(api, "current", lambda: _S())
-    monkeypatch.setattr(api, "robot_languages", lambda pkg: {"robot": pkg, "language": "ko", "languages": ["ko", "en"], "declared": True})
+    monkeypatch.setattr(api, "current_languages", lambda: {"robot": "demo", "language": "ko", "languages": ["ko", "en"], "declared": True, "supported": ["ko", "en"]})
     app = FastAPI(); app.include_router(api.router)
     r = TestClient(app).get("/robot/languages")
-    assert r.status_code == 200 and r.json() == {"robot": "demo", "language": "ko", "languages": ["ko", "en"], "declared": True}
+    assert r.status_code == 200 and r.json() == {"robot": "demo", "language": "ko", "languages": ["ko", "en"], "declared": True, "supported": ["ko", "en"]}
 
 
 def test_a_manifest_that_names_no_language_is_not_declared(monkeypatch):
@@ -98,3 +98,56 @@ def test_the_auto_flag_is_per_run():
     assert L.run_language_auto() is True
     L.set_run_language_auto(False)
     assert L.run_language_auto() is False
+
+
+def _demo(monkeypatch, langs=("ko", "en", "ja")):
+    L.robot_languages.cache_clear()
+    class _A:
+        manifest = Manifest.from_dict(_base(robot="demo", language=langs[0], languages=list(langs)))
+    monkeypatch.setattr("robot_agent.contract.load_adapter", lambda pkg: _A())
+
+
+def test_site_switches_languages_off_and_on(tmp_path, monkeypatch):
+    _demo(monkeypatch)
+    assert L.site_languages("demo", tmp_path)["languages"] == ["ko", "en", "ja"]       # no file: all on
+    out = L.set_site_languages("demo", tmp_path, ["ja", "ko"])                          # manifest order kept
+    assert out["languages"] == ["ko", "ja"] and out["supported"] == ["ko", "en", "ja"] and out["language"] == "ko"
+    assert L.site_languages("demo", tmp_path)["languages"] == ["ko", "ja"]              # read back from the file
+    out = L.set_site_languages("demo", tmp_path, ["en"])                                # the default switched off: the first one on
+    assert out["language"] == "en" and out["languages"] == ["en"]
+    assert L.robot_languages("demo")["languages"] == ["ko", "en", "ja"]                 # the manifest itself is untouched
+
+
+def test_site_cannot_add_what_the_manifest_lacks_or_switch_all_off(tmp_path, monkeypatch):
+    _demo(monkeypatch)
+    with pytest.raises(ValueError, match="not in this robot's manifest: vi"):
+        L.set_site_languages("demo", tmp_path, ["ko", "vi"])
+    with pytest.raises(ValueError, match="at least one"):
+        L.set_site_languages("demo", tmp_path, [])
+    assert not (tmp_path / "languages.json").exists()
+
+
+def test_a_stale_or_broken_site_file_is_ignored(tmp_path, monkeypatch):
+    _demo(monkeypatch)
+    (tmp_path / "languages.json").write_text('{"enabled": ["vi"]}')                     # nothing the manifest lists: all on
+    assert L.site_languages("demo", tmp_path)["languages"] == ["ko", "en", "ja"]
+    (tmp_path / "languages.json").write_text("{oops")
+    assert L.site_languages("demo", tmp_path)["languages"] == ["ko", "en", "ja"]
+
+
+def test_put_endpoint(tmp_path, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from robot_agent.api import robot as api
+    _demo(monkeypatch)
+    class _S:
+        robot_pkg = "demo"; common_dir = tmp_path
+    monkeypatch.setattr(api, "current", lambda: _S())
+    monkeypatch.setattr("robot_agent.state.current", lambda: _S())
+    app = FastAPI(); app.include_router(api.router)
+    c = TestClient(app)
+    r = c.put("/robot/languages", json={"languages": ["en", "ko"]})
+    assert r.status_code == 200 and r.json()["languages"] == ["ko", "en"] and r.json()["supported"] == ["ko", "en", "ja"]
+    assert c.get("/robot/languages").json()["languages"] == ["ko", "en"]
+    assert c.put("/robot/languages", json={"languages": ["xx"]}).status_code == 400
+    assert c.put("/robot/languages", json={"languages": []}).status_code == 400
