@@ -117,8 +117,10 @@ def op_dedupe(F, cx: _Ctx):
         a, o = st.get("action"), st.get("object")
         g = cx.goal_of(o) if a in ("Find", "Pick") else None
         if g is not None and placed.get(o) == g.get("to") and holding != o:
-            end = next((j for j in range(i, len(F)) if F[j][1].get("action") in RELEASES + tuple(cx.release)),
-                       len(F) - 1)
+            end = next((j for j in range(i, len(F)) if F[j][1].get("action") in RELEASES + tuple(cx.release)), None)
+            if end is None:           # no release after: the run to cut ends with its own Find / Pick, never the steps that follow
+                end = max(j for j in range(i, len(F)) if all(F[k][1].get("action") in ("Find", "Pick") and F[k][1].get("object") == o
+                                                             for k in range(i, j + 1)))
             s = i - 1 if i > 0 and F[i - 1][1].get("action") == "MoveTo" else i
             return F[:s] + F[end + 1:]
         if a == "Pick":
