@@ -65,7 +65,8 @@ def test_a_pack_with_its_own_schedule_for_the_kind_is_used(make_assist, env, mon
 
 
 def test_an_empty_pack_keeps_the_engine_schedule_empty(make_assist, env, monkeypatch):
-    for kinds in (None, {}, {"assumed": True}, {"not_a_code": {"schedule_s": [9]}}, {"perception_unavailable": {"schedule_s": "x"}}):
+    for kinds in (None, {}, {"assumed": True}, {"not_a_code": {"schedule_s": [9]}}, {"perception_unavailable": {"schedule_s": "x"}},
+                  {"perception_unavailable": {"schedule_s": [1], "tries": 4}}, {"perception_unavailable": {"schedule_s": [1]}, "source": " "}):    # the last two: no label
         evs, robot, _ = _loop(make_assist, env, monkeypatch, kinds)
         assert done(evs)["status"] == "success" and waits(robot) == ["2", "4", "8"], kinds
 
@@ -76,15 +77,15 @@ def test_a_failure_kind_without_data_uses_the_engine_schedule(make_assist, env, 
 
 
 def test_an_empty_schedule_sends_no_wait_command(make_assist, env, monkeypatch):
-    evs, robot, _ = _loop(make_assist, env, monkeypatch, {"perception_unavailable": {"schedule_s": []}})
+    evs, robot, _ = _loop(make_assist, env, monkeypatch, {"perception_unavailable": {"schedule_s": []}, "assumed": True})
     assert done(evs)["status"] == "success" and waits(robot) == []
 
 
 def test_the_declared_tries_decide_when_the_run_stops(make_assist, env, monkeypatch):
-    three = {"perception_unavailable": {"schedule_s": [1], "tries": 1}}
+    three = {"perception_unavailable": {"schedule_s": [1], "tries": 1}, "assumed": True}
     evs, robot, _ = _loop(make_assist, env, monkeypatch, three, fails=(1, 2, 3))
     assert done(evs)["status"] != "success"                                  # one try only: the second fault stops the run
-    evs, robot, _ = _loop(make_assist, env, monkeypatch, {"perception_unavailable": {"schedule_s": [1], "tries": 4}}, fails=(1, 2, 3))
+    evs, robot, _ = _loop(make_assist, env, monkeypatch, {"perception_unavailable": {"schedule_s": [1], "tries": 4}, "assumed": True}, fails=(1, 2, 3))
     assert done(evs)["status"] == "success" and waits(robot) == ["1", "1", "1"]
     evs, robot, _ = _loop(make_assist, env, monkeypatch, None, fails=(1, 2, 3))      # no data: the policy table's own two retries
     assert done(evs)["status"] != "success"

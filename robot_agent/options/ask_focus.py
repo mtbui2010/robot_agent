@@ -19,8 +19,8 @@ from __future__ import annotations
 import re
 
 from robot_agent.core.options import Key, Option, OptionSpec, register
+from robot_agent.core.planning import langdata, names
 
-_ARTICLES = ("the ", "a ", "an ")
 SPEC = OptionSpec(
     name="ask_focus",
     keys=(Key("enabled", "bool", False, aliases=("ask_focus",)), Key("max_confirms", "int", 3)),
@@ -32,9 +32,9 @@ SPEC = OptionSpec(
 )
 
 
-def _w(s) -> str:
-    t = " ".join(re.findall(r"[\w']+", str(s or "").lower()))
-    return next((t[len(a):] for a in _ARTICLES if t.startswith(a)), t)
+def _w(s, langs=None) -> str:
+    """The words of ``s`` without a leading article (the language packs' ``articles`` of ``langs``; none declared = none stripped)."""
+    return names.plain(s, langs)
 
 
 def _in(small: str, big: str) -> bool:
@@ -42,38 +42,38 @@ def _in(small: str, big: str) -> bool:
     return bool(small) and re.search(r"(?<!\w)" + re.escape(small) + r"(?!\w)", big) is not None
 
 
-def world_names(run, robot) -> list:
+def world_names(run, robot, langs=None) -> list:
     """The objects of the world: the robot's object memory and the manifest's ``limits.objects`` (normalised, no duplicates)."""
     mem = getattr(getattr(run, "memory", None), "data", None) or {}
     lim = getattr(getattr(robot, "manifest", None), "limits", None) or {}
-    return list(dict.fromkeys(n for n in map(_w, list(mem.get("objects") or {}) + list(lim.get("objects") or {})) if n))
+    return list(dict.fromkeys(n for n in (_w(x, langs) for x in list(mem.get("objects") or {}) + list(lim.get("objects") or {})) if n))
 
 
-def place_names(places) -> set:
+def place_names(places, langs=None) -> set:
     """Every head and alias of an ENV place, as whole-word strings."""
     out = set()
     for k, v in (getattr(places, "env", None) or {}).items():
-        out.add(_w(places.head(k)))
-        out.update(_w(a) for a in (v.get("aliases") or []) if a)
+        out.add(_w(places.head(k), langs))
+        out.update(_w(a, langs) for a in (v.get("aliases") or []) if a)
     return {n for n in out if n}
 
 
-def field_words(goals) -> list:
+def field_words(goals, langs=None) -> list:
     """The text of every field of the goals but their object (the places, the tool, whatever the plan reaches by other words)."""
     out = []
     for g in goals:
         for k, v in g.items():
             vals = v if isinstance(v, (list, tuple)) else [v]
-            out += [_w(str(x).replace("@", " ")) for x in vals if isinstance(x, str) and k != "object"]
+            out += [_w(str(x).replace("@", " "), langs) for x in vals if isinstance(x, str) and k != "object"]
     return [x for x in out if x]
 
 
-def redundant(issue, places, goals) -> bool:
+def redundant(issue, places, goals, langs=None) -> bool:
     """An object issue whose name is a place the robot knows, or a part of what a goal's other fields say."""
     if issue.get("kind") != "object":
         return False
-    name = _w(issue.get("what"))
-    return bool(name) and (name in place_names(places) or any(_in(name, f) for f in field_words(goals)))
+    name = _w(issue.get("what"), langs)
+    return bool(name) and (name in place_names(places, langs) or any(_in(name, f) for f in field_words(goals, langs)))
 
 
 def fits(desc: str, names) -> list:
@@ -89,13 +89,14 @@ class AskFocus(Option):
         return run.__dict__.setdefault("opt", {}).setdefault("ask_focus", {}).setdefault("asked", set())
 
     def on_issues(self, issues, run, goals):
-        keep = [i for i in issues if not redundant(i, run.places, goals)]
+        langs = names.langs_of(run)
+        keep = [i for i in issues if not redundant(i, run.places, goals, langs)]
         if len(keep) != len(issues):
             self.svc.lab("ask_focus", rule="redundant", dropped=len(issues) - len(keep))
-        names = world_names(run, self.svc.robot)
+        known = world_names(run, self.svc.robot, langs)
         for g in goals:
-            desc = _w(g.get("object")) if g.get("type") in ("on", "in") else ""
-            hit = fits(desc, names) if desc else []
+            desc = _w(g.get("object"), langs) if g.get("type") in ("on", "in") else ""
+            hit = fits(desc, known) if desc else []
             if len(hit) >= 2 and not any(i.get("kind") == "choice" and i.get("what") == desc for i in keep):
                 keep.append({"kind": "choice", "what": desc, "options": hit[:4]})
                 self.svc.lab("ask_focus", rule="world_ambiguity", name=desc, n=len(hit))
@@ -105,9 +106,19 @@ class AskFocus(Option):
         return max(1, int(self.cfg.get("max_confirms")))
 
     def unrefused(self, run, ans):
-        """True when the answer to a read-back is an "I don't know": the reading stands."""
-        unsure = getattr(self.svc, "is_unsure", None)
-        if not (unsure and ans and unsure(run, ans)):
+        """True when the answer to a read-back is ONLY an "I don't know": the reading stands. An answer that carries more (a no, a correction,
+        a reason) refuses the reading, whatever phrase of "not sure" it also holds: None, the engine's correction path."""
+        left = getattr(self.svc, "unsure_leftover", None)
+        rest = left(run, ans) if left and ans else None
+        if rest is None:
+            return None
+        langs = names.langs_of(run)
+        fillers = set(langdata.dialogue_all("fillers", langs))
+        phrase_words = {w for lg in langs for p in langdata.phrases(lg, "answer_unsure") for w in p.lower().replace("\u2019", "'").split()}
+        refusal = set(langdata.dialogue_all("no", langs))
+        me = [re.compile(p) for lg in langs for p in langdata.words(lg, "first_person")]
+        if any(w in refusal or (w not in fillers and w not in phrase_words and not any(m.search(w) for m in me)) for w in rest.split()):
+            self.svc.lab("ask_focus", rule="unsure_with_more")
             return None
         self.svc.lab("ask_focus", rule="unsure_is_no_refusal")
         return True

@@ -53,7 +53,7 @@ def test_a_drop_with_a_stated_reason_is_asked_once_with_the_reason_and_the_key_c
 def test_a_noun_the_catalogue_does_not_know_is_ignored_and_whole_words_only():
     opt, run, _ = make("Put the kettle and the trowel on the stool.")
     assert opt.on_issues([], run, [goal("kettle")]) == []                    # "trowel" is not in the catalogue
-    opt, run, _ = make("Put the kettle on the stool, near the ladles.", objects=("kettle", "ladle", "lad"))
+    opt, run, _ = make("Put the kettle on the stool and the ladles.", objects=("kettle", "ladle", "lad"))
     assert [i["what"] for i in opt.on_issues([], run, [goal("kettle")])] == ["ladle"]    # a plural folds; "lad" is not a word of "ladles"
     assert said("red mug", "the red mugs") and not said("red mug", "a red and a mug")
     assert held("mug", [goal("red mug")]) and held("red mug", [goal("mug")]) and not held("lamp", [goal("lampshade")])
@@ -119,3 +119,34 @@ def test_the_loop_asks_about_a_dropped_bare_noun_the_engine_check_does_not_see(m
     loop0, robot0 = _loop(make_assist, env, on=False)
     assert len(robot.asked) > len(robot0.asked)
 
+
+
+def test_a_name_only_in_a_negation_a_condition_or_as_a_landmark_is_not_an_open_issue():
+    for text in ("Put the kettle on the stool, but do not touch the lamp.", "If the lamp is on, put the kettle on the stool.",
+                 "Put the kettle on the stool next to the lamp.", "Put the kettle on the stool with the ladle."):
+        opt, run, svc = make(text)
+        assert opt.on_issues([], run, [goal("kettle")]) == [], text
+        assert not svc.labs
+    opt, run, _ = make("Put the kettle on the stool and then the lamp.")                 # a joiner of the pack: an object again
+    assert [i["what"] for i in opt.on_issues([], run, [goal("kettle")])] == ["lamp"]
+
+
+def test_articles_and_plurals_come_from_the_language_pack_and_nothing_is_assumed_without_it(monkeypatch):
+    from robot_agent.core.planning import langdata, names
+    assert names.has("the lamp", "a lamp", ("en",)) and names.has("lamp", "two lamps", ("en",)) and names.has("pony", "the ponies", ("en",))
+    fake = {"zz": {"articles": ["ka"], "plural_rules": [["ne", ""]]}}
+    monkeypatch.setattr(langdata, "get", lambda lg: fake.get(str(lg)[:2], {}))
+    monkeypatch.setattr(langdata, "prompt_lang", lambda: "zz")
+    assert names.plain("ka lampo") == "lampo" and names.has("lampo", "ka lampone")          # a made-up language: its own article and plural
+    monkeypatch.setattr(langdata, "prompt_lang", lambda: "yy")
+    assert names.plain("ka lampo") == "ka lampo" and not names.has("lampo", "lampone")      # no pack data: nothing stripped, nothing folded
+
+
+def test_entity_cover_runs_before_ask_focus_so_a_redundant_name_is_dropped_after_it_is_added():
+    from robot_agent.options.ask_focus import SPEC as FOCUS, redundant
+    assert SPEC.order < FOCUS.order
+    opt, run, _ = make("Use the ladle to put the kettle on the stool.")
+    g = {"type": "on", "object": "kettle", "from": "", "to": "stool@loft", "with": "ladle"}
+    added = opt.on_issues([], run, [g])
+    assert added == [{"kind": "object", "what": "ladle"}] or added == []
+    assert all(redundant(i, run.places, [g]) for i in added)                               # what is added, ask_focus then drops

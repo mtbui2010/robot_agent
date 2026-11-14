@@ -17,11 +17,9 @@ Keys: ``enabled`` (legacy ``goal_words``). Lab flag ``goal_words``: ``{rule, nam
 
 from __future__ import annotations
 
-import re
-
 from robot_agent.core.options import STOP, Key, Option, OptionSpec, register
+from robot_agent.core.planning import names
 
-_ARTICLES = ("the ", "a ", "an ")
 SPEC = OptionSpec(
     name="goal_words",
     keys=(Key("enabled", "bool", False, aliases=("goal_words",)),),
@@ -33,44 +31,58 @@ SPEC = OptionSpec(
 )
 
 
-def _w(s) -> str:
-    t = " ".join(re.findall(r"[\w']+", str(s or "").lower()))
-    return next((t[len(a):] for a in _ARTICLES if t.startswith(a)), t)
+def _w(s, langs=None) -> str:
+    """The words of ``s`` without a leading article (the language packs' ``articles`` of ``langs``; none declared = none stripped)."""
+    return names.plain(s, langs)
 
 
-def catalogue(run, robot) -> set:
+def catalogue(run, robot, langs=None) -> set:
     """The names the robot knows as objects: its object memory and the manifest's ``limits.objects``."""
     mem = getattr(getattr(run, "memory", None), "data", None) or {}
     lim = getattr(getattr(robot, "manifest", None), "limits", None) or {}
-    return {_w(n) for n in list((mem.get("objects") or {})) + list(lim.get("objects") or {}) if _w(n)}
+    return {_w(n, langs) for n in list((mem.get("objects") or {})) + list(lim.get("objects") or {}) if _w(n, langs)}
 
 
-def place_keys(name: str, places) -> list:
+def place_keys(name: str, places, langs=None) -> list:
     """ENV keys whose head or alias is, as whole words, the name."""
-    n = _w(name)
+    n = _w(name, langs)
     if not n:
         return []
     return [k for k, v in places.env.items()
-            if n == _w(places.head(k)) or n in {_w(a) for a in (v.get("aliases") or []) if a}]
+            if n == _w(places.head(k), langs) or n in {_w(a, langs) for a in (v.get("aliases") or []) if a}]
 
 
 class Guard:
     """What ``goal_fix`` asks while it filters: which place a name is, and which goals keep their receiver."""
 
-    def __init__(self, known, places, goals):
-        self.known, self.places = known, places
-        names = [_w(g.get("object")) for g in goals if g.get("type") in ("on", "in") and g.get("object")]
-        self.shared = {n for n in names if names.count(n) > 1}
+    def __init__(self, known, places, goals, langs=None):
+        self.known, self.places, self.langs = known, places, langs
+        objs = [_w(g.get("object"), langs) for g in goals if g.get("type") in ("on", "in") and g.get("object")]
+        self.shared = {n for n in objs if objs.count(n) > 1}
 
     def place(self, name) -> str:
         """The ENV key the name is (one, whole words, not a catalogue object), else ''."""
-        if _w(name) in self.known:
+        if _w(name, self.langs) in self.known:
             return ""
-        keys = place_keys(name, self.places)
+        keys = place_keys(name, self.places, self.langs)
         return keys[0] if len(keys) == 1 else ""
 
     def frozen(self, goal) -> bool:
-        return goal.get("type") in ("on", "in") and _w(goal.get("object")) in self.shared
+        return goal.get("type") in ("on", "in") and _w(goal.get("object"), self.langs) in self.shared
+
+
+def place_named(ans, obj: str, key: str, places, langs=None) -> bool:
+    """Does the answer name the PLACE ``key`` rather than the object ``obj``? By what the place has that the object's name has not: the
+    words of its room, its alias and its head beyond the object's own (a place headed like the object is told apart by its room);
+    else the old reading: the head is said and the object's name is not."""
+    own = {names.fold(w, langs) for w in _w(obj, langs).split()}
+    room = key.split("@", 1)[1] if "@" in key else ""
+    pool = [places.head(key), room] + list((places.env.get(key) or {}).get("aliases") or [])
+    only = {names.fold(w, langs) for t in pool for w in _w(t, langs).split()} - own
+    said = {names.fold(w, langs) for w in _w(ans, langs).split()}
+    if only & said:
+        return True
+    return names.has(places.head(key), ans, langs) and not names.has(obj, ans, langs)
 
 
 class GoalWords(Option):
@@ -80,22 +92,25 @@ class GoalWords(Option):
         return run.__dict__.setdefault("opt", {}).setdefault("goal_words", {})
 
     def goal_guard(self, run, goals):
-        return Guard(catalogue(run, self.svc.robot), run.places, goals)
+        langs = names.langs_of(run)
+        return Guard(catalogue(run, self.svc.robot, langs), run.places, goals, langs)
 
     def _both(self, run):
         """The (goal, place key) pairs whose object is in the catalogue and is also, as whole words, one place."""
-        known = catalogue(run, self.svc.robot)
+        langs = names.langs_of(run)
+        known = catalogue(run, self.svc.robot, langs)
         out = []
         for g in run.goals:
-            keys = place_keys(g.get("object"), run.places) if g.get("type") in ("on", "in") else []
-            if _w(g.get("object")) in known and len(keys) == 1:
+            keys = place_keys(g.get("object"), run.places, langs) if g.get("type") in ("on", "in") else []
+            if _w(g.get("object"), langs) in known and len(keys) == 1:
                 out.append((g, keys[0]))
         return out
 
     def on_goals(self, run):
         asked = self._state(run).setdefault("asked", set())
+        langs = names.langs_of(run)
         for g, key in self._both(run):
-            obj = _w(g.get("object"))
+            obj = _w(g.get("object"), langs)
             if obj in asked:
                 continue
             asked.add(obj)
@@ -108,8 +123,7 @@ class GoalWords(Option):
             if stop:
                 yield stop
                 return STOP
-            a = _w(ans)
-            says_place = bool(re.search(r"(?<!\w)" + re.escape(_w(head)) + r"(?!\w)", a)) and not re.search(r"(?<!\w)" + re.escape(obj) + r"(?!\w)", a)
+            says_place = place_named(ans, obj, key, run.places, langs)
             self.svc.lab("goal_words", rule="ask", name=obj, place=says_place)
             if says_place:
                 run.goals = [x for x in run.goals if x is not g]

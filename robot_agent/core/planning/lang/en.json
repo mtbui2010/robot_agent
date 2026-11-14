@@ -301,6 +301,11 @@
  },
  "grammar": {
   "sep_or": " or ",
+  "joiners": [
+   "and",
+   "then",
+   "plus"
+  ],
   "ascii_names": true,
   "speaker_forms": [
    "me",

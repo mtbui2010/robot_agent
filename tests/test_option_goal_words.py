@@ -137,3 +137,23 @@ def test_the_loop_keeps_a_goal_whose_name_is_inside_a_place_name_on_and_drops_it
     off, on = _book_run(make_assist, env, False), _book_run(make_assist, env, True)
     assert "clarify" in off and "plan" not in off, off          # the goal was dropped, the robot asked what to do
     assert "plan" in on and "clarify" not in on, on
+
+
+def test_a_place_headed_like_the_object_is_told_apart_by_its_room_so_an_answer_can_drop_the_goal():
+    same = Places({"pail@barn": {}, "stool@loft": {}})                            # the place's head IS the object's name
+    for ans, drops in (("the pail in the barn", True), ("the barn one, the fixture", True), ("pail", False), ("the pail itself", False)):
+        opt, run, _, asks = make(known=("pail",), goals=[goal("pail")], answer=ans)
+        run.places = same
+        drain(opt.on_goals(run))
+        assert len(asks) == 1
+        assert (run.goals == []) is drops, ans
+
+
+def test_articles_of_the_run_language_come_from_its_pack_and_none_declared_strips_nothing(monkeypatch):
+    from robot_agent.core.planning import langdata
+    fake = {"zz": {"articles": ["ka"]}}
+    monkeypatch.setattr(langdata, "get", lambda lg: fake.get(str(lg)[:2], {}))
+    monkeypatch.setattr(langdata, "prompt_lang", lambda: "zz")
+    assert place_keys("ka rack", Places({"rack@barn": {}})) == ["rack@barn"]
+    monkeypatch.setattr(langdata, "prompt_lang", lambda: "yy")
+    assert place_keys("ka rack", Places({"rack@barn": {}})) == []

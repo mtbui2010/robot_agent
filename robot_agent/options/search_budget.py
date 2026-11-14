@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from robot_agent.core.options import Key, Option, OptionSpec, register
 from robot_agent.core.options.config import resolve_key
+from robot_agent.core.planning.pack_data import labelled
 
 SPEC = OptionSpec(
     name="search_budget",
@@ -70,7 +71,7 @@ class SearchBudget(Option):
     def _data(self) -> dict:
         planner = getattr(getattr(self.svc.robot, "manifest", None), "planner", None)
         d = self.cfg.get("budget") or resolve_key(SPEC, SPEC.key("budget"), {}, {}, planner)
-        return d if looks_of(d) or stop_of(d) else {}
+        return d if labelled(d) and (looks_of(d) or stop_of(d)) else {}
 
     def looks_made(self, run, obj):
         """Looks made for ``obj`` (places marked searched for it) when a budget is declared; None = the engine counts."""

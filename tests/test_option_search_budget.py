@@ -59,7 +59,7 @@ def test_registered_and_off_by_default_the_data_is_ignored_off(run, make_assist,
     assert not [e for e in loop.lab_log if e["flag"] == "search_budget"]
 
 
-BAD = (None, {}, {"assumed": True}, {"looks_per_object": 0}, {"looks_per_object": "3"}, {"stop_probability": 1.5}, {"ask": "once"})
+BAD = (None, {}, {"assumed": True}, {"looks_per_object": 3}, {"looks_per_object": 3, "source": ""}, {"looks_per_object": 0}, {"looks_per_object": "3"}, {"stop_probability": 1.5}, {"ask": "once"})
 
 
 @pytest.mark.parametrize("bad", BAD)
@@ -70,7 +70,7 @@ def test_an_empty_or_foreign_pack_keeps_the_engine_budget_empty(run, make_assist
 
 
 def test_without_search_legs_the_run_still_ends_normally(run, make_assist, env):
-    robot, evs, loop = go(make_assist, env, {"looks_per_object": 1, "ask": "never"}, search_total=8, search_legs=0)
+    robot, evs, loop = go(make_assist, env, {"looks_per_object": 1, "ask": "never", "assumed": True}, search_total=8, search_legs=0)
     assert done(evs)["status"] in ("success", "failed")           # the stop rule of the legs-less search stays the engine's (search_max)
 
 
@@ -134,7 +134,7 @@ def test_no_belief_or_no_data_answers_nothing_empty():
     from types import SimpleNamespace as NS
     from robot_agent.core.options.config import resolve
     from robot_agent.options.search_budget import SPEC
-    svc = NS(robot=NS(manifest=NS(planner={"options": {"search_budget": {"budget": {"looks_per_object": 2}}}})), lab=lambda *a, **k: None)
+    svc = NS(robot=NS(manifest=NS(planner={"options": {"search_budget": {"budget": {"looks_per_object": 2, "assumed": True}}}})), lab=lambda *a, **k: None)
     opt = SearchBudget(resolve(SPEC, {"search_budget": "1"}, {}, None), svc)
     assert opt.search_over(NS(), "x") is None and opt.looks_made(NS(), "x") is None and opt.search_limit(NS(), "x") == 2
     svc.robot.manifest.planner = {}

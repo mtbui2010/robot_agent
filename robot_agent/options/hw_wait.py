@@ -28,6 +28,7 @@ from robot_agent.contract.recovery import Recovery
 from robot_agent.contract.types import FailureCode
 from robot_agent.core.options import Key, Option, OptionSpec, register
 from robot_agent.core.options.config import resolve_key
+from robot_agent.core.planning.pack_data import labelled
 
 SPEC = OptionSpec(
     name="hw_wait",
@@ -62,13 +63,14 @@ def tries_of(entry):
 
 
 def kinds_of(declared) -> dict:
-    """{failure code value: entry} of the dict-shaped entries whose key is a failure code of the contract; the label fields are dropped."""
+    """{failure code value: entry} of the dict-shaped entries whose key is a failure code of the contract; the label fields are dropped. An entry counts
+    only with a label (``source`` or ``assumed: true``), its own or the whole block's; unlabelled data is not used."""
     if not isinstance(declared, dict):
         return {}
-    out = {}
+    out, whole = {}, labelled(declared)
     for k, v in declared.items():
         code = FailureCode.try_parse(k) if k not in _LABELS else None
-        if code is not None and isinstance(v, dict):
+        if code is not None and isinstance(v, dict) and (whole or labelled(v)):
             out[code.value] = v
     return out
 

@@ -98,7 +98,7 @@ def test_the_shipped_english_pack_reads_like_the_engine_and_a_robot_pack_declare
 
 def test_the_option_reads_the_robot_packs_clause_words_from_the_manifest_key(zq):
     opt, run, _ = make("qq")
-    opt.svc.robot = NS(manifest=NS(planner={"options": {"lang_words": {"clauses": {"qq": {"condition": r"\bsol\b[^,;.]*"}}}}}))
+    opt.svc.robot = NS(manifest=NS(planner={"options": {"lang_words": {"clauses": {"qq": {"condition": r"\bsol\b[^,;.]*", "assumed": True}}}}}))
     opt.on_start(run)
     assert run.places.clauses.cond is not None and run.places.clauses.neg is not None      # its own condition; the prompt language's negation
     assert "lid" not in understand._active("bring the plum. sol the lid is up, shut it", places=run.places)
@@ -126,3 +126,13 @@ def test_the_loop_gives_the_run_its_clauses_when_on(make_assist, env, monkeypatc
     run_task(loop, "Put the mug on the dining table, but not the plate.", max_events=3000)
     assert loop._env_places.clauses.cond is not None and loop._env_places.clauses.neg is not None
     assert isinstance(loop._env_places.clauses, clauses.Clauses)
+
+
+def test_clause_words_of_the_robot_pack_with_no_label_are_not_used_empty():
+    def reads(declared):
+        cl = clauses.build("qq", declared)                                             # the prompt language's own words stay; the robot pack's are the question
+        return bool(cl and cl.cond.search("sol the lid is up")) and bool(cl.neg.search("mir the fig"))
+    bare = {"qq": {"condition": r"\bsol\b[^,;.]*", "negation": r"\bmir\b[^,;.]*"}}
+    assert not reads(bare)                                                             # neither source nor assumed: nothing is read
+    assert not reads({"qq": {**bare["qq"], "source": " "}})
+    assert reads({"qq": {**bare["qq"], "source": "a made-up grammar note"}})

@@ -16,7 +16,8 @@ PLACES = Places(ENV)
 def make(objects=("kettle", "red mug", "blue mug"), mem=(), cap=3, answer=None):
     cfg = resolve(SPEC, {"ask_focus": "1", "ask_focus.max_confirms": cap}, {}, None)
     svc = NS(robot=NS(manifest=NS(limits={"objects": {n: {} for n in objects}})), lab=lambda *a, **k: svc.labs.append((a, k)), labs=[],
-             is_unsure=lambda run, t: bool(answer and t == answer))
+             is_unsure=lambda run, t: bool(answer and answer in t),
+             unsure_leftover=lambda run, t: t.replace(answer, " ").strip(" ,.") if answer and answer in t else None)
     run = NS(memory=NS(data={"objects": {n: {} for n in mem}}), places=PLACES)
     return AskFocus(cfg, svc), run, svc
 
@@ -68,6 +69,30 @@ def test_an_i_dont_know_to_the_read_back_is_no_refusal_and_a_refusal_is_one():
     assert opt.unrefused(run, "no, the other one") is None
     assert opt.unrefused(run, "") is None
     assert [k for a, k in svc.labs if k.get("rule") == "unsure_is_no_refusal"]
+
+
+def test_an_unsure_phrase_inside_a_refusal_with_a_correction_is_still_a_refusal():
+    opt, run, svc = make(answer="not sure")
+    assert opt.unrefused(run, "No, I am not sure why you said kettle. I meant the lamp.") is None
+    assert opt.unrefused(run, "no, not sure") is None                       # a no-marker beside the phrase
+    assert opt.unrefused(run, "uh, not sure") is True                      # fillers do not count as words
+    assert [k for a, k in svc.labs if k.get("rule") == "unsure_with_more"]
+
+
+def opt_real(svc):
+    return AskFocus(resolve(SPEC, {"ask_focus": "1"}, {}, None), svc)
+
+
+def test_the_real_service_takes_the_phrases_out_and_keeps_the_rest(make_assist, env):
+    from robot_agent.core.planning.option_services import LoopServices
+    loop = make_assist(FakeRobot(env, {}, start="counter@kitchen"), FakeLLM(default={}), ScriptedPlanner(steps("MoveTo counter@kitchen")))
+    svc, run = LoopServices(loop), NS(places=PLACES, lang="en", robot=loop.robot)
+    assert opt_real(svc).unrefused(run, "I don't know.") is True and opt_real(svc).unrefused(run, "Um, I'm not sure.") is True
+    assert svc.unsure_leftover(run, "I don't know") is not None and svc.unsure_leftover(run, "put it on the stool") is None
+    mixed = svc.unsure_leftover(run, "No, I am not sure why you said cup. I meant the mug.")
+    assert mixed and "meant" in mixed.split()
+    opt = AskFocus(resolve(SPEC, {"ask_focus": "1"}, {}, None), svc)
+    assert opt.unrefused(run, "No, I am not sure why you said cup. I meant the mug.") is None
 
 
 def test_the_confirmation_rounds_are_bounded_by_the_key():

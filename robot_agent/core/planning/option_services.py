@@ -130,6 +130,16 @@ class LoopServices:
         lp = self._lp
         return dialog_unstick.unsure_answer(text, run.places, lp._unsure_data(run), run.lang, lp._manifest_planner("unstick", None))
 
+    def unsure_leftover(self, run, text):
+        """The words of an "I don't know" answer once its "not sure" phrases are taken out ("" = it says nothing else); None = it is not one."""
+        from . import dialog_unstick
+        if not self.is_unsure(run, text):
+            return None
+        out = dialog_unstick._fold(text)
+        for p in sorted(dialog_unstick.unsure_phrases(self._lp._unsure_data(run), run.lang), key=len, reverse=True):
+            out = out.replace(p, " ")
+        return " ".join(out.split())
+
     def request_english(self, run) -> str:
         """The request's words in the prompt language: the task itself, or the language layer's trusted reading of it (no new call); "" if none."""
         from . import langdata

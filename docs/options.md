@@ -178,6 +178,7 @@ the reading standing instead of starting the correction path; the phrases are th
 `dialog_unstick.unsure_answer`), no data = nothing is claimed. (4) A limit on the read-back rounds: key `max_confirms` (default 3; the engine's own limit is two,
 and one more after a correction, so the default only caps the `dialog_converge` extras; 1 = one read-back only). No pack data. Key `enabled` (legacy
 `ask_focus`), `max_confirms`. Hook `on_issues`, services `confirm_limit(run)`, `unrefused(run, ans)`; lab flag `ask_focus`: `{rule, ...}`.
+"I don't know" is no refusal only when the answer says nothing else (service `unsure_leftover(run, text)`: the answer without its "not sure" phrases; a no, a correction or a reason is a refusal). Articles from the language pack.
 Module: `robot_agent/options/ask_focus.py`.
 
 ### `entity_cover`
@@ -190,6 +191,8 @@ an `object` issue, so the read-back asks about it once (the engine's `issue_aske
 (the reason a goal for it was dropped) the issue carries it as `reason`; key `ask_reasoned` (default on) decides whether such a drop is asked about too.
 A noun the catalogue does not know is ignored. No pack data. Keys `enabled` (legacy `entity_cover`), `ask_reasoned`. Hook `on_issues`, service
 `request_english`; lab flag `entity_cover`: `{what, reason}`. Limit: a drop the person meant (a negation) is asked about too while `ask_reasoned` is on.
+Names follow the language pack (`articles`, `plural_rules`, `grammar.joiners`; `core/planning/names.py`): none declared = nothing stripped or folded. A name counts only in the active
+text (no condition, negation or correction) in object position and not behind a boundary word (a landmark or tool). Order 75: runs before `ask_focus` (80).
 Module: `robot_agent/options/entity_cover.py`.
 
 ### `hw_wait`
@@ -213,7 +216,7 @@ planner:
 policy table's `retries` and first answer for that kind. A kind with no entry, a bad entry or no data: the engine's behaviour, unchanged.
 Hook `on_start` (no effect), services `wait_schedule(run, schedule)`, `recovery_rule(run, code, rule)`. Keys `enabled` (legacy `hw_wait`), `kinds` (dict, manifest only). Lab flag `hw_wait`:
 `{kind, schedule_s, tries, action}`. Limit: the schedule needs `wait_on_robot` and a declared `recovery.wait`; without them the poll stays.
-Module: `robot_agent/options/hw_wait.py`.
+Data with neither `source` nor `assumed: true` (on the block or on a kind) is not used. Module: `robot_agent/options/hw_wait.py`.
 
 ### `search_budget`
 
@@ -235,7 +238,7 @@ the places looked at. An "I don't know" given earlier does not repeat the questi
 belief or off: the engine's behaviour, unchanged. Needs search legs (a legs-less search keeps `search_max`). Engine hooks added: `_search_total`
 and `_search_over` (in `search_hooks.py`) ask services `search_limit(run, obj)` and `search_over(run, obj, ask)`; the option also answers
 `looks_made(run, obj)`. Hook `on_start` (no effect). Keys `enabled` (legacy `search_budget`), `budget` (dict, manifest only). Lab flag `search_budget`:
-`{object, looks, remaining, why}` once per object. Module: `robot_agent/options/search_budget.py`.
+`{object, looks, remaining, why}` once per object. A budget with neither `source` nor `assumed: true` is not used. Module: `robot_agent/options/search_budget.py`.
 
 ### `lang_words`
 The words that open a condition ("if the drawer is open", "unless ...") or a negation ("do not touch the mug", "except ...") were English regexes in

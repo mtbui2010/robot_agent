@@ -3,7 +3,8 @@
 The words are DATA of the language packs (``lang/<code>.json``, ``patterns.condition`` and ``patterns.negation``, one regex each; a clause
 runs from its word to the next comma, semicolon or full stop, or the clause shape the pack gives). ``build(lang)`` compiles those of the run's
 language and of the prompt language (the held English reading of a translated answer is read too), plus the words a robot pack declares for the language
-(manifest ``planner.options.lang_words.clauses``: ``{lang: {"condition": regex | [regex], "negation": ..., "source": label | "assumed": true}}``).
+(manifest ``planner.options.lang_words.clauses``: ``{lang: {"condition": regex | [regex], "negation": ..., "source": label | "assumed": true}}``; an entry
+with neither label is not used).
 Nothing declared: None, and the engine's own reading (``understand._active``) stands. A key that only one of the two packs declares leaves the other kind unread (nothing is
 taken out for it). Option ``lang_words`` hands the result to the run's ``Places`` (``places.clauses``).
 """
@@ -13,6 +14,7 @@ from __future__ import annotations
 import re
 
 from . import langdata
+from .pack_data import labelled
 
 
 class Clauses:
@@ -32,7 +34,7 @@ def _one(key: str, langs, declared):
     pats = langdata.pattern_list(key, langs)
     for lg in langs:
         entry = declared.get(lg) if isinstance(declared, dict) else None
-        pats += _strs(entry.get(key)) if isinstance(entry, dict) else []
+        pats += _strs(entry.get(key)) if labelled(entry) else []              # an entry with no source label or assumed: true is not used
     try:
         return re.compile("|".join(f"(?:{p})" for p in pats), re.I) if pats else None
     except re.error:
