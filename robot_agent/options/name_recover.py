@@ -1,6 +1,6 @@
 """Option ``name_recover`` (default off): an object name the speech recogniser garbled is matched to the robot's object catalogue, strictly.
 
-The failure it closes: recognition turns "charger" into "charjer" (a slip of one or two letters) and the reader hands the garbled word on as the
+The failure it closes: recognition turns "teapot" into "teapod" (a slip of one or two letters) and the reader hands the garbled word on as the
 goal's object; the robot searches for something it does not know or asks about it. After the goals are read (hook ``on_goals``), each goal's
 object that is NOT in the catalogue (the robot's object memory and the manifest's ``limits.objects``) is compared with the catalogue names:
 
@@ -12,7 +12,7 @@ object that is NOT in the catalogue (the robot's object memory and the manifest'
 The limit (keys ``max_edits`` 2 and ``max_ratio`` 0.34 of the longer name, both assumed; ``min_len`` 4 units: a shorter name is never matched fuzzily)
 is a distance in UNITS: ``understand.near_distance`` over letters, or over the letters inside a syllable when the language pack declares
 ``asr.distance_unit: "jamo"`` (Korean). A name already in the catalogue is never changed, nor one that is, as whole words, part of a catalogue name
-or holds one ("phone" / "cell phone"), nor a place or a person of the ENV.
+or holds one ("lamp" / "red lamp"), nor a place or a person of the ENV.
 
 What it cannot recover: a word that SOUNDS like the object but is spelled in another script or another language (a sound-alike across scripts), or
 a garble of more than the limit's letters; those stay as the reader gave them (a question comes from the engine's own object check). No pack data

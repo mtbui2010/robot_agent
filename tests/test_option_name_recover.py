@@ -206,3 +206,9 @@ def test_loop_a_garbled_name_is_read_back_as_the_catalogue_name_and_off_it_stays
         return loop
     assert [e for e in run_it(True).lab_log if e["flag"] == "name_recover" and e.get("took") == "kettle"]
     assert not [e for e in run_it(False).lab_log if e["flag"] == "name_recover"]
+
+
+def test_shipped_korean_pack_declares_the_unit_and_a_hole_pattern():
+    assert name_recover.unit_fn(("ko",))("가") != "가"                       # letters inside a syllable
+    assert guard("내 를 가져와", lang="ko")[0] is not None          # a determiner directly before a case particle
+    assert guard("내 컵을 가져와", lang="ko")[0] is None
