@@ -160,7 +160,7 @@ meets the rules = unchanged. Key `enabled` (legacy `precond_repair`), `needs` (d
 
 ### `goal_words`
 The goal filter compares whole words (default off). `goal_fix.drop_invented` dropped a move goal whose object it grounded to an ENV place, and the grounding
-matches substrings and aliases: "book" was found inside "bookshelf", and an object that is also an alias of a place was dropped as an appliance. With the
+matches substrings and aliases: "lamp" was found inside "lampshelf", and an object that is also an alias of a place was dropped as an appliance. With the
 option a name is a place only when it equals the head or an alias of exactly one ENV key (articles and case ignored); a name the robot knows as an object
 (its object memory, the manifest `limits.objects` names) is an object and the goal is kept; when that name is also a place, the person is asked once which
 one they mean (`on_goals`; an answer that names the place and not the object drops the goal, any other keeps it); an object named by two or more move

@@ -2,8 +2,8 @@
 object and a place, and never changes the receiver of a shared object.
 
 The filter of the understood goals (``goal_fix.drop_invented``) decides "this goal moves a place, so it is not a task" by matching the goal's
-object against the ENV places as SUBSTRINGS and aliases: "book" is found inside "bookshelf", and an object that is also an alias of a place
-(a "charger" that is the name of the dock) is dropped as an appliance. Three rules, all from the world the robot already has:
+object against the ENV places as SUBSTRINGS and aliases: "lamp" is found inside "lampshelf", and an object that is also an alias of a place
+(a "pail" that is the name of the rack) is dropped as an appliance. Three rules, all from the world the robot already has:
 
 * whole words: a name is a place only when it equals the head or an alias of an ENV key (articles ignored), never when it is a part of one;
 * catalogue first: a name the robot knows as an OBJECT (its object memory, the manifest ``limits.objects`` names) is an object, and the goal
