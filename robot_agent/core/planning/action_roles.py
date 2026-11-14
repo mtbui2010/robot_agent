@@ -7,7 +7,7 @@ robot pack's manifest ``planner.action_roles`` maps a role to the action of the 
     planner:
       action_roles: {put_down: Place, move: MoveTo, open: Open, close: Close}
 
-* Roles: ``put_down``, ``move``, ``open``, ``close``, ``find``. A role is a name of an action in the pack's ``plan_actions``.
+* Roles: ``put_down``, ``move``, ``open``, ``close``, ``find``, ``pick``. A role is a name of an action in the pack's ``plan_actions``.
 * A role the pack does not declare, or declares as an action the robot does not have, is ``None``: the part of the option that
   needs it does nothing (fail open). The core never falls back to a name of its own.
 * A hand-over (an action that empties the hand to a person) is not a role: it comes from the skills' effects
@@ -21,7 +21,7 @@ from __future__ import annotations
 from typing import Optional
 
 KEY = "action_roles"
-ROLES = ("put_down", "move", "open", "close", "find")
+ROLES = ("put_down", "move", "open", "close", "find", "pick")
 
 
 def declared(planner) -> dict:

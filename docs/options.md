@@ -14,7 +14,7 @@ CLAUDE.md rules 13-15. The reference for the flat run options and manifest keys 
 | `Registry`, `register` | `core/options/registry.py` | the list of options; built-in ones from `robot_agent/options/__init__.py`, others by entry point group `robot_agent.options` |
 | `Dispatcher` | `core/options/dispatch.py` | builds the enabled options of one loop, calls their hooks in `order` |
 | `Services` | `core/options/services.py` | the interface an option uses to ask the loop for something (`LoopServices` in `core/planning/option_services.py` implements it) |
-| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words` so far |
+| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair` so far |
 
 `python -m robot_agent.core.options list` prints the registered options, their keys and hooks.
 `python -m robot_agent.core.options check MANIFEST.yaml` reports `planner.options` entries that name no option or key.
@@ -70,7 +70,7 @@ dropped. A *flow* hook is a generator (`yield from`): it may yield run events an
 |---|---|---|---|
 | `on_start(run)` | observe | run set-up, after the places are read | `reach_delivery` (time of the person snapshot) |
 | `on_ground(mode, places, to)` | transform | the delivery mode for a goal to a person | `reach_delivery` |
-| `on_plan(steps, run)` | transform | the grounded plan, before `plan_tidy`: the steps, or None (unchanged) | `place_find` |
+| `on_plan(steps, run)` | transform | the grounded plan, before `plan_tidy`: the steps, or None (unchanged) | `place_find`, `precond_repair` |
 | `on_where_answer(run, obj, ans)` | decide, flow | the answer to the engine's own re-asked "I couldn't find the X. Where is it?": the place to go to, or None | `ask_source` (`use_room`, `clarify_unusable`) |
 | `on_goals(run)` | decide, flow | understood goals, before the read-back and the grounding | `hazard` (the gate), `ask_source` (asks where an object is) |
 | `on_goal_edit(run, text)` | observe | a correction is about to be read | `unapplied_change` |
@@ -144,6 +144,17 @@ A Find of a place is dropped (default off). The planner sometimes writes `MoveTo
 moved to (a MoveTo of the plan) is removed from the plan; a Find of a thing, or of a place the robot is not going to, is kept. Needs the pack's
 `planner.action_roles` `move` and `find` (none declared = does nothing). Key `enabled` (legacy `place_find`, `$ROBOT_AGENT_PLACE_FIND`). Hook `on_plan`
 (transform: the grounded plan before `plan_tidy`); lab flag `place_find`: `{place, index}`. Module: `robot_agent/options/place_find.py`.
+
+### `precond_repair`
+A plan that lacks a step its next skill needs gets that step (default off). The planner writes a hand-over with no Pick before it, a Pick with a full
+hand; the gate rejects the plan and the run gives up. The pack declares what its skills need, and the option replays the plan on the belief now and
+splices the missing step before the gate. Pack data `planner.options.precond_repair.needs`:
+`{"rules": {<Action>: {"holding": bool, "hand_free": bool, "near": bool}}, "source": "<label>"}` (or `"assumed": true` for `source`).
+`holding`: the Find / Pick of the one `on` / `in` goal object no step picks (none or several = nothing). `hand_free`: the held object is put down at
+the surface an `on` goal names for it (no goal = nothing). `near`: a MoveTo the step's object (an ENV key). Roles read (`planner.action_roles`):
+`move`, `find`, `pick` (new role), `put_down`; one not declared skips that repair. No rules, no label, an action without rules, or a plan that already
+meets the rules = unchanged. Key `enabled` (legacy `precond_repair`), `needs` (dict, manifest only). Hook `on_plan`; lab flag `precond_repair`:
+`{action, need, index}`. Module: `robot_agent/options/precond_repair.py`. `gate_complete` was tried with it: no gain (docs/home/bench/d2_layers.md of symbolic_robot).
 
 ### `reopen_on_miss`
 A Find that misses inside the container just opened is made again after closing and opening it (default off). A door can report open and still not
