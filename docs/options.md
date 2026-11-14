@@ -166,7 +166,7 @@ moved to (a MoveTo of the plan) is removed from the plan; a Find of a thing, or 
 ### `dedupe_keep_end`
 The gate's removal of a repeated fetch keeps the steps after it (default off). `plan_repair.op_dedupe` removes a Find / Pick of an object the plan already placed at its goal; with no
 release after the repeat the cut ran to the LAST step of the plan and removed the way home (the final MoveTo). With the option the cut ends at the repeat's own Find / Pick; a repeat followed
-by a release is cut as before. No pack data. Key `enabled`. Hook `on_start` (declared only); service `keep_after_dedupe()` (read by the gate's repair as `keep_end`). Module: `robot_agent/options/dedupe_keep_end.py`.
+by a release is cut as before. No pack data. Key `enabled`. Hook `on_start` (declared only); service `keep_after_dedupe()` (read by the gate's repair as `keep_end`: the function `(object, steps kept) -> True` it calls at a cut whose two ends differ). Lab flag `dedupe_keep_end`: `{object, kept}` (since 2026-11-15; the gate keeps the edit only when it lowers the findings). Module: `robot_agent/options/dedupe_keep_end.py`.
 
 ### `recipient_keep`
 A delivery's recipient moves to the speaker only on evidence (default off; D3 layer L10). The engine rule `goal_fix.shared_listener` moved the recipient of a delivery to the speaker whenever
@@ -267,7 +267,7 @@ splices the missing step before the gate. Pack data `planner.options.precond_rep
 the surface an `on` goal names for it (no goal = nothing). `near`: a MoveTo the step's object (an ENV key). Roles read (`planner.action_roles`):
 `move`, `find`, `pick` (new role), `put_down`; one not declared skips that repair. No rules, no label, an action without rules, or a plan that already
 meets the rules = unchanged. Key `enabled` (legacy `precond_repair`), `needs` (dict, manifest only). Hook `on_plan`; lab flag `precond_repair`:
-`{action, need, index}`. Module: `robot_agent/options/precond_repair.py`. End of plan: a rule key `achieves` (`"on"` | `"in"` | `"hand"`) says the skill
+`{action, need, index}`; a MoveTo for the `near` need has its own flag `precond_repair.near` (same fields; since 2026-11-15). Module: `robot_agent/options/precond_repair.py`. End of plan: a rule key `achieves` (`"on"` | `"in"` | `"hand"`) says the skill
 ends a goal of that kind; when the replay ends holding the object of such a goal that no step released, the skill is appended (`on` / `in` after a MoveTo
 the goal's ENV place, `hand` for a goal with `hand`; no rule = nothing; need `achieves` in the lab flag). `gate_complete` was tried with it: no gain (docs/home/bench/d2_layers.md of symbolic_robot).
 
@@ -346,7 +346,7 @@ planner:
 `wait_on_robot` runs the wait). An empty list sends no wait command: the pack says waiting does not help. `tries` and `action` replace the
 policy table's `retries` and first answer for that kind. A kind with no entry, a bad entry or no data: the engine's behaviour, unchanged.
 Hook `on_start` (no effect), services `wait_schedule(run, schedule)`, `recovery_rule(run, code, rule)`, `more_tries(run, code, n)` (D3: only with the key `more_tries` on: an unhealthy robot after a wait does not stop the run while the declared `tries` are left; off, the option behaves as in D2). Keys `enabled` (legacy `hw_wait`), `kinds` (dict, manifest only), `more_tries` (bool, default off, legacy `hw_more_tries`). Lab flag `hw_wait`:
-`{kind, schedule_s, tries, action}`. Limit: the schedule needs `wait_on_robot` and a declared `recovery.wait`; without them the poll stays.
+`{kind, schedule_s, tries, action}`; the key `more_tries` has its own flag `hw_wait.more_tries`: `{kind, tries, tried}` (since 2026-11-15). Limit: the schedule needs `wait_on_robot` and a declared `recovery.wait`; without them the poll stays.
 Data with neither `source` nor `assumed: true` (on the block or on a kind) is not used. Module: `robot_agent/options/hw_wait.py`.
 
 ### `search_budget`
@@ -382,7 +382,7 @@ language packs (`lang/<code>.json`, `patterns`: `condition`, `negation`, each a 
 reading) and the robot pack (`planner.options.lang_words.clauses`, `{lang: {condition, negation, source | assumed}}`, added to the pack's words of that
 language; a language with no pack file is declared there, as D1 does for Korean, assumed). A language with neither key: the engine's
 own reading stands (fail open); a pack with one kind takes nothing out for the other. Hook `on_start` (sets `run.places.clauses`). Keys `enabled`
-(legacy `lang_words`), `clauses` (dict, manifest only). No lab flag (`lab_log` is cleared after `on_start`). Module: `robot_agent/options/lang_words.py`.
+(legacy `lang_words`), `clauses` (dict, manifest only). Lab flag `lang_words`: `{lang, condition, negation}` when the run gets clause words (since 2026-11-15: the loop clears `lab_log` before `on_start`, no longer after it). Module: `robot_agent/options/lang_words.py`.
 
 ### `reopen_on_miss`
 A Find that misses inside the container just opened is made again after closing and opening it (default off). A door can report open and still not
@@ -419,7 +419,7 @@ counts only if it keeps every name, else nothing changes. One more model call, o
 The robot's safety rules refuse a goal, or drop it and say so at the end. The rules are the robot's safety profile, not this option's
 ([safety.md](safety.md)). Keys: `rules` (legacy `hazard_rules`; `core` (alias `profile`) | `pack` | `off`; run option and environment only),
 `receivers` (legacy `hazard_receiver`; turns on the rules with `enabled_by: hazard.receivers`). Always on once registered; a robot with no
-profile gets no refusal. With `receivers` on, the pack's profile rules that name `enabled_by: hazard.receivers` refuse a product x receiver pair (tests: `tests/test_option_hazard_receivers.py`; D1 turns it on, layer L5). Hooks `on_goals`, `on_goals_met`, `on_finish`. Module: `robot_agent/options/hazard.py`.
+profile gets no refusal. With `receivers` on, the pack's profile rules that name `enabled_by: hazard.receivers` refuse a product x receiver pair (tests: `tests/test_option_hazard_receivers.py`; D1 turns it on, layer L5). Hooks `on_goals`, `on_goals_met`, `on_finish`. Lab flag `hazard`: `{rules, refused, goals}` each time the gate refuses or drops goals (since 2026-11-15; the rule ids, so a rule of the profile can be told from another). Module: `robot_agent/options/hazard.py`.
 
 ### `reach_delivery`
 A delivery to a person ends within their reach or in their hand (round 15). Key `enabled` (legacy `reach_delivery`). Needs the pack's
