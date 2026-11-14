@@ -25,6 +25,7 @@ HOOKS: Dict[str, Tuple[str, bool]] = {
     "on_plan": ("transform", False),         # the grounded plan, before the provable no-ops are removed: options may drop or add steps
     "on_where_answer": ("decide", True),     # the answer to the engine's own "I couldn't find the X. Where is it?": a place to go to, or None
     "on_goals": ("decide", True),            # the understood goals, before the read-back: refuse or drop some
+    "on_issues": ("transform", False),       # the read-back's issues (what the words ask for that the goals do not cover): options drop or add some
     "on_goal_edit": ("observe", False),      # a goal change (correction) is about to be read
     "on_goal_reread": ("observe", False),    # the understand LLM re-read a correction: what it asked, found
     "on_goal_unapplied": ("decide", True),   # a correction could not be applied: ask, record

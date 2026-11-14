@@ -461,7 +461,8 @@ def verb_lost(text: str) -> bool:
 
 
 _SAY = {"noverb": "I did not hear what to do", "place": "the {what} you mentioned is not in my plan", "unsaid": "you did not say the {what}",
-        "verb": "you asked me to {what} something", "object": "the {what} is not in my plan"}
+        "verb": "you asked me to {what} something", "object": "the {what} is not in my plan",
+        "choice": "more than one {what} fits"}
 
 
 def describe(issue: dict) -> str:
@@ -631,6 +632,9 @@ def issue_question(issues: list, places) -> str:
             qs.append(f"What should I {i['what']}?")
         elif i["kind"] == "noverb":
             qs.append(LocalText("q_what_do"))
+        elif i["kind"] == "choice":                   # option ask_focus: several objects of the world fit one description
+            qs.append(LocalText("q_which_x", {"what": i["what"], "options": list(i["options"])},
+                                text=f"Which {i['what']} do you mean: {' or '.join(i['options'])}?"))
         elif i["kind"] == "object":
             near = i.get("near")
             qs.append(LocalText("q_did_you_mean", {"object": near, "place": near}) if near else LocalText("q_repeat"))

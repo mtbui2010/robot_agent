@@ -2315,7 +2315,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         if not langdata.is_prompt_lang(getattr(r, "lang", None) or "en"):         # a goal set that only goes somewhere: the English reading's objects
             h = self.language.hear(r.task)
             extra += vacuous_goal_issues(goals, h.english if h.trusted else "", r.places, _USER_WORDS)
-        return issues + [i for i in extra if i not in issues]
+        return self.options.transform("on_issues", issues + [i for i in extra if i not in issues], r, goals)     # option ask_focus
 
     def _object_source(self, r, answers) -> str:
         """The words the object-coverage check reads: the task's own words, unless a later answer said the whole
@@ -2446,8 +2446,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         # from every earlier one is progress and earns one more read-back (two at most): the cap counts the
         # read-backs that gained nothing (R4b item 2).
         readings = getattr(r, "readings", [])
-        cap = 2 + (min(2, max(0, len(set(readings)) - 1)) if self._converge() else 0)
-        if r.confirms >= cap and not (r.confirms < 3 and getattr(r, "corrected", 0) >= r.confirms):
+        cap = min(2 + (min(2, max(0, len(set(readings)) - 1)) if self._converge() else 0), self.options.query("confirm_limit", r, default=9))
+        if r.confirms >= cap and not (r.confirms < min(3, cap + 1) and getattr(r, "corrected", 0) >= r.confirms):
             yield self._finish(r, "failed", msg="the user did not confirm the task"); return _STOP, None
         r.confirms += 1
         sig = dialog_converge.goal_sig(r.goals)
@@ -2468,7 +2468,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         stop = self._cancelled(r)
         if stop:
             yield stop; return _STOP, None
-        if ok_ is True:
+        if ok_ is True or (ok_ is False and self.options.query("unrefused", r, ans)):       # option ask_focus: "I don't know" is no refusal
             return _DONE, None
         if ok_ is None:
             yield self._finish(r, "failed", msg=f"no answer to: {cq}"); return _STOP, None
