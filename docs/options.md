@@ -227,7 +227,7 @@ counts only if it keeps every name, else nothing changes. One more model call, o
 The robot's safety rules refuse a goal, or drop it and say so at the end. The rules are the robot's safety profile, not this option's
 ([safety.md](safety.md)). Keys: `rules` (legacy `hazard_rules`; `core` (alias `profile`) | `pack` | `off`; run option and environment only),
 `receivers` (legacy `hazard_receiver`; turns on the rules with `enabled_by: hazard.receivers`). Always on once registered; a robot with no
-profile gets no refusal. Hooks `on_goals`, `on_goals_met`, `on_finish`. Module: `robot_agent/options/hazard.py`.
+profile gets no refusal. With `receivers` on, the pack's profile rules that name `enabled_by: hazard.receivers` refuse a product x receiver pair (tests: `tests/test_option_hazard_receivers.py`; D1 turns it on, layer L5). Hooks `on_goals`, `on_goals_met`, `on_finish`. Module: `robot_agent/options/hazard.py`.
 
 ### `reach_delivery`
 A delivery to a person ends within their reach or in their hand (round 15). Key `enabled` (legacy `reach_delivery`). Needs the pack's
