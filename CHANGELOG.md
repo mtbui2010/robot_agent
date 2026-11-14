@@ -5,6 +5,7 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+- 2026-11-14 Option `entity_cover` (D2 round 2, D1 layer L4): a mention a self-correction takes back (the pack's marker, the last catalogue name before it), a short name inside a longer catalogue name the request says, and another name of a goal's object are no longer asked about as dropped objects (they made the run ask up to 7 times and lose to the baseline).
 - 2026-11-14 Fix `plan_repair.op_dedupe` (D2 round 2): a repeated Find / Pick of an object already placed, with no release after it, was cut up to the LAST step of the plan, which removed the final MoveTo (the way home); it now ends at the repeated run's own Find / Pick. A repeat followed by a release is cut as before.
 - 2026-11-14 Option `gate_prune` (default off, new module `robot_agent/options/gate_prune.py`, hook `on_plan`; D2 round 2, switched on for D1 through `HOMELOOP_D1_LAYERS`): an Open / Close of a place whose ENV entry declares `openable` false (and no goal names) is dropped before the gate; no field, no role or off: the old plan.
 - 2026-11-14 Option `precond_repair` end-of-plan completion (D1 pilot P5): pack rule key `achieves` (on / in / hand); a plan that stops while holding the object of a goal gets the skill that achieves it (a hand-over after the approach, a put-down after a MoveTo), instead of the gate giving up.

@@ -196,7 +196,7 @@ language, the language layer's trusted reading (service `request_english(run)`; 
 request says, that no goal's object holds (whole words, either way round; a say goal's message counts) and that is not a place the robot knows adds
 an `object` issue, so the read-back asks about it once (the engine's `issue_asked`: no repeat). When `run.filtered` holds a note that names the object
 (the reason a goal for it was dropped) the issue carries it as `reason`; key `ask_reasoned` (default on) decides whether such a drop is asked about too.
-A noun the catalogue does not know is ignored. No pack data. Keys `enabled` (legacy `entity_cover`), `ask_reasoned`. Hook `on_issues`, service
+A noun the catalogue does not know is ignored. Three readings that are not a dropped object (D2 round 2): a mention the person took back (the last catalogue name within 40 characters before a self-correction marker of the language pack: "the blue mug, wait, no, the red one"); a short name only inside a longer catalogue name that the request says ("mug" in "red mug"); another name of a goal's object (a shared word, the request never says the goal's own name, no third catalogue entry has the word). No pack data. Keys `enabled` (legacy `entity_cover`), `ask_reasoned`. Hook `on_issues`, service
 `request_english`; lab flag `entity_cover`: `{what, reason}`. Limit: a drop the person meant (a negation) is asked about too while `ask_reasoned` is on.
 Names follow the language pack (`articles`, `plural_rules`, `grammar.joiners`; `core/planning/names.py`): none declared = nothing stripped or folded. A name counts only in the active
 text (no condition, negation or correction) in object position and not behind a boundary word (a landmark or tool). Order 75: runs before `ask_focus` (80).

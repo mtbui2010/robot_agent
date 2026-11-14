@@ -150,3 +150,34 @@ def test_entity_cover_runs_before_ask_focus_so_a_redundant_name_is_dropped_after
     added = opt.on_issues([], run, [g])
     assert added == [{"kind": "object", "what": "ladle"}] or added == []
     assert all(redundant(i, run.places, [g]) for i in added)                               # what is added, ask_focus then drops
+
+
+def test_a_mention_the_person_took_back_is_not_asked_about_but_a_second_object_is():
+    objs = ("kettle", "lamp", "red mug", "blue mug", "ladle")
+    opt, run, svc = make("Put the kettle on the stool and bring the blue mug, wait, no, the red one.", objects=objs)
+    assert opt.on_issues([], run, [goal("kettle"), goal("red mug")]) == [] and not svc.labs
+    opt, run, _ = make("Put the kettle on the stool and the ladle, wait, no, the lamp.", objects=objs)
+    assert [i["what"] for i in opt.on_issues([], run, [goal("kettle"), goal("lamp")])] == []      # the ladle was replaced
+    opt, run, _ = make("Put the kettle on the stool, wait, no, the rack, and bring the ladle.", objects=objs)
+    assert [i["what"] for i in opt.on_issues([], run, [goal("kettle")])] == ["ladle"]             # a mention AFTER the marker stays
+    opt, run, _ = make("Bring the blue mug and the red mug to the stool.", objects=objs)
+    assert [i["what"] for i in opt.on_issues([], run, [goal("red mug")])] == ["blue mug"]        # no marker: a real drop
+
+
+def test_a_short_name_inside_a_longer_catalogue_name_is_not_a_second_object():
+    objs = ("kettle", "mug", "red mug")
+    opt, run, svc = make("Put the kettle and the red mug on the stool.", objects=objs)
+    assert opt.on_issues([], run, [goal("kettle"), goal("red mug")]) == [] and not svc.labs
+    opt, run, _ = make("Put the kettle and the red mug on the stool.", objects=objs)
+    assert [i["what"] for i in opt.on_issues([], run, [goal("kettle")])] == ["red mug"]     # the longer entry is asked, "mug" is not a second one
+
+
+def test_another_name_of_a_goal_object_is_covered_only_when_no_third_object_has_the_word():
+    objs = ("kettle", "pan lid", "lid cover")
+    opt, run, svc = make("Put the kettle and the pan lid on the stool.", objects=objs)
+    assert opt.on_issues([], run, [goal("kettle"), goal("lid cover")]) == [] and not svc.labs     # "pan lid" is the goal's "lid cover"
+    both = ("kettle", "pan lid", "lid cover", "lid handle")
+    opt, run, _ = make("Put the kettle and the pan lid on the stool.", objects=both)
+    assert [i["what"] for i in opt.on_issues([], run, [goal("kettle"), goal("lid cover")])] == ["pan lid"]   # a third object has "lid"
+    opt, run, _ = make("Put the kettle, the pan lid and the lid cover on the stool.", objects=objs)
+    assert [i["what"] for i in opt.on_issues([], run, [goal("kettle"), goal("lid cover")])] == ["pan lid"]   # both are named: two objects

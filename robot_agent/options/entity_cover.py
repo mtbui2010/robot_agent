@@ -24,6 +24,8 @@ from robot_agent.core.options import Key, Option, OptionSpec, register
 from robot_agent.core.planning import names, understand
 
 
+_REACH = 40            # a correction takes back the mention within this many characters before its marker (as understand._drop_corrected)
+
 SPEC = OptionSpec(
     name="entity_cover",
     keys=(Key("enabled", "bool", False, aliases=("entity_cover",)), Key("ask_reasoned", "bool", True)),
@@ -66,17 +68,53 @@ def held(name: str, goals, langs=None) -> bool:
     return any(o and (names.has(name, o, langs) or names.has(o, name, langs)) for o in objs)
 
 
-def as_object(name: str, text: str, places, langs=None) -> bool:
+def _taken_back(name: str, text: str, corr, catalogue, langs=None) -> list:
+    """Spans of ``name`` in ``text`` that a self-correction takes back: the LAST catalogue name before a correction marker (the pack's marker
+    regex, language data) and within ``_REACH`` characters of it ("the blue mug, wait, no, the red one"): the person replaced it."""
+    marks = [m.start() for m in corr.finditer(text)] if corr is not None else []
+    out = []
+    for start, end in names.occurrences(name, text, langs):
+        for at in marks:
+            if end <= at + 1 and at - end < _REACH and not any(
+                    e2 <= at + 1 and s2 >= end for n2 in catalogue if n2 != name for s2, e2 in names.occurrences(n2, text, langs)):
+                out.append((start, end))
+                break
+    return out
+
+
+def as_object(name: str, text: str, places, langs=None, catalogue=()) -> bool:
     """Does the request name ``name`` as something to handle? In its active text (conditions, negations and corrected parts taken out), in
     object position (after a manipulation verb), and not behind a boundary word that makes it a landmark or a tool ("next to the lamp"); the words
     that join two objects (the pack's ``grammar.joiners``) do not count as a boundary."""
-    t = understand._corr_of(places).sub(" ", understand._active(text, places=places))
+    corr, t = understand._corr_of(places), understand._active(text, places=places)
+    for a, b in _taken_back(name, t, corr, catalogue, langs):           # a mention the person took back is not asked about
+        t = t[:a] + " " * (b - a) + t[b:]
+    t = corr.sub(" ", t)
     arts, join = names.articles(langs), names.joiners(langs)
     for start, end in names.occurrences(name, t, langs):
         before = re.findall(r"[\w']+", t[:start])
         while before and before[-1] in arts:
             before.pop()
         if (understand._object_position(t, start, end) or not understand._MANIP.search(t)) and not (before and before[-1] in understand._BOUND and before[-1] not in join):
+            return True
+    return False
+
+
+def inside_longer(name: str, words: str, catalogue, langs=None) -> bool:
+    """Every mention of ``name`` in ``words`` lies inside a mention of a longer catalogue name ("mug" in "the red mug"): that one is its own entry."""
+    spans = [sp for n2 in catalogue if n2 != name and names.has(name, n2, langs) for sp in names.occurrences(n2, words, langs)]
+    mine = names.occurrences(name, words, langs)
+    return bool(mine) and all(any(a <= s0 and e0 <= b for a, b in spans) for s0, e0 in mine)
+
+
+def same_object(name: str, goals, words: str, catalogue, langs=None) -> bool:
+    """``name`` is another name of a goal's object: they share a word, the request never says the goal's own name, and no third catalogue
+    entry carries that word ("TV remote" for the goal's "remote control"). Two objects both named in the request are two objects."""
+    for o in {g.get("object") for g in goals if g.get("object")}:
+        if names.has(o, words, langs):
+            continue
+        shared = set(names.plain(name, langs).split()) & set(names.plain(o, langs).split()) - set(names.articles(langs))
+        if any(not [c for c in catalogue if c not in (name, o) and names.has(w, c, langs)] for w in shared):
             return True
     return False
 
@@ -100,7 +138,9 @@ class EntityCover(Option):
         for n in catalogue:
             if n in known or not said(n, words, langs) or held(n, goals, langs) or any(said(n, str(i.get("what")), langs) for i in out):
                 continue
-            if not as_object(n, words, run.places, langs):
+            if inside_longer(n, words, catalogue, langs) or same_object(n, goals, words, catalogue, langs):
+                continue
+            if not as_object(n, words, run.places, langs, catalogue):
                 continue
             why = reason(n, getattr(run, "filtered", None), langs)
             if why and not self.cfg.get("ask_reasoned"):
