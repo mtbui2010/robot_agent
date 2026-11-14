@@ -11,12 +11,13 @@ Pack data ``planner.options.hw_wait.kinds`` (a failure code of the contract is t
 
 * ``schedule_s``: the wait entries for that kind, in seconds, in place of the ``planner.recovery.wait`` schedule (the wait ACTION is still the
   pack's ``recovery.wait.action``). An EMPTY list sends no wait command at all: the pack says a wait does not help that kind.
-* ``tries``: the failures of that kind on one step answered with the policy's action before it stops (the policy table's ``retries``).
+* ``tries``: the failures of that kind on one step answered with the policy's action before it stops (the policy table's ``retries``); an unhealthy
+  robot after a wait does not stop the run before they are used up.
 * ``action``: what the first answers are, instead of the policy table's.
 
 A kind with no entry, a bad entry, no ``recovery.wait`` declaration (the schedule only) or no data at all: the engine's own behaviour, byte for
 byte. The schedule is read where ``wait_on_robot`` runs the wait; without that option the engine's own poll stays.
-Hook ``on_start`` (no effect). Services ``wait_schedule``, ``recovery_rule``. Keys: ``enabled`` (legacy ``hw_wait``), ``kinds`` (dict, from the manifest).
+Hook ``on_start`` (no effect). Services ``wait_schedule``, ``recovery_rule``, ``more_tries`` (an unhealthy robot after a wait does not stop the run while declared tries are left). Keys: ``enabled`` (legacy ``hw_wait``), ``kinds`` (dict, from the manifest).
 Lab flag ``hw_wait``: ``{kind, schedule_s, tries, action}``.
 """
 
@@ -36,7 +37,7 @@ SPEC = OptionSpec(
     hooks=("on_start",),
     order=90,
     enabled="enabled",
-    services=("wait_schedule", "recovery_rule"),
+    services=("wait_schedule", "recovery_rule", "more_tries"),
     doc="Hardware-fault wait: the wait schedule, the number of tries and the first answer per failure kind are pack data; an empty schedule sends no wait command.",
 )
 
@@ -108,6 +109,15 @@ class HwWait(Option):
         new = dataclasses.replace(rule, retries=tries or rule.retries, action=act or rule.action)
         self.svc.lab(SPEC.name, kind=FailureCode.parse(code).value, tries=new.retries, action=new.action.value)
         return new
+
+    def more_tries(self, run, code, n):
+        """True while the declared ``tries`` of that failure kind are not used up (``n`` failures so far): an unhealthy robot after a wait
+        does not stop the run yet, the step runs again. None when the pack declares no tries for the kind (the engine's own stop stands)."""
+        tries = tries_of(self._entry(code))
+        if tries is None or n >= tries:
+            return None
+        self.svc.lab(SPEC.name, kind=FailureCode.parse(code).value, tries=tries, tried=n)
+        return True
 
 
 register(SPEC, HwWait)

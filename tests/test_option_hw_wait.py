@@ -32,9 +32,9 @@ def _fail(code):
     return {"code": code, "evidence": {}}
 
 
-def _loop(make_assist, env, monkeypatch, kinds, fails=(1,), on=True, wait=(2, 4, 8), msg="find: no image (camera timeout 1 Hz)"):
+def _loop(make_assist, env, monkeypatch, kinds, fails=(1,), on=True, wait=(2, 4, 8), msg="find: no image (camera timeout 1 Hz)", health=None):
     from robot_agent.core.planning.robot import RobotView
-    monkeypatch.setattr(RobotView, "health", lambda self, node=None: {"ok": None})
+    monkeypatch.setattr(RobotView, "health", lambda self, node=None: {"ok": health})
     robot = WaitRobot(env, {"apple": DS}, faults=[{"skill": "find", "obj": "apple", "kind": "fail", "nth": list(fails), "msg": msg}])
     loop = make_assist(robot, FakeLLM({"status": "clear", "reason": "", "question": "",
                                        "goals": [{"type": "on", "object": "apple", "from": "desk", "to": "dining table"}]}),
@@ -118,3 +118,26 @@ def test_no_failure_noted_yet_leaves_the_schedule_empty():
     assert opt.wait_schedule(run, [2.0]) == [1.0, 3.0] and svc.labs
     opt, run, svc = make(CAMERA, [_fail("hw_fault")])
     assert opt.wait_schedule(run, [2.0]) is None
+
+
+def test_declared_tries_are_honoured_when_the_robot_stays_unhealthy(make_assist, env, monkeypatch):
+    kinds = {"perception_unavailable": {"schedule_s": [1], "tries": 3}, "assumed": True}
+    evs, robot, loop = _loop(make_assist, env, monkeypatch, kinds, fails=(1, 2), health=False)
+    assert done(evs)["status"] == "success" and waits(robot) == ["1", "1"]          # two bad health checks, still tries left
+    assert [e for e in loop.lab_log if e["flag"] == "hw_wait" and e.get("tried") == 1]
+    evs, robot, _ = _loop(make_assist, env, monkeypatch, kinds, fails=(1, 2, 3, 4), health=False)
+    assert done(evs)["status"] != "success"                                          # the tries are used up: it stops
+
+
+def test_unhealthy_robot_stops_at_once_without_declared_tries_or_option_off(make_assist, env, monkeypatch):
+    kinds = {"perception_unavailable": {"schedule_s": [1], "tries": 3}, "assumed": True}
+    evs, _, _ = _loop(make_assist, env, monkeypatch, kinds, fails=(1, 2), health=False, on=False)
+    assert done(evs)["status"] != "success"
+    evs, _, _ = _loop(make_assist, env, monkeypatch, {"perception_unavailable": {"schedule_s": [1]}, "assumed": True}, fails=(1, 2), health=False)
+    assert done(evs)["status"] != "success"
+
+
+def test_more_tries_pure_empty_and_used_up():
+    opt, run, svc = make({"timeout": {"tries": 2}, "assumed": True})
+    assert opt.more_tries(run, "timeout", 1) is True and opt.more_tries(run, "timeout", 2) is None
+    assert opt.more_tries(run, "hw_fault", 1) is None and opt.more_tries(run, "not a code", 1) is None

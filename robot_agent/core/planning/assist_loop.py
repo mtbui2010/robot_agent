@@ -3751,8 +3751,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         wait_s = self.cfg["health_wait_s"] if todo is Recovery.WAIT_HEALTH else 0.0
         r.health = health = yield from self._wait_health(r, wait_s)
         ev_["health"] = health
-        if health.get("ok") is False:
-            # the person hears why in words (no failure code, no skill name: a Dock runs the move skill)
+        if health.get("ok") is False and not (todo is Recovery.WAIT_HEALTH and self.options.query("more_tries", r, code, n, default=False)):
+            # (option hw_wait: no stop while declared tries are left) the person hears why in words (no failure code, no skill name: a Dock runs the move skill)
             yield self._finish(r, "failed", code=code, device=device, evidence=ev_,
                                msg=f"the robot is not healthy after {st.get('action')} {st.get('object')} failed "
                                    f"({skill}: {code.value}): {health.get('error') or health}",
