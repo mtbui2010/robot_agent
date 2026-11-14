@@ -8,6 +8,7 @@ Keys: ``rules`` (legacy ``hazard_rules``; ``core`` | ``pack`` | ``off``, default
 the manifest) and ``receivers`` (legacy ``hazard_receiver``; turns on the profile rules with ``enabled_by: hazard.receivers``).
 Hooks: ``on_goals`` (the gate), ``on_goals_met`` (the partial-refusal sentence), ``on_finish`` (the ``refusals`` field).
 Services: ``forbids`` (the sentence that forbids a goal), ``refused_goals``, ``gate_off``.
+Lab flag ``hazard``: ``{rules, refused, goals}`` each time the gate refuses or drops goals (the rule ids that forbid them).
 """
 
 from __future__ import annotations
@@ -76,6 +77,7 @@ class Hazard(Option):
         bad = [(g, v.say) for g, v in found if v]
         if not bad:
             return None
+        self.svc.lab(SPEC.name, rules=[v.rule for _g, v in found if v], refused=len(bad), goals=len(run.goals))
         st = self._state(run)
         st["refusals"] = list(st.get("refusals", []))
         st["refusals"] += [x for x in (refusal_record(g, v) for g, v in found if v) if x not in st["refusals"]]
