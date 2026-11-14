@@ -5,7 +5,7 @@ This is the one place where option hooks reach loop internals; an option module 
 
 from __future__ import annotations
 
-from . import speech
+from . import dialog_converge, speech
 
 
 class LoopServices:
@@ -78,6 +78,11 @@ class LoopServices:
     def subgoals(self, run):
         """The planner's sub-goals for the run's goals now (one per goal), or None when the planner decomposes itself."""
         return self._lp._subgoals(run)
+
+    def readback_left(self, run) -> bool:
+        """Would the loop read the goals back once more now? The loop's own rule (``dialog_converge.readback_left``, the ``confirm_limit`` service)."""
+        lp = self._lp
+        return dialog_converge.readback_left(run, lp._converge(), lp.options.query("confirm_limit", run))
 
     def replan_round(self, run) -> tuple:
         """(replans the run has recorded, planner calls left in its ``max_replans`` budget). The calls of one replan (its suffix and the one

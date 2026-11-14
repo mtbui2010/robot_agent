@@ -2446,8 +2446,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         # from every earlier one is progress and earns one more read-back (two at most): the cap counts the
         # read-backs that gained nothing (R4b item 2).
         readings = getattr(r, "readings", [])
-        cap = min(2 + (min(2, max(0, len(set(readings)) - 1)) if self._converge() else 0), self.options.query("confirm_limit", r, default=9))
-        if r.confirms >= cap and not (r.confirms < min(3, cap + 1) and getattr(r, "corrected", 0) >= r.confirms):
+        limit = self.options.query("confirm_limit", r)                     # option ask_focus; None: no limit of its own
+        if not dialog_converge.readback_left(r, self._converge(), limit):
             yield self._finish(r, "failed", msg="the user did not confirm the task"); return _STOP, None
         r.confirms += 1
         sig = dialog_converge.goal_sig(r.goals)

@@ -5,8 +5,8 @@ Three classes of the read-back dialogue (``AssistLoop._read_back`` asks "Is that
 * **A bare "no" followed by the same request.** The reading was right, the first answer was noise or a slip, and the person says the request again; it reads
   the same goals as the refused reading. The engine then asks "which part is wrong?" and stops on the second time. With the option the reading is read back
   ONE more time as a yes / no question (hook ``on_goals`` sets the run's ``allow_repeat``); only a yes acts. Silence or another no stops as before. Once per
-  run, only after a refusal that was a bare no (no word of correction), only while the engine's own two read-backs are not used up. A restatement alone is
-  no agreement (``dialog_agree``), so the person is asked again.
+  run, only after a refusal that was a bare no (no word of correction), only while the loop would read back once more (service ``readback_left``: the
+  loop's own cap with ``confirm_limit``; a host without it: never). A restatement alone is no agreement (``dialog_agree``), so the person is asked again.
 * **An "I don't know" that keeps a reading it should not** (service ``unrefused``, before ``ask_focus``). It is no refusal only in a clean case: the answer
   says nothing but "not sure" (its words: fillers, first-person words, whole words of the pack's phrases, or such a word with one declared ending), the
   read-back did not carry the robot's own doubt, and no later answer changed the reading since it was first read back. Otherwise it is a refusal (the
@@ -130,9 +130,9 @@ class AskAgree(Option):
         st = _st(run)
         if goals and st["first"] is None:
             st["first"] = [dict(g) for g in goals]
-        sig = dialog_converge.goal_sig(goals) if goals else None
+        sig, left = dialog_converge.goal_sig(goals) if goals else None, getattr(self.svc, "readback_left", None)
         if (self.cfg["restate_confirm"] and sig in st["bare"] and sig not in st["content"] and not st["used"]
-                and sig in getattr(run, "rejected", ()) and getattr(run, "confirms", 9) < 2):
+                and sig in getattr(run, "rejected", ()) and left is not None and left(run)):
             st["used"], run.allow_repeat = True, True
             self.svc.lab(SPEC.name, rule="restated_after_bare_no")
         yield from ()

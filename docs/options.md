@@ -297,7 +297,8 @@ Module: `robot_agent/options/ask_focus.py`.
 Read-back dialogue (default off, D3 layer L14). Closes the ask loops and the answers accepted although they contradict the person. (1) A bare no, then the same request:
 the refused reading comes back from the person's restatement; instead of "which part is wrong?" and a stop, hook `on_goals` sets the run's `allow_repeat` once, so the reading
 is read back ONE more time as a yes / no question (only a yes acts; a second no or silence stops as before). Only after a refusal that was a bare no (a "no, the X" is no
-case), while the engine's own two read-backs are not used up (key `restate_confirm`, default true). (2) Service `unrefused` (order 78, before `ask_focus`): an "I don't know"
+case), while the loop would read back once more (engine service `readback_left`: the loop's own rule `dialog_converge.readback_left` with the `confirm_limit` service, not a copy of
+its numbers; a host without the service: never) (key `restate_confirm`, default true). (2) Service `unrefused` (order 78, before `ask_focus`): an "I don't know"
 leaves the reading standing only when it is clean: the answer says nothing but "not sure" (service `unsure_leftover`; each leftover word is a filler, a first-person word, a
 whole word of an unsure phrase of the pack, from `answer_unsure` or `dialogue_ext.answer_unsure`, or such a word with one declared ending, `dialogue_ext.polite_endings` or
 `patterns.answer_tail`; a no-word or any other word is a refusal), the read-back did not carry the robot's own doubt (`run.unsure`), and no answer changed the reading since its

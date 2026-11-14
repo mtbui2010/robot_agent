@@ -8,7 +8,7 @@ import pytest
 from fakes import FakeLLM, FakeRobot, ScriptedPlanner, done, run_task, steps
 from robot_agent.core.options import REGISTRY
 from robot_agent.core.options.config import resolve
-from robot_agent.core.planning import langdata
+from robot_agent.core.planning import dialog_converge, langdata
 from robot_agent.core.planning.assist_loop import ASSIST_OPTIONS, Places
 from robot_agent.options.ask_agree import SPEC, AskAgree, bare_no, clean_leftover, one_change
 
@@ -27,13 +27,14 @@ def g(obj="mug", to="stool@loft"):
     return {"type": "on", "object": obj, "from": "", "to": to}
 
 
-def make(first=None, goals=None, unsure=None, answer=None, either=True, restate=True, task="Put the mug on the stool.", dialogue=(), pick=None):
+def make(first=None, goals=None, unsure=None, answer=None, either=True, restate=True, task="Put the mug on the stool.", dialogue=(), pick=None, limit=None):
     """The option with a fake host: ``answer`` is the "I don't know" text it recognises, ``pick`` what the person says to the either-or."""
     cfg = resolve(SPEC, {"ask_agree": "1", "ask_agree.either_or": either, "ask_agree.restate_confirm": restate}, {}, None)
     asked = []
     svc = NS(lab=lambda *a, **k: svc.labs.append((a, k)), labs=[], asked=asked,
              unsure_leftover=lambda run, t: t.lower().replace(answer, " ").strip(" ,.") if answer and answer in t.lower() else None,
-             ask=lambda run, q: asked.append(q) or pick, goal_phrase=lambda goal, places: f"put the {goal['object']} on the {goal['to'].split('@')[0]}")
+             ask=lambda run, q: asked.append(q) or pick, goal_phrase=lambda goal, places: f"put the {goal['object']} on the {goal['to'].split('@')[0]}",
+             readback_left=lambda run: dialog_converge.readback_left(run, True, limit))
     run = NS(places=Places(ENV), goals=goals if goals is not None else [g()], readings=[], rejected=[], confirms=1, unsure=unsure, task=task,
              dialogue=list(dialogue), lang="en", patched=None, allow_repeat=False)
     opt = AskAgree(cfg, svc)
@@ -94,6 +95,34 @@ def test_restate_once_per_run_and_only_after_a_bare_no_not_after_a_content_refus
     opt3.unrefused(run3, "No.")
     list(opt3.on_goals(run3))
     assert run3.allow_repeat is False                                              # the engine's own two read-backs are used up
+
+
+def test_restate_follows_the_loops_own_read_back_cap_with_confirm_limit_set(make_assist, env):
+    sig = dialog_converge.goal_sig([g()])
+    for limit, repeat in ((None, True), (1, False)):
+        opt, run, _ = make(answer="no idea", limit=limit)
+        run.readings = run.rejected = [sig]
+        opt.unrefused(run, "No.")
+        list(opt.on_goals(run))
+        assert run.allow_repeat is repeat, limit                                   # the limit of the service, not a copy of the number
+    opt, run, svc = make(answer="no idea")
+    del svc.readback_left                                                          # a host without the service: never repeats
+    run.readings = run.rejected = [sig]
+    opt.unrefused(run, "No.")
+    list(opt.on_goals(run))
+    assert run.allow_repeat is False
+    answers = ["No.", "Put the mug on the dining table.", "yes"]
+    loop, d = _loop(make_assist, env, on=True, answers=answers, ask_focus="1", **{"ask_focus.max_confirms": 1})
+    assert not [e for e in loop.lab_log if e.get("rule") == "restated_after_bare_no"] and d["status"] == "failed", d     # one read-back allowed: none repeated
+    loop, d = _loop(make_assist, env, on=True, answers=answers, ask_focus="1", **{"ask_focus.max_confirms": 3})
+    assert [e for e in loop.lab_log if e.get("rule") == "restated_after_bare_no"] and d["status"] == "success", d
+
+
+def test_the_read_back_rule_is_one_rule_for_the_loop_and_the_service():
+    run = NS(confirms=2, readings=["a", "b"], corrected=0)
+    assert dialog_converge.readback_left(run, True) and not dialog_converge.readback_left(run, False)      # a new reading earns one more
+    assert not dialog_converge.readback_left(run, True, limit=2) and dialog_converge.readback_left(NS(confirms=2, readings=["a"], corrected=2), False)
+    assert not dialog_converge.readback_left(NS(confirms=3, readings=["a"], corrected=3), False)          # past the cap: one more after a correction only
 
 
 def test_restate_off_by_key_does_nothing():

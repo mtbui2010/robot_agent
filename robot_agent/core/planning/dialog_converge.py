@@ -69,6 +69,16 @@ def goal_sig(goals) -> tuple:
     return tuple(out)
 
 
+def readback_left(run, converge: bool, limit=None) -> bool:
+    """May the run read its goals back once more? Two read-backs; with ``converge`` one more for each reading that differs from every
+    earlier one (two at most), never above ``limit`` (the ``confirm_limit`` service; None: none); past that cap one more only after a
+    correction not read back yet. The ONE rule: the loop's read-back and the option service ``readback_left`` both ask it."""
+    confirms, corrected = run.confirms, getattr(run, "corrected", 0)
+    cap = 2 + (min(2, max(0, len(set(getattr(run, "readings", None) or [])) - 1)) if converge else 0)
+    cap = cap if limit is None else min(cap, limit)
+    return confirms < cap or (confirms < min(3, cap + 1) and corrected >= confirms)
+
+
 def _content(q) -> frozenset:
     return frozenset(w for w in re.findall(r"[^\W_]+", str(q or "").lower()) if w not in _FILLER)
 
