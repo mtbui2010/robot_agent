@@ -387,6 +387,19 @@ language packs' `patterns.condition`; an entry with neither label is not used), 
 Its pack data is read through its keys, and a key the loop resolved empty is read again from the manifest at run time (as the D2 options do): a host that merges the data into a loop already built gets a working option with or
 without `refresh_options` ("Keys and where they come from").
 
+### `else_ask`
+A request with an "otherwise" clause that no goal carries asks the person ONCE what to do otherwise (default off; D4 layer L25, class "conditional": the reader read only
+the if branch of "if X, do A, otherwise B", and `cond_extract` cannot make a goal the reader did not read; the user's decision: no forced split to an else branch, ask once).
+Hook `on_goals` at order 18: after `cond_extract` (15) wrote the `when` field of `cond_goal` (or the reader wrote it), before `cond_goal` (20) reads it. It asks when the goals'
+`when` fields name exactly one condition (one object / place) and all say the same `present`, the request (its words, or its reading in the prompt language) holds an else word
+of the language pack (`patterns.otherwise`), and the else clause (from the else word to the end of its sentence) names an object of the robot's catalogue (object memory,
+manifest `limits.objects`) or a place of its map that no goal and not the condition names ("otherwise just leave it" names nothing: no question). The question is the language pack's phrase `q_else` (block `speech`, assumed; the robot's i18n wins; slots `{object}`, `{place}`
+optional). The answer is read as a change of the request (engine service `reread_change`); each goal it adds that is not a goal of the run nor one the run filtered gets the
+`when` of the other branch (`present` flipped) and joins the goals, which pass the safety gate again (service `safety_gate`); `cond_goal` then looks and keeps the branch that holds.
+A later reading that reads exactly as the first one (`dialog_converge.goal_sig`, the same condition) gets the same added goals again without a question. Never a second question
+in a run, never a goal the answer did not add. No else word, no known name in the else clause, no phrase (run language or English), no condition, two conditions, both
+branches carried, no answer, nothing added: nothing changes. Keys `enabled` (legacy `else_ask`). Lab flag `else_ask`: `{object, at, names, added}`. Module: `robot_agent/options/else_ask.py`.
+
 ### `gate_prune`
 An Open / Close of a place the ENV declares not openable is dropped (default off). The planner opens a shelf or a table; the skill refuses and the run replans or gives up.
 Fail open: only an ENV entry with an explicit `openable` field that is false counts (no field, a name that is not a key, a place an `open` / `close` goal names: kept). Needs the
