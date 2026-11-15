@@ -251,7 +251,7 @@ Pack data `planner.options.effect_check.effects`: `{"sensor": {"skill": <the rob
 "floor": "<head of the map's floor places>", "source": "<label>"}` (or `"assumed": true`). No label = nothing; a sensor skill that is not the robot's holding sensor
 (`RobotView.holding_sensor`), no releases, no floor name: that part does nothing; two floor places in one room: no guess. Keys `enabled` (legacy `effect_check`),
 `effects` (dict, manifest only, read again at run time). Hooks `on_start`, `on_step_failed`, `on_goal_check` (order 88); service `hand_reading`. Lab flag
-`effect_check`: `{part: release, object, step, reading}`, `{part: unreadable, skill}`, `{part: floor, object, place, floor}`, once per distinct event in a run.
+`effect_check`: `{part: release, object, step, reading}`, `{part: unreadable, skill}`, `{part: floor_armed, object, place, floor}` (the search was armed at a goal check; it does not say the floor was looked at), once per distinct event in a run.
 Module: `robot_agent/options/effect_check.py`.
 
 ### `cond_goal`

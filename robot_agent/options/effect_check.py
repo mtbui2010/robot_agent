@@ -21,7 +21,7 @@ Pack data ``planner.options.effect_check.effects``::
 
 The result of any other skill (a speech step's listeners, a hand-over's own fields) is not read. Hooks ``on_start``, ``on_step_failed``,
 ``on_goal_check`` (order 88), service ``hand_reading``. Lab flag ``effect_check``: ``{part, ...}`` (``release`` with the reading, ``unreadable``,
-``floor``), once per distinct event in a run.
+``floor_armed``: the search was armed, not used), once per distinct event in a run.
 """
 
 from __future__ import annotations
@@ -124,7 +124,7 @@ class EffectCheck(Option):
         floor = self._floor(run.places, at, d["floor"]) if d and d["floor"] and isinstance(at, str) else None
         if floor:
             self.svc.prefer_now(run, obj, [floor])
-            self._tell("floor", object=obj, place=at, floor=floor)
+            self._tell("floor_armed", object=obj, place=at, floor=floor)
         return None
 
     @staticmethod

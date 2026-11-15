@@ -87,7 +87,7 @@ def test_floor_of_the_room_where_the_run_released_the_object_comes_first_in_its_
     o, run, svc, calls = make(placed={"widget": "bench@yard", "bolt": "rug@loft"})
     assert o.on_goal_check(run, "widget") is None and calls["prefer"] == [("widget", ["ground@yard"])]
     assert o.on_goal_check(run, "bolt") is None and o.on_goal_check(run, "cog") is None             # no floor in the loft; not released by the run
-    assert calls["prefer"] == [("widget", ["ground@yard"])] and svc.labs == [{"part": "floor", "object": "widget", "place": "bench@yard", "floor": "ground@yard"}]
+    assert calls["prefer"] == [("widget", ["ground@yard"])] and svc.labs == [{"part": "floor_armed", "object": "widget", "place": "bench@yard", "floor": "ground@yard"}]
     two = {**YARD, "ground@yard#2": {}, "Ground@yard": {}}
     o2, run2, _, calls2 = make(env=two, placed={"widget": "bench@yard"})
     assert o2.on_goal_check(run2, "widget") is None and calls2["prefer"] == []                         # two floor places: no guess
@@ -214,7 +214,7 @@ def test_loop_final_silent_drop_the_floor_of_the_release_room_is_the_first_look_
     loop, robot, evs, after = _silent_drop(make_assist, env, on=True)
     assert after[0] == "floor@den" and "chest@attic" not in after                               # the floor first, no other place
     assert done(evs)["status"] == "success" and robot.obj["widget"] == "shelf@den"
-    assert [e["part"] for e in loop.lab_log if e["flag"] == "effect_check"] == ["floor"]
+    assert [e["part"] for e in loop.lab_log if e["flag"] == "effect_check"] == ["floor_armed"]
 
 
 def test_silent_drop_without_the_option_another_place_is_searched_first_off(make_assist, env):
