@@ -85,6 +85,11 @@ class LoopServices:
         world.holding = world.holding_since = None
         return bool(self._lp._refind_dropped(run, step, run.robot.policy.rule_for(FailureCode.DROPPED)))
 
+    def open_items(self, run) -> list:
+        """The request items the active options report as left open at the end of the run: the goals each option serving ``ledger_open``
+        returns, joined in option order (``Dispatcher.collect``; ``goal_ledger``: a go goal the goal filter dropped with no evidence); [] when none."""
+        return self._lp.options.collect("ledger_open", run)
+
     def ask_clarify(self, run, question):
         """Flow: ask ``question`` as the loop's own clarify step (the answer joins the dialogue); the step's result (go on reading, or stop).
         A question an option vetoes (service ``ask_veto``) is not asked: None (the loop goes on reading what it heard)."""

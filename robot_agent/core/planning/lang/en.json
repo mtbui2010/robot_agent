@@ -340,7 +340,8 @@
  },
  "speech": {
   "q_pick_one": "Which one do you mean: {text}?",
+  "say_partial": "I did only part of it. Done: {done}. Not done: {missing}.",
   "assumed": true,
-  "source": "assumed: the re-ask of option answer_align after a yes or no to an either-or, naming the options; the robot's i18n wins"
+  "source": "assumed: the re-ask of option answer_align after a yes or no to an either-or, naming the options, and the robot's own end sentence for a run whose goals hold while a request item stays open (option partial_end), plain English; the robot's i18n wins"
  }
 }

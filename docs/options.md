@@ -15,6 +15,7 @@ CLAUDE.md rules 13-15. The reference for the flat run options and manifest keys 
 | `Dispatcher` | `core/options/dispatch.py` | builds the enabled options of one loop, calls their hooks in `order` |
 | `Services` | `core/options/services.py` | the interface an option uses to ask the loop for something (`LoopServices` in `core/planning/option_services.py` implements it) |
 | the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words`, `cond_goal`, `cond_extract`, `recipient_keep`, `plan_complete`, `ask_agree`, `replan_guard`, `name_recover`, `asr_guard`, `plan_release`, `effect_check`, `repair_sync`, `goal_ledger`, `answer_align` so far |
+| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words`, `cond_goal`, `cond_extract`, `recipient_keep`, `plan_complete`, `ask_agree`, `replan_guard`, `name_recover`, `asr_guard`, `plan_release`, `effect_check`, `repair_sync`, `goal_ledger`, `partial_end` so far |
 
 `python -m robot_agent.core.options list` prints the registered options, their keys and hooks.
 `python -m robot_agent.core.options check MANIFEST.yaml` reports `planner.options` entries that name no option or key.
@@ -99,10 +100,10 @@ dropped. A *flow* hook is a generator (`yield from`): it may yield run events an
 | `on_translation_lost(text, lost, translate)` | decide | the input translation lost a place name the person said: the English to use, or None | `translate_retry` |
 | `on_second_look(run, obj, place)` | decide | the goal check's first look missed and the second saw the object: `(ok, why, skill)` or None (the second look is believed) | `confirm_look` |
 | `on_final(run)` | decide | end of run, before the goals are checked; returns the `done` event | `unapplied_change` |
-| `on_goals_met(run)` | decide | the goals hold; returns the `done` event | `hazard` (partial refusal sentence) |
+| `on_goals_met(run)` | decide | the goals hold; returns the `done` event | `hazard` (partial refusal sentence), `partial_end` (status `partial` when an open request item is missing) |
 | `on_finish(run, fields)` | observe | the fields of a `done` event, before it is built | `hazard` (`refusals`) |
 
-`goal_words` also answers the service `goal_guard(run, goals)` (a guard with `place(name)` and `frozen(goal)`) that the engine puts on `places.guard` before the goal repairs (`goal_fix.drop_invented`, `repair_destination`, `shared_listener` read it; None = old behaviour). `goal_ledger` answers the service `goal_keep(run, goals)`: a predicate `keep(goal, words)` that the engine passes to `goal_fix.drop_invented` (argument `keep_go`) for a `go` goal the F4.4 rule would drop (None = dropped as before); and `ledger_open(run)`: the go goals the last reading dropped with no evidence (for the end of the run; None when none).
+`goal_words` also answers the service `goal_guard(run, goals)` (a guard with `place(name)` and `frozen(goal)`) that the engine puts on `places.guard` before the goal repairs (`goal_fix.drop_invented`, `repair_destination`, `shared_listener` read it; None = old behaviour). `goal_ledger` answers the service `goal_keep(run, goals)`: a predicate `keep(goal, words)` that the engine passes to `goal_fix.drop_invented` (argument `keep_go`) for a `go` goal the F4.4 rule would drop (None = dropped as before); and `ledger_open(run)`: the go goals the last reading dropped with no evidence (for the end of the run; None when none); the engine service `open_items(run)` joins every `ledger_open` answer (`Dispatcher.collect`) for `partial_end`.
 
 Services (`OptionSpec.services`, asked with `Dispatcher.query(name, *args, default=...)`): `hazard.forbids(goal, places)`,
 `hazard.refused_goals(run)`, `hazard.gate_off()`, `reach_delivery.no_refetch()`, `dedupe_keep_end.keep_after_dedupe()`, `effect_check.hand_reading(skill, raw, default)` (asked by the engine's `_holding`: the holding sensor's result read three-valued; no answer = `isdone` as before), `repair_sync.repair_kwargs(run)` (asked by the gate's and the suffix's symbolic repair: extra arguments of `plan_repair.repair`, `sync` and `finish_rest`; no answer = no extra argument, the repair as before). A query returns the first answer that is not None; `Dispatcher.collect(name, *args)` joins the lists of every option that serves `name` (`refused_goals`: `hazard`, `cond_extract` and `cond_goal`). `Dispatcher.decide_flow_of(service, hook, *args)` runs a flow hook of only the options that serve `service`; the engine service `safety_gate(run)` uses it to put the goals through the safety gate again (`on_goals` of the options serving `forbids`) for an option that changed a goal after the gate ran (`name_recover`).
@@ -317,6 +318,17 @@ dialogue. The engine's own questions (read-back, search help) are never vetoed, 
 Data: `max_questions` (int, per robot: `planner.options.question_cap.max_questions` with `source` or `assumed: true`, read again at run time; none
 declared or 0 = no cap). Keys `enabled` (legacy `question_cap`), `max_questions`, `no_repeat` (legacy `question_cap_no_repeat`). Hook `on_start`
 (the task's record starts empty); service `ask_veto`. Lab flag `question_cap`: `{why: cap | repeat, asked}`. Module: `robot_agent/options/question_cap.py`.
+### `partial_end`
+A run whose goals hold while an item of the request stays open ends `partial` and names what was done and what is missing, instead of saying done (default off;
+D4 layer L22, class goal_dropped: "done with an item unresolved", user decision). Hook `on_goals_met` (order 96, after `hazard`, whose partial-refusal sentence
+answers first and keeps the refusal for the caller). The open items come from the engine service `open_items(run)`: the goals every option serving `ledger_open`
+reports (today `goal_ledger`: a `go` goal the goal filter dropped with no evidence; with `goal_ledger` off nothing is open and the option does nothing). An item
+the end state satisfies (one of the run's goals, a `go` place the robot stands at, an object the run put at its place) is not missing. When one is missing the
+`done` event has status `partial`, a field `partial` `{done: [goal text], missing: [goal text]}`, `msg` `partial: <missing>` and the phrase `say_partial` with the
+slots `done` and `missing` (the goals' read-back phrases in a row). Data: the phrase only, in the language packs (`core/planning/lang/en.json` and `ko.json`,
+block `speech`, `assumed`) or the robot's i18n (it wins); a language without it says the English phrase through the translator; no phrase anywhere, no open item
+or no done goal = the run ends as before (a complete success is never changed). Callers that map statuses: `partial` is not `success` (the API's `ok` is false,
+the bench maps it to `give_up`). Keys `enabled` (legacy `partial_end`). Lab flag `partial_end`: `{done, missing}`. Module: `robot_agent/options/partial_end.py`.
 
 ### `cond_goal`
 A request with a condition ("if the spoon is on the table, put it away; if not, leave it") is decided by the robot looking, not by the reader guessing (default off).
