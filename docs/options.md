@@ -294,7 +294,7 @@ e.g. a hand goal: "Open C, Find X, Pick X, Close C" then the hand-over; the Clos
 planner or its edit drops the Close). The grounded plan is replayed on the belief with the engine's action model and the robot's capabilities. For every container an
 Open step of the plan opens (the `open` role) that the replay leaves open and no `open` goal names (by key or by its name): a Close of it the model refuses with
 `hand_full` (one hand) is taken out, and `MoveTo C` (when the robot is elsewhere; needs the `move` role) and `Close C` go in at the first point after the robot's last
-step at C where the hand is empty again. A plan whose hand never empties after that, or a container open before the plan, is left alone. Why a new option: the gate's
+step at C where the hand is empty and the robot is between two legs (before its next MoveTo, or at the plan's end: the steps after keep their place). A plan whose hand never empties after that, or a container open before the plan, is left alone. Why a new option: the gate's
 `op_hoist` moves such a Close only when the plan it edits already holds the release and never adds a Close the plan left out; `plan_release` moves the held object's own
 put-in before the Close of its `in` place, another question. Pack data: only `planner.action_roles` `open` / `close` (and `move`); none = the plan is unchanged.
 Keys `enabled` (legacy `close_opened`). Hooks `on_start`, `on_plan` (order 89, after `precond_repair`, `plan_complete`, `plan_release`, so the release they add is seen).

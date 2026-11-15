@@ -3,8 +3,8 @@
 What: the grounded plan (hook ``on_plan``) is replayed on the belief with the engine's action model and the robot's own capabilities. For every
 container an Open step of the plan opens (the pack's ``open`` role) and the replay leaves open, and that no ``open`` goal names: a Close of it that
 the model refuses because the hand is full (``hand_full``: one hand) is taken out, and ``MoveTo C`` (when the robot is elsewhere) and ``Close C``
-go in at the first point after the robot's last step at C where the hand is empty again (after the release of what it took out). A plan whose
-hand never empties after that is left as it is.
+go in at the first point after the robot's last step at C where the hand is empty and the robot is between two legs (before its next MoveTo, or at
+the plan's end), so the steps after it keep their place. A plan whose hand never empties there is left as it is.
 Why (failure class: container left open, e.g. a hand goal): the planner writes "Open C, Find X, Pick X, Close C" and the hand-over after it. The
 Close cannot run while holding X; the gate says "do it before the Pick" (impossible, X is inside), the planner or the gate drops the Close and the
 robot ends with C open. The gate's own hoist (``plan_repair.op_hoist``) moves such a Close only when the plan it edits holds the release (not one an
@@ -73,7 +73,7 @@ class CloseOpened(Option):
         return any(isinstance(g, dict) and g.get("type") == KEEP_OPEN and g.get("object") in names for g in run.goals or [])
 
     def _close(self, plan, c, world, caps, roles) -> list:
-        """``plan`` with the hand-full Closes of ``c`` out and one Close of ``c`` where the hand is empty after its last use; unchanged if none fits."""
+        """``plan`` with the hand-full Closes of ``c`` out and one Close of ``c`` before the next leg after its last use with the hand empty; unchanged if none fits."""
         close, move = roles["close"], roles["move"]
         states = replay(plan, world, caps)
         full = {i for i, st in enumerate(plan) if st.get("action") == close and st.get("object") == c
@@ -83,7 +83,7 @@ class CloseOpened(Option):
         if c not in states[-1].opened:
             return plan
         last = max(i for i, st in enumerate(rest) if st.get("object") == c or (states[i].arrived == c and st.get("action") != move))
-        k = next((j for j in range(last + 1, len(rest) + 1) if not states[j].holding), None)
+        k = next((j for j in range(last + 1, len(rest) + 1) if not states[j].holding and (j == len(rest) or rest[j].get("action") == move)), None)
         if k is None or (states[k].arrived != c and not move):
             return plan
         add = ([{"action": move, "object": c}] if states[k].arrived != c else []) + [{"action": close, "object": c}]

@@ -58,6 +58,21 @@ def test_close_right_where_the_robot_is_after_a_put_in_and_before_it_leaves():
     assert got == ["MoveTo crate@yard", "Open crate@yard", "PutIn crate@yard", "Close crate@yard", "MoveTo bench@yard"]
 
 
+def test_close_waits_for_the_next_leg_so_the_steps_after_the_release_keep_their_place():
+    # two containers: the gizmo goes from the crate into the hutch; the plan closes the hutch itself, then walks on. Closing the crate right after the
+    # put-in would leave the robot at the crate for the hutch's Close (a step the gate refuses): it goes before the next MoveTo instead.
+    opt, run, _ = make(goals=[{"type": "in", "object": "gizmo", "from": "crate@yard", "to": "hutch@loft"}])
+    plan = steps("MoveTo hutch@loft", "Open hutch@loft", *FETCH, "MoveTo hutch@loft", "PutIn hutch@loft", "Close hutch@loft", "MoveTo bench@yard")
+    got = acts(opt.on_plan(plan, run))
+    assert got == ["MoveTo hutch@loft", "Open hutch@loft", *FETCH, "MoveTo hutch@loft", "PutIn hutch@loft", "Close hutch@loft",
+                   "MoveTo crate@yard", "Close crate@yard", "MoveTo bench@yard"]
+    w = run.world.copy()
+    for st in steps(*got):
+        assert not [v for v in action_model.check(st, w, capabilities=opt.svc.robot.model_capabilities()) if v.is_error], st   # each runs where it stands
+        action_model.apply(st, w, inplace=True)
+    assert not w.opened
+
+
 def test_container_a_goal_wants_open_is_left_open_by_key_or_by_its_name():
     for name in ("crate@yard", "crate"):
         opt, run, svc = make(goals=[HAND, {"type": "open", "object": name}])
