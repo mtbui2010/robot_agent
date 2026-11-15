@@ -3733,9 +3733,9 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         return _NEXT
 
     def _apply_policy(self, r, st, skill, code, rule, reason, device):
-        """The recovery policy's own actions (contract.recovery, by FailureCode) before the per-action
-        recovery: STOP once the rule's retries are used up, WAIT_HEALTH (wait for the robot's health, then
-        the same step again in place), HEALTH_CHECK (an unhealthy robot stops the run). None: go on."""
+        """The recovery policy's own actions (contract.recovery, by FailureCode) before the per-action recovery: STOP once the
+        rule's retries are used up, WAIT_HEALTH (wait for the robot's health, then the same step again in place), HEALTH_CHECK (an
+        unhealthy robot stops the run); a stop goes to the options first (hook ``on_fault_stop``). None: go on."""
         key = (code, st.get("action"), st.get("object"))
         r.code_tries[key] = n = r.code_tries.get(key, 0) + 1
         todo = self.options.query("recovery_rule", r, code, rule, default=rule).next_after(n)   # option hw_wait: tries per kind
@@ -3743,28 +3743,28 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         if todo is Recovery.STOP:
             if r.health is not None:
                 ev_["health"] = r.health                  # what the robot said the last time it was asked
-            yield self._finish(r, "failed", code=code, device=device, evidence=ev_,
-                               msg=f"{st['action']} {st['object']} failed {n} times ({code.value}): {reason}")
-            return _STOP
-        if todo not in (Recovery.WAIT_HEALTH, Recovery.HEALTH_CHECK):
+            stop = {"msg": f"{st['action']} {st['object']} failed {n} times ({code.value}): {reason}"}
+        elif todo not in (Recovery.WAIT_HEALTH, Recovery.HEALTH_CHECK):
             return None
-        wait_s = self.cfg["health_wait_s"] if todo is Recovery.WAIT_HEALTH else 0.0
-        r.health = health = yield from self._wait_health(r, wait_s)
-        ev_["health"] = health
-        if health.get("ok") is False and not (todo is Recovery.WAIT_HEALTH and self.options.query("more_tries", r, code, n, default=False)):
-            # (option hw_wait: no stop while declared tries are left) the person hears why in words (no failure code, no skill name: a Dock runs the move skill)
-            yield self._finish(r, "failed", code=code, device=device, evidence=ev_,
-                               msg=f"the robot is not healthy after {st.get('action')} {st.get('object')} failed "
-                                   f"({skill}: {code.value}): {health.get('error') or health}",
-                               say="I have to stop: something is wrong with my hardware.")
-            return _STOP
-        if todo is Recovery.HEALTH_CHECK:
-            return None
-        if st.get("action") == "Find":
-            r.world.found = None
-        yield r.ev("recover", at_index=r.i, kind="wait_health", code=code.value,
-                   msg=f"{skill} could not run ({code.value}); waited for the robot, trying again")
-        return _NEXT                                      # the same step again, in place (r.i unchanged)
+        else:                                             # wait; unhealthy: stop (option hw_wait: not while declared tries are left)
+            wait_s = self.cfg["health_wait_s"] if todo is Recovery.WAIT_HEALTH else 0.0
+            r.health = ev_["health"] = health = yield from self._wait_health(r, wait_s)
+            if health.get("ok") is not False or todo is Recovery.WAIT_HEALTH and self.options.query("more_tries", r, code, n, default=False):
+                if todo is Recovery.HEALTH_CHECK:
+                    return None
+                if st.get("action") == "Find":
+                    r.world.found = None
+                yield r.ev("recover", at_index=r.i, kind="wait_health", code=code.value,
+                           msg=f"{skill} could not run ({code.value}); waited for the robot, trying again")
+                return _NEXT                              # the same step again, in place (r.i unchanged)
+            # the person hears why in words (no failure code, no skill name: a Dock runs the move skill)
+            stop = {"say": "I have to stop: something is wrong with my hardware.", "msg": f"the robot is not healthy after {st.get('action')} "
+                    f"{st.get('object')} failed ({skill}: {code.value}): {health.get('error') or health}"}
+        out = yield from self.options.decide_flow("on_fault_stop", r, st, skill, code, device, n)   # e.g. fault_ladder: ask, another way
+        if out is not None:
+            return out
+        yield self._finish(r, "failed", code=code, device=device, evidence=ev_, **stop)
+        return _STOP
 
     def _wait_on_robot(self, r):
         """Option ``wait_on_robot``: the pack's declared wait action (manifest planner.recovery.wait) runs once per
