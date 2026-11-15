@@ -183,7 +183,7 @@ def test_no_did_you_mean_loop_final_off_asks_about_the_garbled_word_on_asks_noth
 
 def test_named_loop_final_the_read_back_names_the_nook_with_the_doubt_and_a_yes_reaches_it(make_assist, env):
     task = "Put the gizmo on the dining table, then head back to your"
-    robot, loop, evs, goals = loop_run(make_assist, env, task, FakeLLM(default=understood(GIZMO, GO)), goal_ledger="1", **{"goal_ledger.named": "1"})
+    robot, loop, evs, goals = loop_run(make_assist, env, task, FakeLLM(default=understood(GIZMO, GO)), goal_ledger="1", goal_ledger_named="1")
     asks = [e for e in evs if e["event"] == "clarify"]
     assert len(asks) == 1 and asks[0]["kind"] == "confirm" and "nook" in str(asks[0]["question"]).lower()
     assert "not sure" in str(asks[0]["question"]).lower() and "mean" not in str(asks[0]["question"]).lower()

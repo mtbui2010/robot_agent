@@ -16,7 +16,7 @@ Why: the failure class "the reader's goal is dropped by the engine's own filter,
 ending "... then go back to the <place>" whose last word the recogniser garbled was dropped silently and the run ended done without it). No
 "Did you mean X?" question is asked (user decision); the open items left (``named`` off and no evidence) are served by ``ledger_open(run)``
 for the end of the run, and this option says nothing at the end.
-Switch off: key ``enabled`` False (the default; legacy run option ``goal_ledger``), or a part with ``restore`` / ``named`` / ``retract``
+Switch off: key ``enabled`` False (the default; legacy run option ``goal_ledger``), or a part with ``restore`` / ``named`` (run option ``goal_ledger_named``) / ``retract``
 False. Off: the service answers nothing and ``drop_invented`` drops as before. ``min_share`` (0.5) is assumed, not measured. Lab flag
 ``goal_ledger``: ``{rule: restore, to, heard}``, ``{rule: named, to}``, ``{rule: retract, what}``.
 """
@@ -31,7 +31,7 @@ from robot_agent.core.planning import names, understand
 
 SPEC = OptionSpec(
     name="goal_ledger",
-    keys=(Key("enabled", "bool", False, aliases=("goal_ledger",)), Key("restore", "bool", True), Key("named", "bool", False),
+    keys=(Key("enabled", "bool", False, aliases=("goal_ledger",)), Key("restore", "bool", True), Key("named", "bool", False, aliases=("goal_ledger_named",)),
           Key("min_share", "float", 0.5), Key("retract", "bool", False), Key("retract_markers", "dict", {}, sources=("manifest",))),
     hooks=("on_issues",),
     order=22,

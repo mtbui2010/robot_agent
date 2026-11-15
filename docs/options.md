@@ -284,7 +284,7 @@ with the pack's markers, or the option's narrower `retract_markers` per language
 engine's `unsaid` issue with its object, so the read-back asks the engine's own "Where should I put the X?" (one question, the engine's `issue_asked`). No "Did you mean X?"
 question is ever added. The option says nothing at the end of a run: the open items (`named` off, no evidence) are served by `ledger_open(run)`. Data: none for R1 (the place
 names are the robot's ENV heads and aliases); `retract_markers` (dict, manifest only, read again at run time): `{"<lang>": [<regex>, ...], "assumed": true}`; no list for the
-run's language = the language packs' `self_correction` markers. Keys `enabled` (legacy `goal_ledger`), `restore`, `named`, `min_share`, `retract`, `retract_markers`. Hook
+run's language = the language packs' `self_correction` markers. Keys `enabled` (legacy `goal_ledger`), `restore`, `named` (legacy `goal_ledger_named`), `min_share`, `retract`, `retract_markers`. Hook
 `on_issues` (order 22); services `goal_keep`, `ledger_open`. Lab flag `goal_ledger`: `{rule: restore, to, heard}`, `{rule: named, to}`, `{rule: retract, what}`.
 Module: `robot_agent/options/goal_ledger.py`.
 
