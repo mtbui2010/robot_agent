@@ -14,10 +14,10 @@ narrower ``retract_markers`` per language), when words follow the marker and the
 engine's own ``unsaid`` issue with its object: the read-back asks the existing "where should I put it?".
 Why: the failure class "the reader's goal is dropped by the engine's own filter, or a retracted destination is kept" (the go goal of a request
 ending "... then go back to the <place>" whose last word the recogniser garbled was dropped silently and the run ended done without it). No
-"Did you mean X?" question is asked (user decision); the open items left (``named`` off, no evidence, but a weak cue: a heard word that
-starts with the name with a longer tail, or the words ending in the name's last word cut short to at least ``min_share`` of it) are served
-by ``ledger_open(run)`` for the end of the run, and this option says nothing at the end. A drop with no sign of the place at all (most of
-them: goals the reader invented) is no open item, so a complete success is never reported as partial.
+"Did you mean X?" question is asked (user decision), and this option says nothing at the end. A drop with only a weak cue of the place
+(``named`` off, no evidence: a heard word that starts with the name with a longer tail, or the words ending in the name's last word cut
+short to at least ``min_share`` of it) is logged (lab rule ``open``); a drop with no sign of the place at all (most of them: goals the
+reader invented) is not.
 Switch off: key ``enabled`` False (the default; legacy run option ``goal_ledger``), or a part with ``restore`` / ``named`` (run option ``goal_ledger_named``) / ``retract``
 False. Off: the service answers nothing and ``drop_invented`` drops as before. ``min_share`` (0.5) is assumed, not measured. Lab flag
 ``goal_ledger``: ``{rule: restore, to, heard}``, ``{rule: named, to}``, ``{rule: open, to, heard}``, ``{rule: retract, what}``.
@@ -37,7 +37,7 @@ SPEC = OptionSpec(
     hooks=("on_issues",),
     order=22,
     enabled="enabled",
-    services=("goal_keep", "ledger_open"),
+    services=("goal_keep",),
     doc="A go goal the goal filter would drop is kept when a heard word starts with its place's name (restored silently) or kept and named in the "
         "read-back; a destination the person took back gets the engine's where-question.",
 )
@@ -132,7 +132,7 @@ class GoalLedger(Option):
         if not (self.cfg["restore"] or self.cfg["named"]):
             return None
         st = self._state(run)
-        st["evident"], st["open"] = {}, []
+        st["evident"] = {}
         return lambda g, t: self._keep(run, g, t)
 
     def _keep(self, run, g, t) -> bool:
@@ -146,15 +146,9 @@ class GoalLedger(Option):
             self.svc.lab(SPEC.name, rule="named", to=to)
             return True
         weak = cue(to, t, run.places, float(self.cfg["min_share"]))
-        if weak:                                            # the person may have said it: an open item; no sign at all: the reader's own goal
-            st["open"].append(dict(g))
+        if weak:                                            # the person may have said it: logged; no sign at all: the reader's own goal
             self.svc.lab(SPEC.name, rule="open", to=to, heard=weak)
         return False
-
-    def ledger_open(self, run):
-        """Service: the ``go`` goals the last reading dropped with only a weak cue of their place in the words (``cue``; ``named`` off), for
-        the end of the run; None when none. A goal dropped with no sign at all is the reader's own, not an item of the request."""
-        return list(self._state(run).get("open") or []) or None
 
     def _corr(self, run):
         """The self-correction markers: the option's own list for the run's language (pack data with a ``source`` or ``assumed`` label,

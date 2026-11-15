@@ -23,7 +23,6 @@ class Services(Protocol):
     def prefer_now(self, run, obj: str, keys) -> None: ...                      # look at ``keys`` first for ``obj``, also in a search under way
     def first_unsearched(self, run, obj: str, keys) -> Optional[str]: ...        # the best of ``keys`` not looked at yet
     def run_step(self, run, step: dict) -> Any: ...                            # one step of the end-of-run check, effect applied on success: the result or None
-    def open_items(self, run) -> list: ...                                      # the request items the options report left open at the end (service ``ledger_open``)
     def cancelled(self, run) -> Optional[dict]: ...                             # the stop event if the run was cancelled
     def safety_gate(self, run): ...                                              # generator: the goals through the safety gate again (STOP or None)
     def safety_rule(self, goal, places) -> Any: ...                             # the Verdict of an option's declared hazard rule for a goal, or None

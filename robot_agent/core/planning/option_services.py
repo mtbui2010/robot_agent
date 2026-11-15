@@ -57,12 +57,6 @@ class LoopServices:
         """One more step of the end-of-run check (MoveTo, or the pack's end action), its effect applied on success: the skill result or None."""
         return self._lp._look(run, dict(step))[0]
 
-    def open_items(self, run) -> list:
-        """The request items the active options report as left open at the end of the run: the goals each option serving ``ledger_open``
-        returns, joined in option order (``Dispatcher.collect``; ``goal_ledger``: a go goal the goal filter dropped with only a weak cue of its
-        place in the words); [] when none."""
-        return self._lp.options.collect("ledger_open", run)
-
     def ask_clarify(self, run, question):
         """Flow: ask ``question`` as the loop's own clarify step (the answer joins the dialogue); the step's result (go on reading, or stop)."""
         return self._lp._ask_clarify(run, question)

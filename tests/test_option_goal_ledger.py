@@ -42,14 +42,14 @@ def test_registered_default_off_and_the_filter_drops_as_before_off(make_assist, 
     goals = [goal("on", "mat@hall", "gizmo"), goal("go", NOOK)]
     assert goal_fix.drop_invented([dict(g) for g in goals], "put the gizmo on the mat then go to the roostlo", PLACES) == (goals[:1], goals[1:])
     loop = make_assist(FakeRobot(env, {}), FakeLLM(default={"status": "clear", "goals": []}), ScriptedPlanner([]))
-    assert loop.options.query("goal_keep", NS(), []) is None and loop.options.query("ledger_open", NS()) is None
+    assert loop.options.query("goal_keep", NS(), []) is None
 
 
 def test_no_name_heard_no_marker_no_data_does_nothing_empty():
     opt, run, svc = make()
     goals = [goal("on", "mat@hall", "gizmo"), goal("go", "ledge@hall")]
     out, dropped = filtered(opt, run, goals, "put the gizmo on the mat and then go")        # ledge has no alias, nothing heard
-    assert out == goals[:1] and dropped == goals[1:] and opt.ledger_open(run) is None      # no sign of the place: the reader's goal, no open item
+    assert out == goals[:1] and dropped == goals[1:]                                       # no sign of the place: the reader's goal
     assert opt.on_issues([], run, out) is None and not svc.labs
     off, run2, _ = make(restore=False)
     assert off.goal_keep(run2, goals) is None                                              # restore and named both off: no predicate
@@ -111,7 +111,7 @@ def test_named_no_evidence_keeps_the_goal_and_its_unsaid_issue_stays_for_the_rea
     opt, run, svc = make(named=True)
     goals = [goal("on", "mat@hall", "gizmo"), goal("go", NOOK)]
     out, dropped = filtered(opt, run, goals, "put the gizmo on the mat, then head back to your")
-    assert out == goals and not dropped and opt.ledger_open(run) is None
+    assert out == goals and not dropped
     issues = find_issues(out, "put the gizmo on the mat, then head back to your", PLACES)
     assert opt.on_issues(issues, run, out) is None and {"kind": "unsaid", "what": "nook", "object": ""} in issues
     assert [k["rule"] for _a, k in svc.labs] == ["named"]
@@ -153,9 +153,9 @@ def test_retract_unlabelled_markers_of_the_option_are_not_used_empty():
     assert sourced.on_issues([], run2, gs) == [{"kind": "unsaid", "what": "mat", "object": "gizmo"}]
 
 
-def test_open_only_a_drop_with_a_weak_cue_of_its_place_is_an_open_item():
-    """Regression shape: every go goal F4.4 dropped with no evidence was reported open, most of them goals the reader invented, so
-    partial_end turned complete successes into 'partial'. Only a weak cue of the place (a cut final word, a tail too long) makes one."""
+def test_open_only_a_drop_with_a_weak_cue_of_its_place_is_logged_open():
+    """Regression shape: every go goal F4.4 dropped with no evidence was logged open, most of them goals the reader invented. Only a weak
+    cue of the place (a cut final word, a tail too long) is."""
     assert cue(NOOK, "put the gizmo on the mat then go to the roo", PLACES, 0.5) == "roo"            # the alias cut short (3 of 5)
     assert cue(NOOK, "put the gizmo on the mat then go to the nookaborrel", PLACES, 0.5) == "nookaborrel"   # a tail evidence refuses
     two = Places({"fern stand@hall": {}})                                                          # a name of two words
@@ -167,7 +167,7 @@ def test_open_only_a_drop_with_a_weak_cue_of_its_place_is_an_open_item():
     for text, open_ in (("put the gizmo on the mat then go to the roo", goals[1:]), ("put the gizmo on the mat then rest", None)):
         opt, run, svc = make()
         out, dropped = filtered(opt, run, goals, text)
-        assert out == goals[:1] and dropped == goals[1:] and opt.ledger_open(run) == open_, text
+        assert out == goals[:1] and dropped == goals[1:], text
         assert [k for _a, k in svc.labs] == ([{"rule": "open", "to": NOOK, "heard": "roo"}] if open_ else [])
 
 
