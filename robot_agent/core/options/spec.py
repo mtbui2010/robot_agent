@@ -35,7 +35,6 @@ HOOKS: Dict[str, Tuple[str, bool]] = {
     "on_step": ("decide", True),             # before a step runs: the step may be replaced
     "on_step_done": ("observe", False),      # a step succeeded
     "on_step_failed": ("decide", True),      # a step failed, before the recovery policy
-    "on_fault_stop": ("decide", True),       # the recovery policy is about to stop the run on a failed step (args: run, step, skill, code, device, tries): NEXT, STOP or None
     "on_goal_check": ("decide", False),      # the end-of-run check of one goal: a verdict of its own
     "on_translation_lost": ("decide", False),  # the input translation lost a place name the person said: try again (text, lost, translate)
     "on_second_look": ("decide", False),     # the goal check's first look missed and the second saw it: confirm or not
