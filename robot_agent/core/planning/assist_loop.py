@@ -1181,7 +1181,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         answer / no channel. Where the answer came from: ``self._answer_source`` (robot | typed | '')."""
         from ..run_control import ask_person
         ans, _n = ask_person(question, lambda q: self._ask_io(q, node, log_fn, lang))
-        self._answer_source, self._questions = ans.source, self.__dict__.get("_questions", 0) + 1     # every question put this run (service questions_put)
+        self._answer_source = ans.source
         return ans.text
 
     def _ask_io(self, question, node, log_fn, lang) -> str:
@@ -1211,7 +1211,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             question = speech.calm(question)          # an apology of its own is not stacked behind "I didn't hear you"
         ans, n = ask_person(question, lambda q: self._ask_io(q, node, log_fn, lang),
                             silence_retries=self.cfg["silence_retries"])
-        self._answer_source, self._questions = ans.source, self.__dict__.get("_questions", 0) + 1     # every question put this run (service questions_put)
+        self._answer_source = ans.source
         return ans.text, n
 
     @staticmethod
@@ -1677,7 +1677,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         self._where_asked = None                      # the person "Where are you?" was asked about (this run)
         self._handed = self.options.query("belief_set", default=set())      # objects this run handed over (release actions)
         self._tr_budget = LLMBudget(self.cfg["translate_budget"])   # translation calls: their own cap (F5.3)
-        self._say_not_in_lang, self._run_lang, self._said_as, self._questions = 0, lang, {}, 0
+        self._say_not_in_lang, self._run_lang, self._said_as = 0, lang, {}
         self.language.reset()
         r.speak = lambda text: self.language.speak(text, lang)        # every `say` of the run's events (RunContext.ev)
         self._mute(r)

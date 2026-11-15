@@ -287,8 +287,7 @@ for it (`said`, `name_local`), its places' heads and aliases, the speaker's own 
 nothing (a bare "yes" to "the A or the B?" read as A). The robot asks ONCE per run more, naming the options, with the phrase `q_pick_one` of the language pack (slot `text`: the options joined by the "or" of the question's own words, translated when not in the run's script; `speech` block,
 English and Korean declared, `assumed`; the robot's i18n wins); no phrase in the run's language: not asked (lab `reask_no_phrase`). An "I don't know" (service `unsure_leftover`) is not one, nor an answer with a word (other than a yes, no, filler or polite word) in another declared script than
 the options (`script.letters`: it may name one in the person's own words, which the robot's English options cannot match). The re-ask is announced
-(`understand_check`) and logged only when the loop puts it; when an option vetoes it (`question_cap`), the bare yes / no is taken back with its question (service
-`drop_last_answer`: out of the dialogue and the remembered answers), unresolved, so the reader never picks from it (lab `dropped`). A speaker word of one letter (a demonstrative too in some
+(`understand_check`) and logged only when the loop puts it. A speaker word of one letter (a demonstrative too in some
 languages) counts only with a declared ending.
 (2) `correction` (hook `on_goals`, order 8, before the safety gate): after a correction to the read-back (`run.corrected` grew) the reader read the task again; when the correction's
 words name exactly ONE object of the two readings (its distinguishing words against every other object), each goal of another object that the new reading sent elsewhere gets
@@ -297,7 +296,7 @@ restored place (`replaced`), so its read-back check calls it unsaid and its re-s
 (while that goal still has that destination). The
 read-back's own either-or is `ask_agree`'s, with its key `distinct` (same hook and data there). No pack data of its own: the language packs' words; none = nothing asked or
 changed. Keys `enabled` (legacy `answer_align`), `reask`, `correction` (each on with the option). Hooks `on_heard`, `on_goals`, `on_issues` (order 8). Lab flag `answer_align`:
-`{rule: reask, options}`, `{rule: reask_no_phrase}`, `{rule: dropped}`, `{rule: correction, kept}`. Module: `robot_agent/options/answer_align.py`.
+`{rule: reask, options}`, `{rule: reask_no_phrase}`, `{rule: correction, kept}`. Module: `robot_agent/options/answer_align.py`.
 ### `question_cap`
 Removed on 2026-11-15 (retired by the D4 stay gate, D4 L23, no outcome changed on the development set; symbolic_robot `docs/home/bench/d4_layers.md` `## Removed`). Its code and tests are in git history: added in 2ab4c9c, last version at 2b2ba67.
 

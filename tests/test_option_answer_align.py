@@ -13,7 +13,6 @@ from robot_agent.core.options import REGISTRY
 from robot_agent.core.options.config import resolve
 from robot_agent.core.planning import dialog_converge, langdata, names, speech
 from robot_agent.core.planning.assist_loop import ASSIST_OPTIONS, Places
-from robot_agent.core.planning.option_services import LoopServices
 from robot_agent.options import ask_agree as AA
 from robot_agent.options.answer_align import SPEC, AnswerAlign, named_any, options_of, other_script, realign, yes_or_no
 
@@ -129,45 +128,8 @@ def test_either_or_in_a_made_up_language_is_asked_with_its_own_phrase_and_not_wi
     assert svc.labs == [{"rule": "reask_no_phrase"}]
 
 
-def test_either_or_a_vetoed_re_ask_drops_the_bare_yes_unresolved_and_is_not_logged_as_asked():
-    """The question cap vetoes the re-ask: nothing is announced or logged as asked, the bare yes and its question leave the dialogue (the
-    reader never picks from them), and a later bare yes is dropped the same way (never read as a pick)."""
-    mark = []
-
-    def clarify(run, q, vetoed=None):
-        mark.append(q)
-        return vetoed
-        yield
-    def drop(run):
-        run.dialogue = run.dialogue[:-2]
-        return True
-    opt, svc = option(NS(labs=[], ask_clarify=clarify, drop_last_answer=drop))
-    first = [("user", "Move the jar."), ("robot", "The red jar or the teal jar?")]
-    run = run_of(first + [("user", "Yes, that's right.")])
-    evs, out = [], opt.on_heard(run)
-    try:
-        while True:
-            evs.append(next(out))
-    except StopIteration as end:
-        assert end.value is None
-    assert evs == [] and len(mark) == 1 and run.dialogue == first[:1] and svc.labs == [{"rule": "dropped"}]
-    run.dialogue = first + [("user", "yes")]
-    assert list(opt.on_heard(run)) == [] and run.dialogue == first[:1] and svc.labs[-1] == {"rule": "dropped"} and len(mark) == 2
-
-
-def test_drop_last_answer_takes_the_exchange_out_of_the_dialogue_and_the_remembered_answers_of_the_task():
-    saved = []
-    mem = NS(data={"answers": [{"task": "other", "q": "Q?", "a": "yes"}, {"task": "Move the jar.", "q": "Q?", "a": "yes"}]},
-             save=lambda: saved.append(1))
-    run = NS(task="Move the jar.", dialogue=[("user", "a"), ("robot", "Q?"), ("user", "yes")], memory=mem)
-    svc = LoopServices(NS())
-    assert svc.drop_last_answer(run) is True and run.dialogue == [("user", "a")] and saved == [1]
-    assert mem.data["answers"] == [{"task": "other", "q": "Q?", "a": "yes"}]                     # another task's answer stays
-    assert svc.drop_last_answer(run) is False and run.dialogue == [("user", "a")]                 # no question / answer at the end
-
-
 def test_either_or_a_re_ask_put_is_announced_then_asked():
-    def clarify(run, q, vetoed=None):
+    def clarify(run, q):
         yield {"event": "clarify", "question": q}
         return "next"
     opt, svc = option(NS(labs=[], ask_clarify=clarify))
