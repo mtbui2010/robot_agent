@@ -11,6 +11,12 @@ from . import dialog_converge, speech
 _UNREAD = object()            # ``hand_holds``: the default ``_holding`` returns when the sensor cannot tell
 
 
+def _no_step():
+    """Flow: a step that yields nothing and decides nothing (a vetoed clarify question)."""
+    return None
+    yield                                                   # a generator: the caller runs it with ``yield from``
+
+
 class LoopServices:
     def __init__(self, loop) -> None:
         self._lp = loop
@@ -35,8 +41,11 @@ class LoopServices:
         return self._lp._finish(run, status, **kw)
 
     def ask(self, run, question):
-        """One question to the person: their answer ('' on silence). Counts the turn like every other question of the run."""
+        """One question to the person: their answer ('' on silence). Counts the turn like every other question of the run.
+        A question an option vetoes (service ``ask_veto``: a cap of questions, a question already asked) is not put: '' (no answer)."""
         lp = self._lp
+        if lp.options.query("ask_veto", run, question) is not None:
+            return ""
         ans, _n = lp._ask_heard(question, run.node, lp._log_fn(-1), run.lang)
         run.heard += lp._answer_source == "robot"
         run.asked += 1
@@ -77,7 +86,10 @@ class LoopServices:
         return bool(self._lp._refind_dropped(run, step, run.robot.policy.rule_for(FailureCode.DROPPED)))
 
     def ask_clarify(self, run, question):
-        """Flow: ask ``question`` as the loop's own clarify step (the answer joins the dialogue); the step's result (go on reading, or stop)."""
+        """Flow: ask ``question`` as the loop's own clarify step (the answer joins the dialogue); the step's result (go on reading, or stop).
+        A question an option vetoes (service ``ask_veto``) is not asked: None (the loop goes on reading what it heard)."""
+        if self._lp.options.query("ask_veto", run, question) is not None:
+            return _no_step()
         return self._lp._ask_clarify(run, question)
 
     def cancelled(self, run):
