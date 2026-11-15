@@ -14,7 +14,7 @@ CLAUDE.md rules 13-15. The reference for the flat run options and manifest keys 
 | `Registry`, `register` | `core/options/registry.py` | the list of options; built-in ones from `robot_agent/options/__init__.py`, others by entry point group `robot_agent.options` |
 | `Dispatcher` | `core/options/dispatch.py` | builds the enabled options of one loop, calls their hooks in `order` |
 | `Services` | `core/options/services.py` | the interface an option uses to ask the loop for something (`LoopServices` in `core/planning/option_services.py` implements it) |
-| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words`, `cond_goal`, `cond_extract`, `recipient_keep`, `plan_complete`, `ask_agree`, `replan_guard`, `name_recover`, `asr_guard`, `plan_release`, `repair_sync`, `goal_ledger`, `answer_align` so far |
+| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words`, `cond_goal`, `cond_extract`, `recipient_keep`, `plan_complete`, `ask_agree`, `replan_guard`, `name_recover`, `asr_guard`, `plan_release`, `repair_sync`, `goal_ledger`, `answer_align`, `reach_check` so far |
 
 `python -m robot_agent.core.options list` prints the registered options, their keys and hooks.
 `python -m robot_agent.core.options check MANIFEST.yaml` reports `planner.options` entries that name no option or key.
@@ -92,7 +92,7 @@ dropped. A *flow* hook is a generator (`yield from`): it may yield run events an
 | `on_goal_edit(run, text)` | observe | a correction is about to be read | `unapplied_change` |
 | `on_goal_reread(run, text, understood, goals, q)` | observe | the understand LLM re-read a correction | `unapplied_change` |
 | `on_goal_unapplied(run, turn)` | decide, flow | the correction changed nothing (`turn.text`, `turn.change`) | `unapplied_change` |
-| `on_step(run, step)` | decide, flow | before a step runs; returns the step that replaces it | `reach_delivery` |
+| `on_step(run, step)` | decide, flow | before a step runs; returns the step that replaces it | `reach_delivery`, `reach_check` |
 | `on_step_done(run, step, held)` | observe | a step succeeded (`held`: the object in the hand before it) | `reach_delivery` |
 | `on_step_failed(run, step, code, reason, action, obj)` | decide, flow | a step failed, before the recovery policy | `reach_delivery`, `reopen_on_miss` |
 | `on_goal_check(run, obj)` | decide | the end-of-run check of one goal: `(ok, why, skill)` | `reach_delivery` |
@@ -527,6 +527,17 @@ A delivery to a person ends within their reach or in their hand (round 15). Key 
 `planner.person_snapshot: {trust_s}` and `planner.action_roles`; without them it does nothing. Details: [env.md](env.md) (`planner.reach_delivery`).
 `lab_events`: `{flag: reach_delivery, why: stale | stale_no_handover | no_declared_spot | asked_where | known_where, ...}`. Module:
 `robot_agent/options/reach_delivery.py` (the logic that was `core/planning/reach_delivery.py` is in the same file).
+
+### `reach_check`
+A Pick of an object the last Find at this place saw farther to the side than the arm reaches gets the pack's base shift first (TAMP-lite;
+default off; design: [reach_check.md](reach_check.md)). The rule (pure function `decide(dist, reach, margin, max_shift)`): `dist` = the side
+offset `|y|` of the Find's base-frame point (`ins[obj].pose_3d`, the engine's `seen_at`), `reach` = the manifest's declared `geometry.reach_m`
+(the contract's side reach); beyond it, the shift `dist - reach + margin_m` is inserted as a skill-only step (no plan action, no symbolic effect)
+when it is at most `max_shift_m`, signed toward the object's side. Data `planner.options.reach_check.shift`: `{skill, param, margin_m,
+max_shift_m}` with `source` or `assumed: true`; also the `pick` role of `planner.action_roles`. Fail open: no declared `reach_m`, no labelled
+shift block, a skill the robot does not know, no point, a MoveTo since the Find, or too far even after the shift: unchanged (the Pick runs and
+fails as before). Once per sighting. Key `enabled` (legacy `reach_check`). Hook `on_step` (order 32). Lab flag `reach_check`
+`{object, dist_m, reach_m, shift_m}`; run event `recover` kind `reach_check`. Module: `robot_agent/options/reach_check.py`.
 
 ### `unapplied_change`
 A correction the robot cannot apply is not dropped silently: the understand step's own question is asked once, and if the correction still
