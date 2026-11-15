@@ -51,6 +51,11 @@ class LoopServices:
         run.asked += 1
         return ans
 
+    def questions_put(self, run) -> int:
+        """The questions put to the person in this run so far: every one the loop asked (clarify rounds, read-backs, where-is and search help,
+        which-one, did-you-mean, the options' questions), counted once each by the loop's ask (``_ask_heard`` / ``_ask``), reset at the run's start."""
+        return int(self._lp.__dict__.get("_questions", 0) or 0)
+
     def emit(self, run, event: str, **fields) -> dict:
         """An event from a hook or service that cannot yield (not a flow hook): logged with the run's events (``run.ev``) and pushed through the
         host's live channel when it has one (``emit`` of the loop, the one ``plan_step`` uses). The event."""

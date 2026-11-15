@@ -1,5 +1,5 @@
 """Option ``question_cap`` (default OFF): at most ``max_questions`` questions per task over every option that asks through the engine services
-``ask`` / ``ask_clarify`` (the run's own counters count the clarify rounds and read-backs too), and never the same normalised question twice.
+``ask`` / ``ask_clarify`` (every question the engine put counts: its one counter, service ``questions_put``), and never the same normalised question twice.
 Made-up objects ("florp", "quib"), made-up asking options registered in a test registry, made-up questions. No benchmark text."""
 from types import SimpleNamespace as NS
 
@@ -151,6 +151,57 @@ def test_no_repeat_loop_final_two_options_share_one_cap_and_one_record_the_robot
     assert robot.asked == ["Is the quib nearby?", "Should I hurry?", "Do you want a tune?"]
     assert len({normalised(q) for q in robot.asked}) == 3 and labs(loop) == ["repeat", "cap"]
     assert d["status"] == "success" and robot.obj["florp"] == "dining table@kitchen"
+
+
+def nearer():
+    """A made-up option whose first reading puts the ENGINE's own did-you-mean question (service ``confirm_near_room``: the loop's yes / no
+    question, which raises neither ``asked`` nor ``confirms`` of the run)."""
+    spec = OptionSpec(name="nearer", keys=(Key("enabled", "bool", False),), hooks=("on_goals",), order=29, enabled="enabled")
+
+    class Nearer(Option):
+        def on_goals(self, run):
+            if not run.__dict__.setdefault("opt", {}).get("nearer"):
+                run.opt["nearer"] = (yield from self.svc.confirm_near_room(run, "kitchn"))
+            return None
+    return spec, Nearer
+
+
+def test_cap_loop_final_the_engines_own_question_counts_toward_the_cap(make_assist, env):
+    """Regression shape of the class: the cap read only the run's ``asked`` / ``confirms``, which the engine's own questions (where-is, which-one,
+    did-you-mean, search help) never raise, so one engine question plus three option questions put four to the person with a cap of three."""
+    for opts, put in (({}, 4), ({"question_cap": "1"}, 3)):
+        robot = FakeRobot(env, {"florp": "counter@kitchen"}, start="counter@kitchen", answers=["yes"] * 6)
+        loop = make_assist(robot, FakeLLM(("florp", GOOD), default=GOOD), ScriptedPlanner(PLAN), detector_miss_rate=0, ask_help=False)
+        reg = Registry(builtin=None, entry_points=None)
+        for s, c in ((SPEC, QuestionCap), nearer(), asker("asker0", QS[2:], 30)):
+            reg.register(s, c)
+        refresh_options(loop, {"nearer.enabled": "1", "asker0.enabled": "1", **opts}, environ={}, registry=reg)
+        loop.robot.manifest.planner = dict(loop.robot.manifest.planner or {}, options={"question_cap": {"max_questions": 3, "assumed": True}})
+        d = done(run_task(loop, "Put the florp on the dining table.", max_events=3000))
+        assert len(robot.asked) == put and robot.asked[1:] == QS[2:put + 1] and LoopServices(loop).questions_put(None) == put
+        assert d["status"] == "success" and robot.obj["florp"] == "dining table@kitchen"
+    assert labs(loop) == ["cap"]
+
+
+def test_questions_put_counts_each_question_the_loop_asks_once_and_starts_at_zero_each_run(make_assist, env):
+    robot = FakeRobot(env, {"florp": "counter@kitchen"}, start="counter@kitchen", answers=["", "", "the red one"])
+    loop = make_assist(robot, FakeLLM(default=GOOD), ScriptedPlanner(PLAN), detector_miss_rate=0, ask_help=False, silence_retries=1)
+    svc = LoopServices(loop)
+    assert svc.questions_put(None) == 0
+    assert loop._ask_heard("Which quib?", None, lambda *a: None, "en")[0] == ""                        # silence, asked again: one question put
+    assert loop._ask_heard("Which florp?", None, lambda *a: None, "en")[0] == "the red one" and svc.questions_put(None) == 2
+    run_task(loop, "Put the florp on the dining table.", max_events=3000)
+    assert svc.questions_put(None) == 0                                                               # a new run counts from zero
+
+
+def test_cap_counts_every_question_the_engine_put_through_its_one_counter():
+    put = {"n": 0}
+    opt, svc = make(max_questions=2, assumed="1")
+    svc.questions_put = lambda run: put["n"]
+    r = run_(asked=0, confirms=0)                                      # the run's own counters say nothing was asked
+    assert opt.ask_veto(r, QS[0]) is None
+    put["n"] = 2                                                       # a where-is and a which-one of the engine
+    assert opt.ask_veto(r, QS[2]) == "cap" and svc.labs == [{"why": "cap", "asked": 2}]
 
 
 def test_question_cap_record_starts_empty_with_each_task():
