@@ -118,6 +118,11 @@
   ]
  ],
  "text_fallback": true,
+ "speech": {
+  "say_partial": "I did only part of it. Done: {done}. Not done: {missing}.",
+  "assumed": true,
+  "source": "assumed: the robot's own end sentence for a run whose goals hold while a request item stays open (option partial_end), plain English; the robot's i18n wins"
+ },
  "dialogue_ext": {
   "self_correction": [
    "(?:\\.\\.\\.|,|-)?\\s*\\b(?:no wait|wait,? no|no,? i mean|i mean|actually|sorry|rather)\\b"

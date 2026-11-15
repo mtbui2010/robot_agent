@@ -62,7 +62,7 @@ Error = _ev('error', 'The run failed with an exception.', msg=(str, 'error'), tr
 Stopped = _ev('stopped', 'Open-loop run stopped early (failure, cancel, a step ended the plan).',
               msg=(str, 'why'))
 Done = _ev('done', 'The run is over.',
-           status=(str, 'success | failed | aborted | refused | planned (planning loops)'),
+           status=(str, 'success | failed | aborted | refused | partial (option partial_end) | planned (planning loops)'),
            success=(Any, 'open-loop: the last step result (bool)'), msg=(str, 'why, on failure'))
 WorldEv = _ev('world', 'Robot State refresh (open-loop / direct).')
 

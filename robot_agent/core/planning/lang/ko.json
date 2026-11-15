@@ -161,8 +161,9 @@
  "speech": {
   "q_which_name": "{options} 말씀하시는 거예요?",
   "q_which_reading": "두 가지로 이해할 수 있어요. {first}, 아니면 {second}. 어느 쪽을 말씀하시는 거예요?",
+  "say_partial": "일부만 했어요. 한 일: {done}. 못 한 일: {missing}.",
   "assumed": true,
-  "source": "assumed: the robot's own questions in plain polite Korean, said when the robot pack has no phrase of its own for the key (the robot's i18n wins)"
+  "source": "assumed: the robot's own questions (and the partial-end sentence of option partial_end) in plain polite Korean, said when the robot pack has no phrase of its own for the key (the robot's i18n wins)"
  },
  "patterns": {
   "into_after": "^\\s*(?:의\\s*)?(?:안|속|안쪽)|^(?:에|에다|에다가)?\\s*(?:\\S+\\s+){0,2}?\\S*넣",
