@@ -14,10 +14,7 @@ CLAUDE.md rules 13-15. The reference for the flat run options and manifest keys 
 | `Registry`, `register` | `core/options/registry.py` | the list of options; built-in ones from `robot_agent/options/__init__.py`, others by entry point group `robot_agent.options` |
 | `Dispatcher` | `core/options/dispatch.py` | builds the enabled options of one loop, calls their hooks in `order` |
 | `Services` | `core/options/services.py` | the interface an option uses to ask the loop for something (`LoopServices` in `core/planning/option_services.py` implements it) |
-| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words`, `cond_goal`, `cond_extract`, `recipient_keep`, `plan_complete`, `ask_agree`, `replan_guard`, `name_recover`, `asr_guard`, `plan_release`, `effect_check`, `repair_sync`, `goal_ledger`, `answer_align` so far |
-| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words`, `cond_goal`, `cond_extract`, `recipient_keep`, `plan_complete`, `ask_agree`, `replan_guard`, `name_recover`, `asr_guard`, `plan_release`, `effect_check`, `repair_sync`, `goal_ledger`, `partial_end` so far |
-| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words`, `cond_goal`, `cond_extract`, `recipient_keep`, `plan_complete`, `ask_agree`, `replan_guard`, `name_recover`, `asr_guard`, `plan_release`, `effect_check`, `repair_sync`, `goal_ledger`, `safety_profile` so far |
-| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words`, `cond_goal`, `cond_extract`, `recipient_keep`, `plan_complete`, `ask_agree`, `replan_guard`, `name_recover`, `asr_guard`, `plan_release`, `effect_check`, `repair_sync`, `goal_ledger`, `close_opened` so far |
+| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words`, `cond_goal`, `cond_extract`, `recipient_keep`, `plan_complete`, `ask_agree`, `replan_guard`, `name_recover`, `asr_guard`, `plan_release`, `repair_sync`, `goal_ledger`, `answer_align` so far |
 
 `python -m robot_agent.core.options list` prints the registered options, their keys and hooks.
 `python -m robot_agent.core.options check MANIFEST.yaml` reports `planner.options` entries that name no option or key.
@@ -79,9 +76,9 @@ dropped. A *flow* hook is a generator (`yield from`): it may yield run events an
 
 | hook | kind | when | used by |
 |---|---|---|---|
-| `on_start(run)` | observe | run set-up, after the places are read | `reach_delivery` (time of the person snapshot), `safety_profile` (reads its profile again) |
+| `on_start(run)` | observe | run set-up, after the places are read | `reach_delivery` (time of the person snapshot) |
 | `on_ground(mode, places, to)` | transform | the delivery mode for a goal to a person | `reach_delivery` |
-| `on_plan(steps, run)` | transform | the grounded plan, before `plan_tidy`: the steps, or None (unchanged) | `place_find`, `precond_repair`, `gate_prune`, `replan_guard` (`release_dedupe`), `plan_complete`, `plan_release`, `close_opened` |
+| `on_plan(steps, run)` | transform | the grounded plan, before `plan_tidy`: the steps, or None (unchanged) | `place_find`, `precond_repair`, `gate_prune`, `replan_guard` (`release_dedupe`), `plan_complete`, `plan_release` |
 | `on_where_answer(run, obj, ans)` | decide, flow | the answer to the engine's own re-asked "I couldn't find the X. Where is it?": the place to go to, or None | `ask_source` (`use_room`, `clarify_unusable`) |
 | `on_understand_schema(schema)` | transform | the understand call's output schema (a fresh dict): options add optional fields; None = unchanged | `cond_goal` (`when`) |
 | `on_understand_prompt(text)` | transform | the understand prompt template, before `.format` (escape braces): options add lines; None = unchanged | `cond_goal` |
@@ -97,25 +94,24 @@ dropped. A *flow* hook is a generator (`yield from`): it may yield run events an
 | `on_goal_unapplied(run, turn)` | decide, flow | the correction changed nothing (`turn.text`, `turn.change`) | `unapplied_change` |
 | `on_step(run, step)` | decide, flow | before a step runs; returns the step that replaces it | `reach_delivery` |
 | `on_step_done(run, step, held)` | observe | a step succeeded (`held`: the object in the hand before it) | `reach_delivery` |
-| `on_step_failed(run, step, code, reason, action, obj)` | decide, flow | a step failed, before the recovery policy | `reach_delivery`, `reopen_on_miss`, `effect_check` |
-| `on_fault_stop(run, step, skill, code, device, tries)` | decide, flow | the recovery policy is about to stop the run on a failed step (its tries used up, or an unhealthy robot after the wait; `_apply_policy`, both stops): NEXT (the step runs again as the option left it), STOP (the option ended the run), None (the engine's stop) | `fault_ladder` |
-| `on_goal_check(run, obj)` | decide | the end-of-run check of one goal: `(ok, why, skill)` | `reach_delivery`, `effect_check` (never a verdict: it arms the search) |
+| `on_step_failed(run, step, code, reason, action, obj)` | decide, flow | a step failed, before the recovery policy | `reach_delivery`, `reopen_on_miss` |
+| `on_goal_check(run, obj)` | decide | the end-of-run check of one goal: `(ok, why, skill)` | `reach_delivery` |
 | `on_translation_lost(text, lost, translate)` | decide | the input translation lost a place name the person said: the English to use, or None | `translate_retry` |
 | `on_second_look(run, obj, place)` | decide | the goal check's first look missed and the second saw the object: `(ok, why, skill)` or None (the second look is believed) | `confirm_look` |
 | `on_final(run)` | decide | end of run, before the goals are checked; returns the `done` event | `unapplied_change` |
-| `on_goals_met(run)` | decide | the goals hold; returns the `done` event | `hazard` (partial refusal sentence), `partial_end` (status `partial` when an open request item is missing) |
+| `on_goals_met(run)` | decide | the goals hold; returns the `done` event | `hazard` (partial refusal sentence) |
 | `on_finish(run, fields)` | observe | the fields of a `done` event, before it is built | `hazard` (`refusals`) |
 
 `goal_words` also answers the service `goal_guard(run, goals)` (a guard with `place(name)` and `frozen(goal)`) that the engine puts on `places.guard` before the goal repairs (`goal_fix.drop_invented`, `repair_destination`, `shared_listener` read it; None = old behaviour). `goal_ledger` answers the service `goal_keep(run, goals)`: a predicate `keep(goal, words)` that the engine passes to `goal_fix.drop_invented` (argument `keep_go`) for a `go` goal the F4.4 rule would drop (None = dropped as before); and `ledger_open(run)`: the go goals the last reading dropped with only a weak cue of their place in the words (for the end of the run; None when none); the engine service `open_items(run)` joins every `ledger_open` answer (`Dispatcher.collect`) for `partial_end`.
 
 Services (`OptionSpec.services`, asked with `Dispatcher.query(name, *args, default=...)`): `hazard.forbids(goal, places)`,
-`hazard.refused_goals(run)`, `hazard.gate_off()`, `reach_delivery.no_refetch()`, `dedupe_keep_end.keep_after_dedupe()`, `effect_check.hand_reading(skill, raw, default)` (asked by the engine's `_holding`: the holding sensor's result read three-valued; no answer = `isdone` as before), `repair_sync.repair_kwargs(run)` (asked by the gate's and the suffix's symbolic repair: extra arguments of `plan_repair.repair`, `sync` and `finish_rest`; no answer = no extra argument, the repair as before). A query returns the first answer that is not None; `Dispatcher.collect(name, *args)` joins the lists of every option that serves `name` (`refused_goals`: `hazard`, `cond_extract` and `cond_goal`). `Dispatcher.decide_flow_of(service, hook, *args)` runs a flow hook of only the options that serve `service`; the engine service `safety_gate(run)` uses it to put the goals through the safety gate again (`on_goals` of the options serving `forbids`) for an option that changed a goal after the gate ran (`name_recover`).
+`hazard.refused_goals(run)`, `hazard.gate_off()`, `reach_delivery.no_refetch()`, `dedupe_keep_end.keep_after_dedupe()`, `repair_sync.repair_kwargs(run)` (asked by the gate's and the suffix's symbolic repair: extra arguments of `plan_repair.repair`, `sync` and `finish_rest`; no answer = no extra argument, the repair as before). A query returns the first answer that is not None; `Dispatcher.collect(name, *args)` joins the lists of every option that serves `name` (`refused_goals`: `hazard`, `cond_extract` and `cond_goal`). `Dispatcher.decide_flow_of(service, hook, *args)` runs a flow hook of only the options that serve `service`; the engine service `safety_gate(run)` uses it to put the goals through the safety gate again (`on_goals` of the options serving `forbids`) for an option that changed a goal after the gate ran (`name_recover`).
 
 ## The options
 
-Retired from the D1 bench arm `all` (2026-11-15, D4 stay gate; symbolic_robot `docs/home/bench/d4_layers.md` section `## Retired`): `effect_check`, `fault_ladder`,
-`safety_profile`, `partial_end`, `question_cap`, `else_ask` (no outcome changed on the development set) and `close_opened` (it lost three tasks and won none). Nothing
-changes here: each option keeps its code, tests and default (off) and is turned on by its key as below; the bench still selects each one by its layer name.
+Removed on 2026-11-15 after the D4 stay gate (symbolic_robot `docs/home/bench/d4_layers.md` section `## Removed`): `effect_check`, `fault_ladder`,
+`safety_profile`, `partial_end`, `question_cap`, `else_ask` (no outcome changed on the development set) and `close_opened` (it lost three tasks and won none),
+with the engine support only they used. Their entries below are one line each; git history keeps the code.
 
 ### `ask_source`
 Ask where an object is, before looking for it (default off). The default SAGE behaviour is to guess, look, and ask only after misses
@@ -246,21 +242,7 @@ only). Hooks `on_start`, `on_plan` (order 87, after `precond_repair` and `plan_c
 `{object, place, fix}` (`splice`, `pick_step`, `removed`), once per distinct edit in a run. Module: `robot_agent/options/plan_release.py`.
 
 ### `effect_check`
-What a failed release left in the hand is read from the robot's declared hand sensor, not guessed (default off; D4 layer L16, classes drop_recovery, grasp_misread,
-silent_drop). (1) A step whose action the pack declares a release (the hand-over too) FAILED while the belief holds an object: the holding sensor is read once (engine
-service `hand_holds(run)`: True / False / None). Empty: the belief lets go and the contract's DROPPED rule runs (engine service `let_go(run, step)`: a 'dropped' sighting,
-then the engine's own `_refind_dropped`: the floor place of the room in the map, Find, Pick, back to the step, its retry cap); the hook returns NEXT when the refind was
-spliced in, else None (the belief is synchronised, the failure goes on). Holding or cannot be read: None, the belief keeps the object. The failure code is never read as
-"the hand is empty" (a hand-over that fails `grasp_failed` may be a person who did not take it). (2) Service `hand_reading`: the engine's `_holding` reads of the declared
-sensor are three-valued; a result that failed with a code the pack declares "cannot read" keeps the caller's default instead of reading as empty. (3) `on_goal_check`
-of an object this run released at a place (`run.placed`): the one place of that room whose head is the declared floor name goes first in the search for the object
-(`prefer_now`); a miss there then looks at that floor next. Never a verdict. No other skill result (a speech step's listeners, a hand-over's own fields) is read.
-Pack data `planner.options.effect_check.effects`: `{"sensor": {"skill": <the robot's holding sensor>, "unknown": [<failure code>, ...]}, "releases": [<Action>, ...],
-"floor": "<head of the map's floor places>", "source": "<label>"}` (or `"assumed": true`). No label = nothing; a sensor skill that is not the robot's holding sensor
-(`RobotView.holding_sensor`), no releases, no floor name: that part does nothing; two floor places in one room: no guess. Keys `enabled` (legacy `effect_check`),
-`effects` (dict, manifest only, read again at run time). Hooks `on_start`, `on_step_failed`, `on_goal_check` (order 88); service `hand_reading`. Lab flag
-`effect_check`: `{part: release, object, step, reading}`, `{part: unreadable, skill}`, `{part: floor_armed, object, place, floor}` (the search was armed at a goal check; it does not say the floor was looked at), once per distinct event in a run.
-Module: `robot_agent/options/effect_check.py`.
+Removed on 2026-11-15 (retired by the D4 stay gate, D4 L16, no outcome changed on the development set, alone 0 won / 0 lost; symbolic_robot `docs/home/bench/d4_layers.md` `## Removed`). Its code and tests are in git history: added in 91bbced, last version at 2b2ba67.
 
 ### `repair_sync`
 The gate's symbolic repair edits the plan the gate scores, and a replan's suffix that lets go of a goal's object elsewhere is repaired or reported (default off; D4 layer L17). (1) `gate_sync`:
@@ -317,52 +299,16 @@ read-back's own either-or is `ask_agree`'s, with its key `distinct` (same hook a
 changed. Keys `enabled` (legacy `answer_align`), `reask`, `correction` (each on with the option). Hooks `on_heard`, `on_goals`, `on_issues` (order 8). Lab flag `answer_align`:
 `{rule: reask, options}`, `{rule: reask_no_phrase}`, `{rule: dropped}`, `{rule: correction, kept}`. Module: `robot_agent/options/answer_align.py`.
 ### `question_cap`
-At most `max_questions` questions per task, and never the same question twice (default off; D4 layer L23, class "the robot keeps asking": each option
-bounds only its own questions; user decision: at most 3 per task, never the same question twice). The engine asks the service `ask_veto(run, question)`
-before it puts a question an option asks through the engine services `ask` and `ask_clarify` (the options' way to ask); a non-None answer means the
-question is not put: `ask` returns its `vetoed` argument ('' by default: no answer), `ask_clarify` returns its `vetoed` argument (None by default: the loop reads on);
-`answer_align`, `else_ask` and `fault_ladder` pass a marker of their own and log nothing of a question they did not put. The option answers
-`cap` when the questions the engine put in this run (service `questions_put`: one counter in the loop's ask, every question counted once) reach the cap, `repeat` (key `no_repeat`)
-when the normalised text (case folded, punctuation dropped, spaces collapsed) was already put through the service or is a robot turn of the run's
-dialogue. The engine's own questions (read-back, where-is, search help, which-one, did-you-mean) are never vetoed, they keep their own caps (`clarify_rounds`, `confirm_limit`) and count.
-Data: `max_questions` (int, per robot: `planner.options.question_cap.max_questions` with `source` or `assumed: true`, read again at run time; none
-declared, 0 or no label = no cap). Keys `enabled` (legacy `question_cap`), `max_questions`, `no_repeat` (legacy `question_cap_no_repeat`), `source`, `assumed`. Hook `on_start`
-(the task's record starts empty); service `ask_veto`. Lab flag `question_cap`: `{why: cap | repeat, asked}`. Module: `robot_agent/options/question_cap.py`.
+Removed on 2026-11-15 (retired by the D4 stay gate, D4 L23, no outcome changed on the development set; symbolic_robot `docs/home/bench/d4_layers.md` `## Removed`). Its code and tests are in git history: added in 2ab4c9c, last version at 2b2ba67.
+
 ### `partial_end`
-A run whose goals hold while an item of the request stays open ends `partial` and names what was done and what is missing, instead of saying done (default off;
-D4 layer L22, class goal_dropped: "done with an item unresolved", user decision). Hook `on_goals_met` (order 96, after `hazard`, whose partial-refusal sentence
-answers first and keeps the refusal for the caller). The open items come from the engine service `open_items(run)`: the goals every option serving `ledger_open`
-reports (today `goal_ledger`: a `go` goal the goal filter dropped with only a weak cue of its place, never one with no sign at all; with `goal_ledger` off nothing is open and the option does nothing). An item
-the end state satisfies (one of the run's goals, a `go` place the robot stands at, an object the run put at its place) is not missing. When one is missing the
-`done` event has status `partial`, a field `partial` `{done: [goal text], missing: [goal text]}`, `msg` `partial: <missing>` and the phrase `say_partial` with the
-slots `done` and `missing` (the goals' read-back phrases in a row). Data: the phrase only, in the language packs (`core/planning/lang/en.json` and `ko.json`,
-block `speech`, `assumed`) or the robot's i18n (it wins); a language without it says the English phrase through the translator; no phrase anywhere, no open item
-or no done goal = the run ends as before (a complete success is never changed). Callers that map statuses: `partial` is not `success` (the API's `ok` is false,
-the bench maps it to `give_up`). Keys `enabled` (legacy `partial_end`). Lab flag `partial_end`: `{done, missing}`. Module: `robot_agent/options/partial_end.py`.
+Removed on 2026-11-15 (retired by the D4 stay gate, D4 L22, no outcome changed on the development set; symbolic_robot `docs/home/bench/d4_layers.md` `## Removed`). Its code and tests are in git history: added in ac322b9, last version at 2b2ba67.
+
 ### `safety_profile`
-Hazard rules that are DATA of the robot, declared in the option's own section, refused by the one safety gate (default off; D4 layer L21, classes
-hazard_unrefused / hazard_missed: a thing that can burn was put on or next to a heat source because no rule of the robot related the two). The data
-`planner.options.safety_profile.profile` is a safety profile in the schema of `docs/safety.md` (classes, rules, `sources` with url / opened / quote,
-`provenance: {source: <id>}`), read again from the manifest at each run start (hook `on_start`). A place rule may carry `within_m` (core schema): it
-then also forbids a place that lies LESS than that many metres from a place of its classes on the robot's map (ENV `loc` x / y; the same room when both
-keys name one; persons are never a place of the rule nor a place near one; no position = no relation). The option answers the service
-`safety_rule(goal, places)` (a `Verdict`); `hazard` asks it after its own rules (`hazard.rules=off` turns it off too), so the refusal of the whole
-request, the drop of a part with the end sentence, and the `refusals` record are hazard's: no second gate. The refusal text is the rule's `say` (pack
-data, prompt language, said in the person's language by the loop as for every profile rule). No profile, an empty one, a foreign one, or one with
-errors (lab `{part: errors}`): nothing is refused (fail open). Keys `enabled` (legacy `safety_profile`), `profile` (dict, manifest only, default
-empty: the option ships no rule). Hook `on_start` (order 11); service `safety_rule`. Lab flag `safety_profile`: `{part: loaded, profile, rules,
-sha256}`, `{part: rule, rule, to}`, `{part: errors, errors}`. Module: `robot_agent/options/safety_profile.py`.
+Removed on 2026-11-15 (retired by the D4 stay gate, D4 L21, no outcome changed on the development set; no robot declares a fire-clearance profile of its own; symbolic_robot `docs/home/bench/d4_layers.md` `## Removed`). Its code and tests are in git history: added in e329a71, last version at 2b2ba67.
+
 ### `close_opened`
-A container the plan opens is closed again once the robot is done with it, unless a goal wants it open (default off; D4 layer L24, class "container left open",
-e.g. a hand goal: "Open C, Find X, Pick X, Close C" then the hand-over; the Close cannot run with the hand full, the gate's finding says "do it before the Pick" and the
-planner or its edit drops the Close). The grounded plan is replayed on the belief with the engine's action model and the robot's capabilities. For every container an
-Open step of the plan opens (the `open` role) that the replay leaves open and no `open` goal names (by key or by its name): a Close of it the model refuses with
-`hand_full` (one hand) is taken out, and `MoveTo C` (when the robot is elsewhere; needs the `move` role) and `Close C` go in at the first point after the robot's last
-step at C where the hand is empty and the robot is between two legs (before its next MoveTo, or at the plan's end: the steps after keep their place). A plan whose hand never empties after that, or a container open before the plan, is left alone. Why a new option: the gate's
-`op_hoist` moves such a Close only when the plan it edits already holds the release and never adds a Close the plan left out; `plan_release` moves the held object's own
-put-in before the Close of its `in` place, another question. Pack data: only `planner.action_roles` `open` / `close` (and `move`); none = the plan is unchanged.
-Keys `enabled` (legacy `close_opened`). Hooks `on_start`, `on_plan` (order 89, after `precond_repair`, `plan_complete`, `plan_release`, so the release they add is seen).
-Lab flag `close_opened`: `{container, fix}` (`moved`, `added`), once per distinct edit in a run. Module: `robot_agent/options/close_opened.py`.
+Removed on 2026-11-15 (retired by the D4 stay gate, D4 L24, harmful on the development set: lost 3 tasks, won 0; symbolic_robot `docs/home/bench/d4_layers.md` `## Removed`). Its code and tests are in git history: added in 9fa2ecc, last version at 2b2ba67.
 
 ### `cond_goal`
 A request with a condition ("if the spoon is on the table, put it away; if not, leave it") is decided by the robot looking, not by the reader guessing (default off).
@@ -396,17 +342,7 @@ Its pack data is read through its keys, and a key the loop resolved empty is rea
 without `refresh_options` ("Keys and where they come from").
 
 ### `else_ask`
-A request with an "otherwise" clause that no goal carries asks the person ONCE what to do otherwise (default off; D4 layer L25, class "conditional": the reader read only
-the if branch of "if X, do A, otherwise B", and `cond_extract` cannot make a goal the reader did not read; the user's decision: no forced split to an else branch, ask once).
-Hook `on_goals` at order 18: after `cond_extract` (15) wrote the `when` field of `cond_goal` (or the reader wrote it), before `cond_goal` (20) reads it. It asks when the goals'
-`when` fields name exactly one condition (one object / place) and all say the same `present`, the request (its words, or its reading in the prompt language) holds an else word
-of the language pack (`patterns.otherwise`), and the else clause (from the else word to the end of its sentence) names an object of the robot's catalogue (object memory,
-manifest `limits.objects`) or a place of its map that no goal and not the condition names ("otherwise just leave it" names nothing: no question). The question is the language pack's phrase `q_else` (block `speech`, assumed; the robot's i18n wins; slots `{object}`, `{place}`
-optional). The answer is read as a change of the request (engine service `reread_change`); each goal it adds that is not a goal of the run nor one the run filtered gets the
-`when` of the other branch (`present` flipped) and joins the goals, which pass the safety gate again (service `safety_gate`); `cond_goal` then looks and keeps the branch that holds.
-A later reading that reads exactly as the first one (`dialog_converge.goal_sig`, the same condition) gets the same added goals again without a question. Never a second question
-in a run, never a goal the answer did not add. No else word, no known name in the else clause, no phrase (run language or English), no condition, two conditions, both
-branches carried, no answer, nothing added: nothing changes. Keys `enabled` (legacy `else_ask`). Lab flag `else_ask`: `{object, at, names, added}`. Module: `robot_agent/options/else_ask.py`.
+Removed on 2026-11-15 (retired by the D4 stay gate, D4 L25, no outcome changed on the development set; symbolic_robot `docs/home/bench/d4_layers.md` `## Removed`). Its code and tests are in git history: added in 47eeb14, last version at 2b2ba67.
 
 ### `gate_prune`
 An Open / Close of a place the ENV declares not openable is dropped (default off). The planner opens a shelf or a table; the skill refuses and the run replans or gives up.
@@ -513,19 +449,7 @@ Hook `on_start` (no effect), services `wait_schedule(run, schedule)`, `recovery_
 Data with neither `source` nor `assumed: true` (on the block or on a kind) is not used. Module: `robot_agent/options/hw_wait.py`.
 
 ### `fault_ladder`
-What the robot does when a device fault stops the run, once `hw_wait`'s wait and tries are used up (default off; D4 layer L20, classes hw_persistent /
-camera_persistent: the run ended with "something is wrong with my hardware", no help asked, no device, attempts or done steps named). Hook `on_fault_stop`
-(order 91), only for the codes `hw_fault` and `perception_unavailable` (rules with `retry_allowed` false never reach it). (1) One help question per run naming
-the device (phrase `q_fault_help`, engine service `ask`: it counts, `question_cap` may veto it; an "I don't know" answer is recorded, never asked again):
-the device the skill result reported (its declared name, else as reported), else the declared device of the failed skill; none = no question. (2) One retry
-per run by the declared other skill of the failed skill (the step keeps its action, a concrete `skill` step in its place), only when health reads `ok` True
-and, for a hand step (a skill whose pre / effects name `holding(` / `hand_empty`, an undeclared skill too), the holding sensor (`hand_holds`) gives a reading
-that agrees with the belief; none declared = no retry. (3) The stop: status `failed`, phrase `say_fault_stop` with `device`, `tries` (the policy's count of
-that failure on that step) and `done` (steps done); no health text and no failure code is said. Health is read only as `ok`; any other value is unhealthy.
-Data `planner.options.fault_ladder` (each block labelled, read again at run time): `devices` `{<skill or reported device>: name | {<lang>: name}}`,
-`alternatives` `{<skill>: <another skill of the robot>}`. Phrases in the language packs (`lang/en.json`, `ko.json`, block `speech`, assumed) or the robot's
-i18n. No labelled data or no phrase = the engine's stop. Keys `enabled` (legacy `fault_ladder`), `devices`, `alternatives` (dict, manifest only). Lab flag
-`fault_ladder`: `{part: ask | alternative | stop, ...}`. Module: `robot_agent/options/fault_ladder.py`.
+Removed on 2026-11-15 (retired by the D4 stay gate, D4 L20, no outcome changed on the development set; symbolic_robot `docs/home/bench/d4_layers.md` `## Removed`). Its code and tests are in git history: added in 0e4a112, last version at 2b2ba67.
 
 ### `search_budget`
 

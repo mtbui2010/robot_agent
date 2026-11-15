@@ -335,22 +335,6 @@ def test_loop_a_yes_to_the_either_or_is_asked_again_and_the_final_state_holds_th
     assert [e for e in loop.lab_log if e["flag"] == "answer_align" and e.get("rule") == "reask"]
 
 
-def test_loop_final_the_cap_vetoes_the_re_ask_and_a_bare_yes_never_picks_a_jar(make_assist, monkeypatch):
-    """Regression shape: with the question cap reached, the vetoed re-ask returned nothing and the loop handed the bare yes to the reader,
-    which picked the red jar from nothing (the guess the layer exists to prevent). Now the yes is dropped: no jar is moved on a guess."""
-    import robot_agent.skill_configs as sc
-    monkeypatch.setattr(sc, "ENV", ENV)
-    robot = FakeRobot(ENV, {"red jar": "ledge@den", "teal jar": "ledge@den"}, start="ledge@den", answers=["Yes, that's right."] * 6)
-    loop = make_assist(robot, RuleLLM(), GoalPlanner(), detector_miss_rate=0, answer_align="1", question_cap="1",
-                       **{"question_cap.max_questions": "1", "question_cap.assumed": "1"})
-    loop.robot.manifest.planner["action_roles"] = {"move": "MoveTo", "find": "Find", "pick": "Pick", "put_down": "Place"}
-    d = done(run_task(loop, "Put the jar in the crate.", max_events=3000))
-    assert not any(q.startswith("Which one do you mean") for q in robot.asked)
-    assert robot.obj["red jar"] == "ledge@den" and robot.obj["teal jar"] == "ledge@den" and d["status"] != "success", (d, robot.obj)
-    rules = [e.get("rule") for e in loop.lab_log if e["flag"] == "answer_align"]
-    assert "dropped" in rules and "reask" not in rules
-
-
 def test_loop_answer_align_off_the_yes_is_read_as_a_pick_final_state_unchanged_off(make_assist, monkeypatch):
     robot, loop, d = _loop(make_assist, monkeypatch, False, ["Yes, that's right.", "The teal one."])
     assert not any(q.startswith("Which one do you mean") for q in robot.asked) and not [e for e in loop.lab_log if e["flag"] == "answer_align"]

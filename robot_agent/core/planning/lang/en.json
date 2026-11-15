@@ -139,7 +139,6 @@
   "close_verb": "\\b(?:close|shut)\\b",
   "self_correction": "(?:\\.\\.\\.|,|-)?\\s*\\b(?:no wait|wait,? no|no,? i mean|i mean|actually|sorry|rather)\\b",
   "addressee": "\\b(?:to|tell|ask|remind|let)\\s+(?:the\\s+|my\\s+|your\\s+)?{name}\\b",
-  "otherwise": "\\b(?:otherwise|or else)\\b|\\b(?:if|when) not\\b(?=\\s*[,;])|\\bif (?:it|they|that|there)(?: is|'s| are|'re) not\\b(?=\\s*[,;])|\\bif (?:it|they|that|there) (?:isn't|aren't)(?=\\s*[,;])",
   "condition": "\\b(?:if|unless|whether|in case)\\b[^,;.]*",
   "negation": "\\b(?:don'?t|do not|never|except|without|but not|not)\\b[^,;.]*"
  },
@@ -341,11 +340,7 @@
  },
  "speech": {
   "q_pick_one": "Which one do you mean: {text}?",
-  "say_partial": "I did only part of it. Done: {done}. Not done: {missing}.",
-  "q_fault_help": "My {device} is not working. Could you check it for me?",
-  "say_fault_stop": "I have to stop: my {device} is not working. Attempts: {tries}. Steps done before that: {done}.",
-  "q_else": "And otherwise, what should I do?",
   "assumed": true,
-  "source": "assumed: the re-ask of option answer_align after a yes or no to an either-or, naming the options, and the robot's own end sentence for a run whose goals hold while a request item stays open (option partial_end), plain English; the robot's i18n wins"
+  "source": "assumed: the re-ask of option answer_align after a yes or no to an either-or, naming the options, plain English; the robot's i18n wins"
  }
 }

@@ -64,18 +64,12 @@ THROUGH_THE_LOOP = {"ask_source": "test_option_ask_source.py", "hazard": "test_s
                     "end_state": "test_option_end_state.py", "object_words": "test_option_object_words.py",
                     "precond_repair": "test_option_precond_repair.py", "goal_words": "test_option_goal_words.py",
                     "ask_focus": "test_option_ask_focus.py",
-                    "partial_end": "test_option_partial_end.py",
                     "entity_cover": "test_option_entity_cover.py", "hw_wait": "test_option_hw_wait.py",
                     "search_budget": "test_option_search_budget.py", "lang_words": "test_option_lang_words.py",
                     "gate_prune": "test_option_gate_prune.py", "cond_goal": "test_option_cond_goal.py", "cond_extract": "test_option_cond_extract.py", "dedupe_keep_end": "test_option_dedupe_keep_end.py",
                     "recipient_keep": "test_option_recipient_keep.py", "name_recover": "test_option_name_recover.py", "asr_guard": "test_option_asr_guard.py", "plan_complete": "test_option_plan_complete.py", "replan_guard": "test_option_replan_guard.py",
-                    "ask_agree": "test_option_ask_agree.py", "plan_release": "test_option_plan_release.py", "effect_check": "test_option_effect_check.py",
-                    "repair_sync": "test_option_repair_sync.py", "goal_ledger": "test_option_goal_ledger.py", "answer_align": "test_option_answer_align.py",
-                    "safety_profile": "test_option_safety_profile.py",
-                    "close_opened": "test_option_close_opened.py"}
-THROUGH_THE_LOOP["question_cap"] = "test_option_question_cap.py"                       # D4 layer L23 (a line of its own)
-THROUGH_THE_LOOP["fault_ladder"] = "test_option_fault_ladder.py"                       # D4 layer L20 (a line of its own)
-THROUGH_THE_LOOP["else_ask"] = "test_option_else_ask.py"                               # D4 layer L25 (a line of its own)
+                    "ask_agree": "test_option_ask_agree.py", "plan_release": "test_option_plan_release.py",
+                    "repair_sync": "test_option_repair_sync.py", "goal_ledger": "test_option_goal_ledger.py", "answer_align": "test_option_answer_align.py"}
 
 
 def _specs():
