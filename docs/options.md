@@ -14,7 +14,7 @@ CLAUDE.md rules 13-15. The reference for the flat run options and manifest keys 
 | `Registry`, `register` | `core/options/registry.py` | the list of options; built-in ones from `robot_agent/options/__init__.py`, others by entry point group `robot_agent.options` |
 | `Dispatcher` | `core/options/dispatch.py` | builds the enabled options of one loop, calls their hooks in `order` |
 | `Services` | `core/options/services.py` | the interface an option uses to ask the loop for something (`LoopServices` in `core/planning/option_services.py` implements it) |
-| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words`, `cond_goal`, `cond_extract`, `recipient_keep`, `plan_complete`, `ask_agree`, `replan_guard`, `name_recover`, `asr_guard`, `plan_release`, `effect_check`, `repair_sync` so far |
+| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words`, `cond_goal`, `cond_extract`, `recipient_keep`, `plan_complete`, `ask_agree`, `replan_guard`, `name_recover`, `asr_guard`, `plan_release`, `effect_check`, `repair_sync`, `goal_ledger` so far |
 
 `python -m robot_agent.core.options list` prints the registered options, their keys and hooks.
 `python -m robot_agent.core.options check MANIFEST.yaml` reports `planner.options` entries that name no option or key.
@@ -84,7 +84,7 @@ dropped. A *flow* hook is a generator (`yield from`): it may yield run events an
 | `on_understand_prompt(text)` | transform | the understand prompt template, before `.format` (escape braces): options add lines; None = unchanged | `cond_goal` |
 | `on_heard(run)` | decide | the heard request, before the reader is called: a question to ask instead of reading (the engine asks it, sets `repeat_asked`), or None | `asr_guard` |
 | `on_goals(run)` | decide, flow | understood goals, before the read-back and the grounding | `hazard` (the gate), `ask_source` (asks where an object is), `cond_extract` (writes the `when` of `cond_goal` after one extra model call), `cond_goal` (looks at the place of a `when`), `goal_words` (asks when a name is an object and a place) |
-| `on_issues(issues, run, goals)` | transform | the read-back's issues (`understand.find_issues` plus the loop's extras): the list, or None (unchanged) | `ask_focus`, `entity_cover`, `ask_agree` |
+| `on_issues(issues, run, goals)` | transform | the read-back's issues (`understand.find_issues` plus the loop's extras): the list, or None (unchanged) | `ask_focus`, `entity_cover`, `ask_agree`, `goal_ledger` (settles the `unsaid` issue of a go goal it kept with evidence; adds the where-issue of a destination taken back) |
 | `on_planner_kwargs(kwargs)` | transform | the constructor keys of the planner (a dict) the loop builds; a key must also be in the backend's whitelist (`_GRACE_KWARGS`) | `replan_guard` (`replan_block_fix`) |
 | `on_goal_replan(run)` | decide | the goals changed mid-run, before the plan is repaired: sub-goals for the rest of the plan (the planner's `replan(subgoals=)`), or None | `replan_guard` |
 | `on_replan_findings(bad, run, suffix)` | transform | a replan's suffix (and its refine), after the engine's own findings: the list; a finding makes the one refine, then the uncertified end | `replan_guard`, `repair_sync` (`release_off_goal`) |
@@ -102,7 +102,7 @@ dropped. A *flow* hook is a generator (`yield from`): it may yield run events an
 | `on_goals_met(run)` | decide | the goals hold; returns the `done` event | `hazard` (partial refusal sentence) |
 | `on_finish(run, fields)` | observe | the fields of a `done` event, before it is built | `hazard` (`refusals`) |
 
-`goal_words` also answers the service `goal_guard(run, goals)` (a guard with `place(name)` and `frozen(goal)`) that the engine puts on `places.guard` before the goal repairs (`goal_fix.drop_invented`, `repair_destination`, `shared_listener` read it; None = old behaviour).
+`goal_words` also answers the service `goal_guard(run, goals)` (a guard with `place(name)` and `frozen(goal)`) that the engine puts on `places.guard` before the goal repairs (`goal_fix.drop_invented`, `repair_destination`, `shared_listener` read it; None = old behaviour). `goal_ledger` answers the service `goal_keep(run, goals)`: a predicate `keep(goal, words)` that the engine passes to `goal_fix.drop_invented` (argument `keep_go`) for a `go` goal the F4.4 rule would drop (None = dropped as before); and `ledger_open(run)`: the go goals the last reading dropped with no evidence (for the end of the run; None when none).
 
 Services (`OptionSpec.services`, asked with `Dispatcher.query(name, *args, default=...)`): `hazard.forbids(goal, places)`,
 `hazard.refused_goals(run)`, `hazard.gate_off()`, `reach_delivery.no_refetch()`, `dedupe_keep_end.keep_after_dedupe()`, `effect_check.hand_reading(skill, raw, default)` (asked by the engine's `_holding`: the holding sensor's result read three-valued; no answer = `isdone` as before), `repair_sync.repair_kwargs(run)` (asked by the gate's and the suffix's symbolic repair: extra arguments of `plan_repair.repair`, `sync` and `finish_rest`; no answer = no extra argument, the repair as before). A query returns the first answer that is not None; `Dispatcher.collect(name, *args)` joins the lists of every option that serves `name` (`refused_goals`: `hazard`, `cond_extract` and `cond_goal`). `Dispatcher.decide_flow_of(service, hook, *args)` runs a flow hook of only the options that serve `service`; the engine service `safety_gate(run)` uses it to put the goals through the safety gate again (`on_goals` of the options serving `forbids`) for an option that changed a goal after the gate ran (`name_recover`).
@@ -267,6 +267,26 @@ fix it, a suffix whose LAST release of an `on` / `in` goal's object (a step that
 than the goal's gets the finding `release_off_goal`, so the one refine is told and, if it remains, the run ends uncertified. Two hands or more: no finding. No pack data. Keys `enabled` (legacy
 `repair_sync`), `gate_sync`, `finish_rest`, `off_goal` (each on when the option is on). Lab flag `repair_sync`: `{part: sync, blocks, plan}` (the second try ran from a lined-up plan that differs from the blocks),
 `{part: done_goal, object}` (`finish` passed over a goal done before), `{part: off_goal, findings}`. Module: `robot_agent/options/repair_sync.py`.
+
+### `goal_ledger`
+A `go` goal the engine's own goal filter would drop is kept, and a destination the person took back is asked about (default off; D4 layer L18, classes goal_dropped, part of
+asr_loss). (1) `restore` (on when the option is on): `goal_fix.drop_invented` (F4.4) drops a `go` goal whose place is not an exact mention of the words while other goals remain;
+at that drop site the engine asks the service `goal_keep(run, goals)` for a predicate, and a goal is kept when a heard word STARTS with a name (head or alias) of its place and
+that name's last word is at least `min_share` (0.5, assumed) of the word (a slip at the end of the word, "nookx" for "nook"; a name inside a word, "reroost", or a small part of a
+long word, "roosterhouse", is no evidence). The hook `on_issues` then settles the kept goal's `unsaid` issue and the object issue of the heard word itself (the engine's
+"Did you mean ...?" about that word), so the goal is restored with no question and no re-sample. (2) `named` (default off): a goal with no such word is kept too; its `unsaid`
+issue stays, the read-back's re-sample runs (two model calls) and the engine's read-back names the goal with the robot's doubt ("I am not sure I understood (you did not say the
+...)"); `issue_question` asks nothing for a goal with no object, so no new question; with `ask_agree`, an "I don't know" to that read-back is a refusal. Kept at the drop site,
+the goal keeps its position and passes every later step as a said goal would: the safety gate (`hazard`'s `on_goals`; the service `safety_gate` is not needed), `cond_goal`,
+`go_steps`; a re-sample keeps it again. A goal another filter dropped (`goal_filter`, `go_steps`, `cond_goal`, `drop_echo_say`) is never seen; a correction that removes it is
+not undone. (3) `retract` (default off): an `on` / `in` goal whose destination the words name only in a mention a self-correction marker takes back (`understand._drop_corrected`
+with the pack's markers, or the option's narrower `retract_markers` per language), when words follow the marker and they name no place or object of another goal, gets the
+engine's `unsaid` issue with its object, so the read-back asks the engine's own "Where should I put the X?" (one question, the engine's `issue_asked`). No "Did you mean X?"
+question is ever added. The option says nothing at the end of a run: the open items (`named` off, no evidence) are served by `ledger_open(run)`. Data: none for R1 (the place
+names are the robot's ENV heads and aliases); `retract_markers` (dict, manifest only, read again at run time): `{"<lang>": [<regex>, ...], "assumed": true}`; no list for the
+run's language = the language packs' `self_correction` markers. Keys `enabled` (legacy `goal_ledger`), `restore`, `named`, `min_share`, `retract`, `retract_markers`. Hook
+`on_issues` (order 22); services `goal_keep`, `ledger_open`. Lab flag `goal_ledger`: `{rule: restore, to, heard}`, `{rule: named, to}`, `{rule: retract, what}`.
+Module: `robot_agent/options/goal_ledger.py`.
 
 ### `cond_goal`
 A request with a condition ("if the spoon is on the table, put it away; if not, leave it") is decided by the robot looking, not by the reader guessing (default off).

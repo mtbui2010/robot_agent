@@ -78,8 +78,9 @@ def drop_empty(goals: list) -> tuple:
     return keep, [g for g in goals if g not in keep]
 
 
-def drop_invented(goals: list, text: str, places) -> tuple:
-    """(goals, dropped): F4.4 (see the module doc). ``places.guard`` (option goal_words) says which ENV place a name is."""
+def drop_invented(goals: list, text: str, places, keep_go=None) -> tuple:
+    """(goals, dropped): F4.4 (see the module doc). ``places.guard`` (option goal_words) says which ENV place a name is; ``keep_go(goal, words)``
+    (service ``goal_keep``, option goal_ledger) may keep a ``go`` goal the rule would drop (None: dropped as before)."""
     guard = getattr(places, "guard", None)
     t = _norm(text)
     said = set().union(*(m[3] for m in place_mentions(t, places))) if place_mentions(t, places) else set()
@@ -101,7 +102,7 @@ def drop_invented(goals: list, text: str, places) -> tuple:
         for g in out:
             room = _norm(places.room(g.get("to") or ""))
             if g.get("type") == "go" and g.get("to") in places.env and g.get("to") not in said \
-                    and not (room and re.search(r"(?<!\w)" + re.escape(room) + r"(?!\w)", t)):
+                    and not (room and re.search(r"(?<!\w)" + re.escape(room) + r"(?!\w)", t)) and not (keep_go and keep_go(g, t)):
                 dropped.append(g)
                 continue
             keep.append(g)
