@@ -2,17 +2,21 @@
 
 What: (1) ``gate_sync``: the repair (``plan_repair.repair``) builds its plan from the planner's sub-goal blocks, but the gate scores the plan
 after the ``on_plan`` options and the tidy (steps added, steps dropped); the service ``repair_kwargs`` gives the repair a function that lines
-the blocks up with that plan (longest common subsequence on (action, object); an added step joins the block of the step before it), so an
-operator sees the steps an option added (a Close with the hand full is moved after the release an option spliced in). (2) ``finish_rest``: the
-suffix operator ``finish`` passes over a goal the suffix neither holds nor lets go of (one done before the replan) instead of giving up at it, so
-the pending goal behind it gets its delivery back. (3) ``off_goal`` (hook ``on_replan_findings``): when that repair did not fix it, a suffix whose
+the blocks up with that plan (longest common subsequence on (action, object); an added step joins the block of the step before it). When the
+repair of the blocks leaves a critical finding, the operators run again from the lined-up plan, so they see the steps an option added (a Close
+with the hand full moved after the release an option appended); that try is kept only when it certifies the plan, else the first stands.
+(2) ``finish_rest``: the suffix operator ``finish`` passes over a goal the suffix neither holds nor lets go of when it already holds in the
+belief (the run placed its object at its place and the hand is not holding it) instead of giving up at it, so the pending goal behind it gets
+its delivery back; any other such goal still ends the search, as before. (3) ``off_goal`` (hook ``on_replan_findings``): when that repair did not fix it, a suffix whose
 LAST release of a goal's object (``on`` / ``in``) is at another place than the goal's (no Pick of it after) gets the finding ``release_off_goal``,
 so the engine's one refine sees it; a staging put-down that is picked again later is not one.
 Why: the class "the gate's repair is blind to the steps options added, and a replan's suffix puts the goal object down at the wrong place"
 (gate findings and replan suffixes in the robot's own logs); no model call, no pack data: the release is a step that empties the hand in the
 replay of the action model, two hands or more = no finding (one-hand replay).
 Switch off: key ``enabled`` False (the default; legacy run option ``repair_sync``), or one part with ``gate_sync`` / ``finish_rest`` /
-``off_goal`` False. Off: the service answers nothing and the repair runs as before. Lab flag ``repair_sync``: ``{part: sync | off_goal, ...}``.
+``off_goal`` False. Off: the service answers nothing and the repair runs as before. Lab flag ``repair_sync``: ``{part: sync, blocks, plan}`` (the
+second try ran from a lined-up plan that differs from the blocks; kept tries count as ``synced`` in the plan's ``repaired_by_op``), ``{part: done_goal,
+object}`` (``finish`` passed over a goal done before), ``{part: off_goal, findings}``.
 """
 
 from __future__ import annotations
@@ -84,13 +88,22 @@ def last_releases(world, suffix, caps) -> dict:
 
 
 class RepairSync(Option):
-    def repair_kwargs(self):
-        """Service: the extra arguments of the gate's and the suffix's repair (``sync``, ``finish_rest``); None when both parts are off."""
-        kw = {**({"sync": self.sync} if self.cfg.get("gate_sync") else {}), **({"finish_rest": True} if self.cfg.get("finish_rest") else {})}
+    def repair_kwargs(self, run):
+        """Service: the extra arguments of the gate's and the suffix's repair of ``run`` (``sync``, ``finish_rest``); None when both parts are off."""
+        done = (lambda g: self.done(run, g)) if self.cfg.get("finish_rest") else None
+        kw = {**({"sync": self.sync} if self.cfg.get("gate_sync") else {}), **({"finish_rest": done} if done else {})}
         return kw or None
 
+    def done(self, run, goal) -> bool:
+        """An ``on`` / ``in`` goal holds in the belief now: the run placed its object at the goal's place and the hand does not hold it."""
+        o, placed, world = goal.get("object"), getattr(run, "placed", None) or {}, getattr(run, "world", None)
+        ok = goal.get("type") in ("on", "in") and bool(goal.get("to")) and placed.get(o) == goal.get("to") and getattr(world, "holding", None) != o
+        if ok:
+            self.svc.lab(SPEC.name, part="done_goal", object=o)
+        return ok
+
     def sync(self, owned, steps) -> list:
-        """The repair's owned plan lined up with the plan the gate scores (lab ``part: sync`` when they differ)."""
+        """The repair's owned plan lined up with the plan the gate scores, for its second try (lab ``part: sync`` when they differ)."""
         out = align(owned, steps)
         if [s for _o, s in out] != [s for _o, s in owned]:
             self.svc.lab(SPEC.name, part="sync", blocks=len(owned), plan=len(out))

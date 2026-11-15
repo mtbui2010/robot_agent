@@ -27,13 +27,13 @@ def owned(*blocks):
     return [(k, st) for k, b in enumerate(blocks) for st in steps(*b)]
 
 
-def make(cfg=None, hands=1, goals=(), hold=None, at=None):
+def make(cfg=None, hands=1, goals=(), hold=None, at=None, placed=None):
     caps = RobotView.load("fakebot").model_capabilities()
     svc = NS(lab=lambda *a, **k: svc.labs.append(k), labs=[], robot=NS(model_capabilities=lambda: NS(hands=hands, release_actions=caps.release_actions)
                                                                          if hands != 1 else caps))
     w = WorldState()
     w.update_from_dict({"holding": hold, "arrived": at})
-    run = NS(world=w, goals=list(goals))
+    run = NS(world=w, goals=list(goals), placed=dict(placed or {}))
     return RepairSync(resolve(SPEC, {SPEC.name: "1", **(cfg or {})}, {}, None), svc), run, svc
 
 
@@ -58,11 +58,29 @@ def test_gate_repair_with_sync_moves_the_close_after_the_release_an_option_added
     args = dict(caps=caps, actions={"MoveTo", "Open", "Close", "Find", "Pick", "Place"}, join=join, ground=lambda s: s)
     _s, notes, _c = plan_repair.repair(plan, score, world, places, goals, blocks=[b1, b2], **args)
     assert notes == [] and acts(b1.steps)[-1] == f"Close {DR}"         # off: the blocks have no release, the hoist finds none
-    opt, _run, svc = make()
-    out, notes, counts = plan_repair.repair(plan, score, world, places, goals, blocks=[b1, b2], **args, **opt.repair_kwargs())
-    assert counts.get("hoist") == 1 and score(out) == 0 and join([b1, b2]) == out
+    opt, run, svc = make()
+    out, notes, counts = plan_repair.repair(plan, score, world, places, goals, blocks=[b1, b2], **args, **opt.repair_kwargs(run))
+    assert counts.get("hoist") == 1 and counts.get("synced") == 1 and score(out) == 0 and join([b1, b2]) == out
     assert acts(b1.steps)[-4:] == [f"MoveTo {DT}", f"Place {DT}", f"MoveTo {DR}", f"Close {DR}"] and acts(b2.steps) == [f"MoveTo {DS}"]
     assert svc.labs == [{"part": "sync", "blocks": 6, "plan": 8}]
+
+
+def test_gate_second_try_only_when_the_blocks_repair_leaves_a_finding_and_kept_only_when_it_certifies():
+    calls = []
+    join = lambda bs: [dict(s) for b in bs for s in b.steps]                                             # noqa: E731
+    args = dict(caps=RobotView.load("fakebot").model_capabilities(), actions={"MoveTo", "Open", "Close", "Find", "Pick", "Place"}, join=join,
+                ground=lambda s: s)
+    world, places, goals = WorldState(), Places({DR: {}, DT: {}}), [{"type": "on", "object": "gizmo", "from": DR, "to": DT}]
+    junk = lambda F, st: calls.append(len(F)) or F + [(0, {"action": "Zap", "object": DT})]               # noqa: E731
+    bad = lambda s: sum(x["action"] == "Zap" for x in s) + int("Close" in [x["action"] for x in s][:5])   # noqa: E731
+    fine = steps(f"MoveTo {DR}", f"Open {DR}", "Find gizmo", "Pick gizmo", f"Close {DR}", f"MoveTo {DT}", f"Place {DT}")
+    b = Block("one", [dict(x) for x in fine])
+    out, _n, counts = plan_repair.repair(fine, bad, world, places, goals, blocks=[b], sync=junk, **args)
+    assert calls == [] and counts.get("hoist") == 1 and "synced" not in counts       # the blocks' own repair certified: no second try
+    stuck = steps("Find sprocket", "Zap sprocket", f"Close {DR}")
+    b = Block("one", [dict(x) for x in stuck])
+    out, notes, counts = plan_repair.repair(stuck, bad, world, places, goals, blocks=[b], sync=junk, **args)
+    assert calls == [3] and notes == [] and acts(b.steps) == acts(stuck)              # tried, did not certify: the first result stands
 
 
 def test_gate_finish_rest_passes_over_a_goal_done_before_and_delivers_the_pending_one():
@@ -74,8 +92,16 @@ def test_gate_finish_rest_passes_over_a_goal_done_before_and_delivers_the_pendin
     F = owned(("Find gizmo", "Pick gizmo", "MoveTo crate@yard", "Place crate@yard"))
     never = lambda plan, world, gs: False                                                               # noqa: E731
     assert plan_repair.op_finish(F, cx, never) is None                  # off: gives up at the widget (neither held nor let go of here)
-    cx.finish_rest = True
+    opt, run, svc = make(goals=goals, placed={"widget": "bench@yard"})
+    cx.finish_rest = opt.repair_kwargs(run)["finish_rest"]
     assert acts([s for _o, s in plan_repair.op_finish(F, cx, never)]) == ["Find gizmo", "Pick gizmo", "MoveTo pad@lawn", "Place pad@lawn"]
+    assert svc.labs == [{"part": "done_goal", "object": "widget"}]
+    for placed in ({}, {"widget": "pad@lawn"}):                         # not done in the belief: the search still ends there, as before
+        opt, run, _ = make(goals=goals, placed=placed)
+        cx.finish_rest = opt.repair_kwargs(run)["finish_rest"]
+        assert plan_repair.op_finish(F, cx, never) is None, placed
+    opt, run, _ = make(goals=goals, placed={"widget": "bench@yard"}, hold="widget")
+    assert opt.done(run, goals[0]) is False                             # placed once, in the hand again: not done
 
 
 # ── release_off_goal: the coded finding of a suffix ────────────────────────────────────────────────────────────────────
@@ -110,8 +136,8 @@ def test_release_off_goal_two_hands_or_no_goals_or_parts_off_do_nothing_empty():
     opt, run, _ = make(goals=GOALS)
     assert opt.on_replan_findings([], run, []) is None
     off = make(cfg={"repair_sync.gate_sync": "0", "repair_sync.finish_rest": "0"})[0]
-    assert off.repair_kwargs() is None
-    assert set(make()[0].repair_kwargs()) == {"sync", "finish_rest"}
+    assert off.repair_kwargs(run) is None
+    assert set(make()[0].repair_kwargs(run)) == {"sync", "finish_rest"}
     F = owned(("Walk crate@yard",))
     assert align(F, []) == F and align([], steps("Walk crate@yard")) == []
 
@@ -133,7 +159,7 @@ def _gate_run(make_assist, env, on, planner=None):
 def test_registered_and_off_by_default_the_gate_cannot_repair_the_option_step_off(make_assist, env):
     assert "repair_sync" in ASSIST_OPTIONS and REGISTRY.get("repair_sync").key("enabled").default is False
     loop, robot, evs, planner = _gate_run(make_assist, env, on=False)
-    assert loop.options.query("repair_kwargs") is None and not [e for e in loop.lab_log if e["flag"] == "repair_sync"]
+    assert loop.options.query("repair_kwargs", None) is None and not [e for e in loop.lab_log if e["flag"] == "repair_sync"]
     assert done(evs)["status"] == "failed" and robot.obj == {"gizmo": DR}                        # the gate gave up, nothing moved
     assert acts(planner.blocks()[0].steps)[-1] == f"Close {DR}"
 

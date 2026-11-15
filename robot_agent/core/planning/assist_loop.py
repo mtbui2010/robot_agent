@@ -2860,7 +2860,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             blocks=blocks or None, join=rep.join_blocks if blocks else None, ground=ground,
             complete=str(self.cfg.get("gate_complete", "0")) in ("1", "true", "True"),
             person_goals=bool(self.cfg.get("person_goals")), reached=self._reaches,
-            no_refetch=bool(self.options.query("no_refetch")), keep_end=self.options.query("keep_after_dedupe") or False, **self.options.query("repair_kwargs", default={}))
+            no_refetch=bool(self.options.query("no_refetch")), keep_end=self.options.query("keep_after_dedupe") or False, **self.options.query("repair_kwargs", r, default={}))
         acc = r.__dict__.setdefault("repaired_by_op", {})
         for k, v in counts.items():
             acc[k] = acc.get(k, 0) + v
@@ -2885,7 +2885,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         steps, notes, counts = plan_repair.repair(
             suffix, score, r.world, r.places, r.goals, caps=caps, actions=self.robot.plan_actions,
             release=sorted(caps.release_actions), hand_goal=lambda g: bool(g.get("hand")),
-            only=("hoist", "dedupe", "action", "unclose", "finish"), reached=self._reaches, **self.options.query("repair_kwargs", default={}))
+            only=("hoist", "dedupe", "action", "unclose", "finish"), reached=self._reaches, **self.options.query("repair_kwargs", r, default={}))
         if not notes:
             return suffix
         acc = r.__dict__.setdefault("repaired_by_op", {})
