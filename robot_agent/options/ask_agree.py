@@ -23,7 +23,9 @@ places), ``dialogue_ext.polite_endings`` and ``patterns.answer_tail`` (the endin
 Key ``distinct`` (off; run option ``ask_agree_distinct``, D4 layer ``answer_align``): the earlier value counts as said, and the answer to the
 either-or as naming a reading, by the words that tell the two readings apart (``names.distinguishing``: the object's name, the person's own words
 for it, its places, the speaker's own word when it goes to them), a word with one declared particle or ending of the pack; one word of the name
-is enough ("the tin" for "tin box"), a word both readings share names neither. Off: the whole value as a phrase, as before.
+is enough ("the tin" for "tin box"), a word both readings share names neither (with the key, "mug" said is no earlier "mug" against a current
+"green mug"); an object that changed with its own ``from`` and words
+(``FOLLOW``) is one change, and the earlier object comes back with them. Off: the whole value as a phrase, one value changed, as before.
 Hooks ``on_goals``, ``on_issues``; service ``unrefused`` (order 78, before ``ask_focus``). Keys: ``enabled``, ``restate_confirm`` (true), ``either_or`` (true), ``distinct`` (false).
 Lab flag ``ask_agree``: ``{rule, ...}``.
 """
@@ -47,6 +49,7 @@ SPEC = OptionSpec(
     doc="Read-back dialogue: one more yes / no after a bare no and the same request; an \"I don't know\" keeps only a clean reading; an either-or when it changed a value.",
 )
 VALUE_KEYS = ("object", "to", "from")
+FOLLOW = ("from", "said", "name_local")   # values that go with the object (where it is, the person's words for it): key ``distinct``
 Q_WHICH = "q_which_reading"          # the phrase of the either-or (speech.CORE_PHRASES; another language: the robot's i18n or the language pack's ``speech``)
 
 
@@ -116,6 +119,15 @@ def one_change(first, now):
     return diffs[0] if len(diffs) == 1 and diffs[0][1] in VALUE_KEYS else None
 
 
+def object_change(first, now):
+    """(index, "object") when ``now`` differs from ``first`` in the object of one goal and in nothing else but the values that go
+    with an object (``FOLLOW``: a new object has its own place and words); else ``one_change``."""
+    bare = [[{k: v for k, v in g.items() if k not in FOLLOW} if a.get("object") != b.get("object") else g for g in (a, b)]
+            for a, b in zip(first, now)] if len(first) == len(now) else []
+    ch = one_change([x for x, _ in bare], [y for _, y in bare]) if bare else None
+    return ch if ch and ch[1] == "object" else one_change(first, now)
+
+
 def said(texts, value, places) -> bool:
     """The person's words name ``value``: as whole words, or as a place of the ENV (``place_mentions``)."""
     v = str(value or "").strip().lower()
@@ -180,7 +192,8 @@ class AskAgree(Option):
     def _changed(self, run, st):
         """The reading changed since its first read-back: False (a refusal), or the either-or when one value the person said earlier was changed."""
         self.svc.lab(SPEC.name, rule="veto_changed")
-        ch = one_change(st["first"] or [], run.goals) if self.cfg["either_or"] and not st["asked"] else None
+        change = object_change if self.cfg["distinct"] else one_change
+        ch = change(st["first"] or [], run.goals) if self.cfg["either_or"] and not st["asked"] else None
         ask, phrase = getattr(self.svc, "ask", None), getattr(self.svc, "goal_phrase", None)
         if ch is None or not ask or not phrase:
             return False
@@ -203,19 +216,25 @@ class AskAgree(Option):
         if named == [1]:
             return True
         if named == [0]:
-            run.patched = [dict(g) if j != i else {**g, k: old.get(k)} for j, g in enumerate(run.goals)]
+            run.patched = [dict(g) if j != i else self._back(g, old, k) for j, g in enumerate(run.goals)]
             run.allow_repeat = True
             if k != "object" and new.get(k):                  # the place the person gave up is no coverage doubt any more (``on_issues``)
                 st.setdefault("gave_up", set()).add(new[k])
         return False
 
+    def _back(self, g, old, k) -> dict:
+        """Goal ``g`` with the earlier value of ``k``; with ``distinct`` an earlier object brings its own ``FOLLOW`` values back."""
+        if k != "object" or not self.cfg["distinct"]:
+            return {**g, k: old.get(k)}
+        return {**{f: v for f, v in g.items() if f not in FOLLOW}, k: old.get(k), **{f: old[f] for f in FOLLOW if f in old}}
+
     def _said(self, run, old, new, k) -> bool:
         """The person said the earlier value: as a whole phrase, or (key ``distinct``) a word that tells the earlier reading from the
-        current one (``names.distinguishing``: the object's name, the person's own words for it, its places, the speaker)."""
+        current one (``names.distinguishing``: the object's name, the person's own words for it, its places, the speaker); with the key
+        a phrase made only of words the current reading shares ("mug" against "green mug") says nothing."""
         texts = [run.task] + [t for w, t in run.dialogue if w == "user"]
-        hit = said(texts, old.get(k), run.places)
-        if hit or not self.cfg["distinct"]:
-            return hit
+        if not self.cfg["distinct"]:
+            return said(texts, old.get(k), run.places)
         langs, sk = names.langs_of(run), persons.speaker_key(run.places)
         a, b = (names.reading_words(g, run.places, langs, sk) for g in (old, new))
         return names.says(texts, names.distinguishing(a, b, langs), langs)

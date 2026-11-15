@@ -295,7 +295,9 @@ for it (`said`, `name_local`), its places' heads and aliases, the speaker's own 
 (1) `reask` (hook `on_heard`, before the reader): the robot's last question offered options (its declared `options`, else the clause on each side of the pack's
 `grammar.sep_or`; a read-back is none) and the answer holds a yes or a no word of the pack (`dialogue.yes` / `no`) and names none of the options: the reader would pick one from
 nothing (a bare "yes" to "the A or the B?" read as A). The robot asks ONCE per run more, naming the options, with the phrase `q_pick_one` of the language pack (slot `text`: the options joined by the "or" of the question's own words, translated when not in the run's script; `speech` block,
-English and Korean declared, `assumed`; the robot's i18n wins); no phrase in the run's language: not asked (lab `reask_no_phrase`). An "I don't know" (service `unsure_leftover`) is not one.
+English and Korean declared, `assumed`; the robot's i18n wins); no phrase in the run's language: not asked (lab `reask_no_phrase`). An "I don't know" (service `unsure_leftover`) is not one, nor an answer with a word (other than a yes, no, filler or polite word) in another declared script than
+the options (`script.letters`: it may name one in the person's own words, which the robot's English options cannot match). A speaker word of one letter (a demonstrative too in some
+languages) counts only with a declared ending.
 (2) `correction` (hook `on_goals`, order 8, before the safety gate): after a correction to the read-back (`run.corrected` grew) the reader read the task again; when the correction's
 words name exactly ONE object of the two readings (its distinguishing words against every other object), each goal of another object that the new reading sent elsewhere gets
 its earlier destination back (`type`, `to`, `hand`, `near_person`, `user_at`). No object named, two named, or a result equal to the refused reading: nothing is decided. The
@@ -394,7 +396,10 @@ none = nothing is claimed. (4) Key `distinct` (default off; run option `ask_agre
 answer to the either-or names a reading, by the words that tell the two readings apart (core `names.reading_words` / `names.distinguishing` / `names.says`: the object's name, the
 person's own words for it (`said`, `name_local`), the head and aliases of its places, and for a delivery to the person talking the speaker's own word, `grammar.speaker_forms`
 without `speaker_forms_weak`), a word with one declared particle or ending of the pack (`particles`, `grammar.noun_particles`, `dialogue_ext.polite_endings`). One word of a name is
-enough ("the tin" for "tin box"); a word both readings share, or an answer that names both, names neither (nothing is picked). Off: the whole value as a phrase, as before.
+enough ("the tin" for "tin box"); a word both readings share, or an answer that names both, names neither (nothing is picked; with the key the whole-phrase
+rule is not used, so "mug" said is no earlier "mug" against a current "green mug"). An object that changed together with
+the values that go with it (`from`, `said`, `name_local`: a new object has its own place and words) is one change, and a pick of the earlier object brings them back. Off: the whole
+value as a phrase and exactly one value changed, as before.
 Keys `enabled` (legacy `ask_agree`), `restate_confirm`, `either_or`, `distinct` (legacy `ask_agree_distinct`). Hooks `on_goals`, `on_issues`, service `unrefused(run, ans)`; lab flag `ask_agree`:
 `{rule}`. It does not edit `ask_focus`: with `ask_focus` on and this off, the D2 behaviour is unchanged. Module: `robot_agent/options/ask_agree.py`.
 

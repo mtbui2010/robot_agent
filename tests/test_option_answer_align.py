@@ -190,6 +190,31 @@ def test_distinguish_in_the_read_back_either_or_the_earlier_value_said_by_one_wo
     assert opt.unrefused(run, "I don't know") is False and not svc.asked           # key off: the whole name was never said, no question
 
 
+def test_distinguish_an_object_changed_with_its_own_place_and_words_is_one_change_ask_agree_distinct():
+    first = [mv("tin box", "pat@den", **{"from": "crate@den", "said": "tin"})]
+    now = [mv("reed basket", "pat@den", **{"from": "rack@loft"})]
+    assert AA.one_change(first, now) is None and AA.object_change(first, now) == (0, "object")
+    assert AA.object_change([mv("tin box", "nook@loft")], [mv("reed basket", "rack@loft")]) is None    # the destination changed too: two changes
+    for distinct, asked in ((True, 1), (False, 0)):
+        opt, run, svc = agree(distinct, "Bring me something to hold.", pick="the tin")
+        run.__dict__["opt"]["ask_agree"]["first"], run.goals = [dict(g) for g in first], [dict(g) for g in now]
+        assert opt.unrefused(run, "I don't know") is False and len(svc.asked) == asked
+        assert run.patched == ([dict(first[0])] if distinct else None)                # the tin box comes back with its own place
+
+
+def test_distinguish_an_earlier_name_all_of_whose_words_the_current_reading_shares_is_not_said_ask_agree_distinct():
+    first, now = [mv("jar", "pat@den")], [mv("teal jar", "pat@den", **{"from": "rack@loft"})]
+    for distinct, asked in ((True, 0), (False, 0)):
+        opt, run, svc = agree(distinct, "Bring me a jar.", pick="the jar")
+        run.dialogue = [("user", "The red jar."), ("user", "No, the teal one.")]
+        run.__dict__["opt"]["ask_agree"]["first"], run.goals = [dict(g) for g in first], [dict(g) for g in now]
+        assert opt.unrefused(run, "I don't know") is False and len(svc.asked) == asked and run.patched is None
+    opt, run, svc = agree(True, "Bring me a jar.")
+    assert not opt._said(run, mv("jar", "pat@den"), mv("teal jar", "pat@den"), "object")    # "jar" said, but "teal jar" has it too
+    opt, run, svc = agree(False, "Bring me a jar.")
+    assert opt._said(run, mv("jar", "pat@den"), mv("teal jar", "pat@den"), "object")        # off: the whole phrase, as before
+
+
 def test_distinguish_the_either_or_answer_by_the_readings_words_and_a_yes_picks_nothing(zq):
     opt, run, svc = agree(True, "Bring me something.", pick="reedka pa", lang="zq")
     run.dialogue = [("user", "tinka pa"), ("user", "zo, reedka")]
