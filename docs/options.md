@@ -288,6 +288,18 @@ run's language = the language packs' `self_correction` markers. Keys `enabled` (
 `on_issues` (order 22); services `goal_keep`, `ledger_open`. Lab flag `goal_ledger`: `{rule: restore, to, heard}`, `{rule: named, to}`, `{rule: retract, what}`.
 Module: `robot_agent/options/goal_ledger.py`.
 
+### `question_cap`
+At most `max_questions` questions per task, and never the same question twice (default off; D4 layer L23, class "the robot keeps asking": each option
+bounds only its own questions; user decision: at most 3 per task, never the same question twice). The engine asks the service `ask_veto(run, question)`
+before it puts a question an option asks through the engine services `ask` and `ask_clarify` (the options' way to ask); a non-None answer means the
+question is not put: `ask` gives '' (no answer: the option acts on what it has), `ask_clarify` decides nothing (the loop reads on). The option answers
+`cap` when the run's own counters (`asked`: clarify rounds and option questions; `confirms`: read-backs) reach the cap, `repeat` (key `no_repeat`)
+when the normalised text (case folded, punctuation dropped, spaces collapsed) was already put through the service or is a robot turn of the run's
+dialogue. The engine's own questions (read-back, search help) are never vetoed, they keep their own caps (`clarify_rounds`, `confirm_limit`) and count.
+Data: `max_questions` (int, per robot: `planner.options.question_cap.max_questions` with `source` or `assumed: true`, read again at run time; none
+declared or 0 = no cap). Keys `enabled` (legacy `question_cap`), `max_questions`, `no_repeat` (legacy `question_cap_no_repeat`). Hook `on_start`
+(the task's record starts empty); service `ask_veto`. Lab flag `question_cap`: `{why: cap | repeat, asked}`. Module: `robot_agent/options/question_cap.py`.
+
 ### `cond_goal`
 A request with a condition ("if the spoon is on the table, put it away; if not, leave it") is decided by the robot looking, not by the reader guessing (default off).
 The understand schema gets an OPTIONAL object `when` `{object, at, present}` on a goal, written after `content` (key order: the grammar of the Ollama format follows `properties`,
