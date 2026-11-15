@@ -2,7 +2,7 @@
 (``profile.py``; the manifest's ``safety.profile``); the core ships no domain rule (docs/safety.md)."""
 
 from .hazards import Verdict, check_goal, find_rule, hazard_class  # noqa: F401
-from .place_class import place_class  # noqa: F401
+from .place_class import near_class, place_class  # noqa: F401
 from .profile import EMPTY, Rule, SafetyProfile, load as load_profile  # noqa: F401
 from .receiver_class import receiver_class  # noqa: F401
 

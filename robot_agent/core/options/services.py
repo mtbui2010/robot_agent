@@ -28,6 +28,7 @@ class Services(Protocol):
     def open_items(self, run) -> list: ...                                      # the request items the options report left open at the end (service ``ledger_open``)
     def cancelled(self, run) -> Optional[dict]: ...                             # the stop event if the run was cancelled
     def safety_gate(self, run): ...                                              # generator: the goals through the safety gate again (STOP or None)
+    def safety_rule(self, goal, places) -> Any: ...                             # the Verdict of an option's declared hazard rule for a goal, or None
     def replan_or_fail(self, run, step, reason: str, msg: str): ...            # generator: the replan / give-up path
     def replan_round(self, run) -> tuple: ...                                   # (replans recorded, planner calls left in max_replans)
     def readback_left(self, run) -> bool: ...                                   # would the loop read the goals back once more now (its cap, confirm_limit)
