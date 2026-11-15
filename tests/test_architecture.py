@@ -69,7 +69,7 @@ THROUGH_THE_LOOP = {"ask_source": "test_option_ask_source.py", "hazard": "test_s
                     "gate_prune": "test_option_gate_prune.py", "cond_goal": "test_option_cond_goal.py", "cond_extract": "test_option_cond_extract.py", "dedupe_keep_end": "test_option_dedupe_keep_end.py",
                     "recipient_keep": "test_option_recipient_keep.py", "name_recover": "test_option_name_recover.py", "asr_guard": "test_option_asr_guard.py", "plan_complete": "test_option_plan_complete.py", "replan_guard": "test_option_replan_guard.py",
                     "ask_agree": "test_option_ask_agree.py", "plan_release": "test_option_plan_release.py", "effect_check": "test_option_effect_check.py",
-                    "repair_sync": "test_option_repair_sync.py", "goal_ledger": "test_option_goal_ledger.py"}
+                    "repair_sync": "test_option_repair_sync.py", "goal_ledger": "test_option_goal_ledger.py", "answer_align": "test_option_answer_align.py"}
 
 
 def _specs():

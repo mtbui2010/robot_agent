@@ -14,7 +14,7 @@ CLAUDE.md rules 13-15. The reference for the flat run options and manifest keys 
 | `Registry`, `register` | `core/options/registry.py` | the list of options; built-in ones from `robot_agent/options/__init__.py`, others by entry point group `robot_agent.options` |
 | `Dispatcher` | `core/options/dispatch.py` | builds the enabled options of one loop, calls their hooks in `order` |
 | `Services` | `core/options/services.py` | the interface an option uses to ask the loop for something (`LoopServices` in `core/planning/option_services.py` implements it) |
-| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words`, `cond_goal`, `cond_extract`, `recipient_keep`, `plan_complete`, `ask_agree`, `replan_guard`, `name_recover`, `asr_guard`, `plan_release`, `effect_check`, `repair_sync`, `goal_ledger` so far |
+| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words`, `cond_goal`, `cond_extract`, `recipient_keep`, `plan_complete`, `ask_agree`, `replan_guard`, `name_recover`, `asr_guard`, `plan_release`, `effect_check`, `repair_sync`, `goal_ledger`, `answer_align` so far |
 
 `python -m robot_agent.core.options list` prints the registered options, their keys and hooks.
 `python -m robot_agent.core.options check MANIFEST.yaml` reports `planner.options` entries that name no option or key.
@@ -82,8 +82,8 @@ dropped. A *flow* hook is a generator (`yield from`): it may yield run events an
 | `on_where_answer(run, obj, ans)` | decide, flow | the answer to the engine's own re-asked "I couldn't find the X. Where is it?": the place to go to, or None | `ask_source` (`use_room`, `clarify_unusable`) |
 | `on_understand_schema(schema)` | transform | the understand call's output schema (a fresh dict): options add optional fields; None = unchanged | `cond_goal` (`when`) |
 | `on_understand_prompt(text)` | transform | the understand prompt template, before `.format` (escape braces): options add lines; None = unchanged | `cond_goal` |
-| `on_heard(run)` | decide | the heard request, before the reader is called: a question to ask instead of reading (the engine asks it, sets `repeat_asked`), or None | `asr_guard` |
-| `on_goals(run)` | decide, flow | understood goals, before the read-back and the grounding | `hazard` (the gate), `ask_source` (asks where an object is), `cond_extract` (writes the `when` of `cond_goal` after one extra model call), `cond_goal` (looks at the place of a `when`), `goal_words` (asks when a name is an object and a place) |
+| `on_heard(run)` | decide | the heard request, before the reader is called: a question to ask instead of reading (the engine asks it, sets `repeat_asked`), or None | `asr_guard`, `answer_align` (a yes or a no to an either-or: asked once more naming the options) |
+| `on_goals(run)` | decide, flow | understood goals, before the read-back and the grounding | `hazard` (the gate), `ask_source` (asks where an object is), `cond_extract` (writes the `when` of `cond_goal` after one extra model call), `cond_goal` (looks at the place of a `when`), `goal_words` (asks when a name is an object and a place), `answer_align` (after a correction, the goals of objects it does not name keep their destination) |
 | `on_issues(issues, run, goals)` | transform | the read-back's issues (`understand.find_issues` plus the loop's extras): the list, or None (unchanged) | `ask_focus`, `entity_cover`, `ask_agree`, `goal_ledger` (settles the `unsaid` issue of a go goal it kept with evidence; adds the where-issue of a destination taken back) |
 | `on_planner_kwargs(kwargs)` | transform | the constructor keys of the planner (a dict) the loop builds; a key must also be in the backend's whitelist (`_GRACE_KWARGS`) | `replan_guard` (`replan_block_fix`) |
 | `on_goal_replan(run)` | decide | the goals changed mid-run, before the plan is repaired: sub-goals for the rest of the plan (the planner's `replan(subgoals=)`), or None | `replan_guard` |
@@ -288,6 +288,21 @@ run's language = the language packs' `self_correction` markers. Keys `enabled` (
 `on_issues` (order 22); services `goal_keep`, `ledger_open`. Lab flag `goal_ledger`: `{rule: restore, to, heard}`, `{rule: named, to}`, `{rule: retract, what}`.
 Module: `robot_agent/options/goal_ledger.py`.
 
+### `answer_align`
+An answer or a correction is matched to a reading by the words that tell the readings apart (default off; D4 layer L19, classes ask_loop, wrong_answer_accepted,
+correction_misapplied). The words are the core helpers of `names` (`reading_words`, `distinguishing`, `says`, `which_named`): a reading's object name, the person's own words
+for it (`said`, `name_local`), its places' heads and aliases, the speaker's own word for a delivery to them; a word may carry ONE declared particle or ending of the language pack.
+(1) `reask` (hook `on_heard`, before the reader): the robot's last question offered options (its declared `options`, else the clause on each side of the pack's
+`grammar.sep_or`; a read-back is none) and the answer holds a yes or a no word of the pack (`dialogue.yes` / `no`) and names none of the options: the reader would pick one from
+nothing (a bare "yes" to "the A or the B?" read as A). The robot asks ONCE per run more, naming the options, with the phrase `q_pick_one` of the language pack (slot `text`: the options joined by the "or" of the question's own words, translated when not in the run's script; `speech` block,
+English and Korean declared, `assumed`; the robot's i18n wins); no phrase in the run's language: not asked (lab `reask_no_phrase`). An "I don't know" (service `unsure_leftover`) is not one.
+(2) `correction` (hook `on_goals`, order 8, before the safety gate): after a correction to the read-back (`run.corrected` grew) the reader read the task again; when the correction's
+words name exactly ONE object of the two readings (its distinguishing words against every other object), each goal of another object that the new reading sent elsewhere gets
+its earlier destination back (`type`, `to`, `hand`, `near_person`, `user_at`). No object named, two named, or a result equal to the refused reading: nothing is decided. The
+read-back's own either-or is `ask_agree`'s, with its key `distinct` (same hook and data there). No pack data of its own: the language packs' words; none = nothing asked or
+changed. Keys `enabled` (legacy `answer_align`), `reask`, `correction` (each on with the option). Hooks `on_heard`, `on_goals` (order 8). Lab flag `answer_align`:
+`{rule: reask, options}`, `{rule: reask_no_phrase}`, `{rule: correction, kept}`. Module: `robot_agent/options/answer_align.py`.
+
 ### `cond_goal`
 A request with a condition ("if the spoon is on the table, put it away; if not, leave it") is decided by the robot looking, not by the reader guessing (default off).
 The understand schema gets an OPTIONAL object `when` `{object, at, present}` on a goal, written after `content` (key order: the grammar of the Ollama format follows `properties`,
@@ -375,7 +390,12 @@ nothing is picked and the answer is a refusal. Its text is the phrase `q_which_r
 `speech` block, Korean declares it, `assumed`); no text in the run's language: not asked (lab `either_or_no_phrase`), no translation call. The either-or is asked from the read-back's query service (it cannot yield): its `clarify` event goes through the
 engine service `emit(run, event, **fields)` (logged with the run's events, pushed through the host's live channel when there is one), the turn counts in `run.asked`
 (service `ask`), and a run stopped while asking decides nothing. Pack data: the language pack's own (`dialogue.fillers` / `no` / `polite`, `words.first_person`, the unsure phrases, the endings);
-none = nothing is claimed. Keys `enabled` (legacy `ask_agree`), `restate_confirm`, `either_or`. Hooks `on_goals`, `on_issues`, service `unrefused(run, ans)`; lab flag `ask_agree`:
+none = nothing is claimed. (4) Key `distinct` (default off; run option `ask_agree_distinct`, turned on by the D4 layer `answer_align`): the earlier value counts as said, and the
+answer to the either-or names a reading, by the words that tell the two readings apart (core `names.reading_words` / `names.distinguishing` / `names.says`: the object's name, the
+person's own words for it (`said`, `name_local`), the head and aliases of its places, and for a delivery to the person talking the speaker's own word, `grammar.speaker_forms`
+without `speaker_forms_weak`), a word with one declared particle or ending of the pack (`particles`, `grammar.noun_particles`, `dialogue_ext.polite_endings`). One word of a name is
+enough ("the tin" for "tin box"); a word both readings share, or an answer that names both, names neither (nothing is picked). Off: the whole value as a phrase, as before.
+Keys `enabled` (legacy `ask_agree`), `restate_confirm`, `either_or`, `distinct` (legacy `ask_agree_distinct`). Hooks `on_goals`, `on_issues`, service `unrefused(run, ans)`; lab flag `ask_agree`:
 `{rule}`. It does not edit `ask_focus`: with `ask_focus` on and this off, the D2 behaviour is unchanged. Module: `robot_agent/options/ask_agree.py`.
 
 ### `entity_cover`

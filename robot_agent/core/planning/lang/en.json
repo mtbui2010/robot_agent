@@ -337,5 +337,10 @@
    "pleasesubscribe",
    "bye"
   ]
+ },
+ "speech": {
+  "q_pick_one": "Which one do you mean: {text}?",
+  "assumed": true,
+  "source": "assumed: the re-ask of option answer_align after a yes or no to an either-or, naming the options; the robot's i18n wins"
  }
 }

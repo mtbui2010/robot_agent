@@ -20,7 +20,11 @@ Three classes of the read-back dialogue (``AssistLoop._read_back`` asks "Is that
 
 Pack data: the language pack's ``dialogue.fillers`` / ``no`` / ``polite``, ``words.first_person``, ``answer_unsure`` and ``dialogue_ext.answer_unsure`` (both
 places), ``dialogue_ext.polite_endings`` and ``patterns.answer_tail`` (the endings). No data: nothing is claimed, the engine's path stands.
-Hooks ``on_goals``, ``on_issues``; service ``unrefused`` (order 78, before ``ask_focus``). Keys: ``enabled``, ``restate_confirm`` (true), ``either_or`` (true).
+Key ``distinct`` (off; run option ``ask_agree_distinct``, D4 layer ``answer_align``): the earlier value counts as said, and the answer to the
+either-or as naming a reading, by the words that tell the two readings apart (``names.distinguishing``: the object's name, the person's own words
+for it, its places, the speaker's own word when it goes to them), a word with one declared particle or ending of the pack; one word of the name
+is enough ("the tin" for "tin box"), a word both readings share names neither. Off: the whole value as a phrase, as before.
+Hooks ``on_goals``, ``on_issues``; service ``unrefused`` (order 78, before ``ask_focus``). Keys: ``enabled``, ``restate_confirm`` (true), ``either_or`` (true), ``distinct`` (false).
 Lab flag ``ask_agree``: ``{rule, ...}``.
 """
 
@@ -29,12 +33,13 @@ from __future__ import annotations
 import re
 
 from robot_agent.core.options import Key, Option, OptionSpec, register
-from robot_agent.core.planning import dialog_agree, dialog_converge, langdata, names, speech
+from robot_agent.core.planning import dialog_agree, dialog_converge, langdata, names, persons, speech
 from robot_agent.core.planning.understand import place_mentions
 
 SPEC = OptionSpec(
     name="ask_agree",
-    keys=(Key("enabled", "bool", False, aliases=("ask_agree",)), Key("restate_confirm", "bool", True), Key("either_or", "bool", True)),
+    keys=(Key("enabled", "bool", False, aliases=("ask_agree",)), Key("restate_confirm", "bool", True), Key("either_or", "bool", True),
+          Key("distinct", "bool", False, aliases=("ask_agree_distinct",))),
     hooks=("on_goals", "on_issues"),
     order=78,
     enabled="enabled",
@@ -181,7 +186,7 @@ class AskAgree(Option):
             return False
         i, k = ch
         old, new = st["first"][i], run.goals[i]
-        if not said([run.task] + [t for w, t in run.dialogue if w == "user"], old.get(k), run.places):
+        if not self._said(run, old, new, k):
             return False
         if speech.phrase(getattr(self.svc, "robot", None), Q_WHICH, getattr(run, "lang", None) or "en") is None:
             self.svc.lab(SPEC.name, rule="either_or_no_phrase")          # no text in the run's language: not asked (no translation call)
@@ -193,16 +198,39 @@ class AskAgree(Option):
         if ans is None:                                       # the run was stopped while asking: nothing is decided
             return False
         run.dialogue += [("robot", q), ("user", ans)]
-        named = [o for o in (str(a), str(b)) if dialog_agree.names_option([ans], o, [str(a), str(b)])] if ans else []
+        named = self._picked(run, ans, (old, new), (str(a), str(b)))
         self.svc.lab(SPEC.name, rule="either_or", picked=len(named) == 1)
-        if len(named) == 1 and named[0] == str(b):
+        if named == [1]:
             return True
-        if len(named) == 1:
+        if named == [0]:
             run.patched = [dict(g) if j != i else {**g, k: old.get(k)} for j, g in enumerate(run.goals)]
             run.allow_repeat = True
             if k != "object" and new.get(k):                  # the place the person gave up is no coverage doubt any more (``on_issues``)
                 st.setdefault("gave_up", set()).add(new[k])
         return False
+
+    def _said(self, run, old, new, k) -> bool:
+        """The person said the earlier value: as a whole phrase, or (key ``distinct``) a word that tells the earlier reading from the
+        current one (``names.distinguishing``: the object's name, the person's own words for it, its places, the speaker)."""
+        texts = [run.task] + [t for w, t in run.dialogue if w == "user"]
+        hit = said(texts, old.get(k), run.places)
+        if hit or not self.cfg["distinct"]:
+            return hit
+        langs, sk = names.langs_of(run), persons.speaker_key(run.places)
+        a, b = (names.reading_words(g, run.places, langs, sk) for g in (old, new))
+        return names.says(texts, names.distinguishing(a, b, langs), langs)
+
+    def _picked(self, run, ans, goals, phrases) -> list:
+        """[i]: the answer names reading i of (earlier, current) alone (the phrases as said; with ``distinct`` the readings' own
+        distinguishing words when the phrases name none); [] / two: nothing is picked (a plain yes or no names neither)."""
+        if not ans:
+            return []
+        named = [i for i, o in enumerate(phrases) if dialog_agree.names_option([ans], o, list(phrases))]
+        if named or not self.cfg["distinct"]:
+            return named
+        langs, sk = names.langs_of(run), persons.speaker_key(run.places)
+        i = names.which_named([ans], [names.reading_words(g, run.places, langs, sk) for g in goals], langs)
+        return [] if i is None else [i]
 
     def _ask_either(self, run, q):
         """Ask the either-or from the read-back's query service (it cannot yield): its ``clarify`` event through the service ``emit`` (logged
