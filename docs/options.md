@@ -14,7 +14,7 @@ CLAUDE.md rules 13-15. The reference for the flat run options and manifest keys 
 | `Registry`, `register` | `core/options/registry.py` | the list of options; built-in ones from `robot_agent/options/__init__.py`, others by entry point group `robot_agent.options` |
 | `Dispatcher` | `core/options/dispatch.py` | builds the enabled options of one loop, calls their hooks in `order` |
 | `Services` | `core/options/services.py` | the interface an option uses to ask the loop for something (`LoopServices` in `core/planning/option_services.py` implements it) |
-| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words`, `cond_goal`, `cond_extract`, `recipient_keep`, `plan_complete`, `ask_agree`, `replan_guard`, `name_recover`, `asr_guard`, `plan_release`, `effect_check`, `repair_sync`, `goal_ledger` so far |
+| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words`, `cond_goal`, `cond_extract`, `recipient_keep`, `plan_complete`, `ask_agree`, `replan_guard`, `name_recover`, `asr_guard`, `plan_release`, `effect_check`, `repair_sync`, `goal_ledger`, `safety_profile` so far |
 
 `python -m robot_agent.core.options list` prints the registered options, their keys and hooks.
 `python -m robot_agent.core.options check MANIFEST.yaml` reports `planner.options` entries that name no option or key.
@@ -76,7 +76,7 @@ dropped. A *flow* hook is a generator (`yield from`): it may yield run events an
 
 | hook | kind | when | used by |
 |---|---|---|---|
-| `on_start(run)` | observe | run set-up, after the places are read | `reach_delivery` (time of the person snapshot) |
+| `on_start(run)` | observe | run set-up, after the places are read | `reach_delivery` (time of the person snapshot), `safety_profile` (reads its profile again) |
 | `on_ground(mode, places, to)` | transform | the delivery mode for a goal to a person | `reach_delivery` |
 | `on_plan(steps, run)` | transform | the grounded plan, before `plan_tidy`: the steps, or None (unchanged) | `place_find`, `precond_repair`, `gate_prune`, `replan_guard` (`release_dedupe`), `plan_complete`, `plan_release` |
 | `on_where_answer(run, obj, ans)` | decide, flow | the answer to the engine's own re-asked "I couldn't find the X. Where is it?": the place to go to, or None | `ask_source` (`use_room`, `clarify_unusable`) |
@@ -287,6 +287,20 @@ names are the robot's ENV heads and aliases); `retract_markers` (dict, manifest 
 run's language = the language packs' `self_correction` markers. Keys `enabled` (legacy `goal_ledger`), `restore`, `named` (legacy `goal_ledger_named`), `min_share`, `retract`, `retract_markers`. Hook
 `on_issues` (order 22); services `goal_keep`, `ledger_open`. Lab flag `goal_ledger`: `{rule: restore, to, heard}`, `{rule: named, to}`, `{rule: retract, what}`.
 Module: `robot_agent/options/goal_ledger.py`.
+
+### `safety_profile`
+Hazard rules that are DATA of the robot, declared in the option's own section, refused by the one safety gate (default off; D4 layer L21, classes
+hazard_unrefused / hazard_missed: a thing that can burn was put on or next to a heat source because no rule of the robot related the two). The data
+`planner.options.safety_profile.profile` is a safety profile in the schema of `docs/safety.md` (classes, rules, `sources` with url / opened / quote,
+`provenance: {source: <id>}`), read again from the manifest at each run start (hook `on_start`). A place rule may carry `within_m` (core schema): it
+then also forbids a place that lies LESS than that many metres from a place of its classes on the robot's map (ENV `loc` x / y; the same room when both
+keys name one; persons are never a place of the rule nor a place near one; no position = no relation). The option answers the service
+`safety_rule(goal, places)` (a `Verdict`); `hazard` asks it after its own rules (`hazard.rules=off` turns it off too), so the refusal of the whole
+request, the drop of a part with the end sentence, and the `refusals` record are hazard's: no second gate. The refusal text is the rule's `say` (pack
+data, prompt language, said in the person's language by the loop as for every profile rule). No profile, an empty one, a foreign one, or one with
+errors (lab `{part: errors}`): nothing is refused (fail open). Keys `enabled` (legacy `safety_profile`), `profile` (dict, manifest only, default
+empty: the option ships no rule). Hook `on_start` (order 11); service `safety_rule`. Lab flag `safety_profile`: `{part: loaded, profile, rules,
+sha256}`, `{part: rule, rule, to}`, `{part: errors, errors}`. Module: `robot_agent/options/safety_profile.py`.
 
 ### `cond_goal`
 A request with a condition ("if the spoon is on the table, put it away; if not, leave it") is decided by the robot looking, not by the reader guessing (default off).

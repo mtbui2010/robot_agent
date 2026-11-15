@@ -41,6 +41,7 @@ class Rule:
     say: str = ""
     enabled_by: str = ""
     provenance: str = "assumed"
+    within_m: float = 0.0             # a place rule also forbids a place this near a place of its classes (map ``loc``); 0 = off
 
     @staticmethod
     def legacy(d: dict) -> "Rule":
@@ -280,7 +281,7 @@ def _name_classes(v, key, sources, where, errs, count, extra) -> list:
     return out
 
 
-_RULE_KEYS = {"id", "hazard", "objects", "places", "receivers", "say", "enabled_by", "provenance"}
+_RULE_KEYS = {"id", "hazard", "objects", "places", "receivers", "say", "enabled_by", "provenance", "within_m"}
 
 
 def _rules(v, hz: set, pl: set, rc: set, sources, where, errs) -> list:
@@ -331,7 +332,16 @@ def _rule(d: dict, hz: set, pl: set, rc: set, sources: dict, w: str, errs: list)
         errs.append(f"{w}.enabled_by: must be an option key such as 'hazard.receivers', got {eb!r}")
     prov = _provenance(d.get("provenance"), sources, w, errs)
     return Rule(id=str(d.get("id") or ""), hazard=str(hazard or ""), objects=tuple(objs), places=tuple(pls),
-                receivers=tuple(rcs), say=str(say or ""), enabled_by=str(eb or ""), provenance=prov)
+                receivers=tuple(rcs), say=str(say or ""), enabled_by=str(eb or ""), provenance=prov,
+                within_m=_within(d.get("within_m", 0), places is not None, w, errs))
+
+
+def _within(v, has_places: bool, w: str, errs: list) -> float:
+    """``within_m``: a distance in metres >= 0 of a place rule (0 = none)."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or v < 0 or (v and not has_places):
+        errs.append(f"{w}.within_m: must be a number of metres >= 0 on a rule with `places`, got {v!r}")
+        return 0.0
+    return float(v)
 
 
 def _marks(v, where, errs) -> list:
