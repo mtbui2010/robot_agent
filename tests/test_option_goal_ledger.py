@@ -11,7 +11,7 @@ from robot_agent.core.planning import goal_fix
 from robot_agent.core.planning.assist_loop import ASSIST_OPTIONS, Places
 from robot_agent.core.planning.understand import find_issues
 from robot_agent.core.safety import load_profile
-from robot_agent.options.goal_ledger import SPEC, GoalLedger, evidence, retracted
+from robot_agent.options.goal_ledger import SPEC, GoalLedger, cue, evidence, retracted
 
 NOOK, CT, DT, DS, ST = "nook@den", "counter@kitchen", "dining table@kitchen", "desk@study room", "stool@bedroom"
 HOUSE = {NOOK: {"aliases": ["roost"]}, "mat@hall": {}, "ledge@hall": {}, "vask@zon": {"aliases": ["kruvo"]},
@@ -49,7 +49,7 @@ def test_no_name_heard_no_marker_no_data_does_nothing_empty():
     opt, run, svc = make()
     goals = [goal("on", "mat@hall", "gizmo"), goal("go", "ledge@hall")]
     out, dropped = filtered(opt, run, goals, "put the gizmo on the mat and then go")        # ledge has no alias, nothing heard
-    assert out == goals[:1] and dropped == goals[1:] and opt.ledger_open(run) == goals[1:]  # the open item is served, nothing said
+    assert out == goals[:1] and dropped == goals[1:] and opt.ledger_open(run) is None      # no sign of the place: the reader's goal, no open item
     assert opt.on_issues([], run, out) is None and not svc.labs
     off, run2, _ = make(restore=False)
     assert off.goal_keep(run2, goals) is None                                              # restore and named both off: no predicate
@@ -151,6 +151,24 @@ def test_retract_unlabelled_markers_of_the_option_are_not_used_empty():
     sourced, run2, _ = make(lang="zq", retract=True, planner={"options": {"goal_ledger": {"retract_markers": {"zq": [r"\bnu vek\b"], "source": "a made-up pack"}}}})
     run2.task = run.task
     assert sourced.on_issues([], run2, gs) == [{"kind": "unsaid", "what": "mat", "object": "gizmo"}]
+
+
+def test_open_only_a_drop_with_a_weak_cue_of_its_place_is_an_open_item():
+    """Regression shape: every go goal F4.4 dropped with no evidence was reported open, most of them goals the reader invented, so
+    partial_end turned complete successes into 'partial'. Only a weak cue of the place (a cut final word, a tail too long) makes one."""
+    assert cue(NOOK, "put the gizmo on the mat then go to the roo", PLACES, 0.5) == "roo"            # the alias cut short (3 of 5)
+    assert cue(NOOK, "put the gizmo on the mat then go to the nookaborrel", PLACES, 0.5) == "nookaborrel"   # a tail evidence refuses
+    two = Places({"fern stand@hall": {}})                                                          # a name of two words
+    assert cue("fern stand@hall", "put the gizmo on the mat then go to the fern sta", two, 0.5) == "fern sta"
+    assert cue("fern stand@hall", "put the gizmo on the mat then go to the sta", two, 0.5) == ""      # its first word is not said
+    for text in ("put the gizmo on the mat then go to the r", "put the gizmo on the roo and then rest", "put the gizmo on the mat then go"):
+        assert cue(NOOK, text, PLACES, 0.5) == "", text                                              # too short, not the last word, nothing
+    goals = [goal("on", "mat@hall", "gizmo"), goal("go", NOOK)]
+    for text, open_ in (("put the gizmo on the mat then go to the roo", goals[1:]), ("put the gizmo on the mat then rest", None)):
+        opt, run, svc = make()
+        out, dropped = filtered(opt, run, goals, text)
+        assert out == goals[:1] and dropped == goals[1:] and opt.ledger_open(run) == open_, text
+        assert [k for _a, k in svc.labs] == ([{"rule": "open", "to": NOOK, "heard": "roo"}] if open_ else [])
 
 
 # ── through the real loop ────────────────────────────────────────────────────────────────────────────────────────────

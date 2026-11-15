@@ -14,11 +14,13 @@ narrower ``retract_markers`` per language), when words follow the marker and the
 engine's own ``unsaid`` issue with its object: the read-back asks the existing "where should I put it?".
 Why: the failure class "the reader's goal is dropped by the engine's own filter, or a retracted destination is kept" (the go goal of a request
 ending "... then go back to the <place>" whose last word the recogniser garbled was dropped silently and the run ended done without it). No
-"Did you mean X?" question is asked (user decision); the open items left (``named`` off and no evidence) are served by ``ledger_open(run)``
-for the end of the run, and this option says nothing at the end.
+"Did you mean X?" question is asked (user decision); the open items left (``named`` off, no evidence, but a weak cue: a heard word that
+starts with the name with a longer tail, or the words ending in the name's last word cut short to at least ``min_share`` of it) are served
+by ``ledger_open(run)`` for the end of the run, and this option says nothing at the end. A drop with no sign of the place at all (most of
+them: goals the reader invented) is no open item, so a complete success is never reported as partial.
 Switch off: key ``enabled`` False (the default; legacy run option ``goal_ledger``), or a part with ``restore`` / ``named`` (run option ``goal_ledger_named``) / ``retract``
 False. Off: the service answers nothing and ``drop_invented`` drops as before. ``min_share`` (0.5) is assumed, not measured. Lab flag
-``goal_ledger``: ``{rule: restore, to, heard}``, ``{rule: named, to}``, ``{rule: retract, what}``.
+``goal_ledger``: ``{rule: restore, to, heard}``, ``{rule: named, to}``, ``{rule: open, to, heard}``, ``{rule: retract, what}``.
 """
 
 from __future__ import annotations
@@ -55,6 +57,20 @@ def evidence(key: str, t: str, places, share: float) -> str:
         for m in re.finditer(r"(?<!\w)" + re.escape(n) + r"(\w+)", t):
             if len(last) / (len(last) + len(m.group(1))) >= share:
                 return m.group(0)
+    return ""
+
+
+def cue(key: str, t: str, places, share: float) -> str:
+    """A weak sign that the words named ``key`` (too weak to keep the goal): a heard word that starts with a name of ``key`` with a longer
+    tail than ``evidence`` accepts, or the words ending in a name whose last word is cut short (its start, at least ``share`` of it); ''."""
+    for n in place_names(key, places):
+        last = n.split()[-1]
+        m = re.search(r"(?<!\w)" + re.escape(n) + r"\w+", t)
+        if m:
+            return m.group(0)
+        m = re.search(r"(?<!\w)" + re.escape(n[:len(n) - len(last)]) + r"(\w+)\W*$", t)
+        if m and m.group(1) != last and last.startswith(m.group(1)) and len(m.group(1)) / len(last) >= share:
+            return m.group(0).rstrip(" .,;:!?")
     return ""
 
 
@@ -129,11 +145,15 @@ class GoalLedger(Option):
         if self.cfg["named"]:
             self.svc.lab(SPEC.name, rule="named", to=to)
             return True
-        st["open"].append(dict(g))
+        weak = cue(to, t, run.places, float(self.cfg["min_share"]))
+        if weak:                                            # the person may have said it: an open item; no sign at all: the reader's own goal
+            st["open"].append(dict(g))
+            self.svc.lab(SPEC.name, rule="open", to=to, heard=weak)
         return False
 
     def ledger_open(self, run):
-        """Service: the ``go`` goals the last reading dropped with no evidence (``named`` off), for the end of the run; None when none."""
+        """Service: the ``go`` goals the last reading dropped with only a weak cue of their place in the words (``cue``; ``named`` off), for
+        the end of the run; None when none. A goal dropped with no sign at all is the reader's own, not an item of the request."""
         return list(self._state(run).get("open") or []) or None
 
     def _corr(self, run):

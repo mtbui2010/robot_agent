@@ -93,7 +93,8 @@ class LoopServices:
 
     def open_items(self, run) -> list:
         """The request items the active options report as left open at the end of the run: the goals each option serving ``ledger_open``
-        returns, joined in option order (``Dispatcher.collect``; ``goal_ledger``: a go goal the goal filter dropped with no evidence); [] when none."""
+        returns, joined in option order (``Dispatcher.collect``; ``goal_ledger``: a go goal the goal filter dropped with only a weak cue of its
+        place in the words); [] when none."""
         return self._lp.options.collect("ledger_open", run)
 
     def ask_clarify(self, run, question, vetoed=None):

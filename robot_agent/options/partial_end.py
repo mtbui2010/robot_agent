@@ -3,7 +3,7 @@ done and what is missing, instead of saying done.
 
 What: at the end of a run whose goals were seen to hold (hook ``on_goals_met``, after ``hazard``'s partial-refusal sentence), the engine
 service ``open_items(run)`` lists the request items the options report as left open (service ``ledger_open``; today ``goal_ledger``: a
-``go`` goal the engine's goal filter dropped with no evidence). An item the end state already satisfies (one of the run's goals, a ``go``
+``go`` goal the engine's goal filter dropped with only a weak cue of its place in the words; a drop with no sign at all is no item). An item the end state already satisfies (one of the run's goals, a ``go``
 place the robot stands at, an object the run put at its place) is not missing. When one is missing the run ends with status ``partial``,
 the ``done`` event's field ``partial`` ({done, missing}) and the language pack's phrase ``say_partial`` with the done goals and the missing
 items (the robot's i18n wins; a language without the phrase says the English one through the translator).

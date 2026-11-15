@@ -95,21 +95,23 @@ TABLE, GO = goal("on", DT, "gizmo"), goal("go", NOOK)
 PLAN = steps(f"MoveTo {CT}", "Find gizmo", "Pick gizmo", f"MoveTo {DT}", f"Place {DT}")
 
 
-def loop_run(make_assist, env, task, **opts):
+def loop_run(make_assist, env, task, answers=(), **opts):
     env[NOOK] = {**env["stool@bedroom"], "aliases": ["roost"], "loc": {"x": 3.1, "y": 2.2, "rz": 0}}
-    robot = FakeRobot(env, {"gizmo": CT})
+    robot = FakeRobot(env, {"gizmo": CT}, answers=list(answers))
     llm = FakeLLM(default={"status": "clear", "reason": "", "question": "", "goals": [dict(TABLE), dict(GO)]})
     loop = make_assist(robot, llm, ScriptedPlanner(PLAN + steps(f"MoveTo {NOOK}")), detector_miss_rate=0, ask_help=False, **opts)
     return robot, loop, run_task(loop, task, max_events=3000)
 
 
-GARBLED = "Put the gizmo on the dining table, then head back to your"
+GARBLED = "Put the gizmo on the dining table, then head back to the roostlomaxi"  # the place's name with a tail too long to restore it
+AGAIN = [GARBLED] * 3                                                               # asked to say it again, the person says the same
+INVENTED = "Put the gizmo on the dining table, then have a rest"                  # no sign of the place: the reader's go goal is its own
 
 
-def test_partial_loop_final_a_go_goal_dropped_with_no_evidence_ends_partial_and_names_it(make_assist, env):
-    robot, loop, evs = loop_run(make_assist, env, GARBLED, goal_ledger="1")
+def test_partial_loop_final_a_go_goal_dropped_with_a_weak_cue_of_its_place_ends_partial_and_names_it(make_assist, env):
+    robot, loop, evs = loop_run(make_assist, env, GARBLED, AGAIN, goal_ledger="1")
     assert done(evs)["status"] == "success" and robot.at != NOOK and robot.obj["gizmo"] == DT     # off: the false success of the class
-    robot, loop, evs = loop_run(make_assist, env, GARBLED, goal_ledger="1", partial_end="1")
+    robot, loop, evs = loop_run(make_assist, env, GARBLED, AGAIN, goal_ledger="1", partial_end="1")
     d = done(evs)
     assert d["status"] == "partial" and robot.obj["gizmo"] == DT and robot.at != NOOK
     assert d["partial"] == {"done": [f"on gizmo to {DT}"], "missing": [f"go to {NOOK}"]}
@@ -126,6 +128,14 @@ def test_complete_loop_final_a_restored_go_goal_is_a_success_said_as_before(make
     assert not [e for e in loop.lab_log if e["flag"] == "partial_end"]
 
 
+def test_complete_loop_final_a_go_goal_the_reader_invented_never_turns_a_success_into_partial(make_assist, env):
+    """Regression shape: every go goal the goal filter dropped with no evidence was an open item, so a complete success ended 'partial'."""
+    robot, _l, off = loop_run(make_assist, env, INVENTED, goal_ledger="1")
+    robot, loop, on = loop_run(make_assist, env, INVENTED, goal_ledger="1", partial_end="1")
+    assert done(on)["status"] == done(off)["status"] == "success" and robot.obj["gizmo"] == DT and "partial" not in done(on)
+    assert done(on)["say"] == done(off)["say"] and not [e for e in loop.lab_log if e["flag"] in ("partial_end", "goal_ledger")]
+
+
 def test_partial_loop_final_without_the_ledger_nothing_is_reported_open_and_the_end_is_unchanged(make_assist, env):
-    robot, loop, evs = loop_run(make_assist, env, GARBLED, partial_end="1")
+    robot, loop, evs = loop_run(make_assist, env, GARBLED, AGAIN, partial_end="1")
     assert done(evs)["status"] != "partial" and not [e for e in loop.lab_log if e["flag"] == "partial_end"]
