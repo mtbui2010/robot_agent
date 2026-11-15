@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 
 from robot_agent.core.options import Key, Option, OptionSpec, register
-from robot_agent.core.options.config import resolve_key
+from robot_agent.core.planning import pack_data
 from robot_agent.core.safety import EMPTY, find_rule, load_profile
 
 SPEC = OptionSpec(
@@ -37,8 +37,7 @@ class SafetyProfile(Option):
     def profile(self):
         """The declared profile, read again from the manifest at each use (data that arrives after the loop was built counts); EMPTY
         when none or when it has errors."""
-        planner = getattr(getattr(self.svc.robot, "manifest", None), "planner", None)
-        raw = resolve_key(SPEC, SPEC.key("profile"), {}, {}, planner) or self.cfg.get("profile") or {}
+        raw = pack_data.fresh(SPEC, self.cfg, pack_data.planner_of(self.svc), "profile") or {}
         sig = json.dumps(raw, sort_keys=True, ensure_ascii=False, default=str)
         if sig != self._seen[0]:
             prof, errs = load_profile(raw, where="planner.options.safety_profile.profile") if raw else (EMPTY, [])

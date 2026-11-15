@@ -27,7 +27,7 @@ is the plan's object in the same or other words (``exec_integrity.lookup_object`
 from __future__ import annotations
 
 from robot_agent.core.options import Key, Option, OptionSpec, register
-from robot_agent.core.options.config import resolve_key
+from robot_agent.core.planning import pack_data
 from robot_agent.core.planning.exec_integrity import lookup_object
 
 KINDS = ("in", "on", "hand")
@@ -36,7 +36,7 @@ FETCHED = ("in", "on")
 
 def rules_of(needs) -> dict:
     """``{action: kind}`` from the declared data; {} when it has no label (source or assumed) or is malformed."""
-    if not isinstance(needs, dict) or not (isinstance(needs.get("source"), str) and needs["source"].strip() or needs.get("assumed") is True):
+    if not pack_data.labelled(needs):
         return {}
     rules = needs.get("rules")
     if not isinstance(rules, dict):
@@ -107,7 +107,7 @@ class PlanRelease(Option):
 
     def on_plan(self, steps, run):
         """``steps`` with the held object's release before the Close of its goal place; None when nothing changes or nothing is declared."""
-        rules = rules_of(self.cfg.get("needs") or resolve_key(SPEC, SPEC.key("needs"), {}, {}, getattr(self.svc.robot.manifest, "planner", None)))
+        rules = rules_of(pack_data.fresh(SPEC, self.cfg, pack_data.planner_of(self.svc), "needs"))
         if not steps or "in" not in rules.values() or self._hands() != 1:
             return None
         px = _Pass(self.svc, rules, run)

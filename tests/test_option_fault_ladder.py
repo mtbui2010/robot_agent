@@ -134,7 +134,7 @@ def test_ask_once_an_unsure_answer_is_not_asked_again(make_assist, env, monkeypa
 
 def test_ask_once_capped_by_question_cap_no_question_the_stop_message_still_comes(make_assist, env, monkeypatch):
     evs, robot, loop = _loop(make_assist, env, monkeypatch, EYE, {"find": {"code": "hw_fault"}}, health={"ok": False}, confirm_task=True,
-                             question_cap="1", **{"question_cap.max_questions": "1"})
+                             question_cap="1", **{"question_cap.max_questions": "1", "question_cap.assumed": "1"})
     d = done(evs)
     assert not [q for q in robot.asked if "eye unit" in q] and "eye unit" in d["say"] and d["status"] == "failed"
     assert [e.get("asked") for e in laddered(loop, "ask")] == [False] and not [e for e in evs if e.get("kind") == "fault_ladder"]

@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from robot_agent.contract import FailureCode, SkillResult
 from robot_agent.core.options import NEXT, Key, Option, OptionSpec, register
-from robot_agent.core.options.config import resolve_key
+from robot_agent.core.planning import pack_data
 
 READING = {True: "holding", False: "empty", None: "unknown"}
 
@@ -39,7 +39,7 @@ def _names(v) -> tuple:
 
 def effects_of(data) -> dict:
     """``{sensor, unknown, releases, floor}`` from the declared data; {} when it has no label (source or assumed) or is no mapping."""
-    if not isinstance(data, dict) or not (isinstance(data.get("source"), str) and data["source"].strip() or data.get("assumed") is True):
+    if not pack_data.labelled(data):
         return {}
     sensor = data.get("sensor") if isinstance(data.get("sensor"), dict) else {}
     floor = data.get("floor")
@@ -73,8 +73,7 @@ SPEC = OptionSpec(
 class EffectCheck(Option):
     def _data(self) -> dict:
         """The declared data as it is now (read again each time: a manifest overlay merged after the loop was built is seen)."""
-        planner = getattr(getattr(self.svc.robot, "manifest", None), "planner", None)
-        return effects_of(self.cfg.get("effects") or resolve_key(SPEC, SPEC.key("effects"), {}, {}, planner))
+        return effects_of(pack_data.fresh(SPEC, self.cfg, pack_data.planner_of(self.svc), "effects"))
 
     def _tell(self, part, **info) -> None:
         """One lab event per distinct event in a run (``_holding`` is read several times per step)."""

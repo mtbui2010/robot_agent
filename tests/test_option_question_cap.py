@@ -79,8 +79,20 @@ def test_question_cap_enabled_with_no_cap_declared_vetoes_nothing_empty():
     assert foreign.ask_veto(run_(asked=5), QS[0]) is None
 
 
+def test_question_cap_unlabelled_cap_data_vetoes_nothing_empty():
+    """Pack data with neither ``source`` nor ``assumed: true`` is not used (fail open): in the manifest or as a run option."""
+    bare, svc = make(planner={"options": {"question_cap": {"max_questions": 1}}})
+    assert bare.ask_veto(run_(asked=4, confirms=2), QS[0]) is None and svc.labs == []
+    blank, _ = make(planner={"options": {"question_cap": {"max_questions": 1, "source": "  "}}})        # an empty source is no label
+    assert blank.ask_veto(run_(asked=4), QS[0]) is None
+    run_opt, _ = make(max_questions=1)
+    assert run_opt.ask_veto(run_(asked=4), QS[0]) is None
+    sourced, _ = make(planner={"options": {"question_cap": {"max_questions": 1, "source": "a made-up robot sheet"}}})
+    assert sourced.ask_veto(run_(asked=1), QS[0]) == "cap"
+
+
 def test_cap_counts_the_runs_own_questions_clarify_rounds_and_read_backs():
-    opt, svc = make(max_questions=3)
+    opt, svc = make(max_questions=3, assumed="1")
     assert opt.ask_veto(run_(asked=1, confirms=1), QS[0]) is None
     assert opt.ask_veto(run_(asked=2, confirms=1), QS[2]) == "cap" and svc.labs == [{"why": "cap", "asked": 3}]
     assert opt.ask_veto(run_(asked=3), QS[3]) == "cap"
@@ -104,7 +116,7 @@ def test_no_repeat_the_same_normalised_question_is_vetoed_another_passes():
     clar = run_(dialogue=[("robot", "Which quib do you mean?"), ("user", "the red one")])            # the loop's own clarify question
     assert opt.ask_veto(clar, "which QUIB do you mean") == "repeat" and opt.ask_veto(clar, "the red one?") is None
     assert [e["why"] for e in svc.labs] == ["repeat", "repeat"]
-    plain, _ = make(max_questions=5)                                                                  # no_repeat off: a repeat is asked
+    plain, _ = make(max_questions=5, assumed="1")                                                                # no_repeat off: a repeat is asked
     assert plain.ask_veto(run_(), QS[0]) is None and plain.ask_veto(run_(), QS[1]) is None
 
 

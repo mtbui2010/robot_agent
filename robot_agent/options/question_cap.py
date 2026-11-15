@@ -10,7 +10,7 @@ they keep their own caps, but they count.
 Why: the failure class "the robot keeps asking": every option bounds only its own questions, so a task could get one question from each
 of several options and the same question again (the user's rule: at most 3 questions per task, never the same question twice).
 Switch off: key ``enabled`` False (the default; legacy run option ``question_cap``). Data: ``max_questions`` (int, per robot, manifest
-``planner.options.question_cap.max_questions``, read again at run time; 0 or none declared = no cap) and ``no_repeat`` (bool, legacy run
+``planner.options.question_cap.max_questions`` beside ``source`` or ``assumed: true``, read again at run time; 0, none declared or no label = no cap) and ``no_repeat`` (bool, legacy run
 option ``question_cap_no_repeat``). Nothing declared = the option vetoes nothing. Hook ``on_start`` (the task's record starts empty). Lab flag ``question_cap``: ``{why: cap | repeat, asked}``.
 """
 
@@ -19,12 +19,12 @@ from __future__ import annotations
 import re
 
 from robot_agent.core.options import Key, Option, OptionSpec, register
-from robot_agent.core.options.config import resolve_key
+from robot_agent.core.planning import pack_data
 
 SPEC = OptionSpec(
     name="question_cap",
     keys=(Key("enabled", "bool", False, aliases=("question_cap",)), Key("max_questions", "int", 0),
-          Key("no_repeat", "bool", False, aliases=("question_cap_no_repeat",))),
+          Key("no_repeat", "bool", False, aliases=("question_cap_no_repeat",)), Key("source", "str", ""), Key("assumed", "bool", False)),
     hooks=("on_start",),
     order=96,
     enabled="enabled",
@@ -49,10 +49,10 @@ class QuestionCap(Option):
         run.__dict__.setdefault("opt", {})[SPEC.name] = {"asked": set()}
 
     def _cap(self) -> int:
-        """The declared cap as it is now (read again: a manifest overlay merged after the loop was built is seen); 0 = no cap."""
-        planner = getattr(getattr(self.svc.robot, "manifest", None), "planner", None)
+        """The declared cap as it is now (read again: a manifest overlay merged after the loop was built is seen); 0 = no cap. Used only when
+        labelled (``source`` / ``assumed`` beside it, or as run options): an unlabelled cap is no cap."""
         try:
-            return max(0, int(self.cfg.get("max_questions") or resolve_key(SPEC, SPEC.key("max_questions"), {}, {}, planner) or 0))
+            return max(0, int(pack_data.labelled_keys(SPEC, self.cfg, pack_data.planner_of(self.svc), ("max_questions",))["max_questions"] or 0))
         except (TypeError, ValueError):
             return 0
 

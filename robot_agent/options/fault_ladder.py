@@ -27,7 +27,7 @@ from __future__ import annotations
 from robot_agent.contract import FailureCode
 from robot_agent.core.options import NEXT, STOP, Key, Option, OptionSpec, register
 from robot_agent.core.planning import speech
-from robot_agent.core.planning.pack_data import fresh, labelled
+from robot_agent.core.planning.pack_data import fresh, labelled, planner_of
 
 ASK, SAY = "q_fault_help", "say_fault_stop"
 KINDS = (FailureCode.HW_FAULT, FailureCode.PERCEPTION_UNAVAILABLE)
@@ -81,8 +81,7 @@ class FaultLadder(Option):
         return run.__dict__.setdefault("opt", {}).setdefault(SPEC.name, {"asked": False, "alt": False})
 
     def _block(self, name) -> dict:
-        planner = getattr(getattr(self.svc.robot, "manifest", None), "planner", None)
-        return entries(fresh(SPEC, self.cfg, planner, name))
+        return entries(fresh(SPEC, self.cfg, planner_of(self.svc), name))
 
     def on_fault_stop(self, run, st, skill, code, device, tries):
         """Flow: NEXT (the other skill runs the step), STOP (the run ended with the sentence), None (the engine's own stop)."""

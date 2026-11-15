@@ -287,7 +287,7 @@ not undone. (3) `retract` (default off): an `on` / `in` goal whose destination t
 with the pack's markers, or the option's narrower `retract_markers` per language), when words follow the marker and they name no place or object of another goal, gets the
 engine's `unsaid` issue with its object, so the read-back asks the engine's own "Where should I put the X?" (one question, the engine's `issue_asked`). No "Did you mean X?"
 question is ever added. The option says nothing at the end of a run: the open items (`named` off, no evidence) are served by `ledger_open(run)`. Data: none for R1 (the place
-names are the robot's ENV heads and aliases); `retract_markers` (dict, manifest only, read again at run time): `{"<lang>": [<regex>, ...], "assumed": true}`; no list for the
+names are the robot's ENV heads and aliases); `retract_markers` (dict, manifest only, read again at run time, used only with its `source` or `assumed: true` label): `{"<lang>": [<regex>, ...], "assumed": true}`; no list for the
 run's language = the language packs' `self_correction` markers. Keys `enabled` (legacy `goal_ledger`), `restore`, `named` (legacy `goal_ledger_named`), `min_share`, `retract`, `retract_markers`. Hook
 `on_issues` (order 22); services `goal_keep`, `ledger_open`. Lab flag `goal_ledger`: `{rule: restore, to, heard}`, `{rule: named, to}`, `{rule: retract, what}`.
 Module: `robot_agent/options/goal_ledger.py`.
@@ -319,7 +319,7 @@ question is not put: `ask` gives '' (no answer: the option acts on what it has),
 when the normalised text (case folded, punctuation dropped, spaces collapsed) was already put through the service or is a robot turn of the run's
 dialogue. The engine's own questions (read-back, search help) are never vetoed, they keep their own caps (`clarify_rounds`, `confirm_limit`) and count.
 Data: `max_questions` (int, per robot: `planner.options.question_cap.max_questions` with `source` or `assumed: true`, read again at run time; none
-declared or 0 = no cap). Keys `enabled` (legacy `question_cap`), `max_questions`, `no_repeat` (legacy `question_cap_no_repeat`). Hook `on_start`
+declared, 0 or no label = no cap). Keys `enabled` (legacy `question_cap`), `max_questions`, `no_repeat` (legacy `question_cap_no_repeat`), `source`, `assumed`. Hook `on_start`
 (the task's record starts empty); service `ask_veto`. Lab flag `question_cap`: `{why: cap | repeat, asked}`. Module: `robot_agent/options/question_cap.py`.
 ### `partial_end`
 A run whose goals hold while an item of the request stays open ends `partial` and names what was done and what is missing, instead of saying done (default off;

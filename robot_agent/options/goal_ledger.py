@@ -26,8 +26,7 @@ from __future__ import annotations
 import re
 
 from robot_agent.core.options import Key, Option, OptionSpec, register
-from robot_agent.core.options.config import resolve_key
-from robot_agent.core.planning import names, understand
+from robot_agent.core.planning import names, pack_data, understand
 
 SPEC = OptionSpec(
     name="goal_ledger",
@@ -138,10 +137,10 @@ class GoalLedger(Option):
         return list(self._state(run).get("open") or []) or None
 
     def _corr(self, run):
-        """The self-correction markers: the option's own list for the run's language (pack data, re-read at run time), else the pack's."""
-        planner = getattr(getattr(self.svc.robot, "manifest", None), "planner", None)
-        data = self.cfg.get("retract_markers") or resolve_key(SPEC, SPEC.key("retract_markers"), {}, {}, planner) or {}
-        words = data.get(str(getattr(run, "lang", None) or "en")[:2]) if isinstance(data, dict) else None
+        """The self-correction markers: the option's own list for the run's language (pack data with a ``source`` or ``assumed`` label,
+        re-read at run time; unlabelled = none), else the pack's."""
+        data = pack_data.fresh(SPEC, self.cfg, pack_data.planner_of(self.svc), "retract_markers")
+        words = data.get(str(getattr(run, "lang", None) or "en")[:2]) if pack_data.labelled(data) else None
         if words:
             return re.compile("|".join(f"(?:{w})" for w in words), re.I)
         return understand._corr_of(run.places)

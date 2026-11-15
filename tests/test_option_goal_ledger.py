@@ -142,6 +142,17 @@ def test_retract_polite_marker_decoy_and_the_option_narrower_markers():
     assert zq.on_issues([], run3, gs) == [{"kind": "unsaid", "what": "mat", "object": "gizmo"}]
 
 
+def test_retract_unlabelled_markers_of_the_option_are_not_used_empty():
+    """``retract_markers`` with neither ``source`` nor ``assumed: true`` is not used (fail open): the made-up language's words add nothing."""
+    gs = [goal("on", "mat@hall", "gizmo")]
+    bare, run, svc = make(lang="zq", retract=True, planner={"options": {"goal_ledger": {"retract_markers": {"zq": [r"\bnu vek\b"]}}}})
+    run.task = "ka gizmo mat lu, nu vek, ledgo"
+    assert bare.on_issues([], run, gs) is None and not svc.labs
+    sourced, run2, _ = make(lang="zq", retract=True, planner={"options": {"goal_ledger": {"retract_markers": {"zq": [r"\bnu vek\b"], "source": "a made-up pack"}}}})
+    run2.task = run.task
+    assert sourced.on_issues([], run2, gs) == [{"kind": "unsaid", "what": "mat", "object": "gizmo"}]
+
+
 # ── through the real loop ────────────────────────────────────────────────────────────────────────────────────────────
 def _house(env):
     env[NOOK] = {**env[ST], "aliases": ["roost"], "loc": {"x": 3.1, "y": 2.2, "rz": 0}}
