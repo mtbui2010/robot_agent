@@ -126,12 +126,15 @@ def test_cap_a_vetoed_question_is_not_put_ask_gives_no_answer_and_clarify_reads_
             _ask_heard=lambda *a: calls.append(a) or ("yes", 1), _ask_clarify=lambda *a: calls.append(a), _log_fn=lambda i: None)
     svc, r = LoopServices(lp), NS(asked=3, heard=0, node=None, lang="en")
     assert svc.ask(r, "Is the quib blue?") == "" and r.asked == 3
-    gen = svc.ask_clarify(r, "Is the quib blue?")
-    try:
-        next(gen)
-        raise AssertionError("a vetoed clarify yields nothing")
-    except StopIteration as stop:
-        assert stop.value is None
+    assert svc.ask(r, "Is the quib blue?", vetoed=None) is None                       # a caller tells "not put" from "not answered"
+    mark = object()
+    for vetoed, want in ((None, None), (mark, mark)):
+        gen = svc.ask_clarify(r, "Is the quib blue?", **({} if vetoed is None else {"vetoed": vetoed}))
+        try:
+            next(gen)
+            raise AssertionError("a vetoed clarify yields nothing")
+        except StopIteration as stop:
+            assert stop.value is want
     assert calls == []
 
 

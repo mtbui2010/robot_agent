@@ -137,7 +137,8 @@ def test_ask_once_capped_by_question_cap_no_question_the_stop_message_still_come
                              question_cap="1", **{"question_cap.max_questions": "1", "question_cap.assumed": "1"})
     d = done(evs)
     assert not [q for q in robot.asked if "eye unit" in q] and "eye unit" in d["say"] and d["status"] == "failed"
-    assert [e.get("asked") for e in laddered(loop, "ask")] == [False] and not [e for e in evs if e.get("kind") == "fault_ladder"]
+    assert laddered(loop, "ask") == [] and not [e for e in evs if e.get("kind") == "fault_ladder"]       # not put: no ask event of its own
+    assert [e["why"] for e in loop.lab_log if e["flag"] == "question_cap"] == ["cap"]
 
 
 def test_stop_message_names_device_tries_and_steps_done_no_health_text_no_env_key(make_assist, env, monkeypatch):

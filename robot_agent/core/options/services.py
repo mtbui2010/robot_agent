@@ -17,7 +17,7 @@ class Services(Protocol):
     def role(self, name: str) -> Optional[str]: ...   # the pack's action for a role (action_roles)
     def hand_action(self) -> Optional[str]: ...       # the robot's hand-over (release) action, or None
     def finish(self, run, status: str, **kw) -> dict: ...                       # the ``done`` event
-    def ask(self, run, question) -> Optional[str]: ...                          # one question to the person, the answer
+    def ask(self, run, question, vetoed="") -> Optional[str]: ...              # one question to the person, the answer (``vetoed`` when an option vetoed it)
     def questions_put(self, run) -> int: ...                                    # the questions the loop put to the person in this run (all of them)
     def emit(self, run, event: str, **fields) -> dict: ...                      # an event from a non-flow hook / service: logged, pushed live if the host can
     def look_for(self, run, obj: str) -> Any: ...                              # one more Find of ``obj`` as the goal check makes it: (seen, skill)
@@ -27,6 +27,7 @@ class Services(Protocol):
     def hand_holds(self, run) -> Optional[bool]: ...                            # the holding sensor read once: True / False, None = no sensor or not readable
     def let_go(self, run, step: dict) -> bool: ...                              # the hand is empty after ``step`` failed: belief lets go, DROPPED rule spliced in?
     def open_items(self, run) -> list: ...                                      # the request items the options report left open at the end (service ``ledger_open``)
+    def drop_last_answer(self, run) -> bool: ...                                # the last question / answer of the dialogue taken back as unresolved (dialogue, memory)
     def cancelled(self, run) -> Optional[dict]: ...                             # the stop event if the run was cancelled
     def safety_gate(self, run): ...                                              # generator: the goals through the safety gate again (STOP or None)
     def safety_rule(self, goal, places) -> Any: ...                             # the Verdict of an option's declared hazard rule for a goal, or None

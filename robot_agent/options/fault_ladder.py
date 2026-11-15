@@ -113,10 +113,8 @@ class FaultLadder(Option):
         q = phrase_text(self.svc.robot, ASK, getattr(run, "lang", None) or "en", device=name)
         if q is None:
             return None
-        before = getattr(run, "asked", 0)
-        ans = self.svc.ask(run, q) or ""
-        if getattr(run, "asked", 0) == before:                  # vetoed (question_cap): nothing was asked
-            self.svc.lab(SPEC.name, part="ask", device=name, asked=False)
+        ans = self.svc.ask(run, q, vetoed=None)
+        if ans is None:                                         # vetoed (question_cap): nothing was asked, nothing logged
             return None
         yield run.ev("clarify", question=q, round=run.asked, kind=SPEC.name)
         unsure = bool(ans) and self.svc.unsure_leftover(run, ans) is not None

@@ -11,9 +11,9 @@ from . import dialog_converge, speech
 _UNREAD = object()            # ``hand_holds``: the default ``_holding`` returns when the sensor cannot tell
 
 
-def _no_step():
-    """Flow: a step that yields nothing and decides nothing (a vetoed clarify question)."""
-    return None
+def _no_step(result=None):
+    """Flow: a step that yields nothing and returns ``result`` (a vetoed clarify question)."""
+    return result
     yield                                                   # a generator: the caller runs it with ``yield from``
 
 
@@ -40,12 +40,13 @@ class LoopServices:
     def finish(self, run, status: str, **kw) -> dict:
         return self._lp._finish(run, status, **kw)
 
-    def ask(self, run, question):
+    def ask(self, run, question, vetoed=""):
         """One question to the person: their answer ('' on silence). Counts the turn like every other question of the run.
-        A question an option vetoes (service ``ask_veto``: a cap of questions, a question already asked) is not put: '' (no answer)."""
+        A question an option vetoes (service ``ask_veto``: a cap of questions, a question already asked) is not put: ``vetoed`` is returned
+        ('' by default, read as no answer; a caller that must not log a question it did not put passes None and tells the two apart)."""
         lp = self._lp
         if lp.options.query("ask_veto", run, question) is not None:
-            return ""
+            return vetoed
         ans, _n = lp._ask_heard(question, run.node, lp._log_fn(-1), run.lang)
         run.heard += lp._answer_source == "robot"
         run.asked += 1
@@ -95,12 +96,28 @@ class LoopServices:
         returns, joined in option order (``Dispatcher.collect``; ``goal_ledger``: a go goal the goal filter dropped with no evidence); [] when none."""
         return self._lp.options.collect("ledger_open", run)
 
-    def ask_clarify(self, run, question):
+    def ask_clarify(self, run, question, vetoed=None):
         """Flow: ask ``question`` as the loop's own clarify step (the answer joins the dialogue); the step's result (go on reading, or stop).
-        A question an option vetoes (service ``ask_veto``) is not asked: None (the loop goes on reading what it heard)."""
+        A question an option vetoes (service ``ask_veto``) is not asked: the flow yields nothing and returns ``vetoed`` (None by default: the
+        loop goes on reading what it heard; a caller passes a marker of its own to act on a question it could not put)."""
         if self._lp.options.query("ask_veto", run, question) is not None:
-            return _no_step()
+            return _no_step(vetoed)
         return self._lp._ask_clarify(run, question)
+
+    def drop_last_answer(self, run) -> bool:
+        """The person's last answer is taken back as unresolved, with the robot's question it answered: out of the run's dialogue and of the
+        object memory's remembered answers of this task (the reader sees neither). True when the dialogue ended with such an exchange."""
+        dlg = list(getattr(run, "dialogue", None) or [])
+        if len(dlg) < 2 or dlg[-1][0] != "user" or dlg[-2][0] != "robot":
+            return False
+        run.dialogue = dlg[:-2]
+        mem = getattr(getattr(run, "memory", None), "data", None)
+        said = [i for i, a in enumerate((mem or {}).get("answers") or ())
+                if a.get("task") == run.task and str(a.get("q")) == str(dlg[-2][1]) and a.get("a") == dlg[-1][1]]
+        if said:
+            del mem["answers"][said[-1]]
+            run.memory.save()
+        return True
 
     def cancelled(self, run):
         return self._lp._cancelled(run)

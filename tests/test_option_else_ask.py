@@ -23,12 +23,15 @@ MAP = Places({"shelf": {}, "crate": {}, "hall": {}, "attic": {}})              #
 CATALOGUE = {"urn": {}, "vase": {}, "green lamp": {}}                             # a made-up object memory
 
 
-def make(task=TASK, lang="en", goals=(KEEP,), answers=("in the crate",), added=(PUT,), english="", filtered=()):
-    """(option, run, log): a stub of the services; ``added``: the goals the reader adds when it reads the answer as a change."""
+def make(task=TASK, lang="en", goals=(KEEP,), answers=("in the crate",), added=(PUT,), english="", filtered=(), veto=False):
+    """(option, run, log): a stub of the services; ``added``: the goals the reader adds when it reads the answer as a change; ``veto``: an
+    option (the question cap) vetoes every question, so ``ask`` puts nothing and returns its ``vetoed`` value."""
     log = NS(asked=[], rereads=[], labs=[], gates=0)
     ans = list(answers)
 
-    def do_ask(run, q):
+    def do_ask(run, q, vetoed=""):
+        if veto:
+            return vetoed
         log.asked.append(str(q))
         return ans.pop(0) if ans else ""
 
@@ -123,6 +126,15 @@ def test_else_ask_ask_once_a_second_pass_and_a_later_same_reading_ask_nothing_mo
     run.goals = [{**KEEP, "to": "crate"}]                                            # another reading: it stands, no question
     go(opt, run)
     assert len(log.asked) == 1 and run.goals == [{**KEEP, "to": "crate"}]
+
+
+def test_else_ask_ask_once_a_vetoed_question_is_not_logged_as_asked_and_not_tried_again():
+    """Regression shape: a question the cap vetoed was recorded as asked (state and lab event as for a silent answer), so the run log and the
+    count of episodes the layer fired in claimed a question that was never put."""
+    opt, run, log = make(veto=True)
+    assert go(opt, run) == ([], None) and log.asked == [] and log.labs == [] and log.rereads == [] and run.goals == [KEEP]
+    assert opt._state(run)["asked"] is False
+    assert go(opt, run) == ([], None) and log.labs == [] and log.rereads == []                 # one try per run: the later reading asks nothing
 
 
 def test_else_ask_no_else_clause_no_question():

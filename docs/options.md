@@ -300,7 +300,9 @@ for it (`said`, `name_local`), its places' heads and aliases, the speaker's own 
 `grammar.sep_or`; a read-back is none) and the answer holds a yes or a no word of the pack (`dialogue.yes` / `no`) and names none of the options: the reader would pick one from
 nothing (a bare "yes" to "the A or the B?" read as A). The robot asks ONCE per run more, naming the options, with the phrase `q_pick_one` of the language pack (slot `text`: the options joined by the "or" of the question's own words, translated when not in the run's script; `speech` block,
 English and Korean declared, `assumed`; the robot's i18n wins); no phrase in the run's language: not asked (lab `reask_no_phrase`). An "I don't know" (service `unsure_leftover`) is not one, nor an answer with a word (other than a yes, no, filler or polite word) in another declared script than
-the options (`script.letters`: it may name one in the person's own words, which the robot's English options cannot match). A speaker word of one letter (a demonstrative too in some
+the options (`script.letters`: it may name one in the person's own words, which the robot's English options cannot match). The re-ask is announced
+(`understand_check`) and logged only when the loop puts it; when an option vetoes it (`question_cap`), the bare yes / no is taken back with its question (service
+`drop_last_answer`: out of the dialogue and the remembered answers), unresolved, so the reader never picks from it (lab `dropped`). A speaker word of one letter (a demonstrative too in some
 languages) counts only with a declared ending.
 (2) `correction` (hook `on_goals`, order 8, before the safety gate): after a correction to the read-back (`run.corrected` grew) the reader read the task again; when the correction's
 words name exactly ONE object of the two readings (its distinguishing words against every other object), each goal of another object that the new reading sent elsewhere gets
@@ -309,12 +311,13 @@ restored place (`replaced`), so its read-back check calls it unsaid and its re-s
 (while that goal still has that destination). The
 read-back's own either-or is `ask_agree`'s, with its key `distinct` (same hook and data there). No pack data of its own: the language packs' words; none = nothing asked or
 changed. Keys `enabled` (legacy `answer_align`), `reask`, `correction` (each on with the option). Hooks `on_heard`, `on_goals`, `on_issues` (order 8). Lab flag `answer_align`:
-`{rule: reask, options}`, `{rule: reask_no_phrase}`, `{rule: correction, kept}`. Module: `robot_agent/options/answer_align.py`.
+`{rule: reask, options}`, `{rule: reask_no_phrase}`, `{rule: dropped}`, `{rule: correction, kept}`. Module: `robot_agent/options/answer_align.py`.
 ### `question_cap`
 At most `max_questions` questions per task, and never the same question twice (default off; D4 layer L23, class "the robot keeps asking": each option
 bounds only its own questions; user decision: at most 3 per task, never the same question twice). The engine asks the service `ask_veto(run, question)`
 before it puts a question an option asks through the engine services `ask` and `ask_clarify` (the options' way to ask); a non-None answer means the
-question is not put: `ask` gives '' (no answer: the option acts on what it has), `ask_clarify` decides nothing (the loop reads on). The option answers
+question is not put: `ask` returns its `vetoed` argument ('' by default: no answer), `ask_clarify` returns its `vetoed` argument (None by default: the loop reads on);
+`answer_align`, `else_ask` and `fault_ladder` pass a marker of their own and log nothing of a question they did not put. The option answers
 `cap` when the questions the engine put in this run (service `questions_put`: one counter in the loop's ask, every question counted once) reach the cap, `repeat` (key `no_repeat`)
 when the normalised text (case folded, punctuation dropped, spaces collapsed) was already put through the service or is a robot turn of the run's
 dialogue. The engine's own questions (read-back, where-is, search help, which-one, did-you-mean) are never vetoed, they keep their own caps (`clarify_rounds`, `confirm_limit`) and count.

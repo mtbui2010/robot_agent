@@ -105,7 +105,11 @@ class ElseAsk(Option):
         if q is None:
             return None
         st.update(asked=True, sig=dialog_converge.goal_sig(goals), cond=cond, added=[])
-        ans = str(self.svc.ask(run, q) or "").strip()
+        ans = self.svc.ask(run, q, vetoed=None)
+        if ans is None:                         # an option vetoed it (the question cap): not asked, nothing logged, not tried again
+            st["asked"] = False
+            return None
+        ans = str(ans or "").strip()
         stop = self.svc.cancelled(run)
         if stop:
             yield stop

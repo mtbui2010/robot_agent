@@ -4,8 +4,9 @@ What: the engine asks the service ``ask_veto(run, question)`` before it puts a q
 ``ask`` (the options' one way to ask) and ``ask_clarify`` (an option's question as the loop's clarify step). This option vetoes the question
 ("cap") when the run has already put ``max_questions`` questions (the engine's one count of every question it put to the person: clarify
 rounds, read-backs, where-is and search help, which-one, did-you-mean, every option question; service ``questions_put``), and ("repeat") when the same question, normalised (case, punctuation, spacing), was already put
-in this run (through this service, or as a clarify question in the run's dialogue). A vetoed question is not asked: ``ask`` gives no answer
-(''), so the option acts on what it has; ``ask_clarify`` goes on reading. The engine's own questions are not vetoed (they keep their own caps),
+in this run (through this service, or as a clarify question in the run's dialogue). A vetoed question is not asked: ``ask`` returns its
+``vetoed`` value ('' by default: no answer) and ``ask_clarify`` its ``vetoed`` value (None by default: the loop goes on reading), so an
+asking option tells a question not put from a silence and logs only what it put. The engine's own questions are not vetoed (they keep their own caps),
 but they count.
 Why: the failure class "the robot keeps asking": every option bounds only its own questions, so a task could get one question from each
 of several options and the same question again (the user's rule: at most 3 questions per task, never the same question twice).

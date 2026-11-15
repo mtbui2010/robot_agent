@@ -13,6 +13,7 @@ from robot_agent.core.options import REGISTRY
 from robot_agent.core.options.config import resolve
 from robot_agent.core.planning import dialog_converge, langdata, names, speech
 from robot_agent.core.planning.assist_loop import ASSIST_OPTIONS, Places
+from robot_agent.core.planning.option_services import LoopServices
 from robot_agent.options import ask_agree as AA
 from robot_agent.options.answer_align import SPEC, AnswerAlign, named_any, options_of, other_script, realign, yes_or_no
 
@@ -126,6 +127,59 @@ def test_either_or_in_a_made_up_language_is_asked_with_its_own_phrase_and_not_wi
     opt, svc = option()
     assert opt._reask(run_of([("robot", "tinka vel reedka?"), ("user", "ja")], lang="zq")) is None
     assert svc.labs == [{"rule": "reask_no_phrase"}]
+
+
+def test_either_or_a_vetoed_re_ask_drops_the_bare_yes_unresolved_and_is_not_logged_as_asked():
+    """The question cap vetoes the re-ask: nothing is announced or logged as asked, the bare yes and its question leave the dialogue (the
+    reader never picks from them), and a later bare yes is dropped the same way (never read as a pick)."""
+    mark = []
+
+    def clarify(run, q, vetoed=None):
+        mark.append(q)
+        return vetoed
+        yield
+    def drop(run):
+        run.dialogue = run.dialogue[:-2]
+        return True
+    opt, svc = option(NS(labs=[], ask_clarify=clarify, drop_last_answer=drop))
+    first = [("user", "Move the jar."), ("robot", "The red jar or the teal jar?")]
+    run = run_of(first + [("user", "Yes, that's right.")])
+    evs, out = [], opt.on_heard(run)
+    try:
+        while True:
+            evs.append(next(out))
+    except StopIteration as end:
+        assert end.value is None
+    assert evs == [] and len(mark) == 1 and run.dialogue == first[:1] and svc.labs == [{"rule": "dropped"}]
+    run.dialogue = first + [("user", "yes")]
+    assert list(opt.on_heard(run)) == [] and run.dialogue == first[:1] and svc.labs[-1] == {"rule": "dropped"} and len(mark) == 2
+
+
+def test_drop_last_answer_takes_the_exchange_out_of_the_dialogue_and_the_remembered_answers_of_the_task():
+    saved = []
+    mem = NS(data={"answers": [{"task": "other", "q": "Q?", "a": "yes"}, {"task": "Move the jar.", "q": "Q?", "a": "yes"}]},
+             save=lambda: saved.append(1))
+    run = NS(task="Move the jar.", dialogue=[("user", "a"), ("robot", "Q?"), ("user", "yes")], memory=mem)
+    svc = LoopServices(NS())
+    assert svc.drop_last_answer(run) is True and run.dialogue == [("user", "a")] and saved == [1]
+    assert mem.data["answers"] == [{"task": "other", "q": "Q?", "a": "yes"}]                     # another task's answer stays
+    assert svc.drop_last_answer(run) is False and run.dialogue == [("user", "a")]                 # no question / answer at the end
+
+
+def test_either_or_a_re_ask_put_is_announced_then_asked():
+    def clarify(run, q, vetoed=None):
+        yield {"event": "clarify", "question": q}
+        return "next"
+    opt, svc = option(NS(labs=[], ask_clarify=clarify))
+    run = run_of([("robot", "The red jar or the teal jar?"), ("user", "Yes.")])
+    gen, evs = opt.on_heard(run), []
+    try:
+        while True:
+            evs.append(next(gen))
+    except StopIteration as end:
+        assert end.value == "next"
+    assert [e["event"] for e in evs] == ["understand_check", "clarify"] and svc.labs == [{"rule": "reask", "options": 2}]
+    assert opt._reask(run) is None                                                          # once per run
 
 
 # ── correction: only the goal the correction names changes ───────────────────────────────────────────────────────────
@@ -279,6 +333,22 @@ def test_loop_a_yes_to_the_either_or_is_asked_again_and_the_final_state_holds_th
     assert any(q.startswith("Which one do you mean") for q in robot.asked), robot.asked
     assert d["status"] == "success" and robot.obj["teal jar"] == "crate@den" and robot.obj["red jar"] == "ledge@den", (d, robot.obj)
     assert [e for e in loop.lab_log if e["flag"] == "answer_align" and e.get("rule") == "reask"]
+
+
+def test_loop_final_the_cap_vetoes_the_re_ask_and_a_bare_yes_never_picks_a_jar(make_assist, monkeypatch):
+    """Regression shape: with the question cap reached, the vetoed re-ask returned nothing and the loop handed the bare yes to the reader,
+    which picked the red jar from nothing (the guess the layer exists to prevent). Now the yes is dropped: no jar is moved on a guess."""
+    import robot_agent.skill_configs as sc
+    monkeypatch.setattr(sc, "ENV", ENV)
+    robot = FakeRobot(ENV, {"red jar": "ledge@den", "teal jar": "ledge@den"}, start="ledge@den", answers=["Yes, that's right."] * 6)
+    loop = make_assist(robot, RuleLLM(), GoalPlanner(), detector_miss_rate=0, answer_align="1", question_cap="1",
+                       **{"question_cap.max_questions": "1", "question_cap.assumed": "1"})
+    loop.robot.manifest.planner["action_roles"] = {"move": "MoveTo", "find": "Find", "pick": "Pick", "put_down": "Place"}
+    d = done(run_task(loop, "Put the jar in the crate.", max_events=3000))
+    assert not any(q.startswith("Which one do you mean") for q in robot.asked)
+    assert robot.obj["red jar"] == "ledge@den" and robot.obj["teal jar"] == "ledge@den" and d["status"] != "success", (d, robot.obj)
+    rules = [e.get("rule") for e in loop.lab_log if e["flag"] == "answer_align"]
+    assert "dropped" in rules and "reask" not in rules
 
 
 def test_loop_answer_align_off_the_yes_is_read_as_a_pick_final_state_unchanged_off(make_assist, monkeypatch):

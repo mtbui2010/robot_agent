@@ -7,7 +7,9 @@ the person's own words for it, a word with one declared particle or ending of th
   on each side of the pack's ``grammar.sep_or``, said again in the question's own words) and the answer holds a yes or a no word of the pack (``dialogue.yes`` / ``no``) and names
   none of them. The reader would pick one from nothing, so the robot asks ONCE more, naming the options (phrase ``q_pick_one`` of the
   language pack, labelled; no phrase in the run's language: not asked). An "I don't know" is not one (service ``unsure_leftover``),
-  nor an answer with another word in another declared script than the options (it may name one in the person's own words).
+  nor an answer with another word in another declared script than the options (it may name one in the person's own words). The re-ask is
+  announced and logged only when the loop puts it; when an option vetoes it (the question cap), the bare yes / no is taken back with its
+  question (service ``drop_last_answer``), unresolved: the reader never picks from it.
 * ``correction`` (hook ``on_goals``, before the safety gate): the reader read the task again after a correction to the read-back. When
   the correction's words name exactly ONE object of the readings (its distinguishing words against every other object), a goal of
   another object that the new reading sent elsewhere gets its earlier destination (and the place it is taken from) back. Two objects named, none, or a result equal to
@@ -19,7 +21,7 @@ Why: failure classes ask_loop / wrong_answer_accepted / correction_misapplied: a
 same matching with its key ``distinct`` (same hook and data there, so a key of that option and not a part of this one).
 Switch off: key ``enabled`` False (the default; run option ``answer_align``), or ``reask`` / ``correction`` False. A language with no
 yes / no words, no ``sep_or`` and no phrase: nothing is asked; a correction that names no object: nothing changes (fail open).
-Lab flag ``answer_align``: ``{rule: reask | reask_no_phrase | correction, ...}``.
+Lab flag ``answer_align``: ``{rule: reask | reask_no_phrase | dropped | correction, ...}``.
 """
 
 from __future__ import annotations
@@ -42,6 +44,7 @@ MOVE = ("on", "in")
 DEST = ("type", "to", "hand", "near_person", "user_at")
 BACK = DEST + ("from",)                     # what a goal the correction does not name gets back: its earlier reading (the "from" with its "to")
 _CUT = re.compile(r"[:;,.!?]")
+_VETOED = object()                          # ``ask_clarify``'s result when an option vetoed the re-ask (the question cap): it was not put
 
 
 def options_of(q, langs) -> tuple:
@@ -119,12 +122,32 @@ class AnswerAlign(Option):
         return run.__dict__.setdefault("opt", {}).setdefault(SPEC.name, {})
 
     def on_heard(self, run):
-        """A yes or a no to an either-or: ask once more naming the options (the loop reads the next round); else None."""
+        """A yes or a no to an either-or: ask once more naming the options (the loop reads the next round). When an option vetoes that
+        question (service ``ask_veto``: the question cap) the bare yes / no is taken back with its question, unresolved (service
+        ``drop_last_answer``: nothing is picked from it, nothing it would confirm is confirmed), and the loop reads on (None); else None."""
         q = self._reask(run) if self.cfg["reask"] else None
         if q is None:
             return None
+        out = yield from self._put(run, q)
+        if out is not _VETOED:
+            return out
+        self._state(run)["reasked"] = False                    # not asked: a later bare yes / no is dropped the same way, never read as a pick
+        if self.svc.drop_last_answer(run):
+            self.svc.lab(SPEC.name, rule="dropped")
+        return None
+
+    def _put(self, run, q):
+        """Flow: the re-ask as the loop's clarify step, announced (event ``understand_check``, lab ``reask``) only when the loop puts it;
+        ``_VETOED`` when an option vetoed it (nothing yielded, nothing logged)."""
+        flow = self.svc.ask_clarify(run, q, vetoed=_VETOED)
+        try:
+            first = next(flow)
+        except StopIteration as end:
+            return end.value
+        self.svc.lab(SPEC.name, rule="reask", options=len((getattr(q, "ask", None) or {}).get("options") or ()))
         yield run.ev("understand_check", issues=["a yes or no to an either-or"], reask=True)
-        return (yield from self.svc.ask_clarify(run, q))
+        yield first
+        return (yield from flow)
 
     def _reask(self, run):
         st, dlg, langs = self._state(run), list(getattr(run, "dialogue", None) or []), names.langs_of(run)
@@ -140,7 +163,6 @@ class AnswerAlign(Option):
             self.svc.lab(SPEC.name, rule="reask_no_phrase")
             return None
         st["reasked"] = True
-        self.svc.lab(SPEC.name, rule="reask", options=len(opts))
         slots = {"text": sep.join(opts)}                       # in the question's own words (a slot not in the run's script is translated)
         en = speech.render(speech.LocalText(Q_PICK, slots, text=""), "en", robot) or ""
         return speech.LocalText(Q_PICK, slots, text=en, ask={"intent": "choose", "options": opts, "about": ""})
