@@ -11,7 +11,8 @@ the person's own words for it, a word with one declared particle or ending of th
 * ``correction`` (hook ``on_goals``, before the safety gate): the reader read the task again after a correction to the read-back. When
   the correction's words name exactly ONE object of the readings (its distinguishing words against every other object), a goal of
   another object that the new reading sent elsewhere gets its earlier destination (and the place it is taken from) back. Two objects named, none, or a result equal to
-  the refused reading: nothing is decided.
+  the refused reading: nothing is decided. The engine took the correction as replacing the restored place (``replaced``), so its read-back
+  check calls that place unsaid and its re-sample would undo the restore: ``on_issues`` settles that ``unsaid`` issue of a goal it restored.
 
 Why: failure classes ask_loop / wrong_answer_accepted / correction_misapplied: a bare "yes" to "the A or the B?" was read as a choice
 (false success), and "no, the <X> on the <Y>" moved the other object too. The read-back's own either-or (option ``ask_agree``) gets the
@@ -31,7 +32,7 @@ from robot_agent.core.planning import dialog_converge, langdata, names, speech
 SPEC = OptionSpec(
     name="answer_align",
     keys=(Key("enabled", "bool", False, aliases=("answer_align",)), Key("reask", "bool", True), Key("correction", "bool", True)),
-    hooks=("on_heard", "on_goals"),
+    hooks=("on_heard", "on_goals", "on_issues"),
     order=8,
     enabled="enabled",
     doc="A yes or no to an either-or is asked once more naming the options; a correction that names one object leaves the other goals' destinations as they were.",
@@ -155,13 +156,21 @@ class AnswerAlign(Option):
         if self.cfg["correction"] and st.get("prev") and n > st.get("seen", 0) and dlg and dlg[-1][0] == "user":
             new = realign(st["prev"], goals, [str(dlg[-1][1])], known, langs)
             if new is not None:
-                self.svc.lab(SPEC.name, rule="correction", kept=sum(a is not b for a, b in zip(new, goals)))
+                st["kept"] = {(_obj(a), a.get("to")) for a, b in zip(new, goals) if a is not b}
+                self.svc.lab(SPEC.name, rule="correction", kept=len(st["kept"]))
                 run.goals = goals = new
         if goals:
             st["prev"] = [dict(g) for g in goals]
         st["seen"] = n
         yield from ()
         return None
+
+    def on_issues(self, issues, run, goals):
+        """The ``unsaid`` issue of a goal whose earlier destination the correction kept (the person said it before the correction)."""
+        kept = {k for k in self._state(run).get("kept") or () if k in {(_obj(g), g.get("to")) for g in goals or ()}}
+        objs = {o for o, _to in kept}
+        out = [i for i in issues or () if not (i.get("kind") == "unsaid" and str(i.get("object") or "").strip().lower() in objs)]
+        return out if len(out) != len(issues or ()) else None
 
 
 register(SPEC, AnswerAlign)

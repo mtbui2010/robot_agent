@@ -285,3 +285,55 @@ def test_loop_answer_align_off_the_yes_is_read_as_a_pick_final_state_unchanged_o
     robot, loop, d = _loop(make_assist, monkeypatch, False, ["Yes, that's right.", "The teal one."])
     assert not any(q.startswith("Which one do you mean") for q in robot.asked) and not [e for e in loop.lab_log if e["flag"] == "answer_align"]
     assert robot.obj["teal jar"] == "ledge@den" and robot.obj["red jar"] == "crate@den", (robot.obj, robot.trace, d)          # the default path: the pick from nothing
+
+
+class CorrectionLLM:
+    """The reader of a made-up house: the tin box on the crate; after "no, the reed basket ... too" it sends BOTH to the nook (the misapplied correction)."""
+
+    def chat(self, prompt="", format=None, **kw):
+        ans = re.findall(r"-> '([^']*)'", prompt)
+        both = any("reed" in a.lower() for a in ans)
+        goals = [mv("tin box", "nook@loft"), mv("reed basket", "nook@loft")] if both else [mv("tin box", "crate@den")]
+        return json.dumps({"status": "clear", "reason": "", "question": "", "goals": goals})
+
+    def chat_guide(self, prompt, guide=None, reuse=False, **kw):
+        return self.chat(prompt=prompt, **kw)
+
+
+class LinePlanner:
+    """Plans a fetch from the rack for every ``on`` goal of the observation's goal line (no model)."""
+
+    def generate_plan(self, task, obs, visible_objects):
+        line = re.search(r"Goals: (.*)", str(obs))
+        goals = re.findall(r"on (.+?) to ([\w@]+)", line.group(1)) if line else []
+        return steps(*[s for o, to in goals for s in ("MoveTo rack@loft", f"Find {o}", f"Pick {o}", f"MoveTo {to}", f"Place {to}")]), {"method": "rule"}
+
+    def replan(self, *a, **k):
+        return [], {"method": "rule"}
+
+
+@pytest.mark.parametrize("on", [True, False])
+def test_correction_loop_final_the_object_the_correction_does_not_name_stays_where_it_was_said(make_assist, monkeypatch, on):
+    import robot_agent.skill_configs as sc
+    monkeypatch.setattr(sc, "ENV", ENV)
+    robot = FakeRobot(ENV, {"tin box": "rack@loft", "reed basket": "rack@loft"}, start="rack@loft",
+                      answers=["No, the reed basket goes in the nook too.", "Yes."])
+    loop = make_assist(robot, CorrectionLLM(), LinePlanner(), detector_miss_rate=0, confirm_task="1", **({"answer_align": "1"} if on else {}))
+    loop.robot.manifest.planner["action_roles"] = {"move": "MoveTo", "find": "Find", "pick": "Pick", "put_down": "Place"}
+    d = done(run_task(loop, "Put the tin box on the crate.", max_events=3000))
+    assert d["status"] == "success" and robot.obj["reed basket"] == "nook@loft", (d, robot.obj)
+    assert robot.obj["tin box"] == ("crate@den" if on else "nook@loft"), (robot.obj, robot.asked)      # off: the correction moved the tin box too
+    assert robot.asked[-1].startswith("I will put the tin box on the " + ("crate" if on else "nook"))
+    assert bool([e for e in loop.lab_log if e["flag"] == "answer_align" and e.get("rule") == "correction"]) is on
+
+
+def test_correction_settles_only_the_unsaid_issue_of_the_goal_it_kept():
+    opt, _ = option()
+    run = run_of(goals=[mv("tin box", "crate@den")])
+    opt._state(run)["kept"] = {("tin box", "crate@den")}
+    issues = [{"kind": "unsaid", "what": "crate", "object": "tin box"}, {"kind": "unsaid", "what": "nook", "object": "reed basket"},
+              {"kind": "place", "what": "crate", "keys": ["crate@den"]}]
+    goals = [mv("tin box", "crate@den"), mv("reed basket", "nook@loft")]
+    assert opt.on_issues(issues, run, goals) == issues[1:]
+    assert opt.on_issues(issues, run, [mv("tin box", "nook@loft")]) is None           # the goal was sent elsewhere since: its issue stays
+    assert option()[0].on_issues(issues, run_of(), goals) is None                       # nothing kept: nothing settled

@@ -84,7 +84,7 @@ dropped. A *flow* hook is a generator (`yield from`): it may yield run events an
 | `on_understand_prompt(text)` | transform | the understand prompt template, before `.format` (escape braces): options add lines; None = unchanged | `cond_goal` |
 | `on_heard(run)` | decide | the heard request, before the reader is called: a question to ask instead of reading (the engine asks it, sets `repeat_asked`), or None | `asr_guard`, `answer_align` (a yes or a no to an either-or: asked once more naming the options) |
 | `on_goals(run)` | decide, flow | understood goals, before the read-back and the grounding | `hazard` (the gate), `ask_source` (asks where an object is), `cond_extract` (writes the `when` of `cond_goal` after one extra model call), `cond_goal` (looks at the place of a `when`), `goal_words` (asks when a name is an object and a place), `answer_align` (after a correction, the goals of objects it does not name keep their destination) |
-| `on_issues(issues, run, goals)` | transform | the read-back's issues (`understand.find_issues` plus the loop's extras): the list, or None (unchanged) | `ask_focus`, `entity_cover`, `ask_agree`, `goal_ledger` (settles the `unsaid` issue of a go goal it kept with evidence; adds the where-issue of a destination taken back) |
+| `on_issues(issues, run, goals)` | transform | the read-back's issues (`understand.find_issues` plus the loop's extras): the list, or None (unchanged) | `ask_focus`, `entity_cover`, `ask_agree`, `goal_ledger` (settles the `unsaid` issue of a go goal it kept with evidence; adds the where-issue of a destination taken back), `answer_align` (settles the `unsaid` issue of a goal whose earlier destination a correction kept) |
 | `on_planner_kwargs(kwargs)` | transform | the constructor keys of the planner (a dict) the loop builds; a key must also be in the backend's whitelist (`_GRACE_KWARGS`) | `replan_guard` (`replan_block_fix`) |
 | `on_goal_replan(run)` | decide | the goals changed mid-run, before the plan is repaired: sub-goals for the rest of the plan (the planner's `replan(subgoals=)`), or None | `replan_guard` |
 | `on_replan_findings(bad, run, suffix)` | transform | a replan's suffix (and its refine), after the engine's own findings: the list; a finding makes the one refine, then the uncertified end | `replan_guard`, `repair_sync` (`release_off_goal`) |
@@ -300,9 +300,11 @@ the options (`script.letters`: it may name one in the person's own words, which 
 languages) counts only with a declared ending.
 (2) `correction` (hook `on_goals`, order 8, before the safety gate): after a correction to the read-back (`run.corrected` grew) the reader read the task again; when the correction's
 words name exactly ONE object of the two readings (its distinguishing words against every other object), each goal of another object that the new reading sent elsewhere gets
-its earlier destination back (`type`, `to`, `hand`, `near_person`, `user_at`) with the place it is taken from (`from`). No object named, two named, or a result equal to the refused reading: nothing is decided. The
+its earlier destination back (`type`, `to`, `hand`, `near_person`, `user_at`) with the place it is taken from (`from`). No object named, two named, or a result equal to the refused reading: nothing is decided. The engine took the correction as replacing the
+restored place (`replaced`), so its read-back check calls it unsaid and its re-sample would undo the restore: hook `on_issues` settles the `unsaid` issue of a goal it restored
+(while that goal still has that destination). The
 read-back's own either-or is `ask_agree`'s, with its key `distinct` (same hook and data there). No pack data of its own: the language packs' words; none = nothing asked or
-changed. Keys `enabled` (legacy `answer_align`), `reask`, `correction` (each on with the option). Hooks `on_heard`, `on_goals` (order 8). Lab flag `answer_align`:
+changed. Keys `enabled` (legacy `answer_align`), `reask`, `correction` (each on with the option). Hooks `on_heard`, `on_goals`, `on_issues` (order 8). Lab flag `answer_align`:
 `{rule: reask, options}`, `{rule: reask_no_phrase}`, `{rule: correction, kept}`. Module: `robot_agent/options/answer_align.py`.
 
 ### `cond_goal`
