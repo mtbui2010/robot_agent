@@ -113,6 +113,10 @@ Services (`OptionSpec.services`, asked with `Dispatcher.query(name, *args, defau
 
 ## The options
 
+Retired from the D1 bench arm `all` (2026-11-15, D4 stay gate; symbolic_robot `docs/home/bench/d4_layers.md` section `## Retired`): `effect_check`, `fault_ladder`,
+`safety_profile`, `partial_end`, `question_cap`, `else_ask` (no outcome changed on the development set) and `close_opened` (it lost three tasks and won none). Nothing
+changes here: each option keeps its code, tests and default (off) and is turned on by its key as below; the bench still selects each one by its layer name.
+
 ### `ask_source`
 Ask where an object is, before looking for it (default off). The default SAGE behaviour is to guess, look, and ask only after misses
 (`search_max`) or when nowhere is left. With the option, an `on` / `in` goal whose source the request does not name, and whose object the
