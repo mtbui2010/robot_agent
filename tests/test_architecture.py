@@ -74,6 +74,7 @@ THROUGH_THE_LOOP = {"ask_source": "test_option_ask_source.py", "hazard": "test_s
                     "safety_profile": "test_option_safety_profile.py",
                     "close_opened": "test_option_close_opened.py"}
 THROUGH_THE_LOOP["question_cap"] = "test_option_question_cap.py"                       # D4 layer L23 (a line of its own)
+THROUGH_THE_LOOP["fault_ladder"] = "test_option_fault_ladder.py"                       # D4 layer L20 (a line of its own)
 
 
 def _specs():

@@ -98,6 +98,7 @@ dropped. A *flow* hook is a generator (`yield from`): it may yield run events an
 | `on_step(run, step)` | decide, flow | before a step runs; returns the step that replaces it | `reach_delivery` |
 | `on_step_done(run, step, held)` | observe | a step succeeded (`held`: the object in the hand before it) | `reach_delivery` |
 | `on_step_failed(run, step, code, reason, action, obj)` | decide, flow | a step failed, before the recovery policy | `reach_delivery`, `reopen_on_miss`, `effect_check` |
+| `on_fault_stop(run, step, skill, code, device, tries)` | decide, flow | the recovery policy is about to stop the run on a failed step (its tries used up, or an unhealthy robot after the wait; `_apply_policy`, both stops): NEXT (the step runs again as the option left it), STOP (the option ended the run), None (the engine's stop) | `fault_ladder` |
 | `on_goal_check(run, obj)` | decide | the end-of-run check of one goal: `(ok, why, skill)` | `reach_delivery`, `effect_check` (never a verdict: it arms the search) |
 | `on_translation_lost(text, lost, translate)` | decide | the input translation lost a place name the person said: the English to use, or None | `translate_retry` |
 | `on_second_look(run, obj, place)` | decide | the goal check's first look missed and the second saw the object: `(ok, why, skill)` or None (the second look is believed) | `confirm_look` |
@@ -490,6 +491,21 @@ policy table's `retries` and first answer for that kind. A kind with no entry, a
 Hook `on_start` (no effect), services `wait_schedule(run, schedule)`, `recovery_rule(run, code, rule)`, `more_tries(run, code, n)` (D3: only with the key `more_tries` on: an unhealthy robot after a wait does not stop the run while the declared `tries` are left; off, the option behaves as in D2). Keys `enabled` (legacy `hw_wait`), `kinds` (dict, manifest only), `more_tries` (bool, default off, legacy `hw_more_tries`). Lab flag `hw_wait`:
 `{kind, schedule_s, tries, action}`; the key `more_tries` has its own flag `hw_wait.more_tries`: `{kind, tries, tried}` (since 2026-11-15). Limit: the schedule needs `wait_on_robot` and a declared `recovery.wait`; without them the poll stays.
 Data with neither `source` nor `assumed: true` (on the block or on a kind) is not used. Module: `robot_agent/options/hw_wait.py`.
+
+### `fault_ladder`
+What the robot does when a device fault stops the run, once `hw_wait`'s wait and tries are used up (default off; D4 layer L20, classes hw_persistent /
+camera_persistent: the run ended with "something is wrong with my hardware", no help asked, no device, attempts or done steps named). Hook `on_fault_stop`
+(order 91), only for the codes `hw_fault` and `perception_unavailable` (rules with `retry_allowed` false never reach it). (1) One help question per run naming
+the device (phrase `q_fault_help`, engine service `ask`: it counts, `question_cap` may veto it; an "I don't know" answer is recorded, never asked again):
+the device the skill result reported (its declared name, else as reported), else the declared device of the failed skill; none = no question. (2) One retry
+per run by the declared other skill of the failed skill (the step keeps its action, a concrete `skill` step in its place), only when health reads `ok` True
+and, for a hand step (a skill whose pre / effects name `holding(` / `hand_empty`, an undeclared skill too), the holding sensor (`hand_holds`) gives a reading
+that agrees with the belief; none declared = no retry. (3) The stop: status `failed`, phrase `say_fault_stop` with `device`, `tries` (the policy's count of
+that failure on that step) and `done` (steps done); no health text and no failure code is said. Health is read only as `ok`; any other value is unhealthy.
+Data `planner.options.fault_ladder` (each block labelled, read again at run time): `devices` `{<skill or reported device>: name | {<lang>: name}}`,
+`alternatives` `{<skill>: <another skill of the robot>}`. Phrases in the language packs (`lang/en.json`, `ko.json`, block `speech`, assumed) or the robot's
+i18n. No labelled data or no phrase = the engine's stop. Keys `enabled` (legacy `fault_ladder`), `devices`, `alternatives` (dict, manifest only). Lab flag
+`fault_ladder`: `{part: ask | alternative | stop, ...}`. Module: `robot_agent/options/fault_ladder.py`.
 
 ### `search_budget`
 
