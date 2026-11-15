@@ -71,7 +71,8 @@ THROUGH_THE_LOOP = {"ask_source": "test_option_ask_source.py", "hazard": "test_s
                     "recipient_keep": "test_option_recipient_keep.py", "name_recover": "test_option_name_recover.py", "asr_guard": "test_option_asr_guard.py", "plan_complete": "test_option_plan_complete.py", "replan_guard": "test_option_replan_guard.py",
                     "ask_agree": "test_option_ask_agree.py", "plan_release": "test_option_plan_release.py", "effect_check": "test_option_effect_check.py",
                     "repair_sync": "test_option_repair_sync.py", "goal_ledger": "test_option_goal_ledger.py", "answer_align": "test_option_answer_align.py",
-                    "safety_profile": "test_option_safety_profile.py"}
+                    "safety_profile": "test_option_safety_profile.py",
+                    "close_opened": "test_option_close_opened.py"}
 THROUGH_THE_LOOP["question_cap"] = "test_option_question_cap.py"                       # D4 layer L23 (a line of its own)
 
 
