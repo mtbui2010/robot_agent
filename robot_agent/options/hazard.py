@@ -7,8 +7,7 @@ that other steps ask, the partial-refusal sentence at the end and the ``refusals
 Keys: ``rules`` (legacy ``hazard_rules``; ``core`` | ``pack`` | ``off``, default ``core``; run option and environment only, never
 the manifest) and ``receivers`` (legacy ``hazard_receiver``; turns on the profile rules with ``enabled_by: hazard.receivers``).
 Hooks: ``on_goals`` (the gate), ``on_goals_met`` (the partial-refusal sentence), ``on_finish`` (the ``refusals`` field).
-Services: ``forbids`` (the sentence that forbids a goal), ``refused_goals``, ``gate_off``. Asks ``safety_rule`` (option ``safety_profile``)
-after its own rules: one gate for every declared rule.
+Services: ``forbids`` (the sentence that forbids a goal), ``refused_goals``, ``gate_off``.
 Lab flag ``hazard``: ``{rules, refused, goals}`` each time the gate refuses or drops goals (the rule ids that forbid them).
 """
 
@@ -52,14 +51,11 @@ class Hazard(Option):
 
     # ── the one place that reads the options ────────────────────────────────
     def verdict(self, goal, places):
-        """The safety rule (profile + the manifest's legacy list, then an option's declared rules: service ``safety_rule``, unless the
-        rules are ``off``) that forbids ``goal``, as a ``Verdict``; None."""
+        """The safety rule (profile + the manifest's legacy list) that forbids ``goal``, as a ``Verdict``; None."""
         manifest = getattr(self.svc.robot, "manifest", None)
         pack = (getattr(manifest, "safety", None) or {}).get("hazards") or []
-        v = find_rule(goal, places, profile_of(self.svc.robot), pack, str(self.cfg["rules"]),
-                      {"hazard.receivers"} if self.cfg["receivers"] else ())
-        more = getattr(self.svc, "safety_rule", None) if str(self.cfg["rules"]) != "off" else None
-        return v or (more(goal, places) if more else None)
+        return find_rule(goal, places, profile_of(self.svc.robot), pack, str(self.cfg["rules"]),
+                         {"hazard.receivers"} if self.cfg["receivers"] else ())
 
     # ── services ────────────────────────────────────────────────────────────
     def forbids(self, goal, places):

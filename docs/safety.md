@@ -55,8 +55,6 @@ rules:
                                     #   place key) and `receivers` (declared receiver classes)
     say: "cleaning chemicals do not go with food"    # prompt language; spoken through the translator like any robot sentence
     provenance: assumed             # `assumed`, or {source: <id>} when an opened page states the rule itself
-    within_m: 0                     # optional, metres (place rules only): also forbid a place LESS than this far from a place of
-                                    #   the rule's classes on the map (ENV `loc`; same room when both keys name one); 0 = off
   - id: chem_child
     hazard: cleaning_chemical
     receivers: [vulnerable_person]
@@ -87,8 +85,6 @@ undeclared class; a rule with both or none of `places` / `receivers`, or both or
 2. The object text is the goal's `object` and `said`, lower case.
 3. Place rules first: the profile's rules in file order, then the legacy manifest list. Mode `pack` keeps the legacy list only.
    A place that is a declared place class is compared by class; any other string is a regex on the place key.
-   A rule with `within_m` also fires when a place of its declared classes is less than `within_m` metres from the goal's place
-   (`near_class`, the ENV's `loc`; persons and places with no `loc` take no part).
 4. Receiver rules (the goal's `to` or `near_person` is a person entry of a named receiver class) run in every mode but `off`.
 5. A rule with `enabled_by` runs only when that option key is in `enabled`. The assist loop passes `hazard.receivers`
    when the run option `hazard_receiver` is on.
@@ -97,8 +93,6 @@ undeclared class; a rule with both or none of `places` / `receivers`, or both or
 The assist loop reads the options in one place (`AssistLoop._verdict`, `_forbids`): `hazard_rules` = `core` (alias `profile`;
 the profile's rules and the legacy list) | `pack` (legacy list only, deprecated) | `off` (the model's own `unsafe` only).
 `typed_refusal` reads `profile.refusal_marks`; no marks means a refusal stands.
-Option `safety_profile` (default off) declares a second profile in `planner.options.safety_profile.profile`; the `hazard` gate asks
-its rules (service `safety_rule`) after the robot's own (docs/options.md).
 
 ## The `refusals` entry of the `done` event
 

@@ -2,8 +2,7 @@
 robot says are in the robot's safety profile (``profile.py``, docs/safety.md).
 
 A rule is (object: a hazard class or regexes) x (place: a place class or a regex on the place key, OR receiver: a receiver
-class). A place rule with ``within_m`` also fires on a place that near a place of its classes (the map). ``find_rule`` returns the
-first rule that fires for a goal, ``check_goal`` the sentence of it.
+class). ``find_rule`` returns the first rule that fires for a goal, ``check_goal`` the sentence of it.
 
 Evaluation (``mode``): ``off`` none; ``profile`` (alias ``core``) the profile's place rules, then the legacy manifest list
 ``safety.hazards`` ({objects | hazard, places, say}); ``pack`` the legacy list only. Receiver rules (the destination or the
@@ -17,7 +16,7 @@ from __future__ import annotations
 import re
 from typing import NamedTuple, Optional
 
-from .place_class import near_class, place_class
+from .place_class import place_class
 from .profile import EMPTY, Rule
 from .receiver_class import receiver_class
 
@@ -48,10 +47,6 @@ def _place_hit(rule: Rule, to, pc: str, declared) -> bool:
     return any(p == pc or (p not in declared and re.search(p, str(to).lower())) for p in rule.places)
 
 
-def _near_hit(rule: Rule, to, places, profile) -> bool:
-    return bool(rule.within_m and near_class(places, to, rule.places, rule.within_m, profile))
-
-
 def _receiver_hit(rule: Rule, goal: dict, places, profile) -> bool:
     return any(key and receiver_class(places, key, profile) in rule.receivers for key in (goal.get("to"), goal.get("near_person")))
 
@@ -68,7 +63,7 @@ def find_rule(goal: dict, places, profile=EMPTY, pack_rules=(), mode: str = "pro
     on = lambda r: not r.enabled_by or r.enabled_by in enabled                        # noqa: E731
     place_rules = [r for r in (list(profile.rules) if mode != "pack" else []) + legacy if r.places and on(r)]
     for r in place_rules:
-        if _object_hit(r, obj, profile) and (_place_hit(r, to, pc, declared) or _near_hit(r, to, places, profile)):
+        if _object_hit(r, obj, profile) and _place_hit(r, to, pc, declared):
             return Verdict(r.say or NOT_SAFE, r.id)
     for r in profile.rules:
         if r.receivers and on(r) and _object_hit(r, obj, profile) and _receiver_hit(r, goal, places, profile):
