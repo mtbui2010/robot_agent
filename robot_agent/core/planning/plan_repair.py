@@ -27,7 +27,11 @@ makes a plan worse, and every kept edit is a note.
    person the goal names, after a MoveTo to them (a hand-over to nobody or to another person is the planner's
    slip); an Open / Close of something that cannot be opened and that no goal names is removed.
 7. ``finish`` (a replan's suffix only): a goal still to do that the suffix dropped (the held object put down on
-   another surface) gets its delivery back, from the object in the hand.
+   another surface) gets its delivery back, from the object in the hand. With ``finish_rest`` (option ``repair_sync``) a
+   goal the suffix neither holds nor lets go of (one done before the replan) is passed over instead of ending the search.
+
+``sync`` (option ``repair_sync``): a function ``(owned plan of the blocks, steps) -> owned plan`` that lines the blocks up
+with the plan the gate scores (``steps``: the steps the options added or dropped), so the operators edit that plan.
 
 Block-aware: the planner's sub-goal blocks (``SubgoalRepair``) are edited in place, so a later LLM block edit
 starts from the repaired blocks (an edit of the flat plan alone would be overwritten by the planner's next
@@ -397,7 +401,8 @@ def op_finish(F, cx: _Ctx, reached: Callable):
             return F[:j] + [(owner, s) for s in deliver] + F[rel_i + 1:]
         if held == o:                               # still in the hand at the end
             return F + [(owner, s) for s in deliver]
-        return None
+        if not getattr(cx, "finish_rest", False):   # neither held nor let go of here (e.g. done before): next goal
+            return None
     return None
 
 
@@ -421,16 +426,18 @@ def write_back(blocks, F) -> None:
 def repair(steps: list, score: Callable, world, places, goals, *, caps=None, actions=(), release=(),
            hand_goal: Callable = lambda g: False, blocks=None, join=None, ground=None, complete: bool = False,
            person_goals: bool = False, reached: Optional[Callable] = None, max_edits: int = 8, only=None,
-           no_refetch: bool = False, keep_end=False) -> tuple:
+           no_refetch: bool = False, keep_end=False, sync: Optional[Callable] = None, finish_rest: bool = False) -> tuple:
     """(steps, notes, counts): the plan after the operators, ``notes`` per kept edit, ``counts`` {op: n} (with
     ``completed_by_gate``). ``score(steps)``: the number of critical findings; an edit is kept only when it
     strictly lowers it. With ``blocks`` (+ ``join`` / ``ground``) the blocks are edited in place. ``only``: the
     operator names to use (a replan's suffix: not ``insert`` / ``room``, whose "where the person said" no longer
-    holds after the object was not there)."""
+    holds after the object was not there). ``sync`` / ``finish_rest``: see the module docstring."""
     caps = action_model.Capabilities.from_any(caps) if not hasattr(caps, "hands") else caps
     cx = _Ctx(world, places, goals, caps, actions, tuple(release or ()), hand_goal)
     cx.no_refetch, cx.keep_end = bool(no_refetch), keep_end if callable(keep_end) else bool(keep_end)
+    cx.finish_rest = bool(finish_rest)
     F = owned_plan(blocks, join, ground) if blocks else [(0, dict(s)) for s in steps]
+    F = sync(F, steps) if blocks and sync is not None else F
     n, notes, counts = score([s for _o, s in F]), [], {}
     ops = [("hoist", op_hoist), ("dedupe", op_dedupe), ("insert", op_insert), ("room", op_room),
            ("putin", op_putin), ("fetch", op_fetch), ("action", op_action), ("say", op_say), ("unclose", op_unclose)]

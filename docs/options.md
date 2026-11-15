@@ -14,7 +14,7 @@ CLAUDE.md rules 13-15. The reference for the flat run options and manifest keys 
 | `Registry`, `register` | `core/options/registry.py` | the list of options; built-in ones from `robot_agent/options/__init__.py`, others by entry point group `robot_agent.options` |
 | `Dispatcher` | `core/options/dispatch.py` | builds the enabled options of one loop, calls their hooks in `order` |
 | `Services` | `core/options/services.py` | the interface an option uses to ask the loop for something (`LoopServices` in `core/planning/option_services.py` implements it) |
-| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words`, `cond_goal`, `cond_extract`, `recipient_keep`, `plan_complete`, `ask_agree`, `replan_guard`, `name_recover`, `asr_guard`, `plan_release`, `effect_check` so far |
+| the options | `robot_agent/options/<name>.py` | `ask_source`, `confirm_look`, `translate_retry`, `hazard`, `reach_delivery`, `unapplied_change`, `search_per_object`, `place_find`, `reopen_on_miss`, `end_state`, `object_words`, `precond_repair`, `gate_prune`, `dedupe_keep_end`, `goal_words`, `ask_focus`, `entity_cover`, `hw_wait`, `search_budget`, `lang_words`, `cond_goal`, `cond_extract`, `recipient_keep`, `plan_complete`, `ask_agree`, `replan_guard`, `name_recover`, `asr_guard`, `plan_release`, `effect_check`, `repair_sync` so far |
 
 `python -m robot_agent.core.options list` prints the registered options, their keys and hooks.
 `python -m robot_agent.core.options check MANIFEST.yaml` reports `planner.options` entries that name no option or key.
@@ -87,7 +87,7 @@ dropped. A *flow* hook is a generator (`yield from`): it may yield run events an
 | `on_issues(issues, run, goals)` | transform | the read-back's issues (`understand.find_issues` plus the loop's extras): the list, or None (unchanged) | `ask_focus`, `entity_cover`, `ask_agree` |
 | `on_planner_kwargs(kwargs)` | transform | the constructor keys of the planner (a dict) the loop builds; a key must also be in the backend's whitelist (`_GRACE_KWARGS`) | `replan_guard` (`replan_block_fix`) |
 | `on_goal_replan(run)` | decide | the goals changed mid-run, before the plan is repaired: sub-goals for the rest of the plan (the planner's `replan(subgoals=)`), or None | `replan_guard` |
-| `on_replan_findings(bad, run, suffix)` | transform | a replan's suffix (and its refine), after the engine's own findings: the list; a finding makes the one refine, then the uncertified end | `replan_guard` |
+| `on_replan_findings(bad, run, suffix)` | transform | a replan's suffix (and its refine), after the engine's own findings: the list; a finding makes the one refine, then the uncertified end | `replan_guard`, `repair_sync` (`release_off_goal`) |
 | `on_listener_rule(run, goals, words)` | decide | a delivery to a person who is also a message's listener, in grounding: `(goals, notes)` of the option's rule in place of `goal_fix.shared_listener`, or None (the engine's rule). The loop puts the hook on `places.listener_rule` when an option answers it (as it puts the `goal_guard` service on `places.guard`); none: None | `recipient_keep` |
 | `on_goal_edit(run, text)` | observe | a correction is about to be read | `unapplied_change` |
 | `on_goal_reread(run, text, understood, goals, q)` | observe | the understand LLM re-read a correction | `unapplied_change` |
@@ -105,7 +105,7 @@ dropped. A *flow* hook is a generator (`yield from`): it may yield run events an
 `goal_words` also answers the service `goal_guard(run, goals)` (a guard with `place(name)` and `frozen(goal)`) that the engine puts on `places.guard` before the goal repairs (`goal_fix.drop_invented`, `repair_destination`, `shared_listener` read it; None = old behaviour).
 
 Services (`OptionSpec.services`, asked with `Dispatcher.query(name, *args, default=...)`): `hazard.forbids(goal, places)`,
-`hazard.refused_goals(run)`, `hazard.gate_off()`, `reach_delivery.no_refetch()`, `dedupe_keep_end.keep_after_dedupe()`, `effect_check.hand_reading(skill, raw, default)` (asked by the engine's `_holding`: the holding sensor's result read three-valued; no answer = `isdone` as before). A query returns the first answer that is not None; `Dispatcher.collect(name, *args)` joins the lists of every option that serves `name` (`refused_goals`: `hazard`, `cond_extract` and `cond_goal`). `Dispatcher.decide_flow_of(service, hook, *args)` runs a flow hook of only the options that serve `service`; the engine service `safety_gate(run)` uses it to put the goals through the safety gate again (`on_goals` of the options serving `forbids`) for an option that changed a goal after the gate ran (`name_recover`).
+`hazard.refused_goals(run)`, `hazard.gate_off()`, `reach_delivery.no_refetch()`, `dedupe_keep_end.keep_after_dedupe()`, `effect_check.hand_reading(skill, raw, default)` (asked by the engine's `_holding`: the holding sensor's result read three-valued; no answer = `isdone` as before), `repair_sync.repair_kwargs()` (asked by the gate's and the suffix's symbolic repair: extra arguments of `plan_repair.repair`, `sync` and `finish_rest`; no answer = no extra argument, the repair as before). A query returns the first answer that is not None; `Dispatcher.collect(name, *args)` joins the lists of every option that serves `name` (`refused_goals`: `hazard`, `cond_extract` and `cond_goal`). `Dispatcher.decide_flow_of(service, hook, *args)` runs a flow hook of only the options that serve `service`; the engine service `safety_gate(run)` uses it to put the goals through the safety gate again (`on_goals` of the options serving `forbids`) for an option that changed a goal after the gate ran (`name_recover`).
 
 ## The options
 
@@ -253,6 +253,18 @@ Pack data `planner.options.effect_check.effects`: `{"sensor": {"skill": <the rob
 `effects` (dict, manifest only, read again at run time). Hooks `on_start`, `on_step_failed`, `on_goal_check` (order 88); service `hand_reading`. Lab flag
 `effect_check`: `{part: release, object, step, reading}`, `{part: unreadable, skill}`, `{part: floor_armed, object, place, floor}` (the search was armed at a goal check; it does not say the floor was looked at), once per distinct event in a run.
 Module: `robot_agent/options/effect_check.py`.
+
+### `repair_sync`
+The gate's symbolic repair edits the plan the gate scores, and a replan's suffix that lets go of a goal's object elsewhere is repaired or reported (default off; D4 layer L17). (1) `gate_sync`:
+`plan_repair.repair` builds its plan from the planner's sub-goal blocks (`owned_plan`), but the gate scores that plan after the `on_plan` options and the tidy; the service `repair_kwargs` gives it
+`sync`, a function that lines the blocks up with the scored plan (longest common subsequence on (action, object); an added step joins the block of the step before it, a step the plan dropped is
+gone), so an operator sees the steps an option added (a Close with the hand full moved after the release an option appended); an edit is still kept only when the critical findings drop, and only then
+is the lined-up plan written into the blocks. A planner without blocks: nothing changes. (2) `finish_rest`: the suffix operator `finish` passes over a goal the suffix neither holds nor lets go of (one
+done before the replan) instead of giving up at the first such goal, so the pending goal behind it gets its delivery back. (3) `off_goal` (hook `on_replan_findings`, order 91): when the repair did not
+fix it, a suffix whose LAST release of an `on` / `in` goal's object (a step that empties the hand in the action model's replay; a Pick of it later = a staging put-down, not counted) is at another place
+than the goal's gets the finding `release_off_goal`, so the one refine is told and, if it remains, the run ends uncertified. Two hands or more: no finding. No pack data. Keys `enabled` (legacy
+`repair_sync`), `gate_sync`, `finish_rest`, `off_goal` (each on when the option is on). Lab flag `repair_sync`: `{part: sync, blocks, plan}` (the lined-up plan differs from the blocks),
+`{part: off_goal, findings}`. Module: `robot_agent/options/repair_sync.py`.
 
 ### `cond_goal`
 A request with a condition ("if the spoon is on the table, put it away; if not, leave it") is decided by the robot looking, not by the reader guessing (default off).
