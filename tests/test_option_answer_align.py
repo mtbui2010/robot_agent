@@ -139,6 +139,9 @@ def test_correction_that_names_one_object_leaves_the_other_goal_where_it_was():
     assert realign(prev, now, ["No, the tin box on the ledge."], {}, ("en",)) is None  # it names the goal that changed: as read
     two = [mv("tin box", "rack@loft"), mv("reed basket", "rack@loft")]
     assert realign(two, [mv("tin box", "nook@loft"), mv("reed basket", "rack@loft")], ["No, the reed one."], {}, ("en",)) is None   # = the refused reading
+    moved = [{"type": "on", "object": "tin box", "from": "crate@den", "to": "pat@den"}, mv("reed basket", "pat@den")]
+    assert realign([mv("tin box", "crate@den", **{"from": "ledge@den"})], moved, ["No, the reed basket to me."], {}, ("en",))[0] == \
+        mv("tin box", "crate@den", **{"from": "ledge@den"})                       # the place it is taken from comes back with the destination
 
 
 def test_correction_matched_by_the_persons_own_words_in_a_made_up_language(zq):

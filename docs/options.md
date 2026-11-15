@@ -300,7 +300,7 @@ the options (`script.letters`: it may name one in the person's own words, which 
 languages) counts only with a declared ending.
 (2) `correction` (hook `on_goals`, order 8, before the safety gate): after a correction to the read-back (`run.corrected` grew) the reader read the task again; when the correction's
 words name exactly ONE object of the two readings (its distinguishing words against every other object), each goal of another object that the new reading sent elsewhere gets
-its earlier destination back (`type`, `to`, `hand`, `near_person`, `user_at`). No object named, two named, or a result equal to the refused reading: nothing is decided. The
+its earlier destination back (`type`, `to`, `hand`, `near_person`, `user_at`) with the place it is taken from (`from`). No object named, two named, or a result equal to the refused reading: nothing is decided. The
 read-back's own either-or is `ask_agree`'s, with its key `distinct` (same hook and data there). No pack data of its own: the language packs' words; none = nothing asked or
 changed. Keys `enabled` (legacy `answer_align`), `reask`, `correction` (each on with the option). Hooks `on_heard`, `on_goals` (order 8). Lab flag `answer_align`:
 `{rule: reask, options}`, `{rule: reask_no_phrase}`, `{rule: correction, kept}`. Module: `robot_agent/options/answer_align.py`.

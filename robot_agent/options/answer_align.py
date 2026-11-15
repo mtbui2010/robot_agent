@@ -10,7 +10,7 @@ the person's own words for it, a word with one declared particle or ending of th
   nor an answer with another word in another declared script than the options (it may name one in the person's own words).
 * ``correction`` (hook ``on_goals``, before the safety gate): the reader read the task again after a correction to the read-back. When
   the correction's words name exactly ONE object of the readings (its distinguishing words against every other object), a goal of
-  another object that the new reading sent elsewhere gets its earlier destination back. Two objects named, none, or a result equal to
+  another object that the new reading sent elsewhere gets its earlier destination (and the place it is taken from) back. Two objects named, none, or a result equal to
   the refused reading: nothing is decided.
 
 Why: failure classes ask_loop / wrong_answer_accepted / correction_misapplied: a bare "yes" to "the A or the B?" was read as a choice
@@ -39,6 +39,7 @@ SPEC = OptionSpec(
 Q_PICK = "q_pick_one"                       # the language pack's phrase (block ``speech``): the re-ask with its ``options`` slot
 MOVE = ("on", "in")
 DEST = ("type", "to", "hand", "near_person", "user_at")
+BACK = DEST + ("from",)                     # what a goal the correction does not name gets back: its earlier reading (the "from" with its "to")
 _CUT = re.compile(r"[:;,.!?]")
 
 
@@ -104,7 +105,7 @@ def realign(prev, now, texts, known, langs):
     for g in now:
         p = before.get(_obj(g)) or []
         keep = _obj(g) and _obj(g) != objs[i] and len(p) == 1 and _dest(p[0]) != _dest(g)
-        out.append({**{k: v for k, v in g.items() if k not in DEST}, **{k: v for k, v in p[0].items() if k in DEST}} if keep else g)
+        out.append({**{k: v for k, v in g.items() if k not in BACK}, **{k: v for k, v in p[0].items() if k in BACK}} if keep else g)
     if out == list(now) or dialog_converge.goal_sig(out) == dialog_converge.goal_sig(prev):
         return None
     return out
