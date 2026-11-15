@@ -23,8 +23,6 @@ class Services(Protocol):
     def prefer_now(self, run, obj: str, keys) -> None: ...                      # look at ``keys`` first for ``obj``, also in a search under way
     def first_unsearched(self, run, obj: str, keys) -> Optional[str]: ...        # the best of ``keys`` not looked at yet
     def run_step(self, run, step: dict) -> Any: ...                            # one step of the end-of-run check, effect applied on success: the result or None
-    def hand_holds(self, run) -> Optional[bool]: ...                            # the holding sensor read once: True / False, None = no sensor or not readable
-    def let_go(self, run, step: dict) -> bool: ...                              # the hand is empty after ``step`` failed: belief lets go, DROPPED rule spliced in?
     def open_items(self, run) -> list: ...                                      # the request items the options report left open at the end (service ``ledger_open``)
     def cancelled(self, run) -> Optional[dict]: ...                             # the stop event if the run was cancelled
     def safety_gate(self, run): ...                                              # generator: the goals through the safety gate again (STOP or None)

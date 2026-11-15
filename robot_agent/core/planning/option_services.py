@@ -5,10 +5,7 @@ This is the one place where option hooks reach loop internals; an option module 
 
 from __future__ import annotations
 
-from robot_agent.contract import FailureCode
 from . import dialog_converge, speech
-
-_UNREAD = object()            # ``hand_holds``: the default ``_holding`` returns when the sensor cannot tell
 
 
 class LoopServices:
@@ -59,22 +56,6 @@ class LoopServices:
     def run_step(self, run, step: dict):
         """One more step of the end-of-run check (MoveTo, or the pack's end action), its effect applied on success: the skill result or None."""
         return self._lp._look(run, dict(step))[0]
-
-    def hand_holds(self, run):
-        """The robot's holding sensor read once (``_holding``, through the ``hand_reading`` service): True / False, None when the robot has
-        no holding sensor or the reading cannot be told (the call raised, or an option reads its code as "cannot read")."""
-        v = self._lp._holding(run.node, default=_UNREAD)
-        return None if v is _UNREAD else bool(v)
-
-    def let_go(self, run, step) -> bool:
-        """The hand reads empty after the release ``step`` failed: the belief lets go of the held object (a 'dropped' sighting, no place) and
-        the contract's DROPPED rule runs as the engine's own empty-hand release does (``_refind_dropped``: the floor place of the room in the
-        map, Find, Pick, back to the step; its retry cap). True when those steps were spliced in before the step, False when not."""
-        world = run.world
-        if world.holding:
-            run.memory.see(world.holding, None, "dropped")
-        world.holding = world.holding_since = None
-        return bool(self._lp._refind_dropped(run, step, run.robot.policy.rule_for(FailureCode.DROPPED)))
 
     def open_items(self, run) -> list:
         """The request items the active options report as left open at the end of the run: the goals each option serving ``ledger_open``
