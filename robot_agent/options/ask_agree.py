@@ -23,8 +23,8 @@ places), ``dialogue_ext.polite_endings`` and ``patterns.answer_tail`` (the endin
 Key ``distinct`` (off; run option ``ask_agree_distinct``, D4 layer ``answer_align``): the earlier value counts as said, and the answer to the
 either-or as naming a reading, by the words that tell the two readings apart (``names.distinguishing``: the object's name, the person's own words
 for it, its places, the speaker's own word when it goes to them), a word with one declared particle or ending of the pack; one word of the name
-is enough ("the tin" for "tin box"), a word both readings share names neither (with the key, "mug" said is no earlier "mug" against a current
-"green mug"); an object that changed with its own ``from`` and words
+is enough ("the tin" for "tin box"), a word both readings share names neither (with the key, "jar" said is no earlier "jar" against a current
+"teal jar"); an object that changed with its own ``from`` and words
 (``FOLLOW``) is one change, and the earlier object comes back with them. Off: the whole value as a phrase, one value changed, as before.
 Hooks ``on_goals``, ``on_issues``; service ``unrefused`` (order 78, before ``ask_focus``). Keys: ``enabled``, ``restate_confirm`` (true), ``either_or`` (true), ``distinct`` (false).
 Lab flag ``ask_agree``: ``{rule, ...}``.
@@ -231,7 +231,7 @@ class AskAgree(Option):
     def _said(self, run, old, new, k) -> bool:
         """The person said the earlier value: as a whole phrase, or (key ``distinct``) a word that tells the earlier reading from the
         current one (``names.distinguishing``: the object's name, the person's own words for it, its places, the speaker); with the key
-        a phrase made only of words the current reading shares ("mug" against "green mug") says nothing."""
+        a phrase made only of words the current reading shares ("jar" against "teal jar") says nothing."""
         texts = [run.task] + [t for w, t in run.dialogue if w == "user"]
         if not self.cfg["distinct"]:
             return said(texts, old.get(k), run.places)

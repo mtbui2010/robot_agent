@@ -399,7 +399,7 @@ answer to the either-or names a reading, by the words that tell the two readings
 person's own words for it (`said`, `name_local`), the head and aliases of its places, and for a delivery to the person talking the speaker's own word, `grammar.speaker_forms`
 without `speaker_forms_weak`), a word with one declared particle or ending of the pack (`particles`, `grammar.noun_particles`, `dialogue_ext.polite_endings`). One word of a name is
 enough ("the tin" for "tin box"); a word both readings share, or an answer that names both, names neither (nothing is picked; with the key the whole-phrase
-rule is not used, so "mug" said is no earlier "mug" against a current "green mug"). An object that changed together with
+rule is not used, so "jar" said is no earlier "jar" against a current "teal jar"). An object that changed together with
 the values that go with it (`from`, `said`, `name_local`: a new object has its own place and words) is one change, and a pick of the earlier object brings them back. Off: the whole
 value as a phrase and exactly one value changed, as before.
 Keys `enabled` (legacy `ask_agree`), `restate_confirm`, `either_or`, `distinct` (legacy `ask_agree_distinct`). Hooks `on_goals`, `on_issues`, service `unrefused(run, ans)`; lab flag `ask_agree`:
