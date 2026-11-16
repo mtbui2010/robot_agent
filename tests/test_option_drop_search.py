@@ -1,5 +1,5 @@
-"""Option ``drop_search`` (default off): an object lost on the way to a hand-over, or after a release, is looked for on the floors of the
-rooms the robot passed. Made-up flat (a pantry, a den), made-up person and objects; a symbolic robot whose hand-over skill fails with an
+"""Option ``drop_search`` (default off): an object lost on the way to a hand-over is looked for on the floors of the rooms the robot
+passed. Made-up flat (a pantry, a den), made-up person and objects; a symbolic robot whose hand-over skill fails with an
 empty hand and whose carried object falls on a floor."""
 
 import pytest
@@ -43,13 +43,12 @@ class LossyRobot(FakeRobot):
         return super()._exec(skill, o, params)
 
 
-def _run(make_assist, robot, plan, goals=GOAL_HAND, replans=(), data=FLOORS, task="Bring me the zorb.", **opts):
-    planner = ScriptedPlanner(plan, replans=replans)
-    loop = make_assist(robot, FakeLLM(goals, default="{}"), planner, search_legs=1, search_rank="prior", ask_help=False,
+def _run(make_assist, robot, plan, data=FLOORS, **opts):
+    loop = make_assist(robot, FakeLLM(GOAL_HAND, default="{}"), ScriptedPlanner(plan), search_legs=1, search_rank="prior", ask_help=False,
                        detector_miss_rate=0, **opts)
     if data is not None:
         loop.robot.manifest.planner = {**(loop.robot.manifest.planner or {}), **data["planner"]}
-    return run_task(loop, task, max_events=3000), planner
+    return run_task(loop, "Bring me the zorb.", max_events=3000)
 
 
 def _flags(evs):
@@ -98,57 +97,21 @@ def test_drop_search_floor_order_person_room_then_path_then_pick_place():
 # ── through the loop ────────────────────────────────────────────────────────────────────────────────
 def test_drop_search_hand_over_with_an_empty_hand_is_not_searched_off(make_assist, env):
     robot = LossyRobot(env, {"zorb": SH}, start=SH, fall_room="pantry", fall_on=1)
-    evs, _ = _run(make_assist, robot, HAND_PLAN)
+    evs = _run(make_assist, robot, HAND_PLAN)
     assert _flags(evs) == [] and done(evs)["status"] == "failed"
     assert ("move", PF, True, f"arrived at {PF}") not in robot.trace
 
 
 def test_drop_search_no_floor_data_does_nothing_empty(make_assist, env):
     robot = LossyRobot(env, {"zorb": SH}, start=SH, fall_room="pantry", fall_on=1)
-    evs, _ = _run(make_assist, robot, HAND_PLAN, data=None, drop_search=1)
+    evs = _run(make_assist, robot, HAND_PLAN, data=None, drop_search=1)
     assert _flags(evs) == [] and done(evs)["status"] == "failed"
 
 
 def test_drop_search_loop_final_hand_over_object_lost_on_the_way_is_found_and_handed(make_assist, env):
     robot = LossyRobot(env, {"zorb": SH}, start=SH, fall_room="pantry", fall_on=1)
-    evs, planner = _run(make_assist, robot, HAND_PLAN, drop_search=1)
+    evs = _run(make_assist, robot, HAND_PLAN, drop_search=1)
     assert [e["msg"] for e in _flags(evs)] and done(evs)["status"] == "success"
     assert robot.obj["zorb"] == "person:quill"                                    # the final state: the person has it
     looked = [o for s, o, ok, _m in robot.trace if s == "move"]
     assert looked.index(DF) < looked.index(PF)                                     # the person's room first, then the path
-
-
-def test_drop_search_loop_final_goal_check_names_the_floor_in_the_replan(make_assist, env):
-    goals = {"status": "clear", "reason": "", "question": "", "goals": [{"type": "on", "object": "zorb", "from": SH, "to": DT}]}
-    plan = steps(f"MoveTo {SH}", "Find zorb", "Pick zorb", f"MoveTo {DT}", f"Place {DT}")
-    fetch = steps(f"MoveTo {DF}", "Find zorb", "Pick zorb", f"MoveTo {DT}", f"Place {DT}")
-    robot = LossyRobot(env, {"zorb": SH}, start=SH)
-    robot._exec = _fall_on_place(robot, "den")
-    evs, planner = _run(make_assist, robot, plan, goals=goals, replans=[fetch], task="Put the zorb on the den table.", drop_search=1, drop_search_goal=1,
-                        data={"planner": {**FLOORS["planner"], "action_roles": {"move": "MoveTo"}}})
-    reasons = [c[2] for c in planner.calls if c[0] == "replan"]
-    assert reasons and DF in reasons[0] and "zorb" in reasons[0]                    # the unmet goal and where the object is
-    assert done(evs)["status"] == "success" and robot.obj["zorb"] == DT
-
-
-def test_drop_search_end_check_does_not_look_at_the_floor_goal_check_off(make_assist, env):
-    goals = {"status": "clear", "reason": "", "question": "", "goals": [{"type": "on", "object": "zorb", "from": SH, "to": DT}]}
-    plan = steps(f"MoveTo {SH}", "Find zorb", "Pick zorb", f"MoveTo {DT}", f"Place {DT}")
-    robot = LossyRobot(env, {"zorb": SH}, start=SH)
-    robot._exec = _fall_on_place(robot, "den")
-    evs, planner = _run(make_assist, robot, plan, goals=goals, task="Put the zorb on the den table.", drop_search=1,
-                        data={"planner": {**FLOORS["planner"], "action_roles": {"move": "MoveTo"}}})
-    assert DF not in [o for s, o, ok, _m in robot.trace if s == "move"] and done(evs)["status"] == "failed"
-
-
-def _fall_on_place(robot, room):
-    """The first Place reports success while the object lands on the floor of ``room``."""
-    inner, fell = robot._exec, []
-
-    def _exec(skill, o, params):
-        if skill == "place" and robot.holding and not fell:
-            fell.append(o)
-            robot.obj[robot.holding], robot.holding = f"floor@{room}", None
-            return {"isdone": True, "msg": "placed"}
-        return inner(skill, o, params)
-    return _exec

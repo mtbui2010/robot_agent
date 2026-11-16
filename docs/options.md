@@ -97,7 +97,6 @@ dropped. A *flow* hook is a generator (`yield from`): it may yield run events an
 | `on_step_failed(run, step, code, reason, action, obj)` | decide, flow | a step failed, before the recovery policy | `reach_delivery`, `reopen_on_miss` |
 | `on_ask_help(run, step, kind)` | decide, flow | a failed step used its own retries and the engine is about to put its help question (`kind`: `where` of `_recover_find`, `pick`, `move`; once per object and kind, only with `ask_help`): `(outcome, replan hint)` returned as the recovery's own, or None (the engine's question) | `ask_next` |
 | `on_goal_check(run, obj)` | decide | the end-of-run check of one goal: `(ok, why, skill)` | `reach_delivery` |
-| `on_goal_missed(run, obj, place)` | decide | the end-of-run check did not see `obj` at its goal `place` (after its second look): `(ok, why, skill)` of an option's own, or None (the engine's "not there") | `drop_search` |
 | `on_translation_lost(text, lost, translate)` | decide | the input translation lost a place name the person said: the English to use, or None | `translate_retry` |
 | `on_second_look(run, obj, place)` | decide | the goal check's first look missed and the second saw the object: `(ok, why, skill)` or None (the second look is believed) | `confirm_look` |
 | `on_final(run)` | decide | end of run, before the goals are checked; returns the `done` event | `unapplied_change` |
@@ -569,19 +568,19 @@ and `ko.json` (assumed). Keys `enabled` (legacy `ask_next`), `max_menus`. Lab fl
 as stop. Module: `robot_agent/options/ask_next.py`.
 
 ### `drop_search`
-An object the robot carried or let go of and lost is looked for on the floors of the rooms it passed (default off; classes K4, K6, S2 of
-the D4 failure analysis). (1) Hook `on_step_failed` (order 36): a failed hand-over (the robot's hand action) while the belief holds an object
+A carried object lost on the way to a hand-over is looked for on the floors of the rooms it passed (default off; classes K4, K6, S2 of
+the D4 failure analysis). Hook `on_step_failed` (order 36): a failed hand-over (the robot's hand action) while the belief holds an object
 and the hand sensor READS empty (engine service `hand_sensor`, read by the pure `reading`: a call that failed for a device reason, e.g.
 `hw_fault` or `timeout`, is no reading): `let_go`, then the engine's REFIND rung (`refind_on`, the engine's `_splice_refind`) on the first floor
 of `drop_floors` (the room of the person: key, `spot`, `seat`, else the support place within `PERSON_SEAT_M` of them; then the rooms of the
 MoveTo steps since the Pick, latest first; then the Pick's place); all of them first in the search (`prefer_now`), so a miss goes on to the next;
-once per object. (2) Key `goal_check` (legacy `drop_search_goal`, default off): hook `on_goal_missed`: the end check of an object this run put at
-its goal place that does not see it looks once at the floor of that room (`run_step` with the pack's `move` role, `look_for`); seen: the goal is
-unmet and the verdict (the replan reason) names the goal and the floor. Data `planner.options.drop_search.floors` `{head, source | assumed}`: the
-head of the map's floor places (`<head>@<room>`); none, no label, no hand action, no move role, no floor in the room: nothing. Overlaps: the
-engine's DROPPED rule (`_refind_dropped`: only the room of the place the robot stands at, never a person's, and only for code `dropped`) and the
-deleted `effect_check` (91bbced: the same sensor read, the current room only; 0 of 600 changed). Lab flag `drop_search` `{part, object, floors,
-seen}`; run event `recover` kind `drop_search`. Module: `robot_agent/options/drop_search.py`.
+once per object. Data `planner.options.drop_search.floors` `{head, source | assumed}`: the head of the map's floor places (`<head>@<room>`);
+none, no label, no hand action, no floor in those rooms: nothing. Overlaps: the engine's DROPPED rule (`_refind_dropped`: only the room of the place the robot stands at, never a person's, and only for code `dropped`) and the
+deleted `effect_check` (91bbced: the same sensor read, the current room only; 0 of 600 changed). Lab flag `drop_search` `{part, object, floors}`;
+run event `recover` kind `drop_search`. Module: `robot_agent/options/drop_search.py`. Removed on 2026-11-17: key `goal_check` (legacy
+`drop_search_goal`; the end check's look at the floor of a goal's room, with the engine hook `on_goal_missed` only it used): on the D5 development
+set (3 arms x 4 cells x 150 tasks) it fired 9 times, changed no success outcome, won no task and added 2 false successes (one task in two cells), so it failed
+the stay gate (symbolic_robot `docs/home/bench/d4_layers.md` `## Removed`); git history keeps it (key added in 559ce54, hook in c2b0845).
 
 ### `heat_safety`
 A goal that puts a thing that can burn on or in a heat-source place is refused (default off; design and limits: [heat_safety.md](heat_safety.md)).

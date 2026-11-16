@@ -1,13 +1,11 @@
-"""Option ``drop_search`` (default off): an object the robot carried or let go of and lost is looked for on the floors it passed.
+"""Option ``drop_search`` (default off): a carried object lost on the way to a hand-over is looked for on the floors it passed.
 
-What: (1) a failed hand-over (the robot's hand action) while the belief holds an object and the hand sensor READS empty (a sensor call
+What: a failed hand-over (the robot's hand action) while the belief holds an object and the hand sensor READS empty (a sensor call
 that failed for a device reason is no reading): the belief lets go, the engine's REFIND rung looks on the floor place of the person's
 room, else of the rooms of the moves since the Pick and of the Pick's place (all of them first in the search, so a miss goes on to the
-next), then picks it up and hands over again; once per object. (2) key ``goal_check``: the end-of-run check of an object this run put at
-its goal place that does not see it there looks once at the floor of that room; seen there, the goal is unmet and the replan reason
-names the goal and where the object is.
-Why (classes K4, K6, S2): a hand-over that failed with an empty hand was repeated as is until "the same failure thrice"; an object lost
-after a release was never looked for on the floor (the engine's REFIND knows only the room of the place it stands at, never a person's).
+next), then picks it up and hands over again; once per object (key ``goal_check``, the end check's floor look, retired 2026-11-17).
+Why (classes K4, K6, S2): a hand-over that failed with an empty hand was repeated as is until "the same failure thrice" (the engine's
+REFIND knows only the room of the place it stands at, never a person's).
 Data ``planner.options.drop_search.floors``: ``{"head": "<head of the map's floor places>", "source" | "assumed": true}``; none: nothing.
 Switch off: key ``enabled`` (legacy ``drop_search``), off by default. Event: lab flag ``drop_search`` ``{part, object, floors}``.
 """
@@ -69,13 +67,11 @@ def drop_floors(places, head: str, target, completed, radius: float, start=None)
 
 SPEC = OptionSpec(
     name=FLAG,
-    keys=(Key("enabled", "bool", False, aliases=(FLAG,)), Key("goal_check", "bool", False, aliases=("drop_search_goal",)),
-          Key("floors", "dict", {}, sources=("manifest",))),
-    hooks=("on_step_failed", "on_goal_missed"),
+    keys=(Key("enabled", "bool", False, aliases=(FLAG,)), Key("floors", "dict", {}, sources=("manifest",))),
+    hooks=("on_step_failed",),
     order=36,
     enabled="enabled",
-    doc="A failed hand-over with an empty hand looks for the object on the floors of the rooms it passed; key goal_check: a released object the "
-        "end check misses is looked for on that room's floor (needs planner.options.drop_search.floors).",
+    doc="A failed hand-over with an empty hand looks for the object on the floors of the rooms it passed (needs planner.options.drop_search.floors).",
 )
 
 
@@ -83,44 +79,26 @@ class DropSearch(Option):
     def _head(self) -> Optional[str]:
         return floor_head(pack_data.fresh(SPEC, self.cfg, pack_data.planner_of(self.svc), "floors"))
 
-    def _done(self, run, part) -> set:
-        return run.__dict__.setdefault("opt", {}).setdefault(FLAG, {}).setdefault(part, set())
+    def _done(self, run) -> set:
+        return run.__dict__.setdefault("opt", {}).setdefault(FLAG, set())
 
     def on_step_failed(self, run, st, code, reason, a, o):
         """The hand-over failed and the hand reads empty: let go, REFIND on the first floor of ``drop_floors`` (the rest first in the
         search). NEXT when spliced; None: not a hand-over, nothing held, no data or floor, not read as empty, or done for this object."""
         head, held = self._head(), run.world.holding
-        if not head or not held or a != self.svc.hand_action() or held in self._done(run, "hand_over"):
+        if not head or not held or a != self.svc.hand_action() or held in self._done(run):
             return None
         start = getattr(getattr(run, "world_at_start", None), "arrived", None)
         floors = drop_floors(run.places, head, o, run.completed, persons.PERSON_SEAT_M, start)
         if not floors or reading(self.svc.hand_sensor(run)) is not False:
             return None
-        self._done(run, "hand_over").add(held)
+        self._done(run).add(held)
         self.svc.let_go(run, "dropped")
         self.svc.prefer_now(run, held, floors)
         self.svc.refind_on(run, st, held, floors[0])
         self.svc.lab(FLAG, part="hand_over", object=held, floors=floors)
         yield run.ev("recover", at_index=run.i, kind=FLAG, msg=f"the {held} is not in the hand after {a} {o}: looking on {', '.join(floors)}")
         return NEXT
-
-    def on_goal_missed(self, run, obj, place):
-        """Key ``goal_check``: the run put ``obj`` at ``place`` and the end check does not see it there: one look at the floor of that
-        room. Seen: (False, evidence naming the goal and the floor, skill), the floor first in a search for it; else None."""
-        head, move = self._head(), self.svc.role("move")
-        if not self.cfg.get("goal_check") or not head or not move or (run.placed or {}).get(obj) != place or obj in self._done(run, "goal"):
-            return None
-        floor = next((k for k in run.places.keys if run.places.room(k) == run.places.room(place) and run.places.head(k).lower() == head), None)
-        if not floor or floor == place:
-            return None
-        self._done(run, "goal").add(obj)
-        res = self.svc.run_step(run, {"action": move, "object": floor, "grounded": True})
-        seen, skill = self.svc.look_for(run, obj) if res is not None and res.ok else (False, None)
-        self.svc.lab(FLAG, part="goal_check", object=obj, floors=[floor], seen=bool(seen))
-        if not seen:
-            return None
-        self.svc.prefer_now(run, obj, [floor])
-        return False, f"the goal {obj} at {place} is not met: the {obj} is not there, it was seen on {floor}", skill
 
 
 register(SPEC, DropSearch)
