@@ -85,6 +85,33 @@ class TeleopSpeedIn(_Open):
     scale: float                  # 0..1, a fraction of the function's top speed
 
 
+# --- recorder ----------------------------------------------------------------
+class RecorderStatus(_Open):
+    available: bool               # a fresh state has arrived: robot_teleop's recorder is running
+    state: Optional[dict] = None  # {state: idle|recording|saving, episode, prompt, elapsed_s, counts, last, error, ready, root}
+    age_s: Optional[float] = None
+    dir: Optional[str] = None
+    teleop: Optional[str] = None  # the teleop function switched on / off with the recording
+    fields: list[str] = []        # the prompt fields the form shows, in order
+
+
+class RecorderPromptIn(_Open):
+    fields: dict[str, str]
+
+
+class RecorderPrompt(_Open):
+    prompt: str
+
+
+class RecorderStartIn(_Open):
+    prompt: str
+    meta: Optional[dict] = None
+
+
+class RecorderStopIn(_Open):
+    label: str                    # success | failure | discard
+
+
 # --- skills ------------------------------------------------------------------
 class SkillInfo(_Open):
     name: str

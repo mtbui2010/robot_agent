@@ -5,6 +5,13 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+### Record raw VLA episodes from the dashboard (`/recorder`)
+- `RECORDER` config group (kcare: `configs/tasks.py`; none = nothing shown): `{dir, teleop, prompts: {fields, templates, synonyms}}`. `GET /recorder` (state of
+  `robot_teleop.recorder`, the prompt fields, `404` without the group), `POST /recorder/prompt {fields}` -> a RANDOM sentence from the robot's templates that uses every
+  filled field (`core/prompts.py`; a template may be limited to some actions; a value may be replaced by a synonym), `POST /recorder/start {prompt, meta?}`
+  (recorder idle, teleop function running, no run in flight: starts the recording AND the teleop function), `POST /recorder/stop {label: success|failure|discard}`
+  (teleop off, then save / throw away). Reading sends nothing. 9 tests.
+
 ### Teleop functions on the dashboard (`/teleop`)
 - A function can offer named poses to go to (`GET /teleop` -> `functions[].poses: [{name, label, skill, params}]`): its TELEOP entry has
   `poses: {from: <config group>, skill, param, prefix?, keys?, names?}` and the list is READ from that group of the robot's own config
