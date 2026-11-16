@@ -5,6 +5,14 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+### Editable "Go to" poses (`/poses`)
+- A pose is a label + a PLAN of steps written like a shortcut button's (`lift::0.5&&movej::approach_drawer`), stored in `<common>/poses.json` (shared and merged like the buttons). The
+  operator adds / edits / deletes ALL of them (`GET|POST /poses`, `PUT|DELETE /poses/{id}`); the robot package only SEEDS the first list (`POSES['seed']`, kcare: the `approach_*` of
+  `ARM_CONFIGS`), `POST /poses/defaults` adds the missing seeds back. ONE speed for every pose (`PUT /poses/speed`, 0.05..1; `POSES['default_speed']`): each step of a speed skill
+  (`POSES['speed_skills']`: movej / movel / movet) gets `speed=<s>` unless it sets its own. `POST /poses/{id}/run` runs the plan (teleop off first, answers when done); while an episode is
+  being recorded the move is sent to the recorder as a `goto` mark. Replaces `poses` in `GET /teleop` (removed). 8 tests.
+- Episodes: a Go to pose move is no longer cut by the suggested trim (the model should learn the init move): `summary.init_moves` lists it (pose name from the mark) and `summary.notes` says so.
+
 ### Look at and clean the raw VLA episodes (`/recordings`)
 - A move made while teleop was OFF (the dashboard's Go to pose during a recording) is detected (`summary.auto_motion`: the teleop state changes + the arm moving for > 0.5 s): it is not an
   operator demonstration (3-4 rad/s, no servo command), so the suggested trim now keeps the teleop part with the most movement (ep_0001: 10.7-29.3 s, not 6.3-29.3 s) and the servo-gap warning is not

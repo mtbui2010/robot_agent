@@ -76,21 +76,20 @@ def summarise(meta: dict, z: dict) -> dict:
     out.update(max_speed_rad_s=round(float(speed.max()), 3), path_rad=round(float(np.abs(np.diff(st[:, :7], axis=0)).sum()), 2),
                moving_fraction=round(float(moving.mean()), 2))
     t1 = tt[1:]
-    auto = _auto_motion(meta.get('events') or [], t1, moving, dur)           # the arm moved while teleop was off (e.g. a Go to pose): not a demonstration
-    out['auto_motion'] = [[round(x, 2), round(y, 2)] for x, y in auto]
-    span = _demo_span(auto, t1, moving, dur)
-    ms = moving & (t1 >= span[0]) & (t1 <= span[1])
-    if ms.any():
-        first, last = float(t1[ms][0]), float(t1[ms][-1])
+    init = _init_moves(meta.get('events') or [], t1, moving, dur)             # Go to pose moves (teleop off): KEPT as the "go to the start pose" part of the episode
+    out['init_moves'] = init
+    if moving.any():
+        first, last = float(t1[moving][0]), float(t1[moving][-1])
         out.update(idle_head_s=round(first, 2), idle_tail_s=round(max(0.0, dur - last), 2),
-                   trim_suggest=[round(max(span[0], first - PAD_S), 2), round(min(span[1], last + PAD_S), 2)])
+                   trim_suggest=[round(max(0.0, first - PAD_S), 2), round(min(dur, last + PAD_S), 2)])
         out['inactive_inside_s'] = round(_inactive_between(meta.get('events') or [], first, last), 2)
-        if out['inactive_inside_s'] > 0.5:
-            out['warnings'].append(f"teleop was off for {out['inactive_inside_s']} s in the middle of the movement")
+        out['notes'] = [f"the arm went to a pose{' (' + m['name'] + ')' if m.get('name') else ''} from {m['start']:.1f} to {m['end']:.1f} s with teleop off: kept as the "
+                        'init part of the episode' for m in init]
+        quiet = sum(max(0.0, min(m['end'], last) - max(m['start'], first)) for m in init)
+        if out['inactive_inside_s'] - quiet > 0.5:
+            out['warnings'].append(f"teleop was off for {round(out['inactive_inside_s'] - quiet, 2)} s in the middle of the movement")
     else:
         out['warnings'].append('the arm never moved')
-    for x, y in auto:
-        out['warnings'].append(f'the arm was moved with teleop off from {x:.1f} to {y:.1f} s (e.g. Go to pose): not a demonstration; the suggested trim keeps the longest teleop part')
     g = z.get('gripper_cmd')
     out['gripper_changes'] = int((np.abs(np.diff(g[:, 0])) > 0.01).sum()) if g is not None and len(g) > 1 else 0
     if out['gripper_changes'] == 0:
@@ -105,7 +104,7 @@ def summarise(meta: dict, z: dict) -> dict:
     if ta is not None and len(ta) > 1:
         for i in np.where(np.diff(ta) > 1.0)[0]:
             g0, g1 = float(ta[i] - t0), float(ta[i + 1] - t0)
-            if not any(g0 < y + 0.5 and g1 > x - 0.5 for x, y in auto):            # a gap during a Go to pose is explained above
+            if not any(g0 < m['end'] + 0.5 and g1 > m['start'] - 0.5 for m in init):          # a gap during a Go to pose is explained by it
                 out['warnings'].append(f'the servo command stopped for {g1 - g0:.1f} s (at {g0:.1f} s)')
     return out
 
@@ -126,9 +125,18 @@ def _states(events: list, dur: float) -> list:
     return segs
 
 
-def _auto_motion(events: list, t1, moving, dur: float) -> list:
-    """Time ranges where the teleop function was not active AND the arm moved for more than 0.5 s (something else moved it: a Go to pose, MoveIt, ...).
-    Neighbouring non-active states (inactive, then hold while the servo starts) are one range."""
+def _init_moves(events: list, t1, moving, dur: float) -> list:
+    """The moves the arm made WITHOUT the operator: [{start, end, name}]. A ``goto`` event pair (the dashboard's Go to pose, with the pose name) is one; any other stretch where the
+    teleop function was not active and the arm moved for more than 0.5 s (a move made some other way) is one with name None."""
+    out, open_ = [], None
+    for e in sorted((e for e in events if e.get('kind') == 'goto'), key=lambda e: e['t']):
+        if e.get('phase') == 'start':
+            open_ = e
+        elif e.get('phase') == 'end' and open_ is not None:
+            out.append({'start': round(open_['t'], 2), 'end': round(e['t'], 2), 'name': open_.get('name') or None})
+            open_ = None
+    if open_ is not None:
+        out.append({'start': round(open_['t'], 2), 'end': round(dur, 2), 'name': open_.get('name') or None})
     merged: list = []
     for a, b, st in _states(events, dur):
         if st == 'active':
@@ -137,16 +145,10 @@ def _auto_motion(events: list, t1, moving, dur: float) -> list:
             merged[-1][1] = b
         else:
             merged.append([a, b])
-    return [(a, b) for a, b in merged if (moving & (t1 >= a) & (t1 <= b)).sum() * 0.02 > 0.5]
-
-
-def _demo_span(auto: list, t1, moving, dur: float) -> tuple:
-    """The part of the episode between the automatic movements with the most operator movement (the whole episode when there is none)."""
-    if not auto:
-        return 0.0, dur
-    edges = [0.0] + [x for r in auto for x in r] + [dur]
-    spans = [(edges[i], edges[i + 1]) for i in range(0, len(edges), 2)]
-    return max(spans, key=lambda sp: int((moving & (t1 >= sp[0]) & (t1 <= sp[1])).sum()))
+    for a, b in merged:
+        if (moving & (t1 >= a) & (t1 <= b)).sum() * 0.02 > 0.5 and not any(m['start'] < b and m['end'] > a for m in out):
+            out.append({'start': round(a, 2), 'end': round(b, 2), 'name': None})
+    return sorted(out, key=lambda m: m['start'])
 
 
 def _inactive_between(events: list, a: float, b: float) -> float:

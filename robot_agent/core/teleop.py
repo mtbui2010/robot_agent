@@ -54,47 +54,17 @@ def _functions(cfg) -> list:
         if not name or name in seen:
             continue
         seen.add(name)
-        out.append({'name': name, 'label': str(f.get('label') or name), **({'poses': f['poses']} if isinstance(f.get('poses'), dict) else {}),
+        out.append({'name': name, 'label': str(f.get('label') or name),
                     'state_topic': str(f.get('state_topic') or f'/teleop/{name}/state'),
                     'command_topic': str(f.get('command_topic') or f'/teleop/{name}/command')})
     return out
 
 
-def _is_pose(value) -> bool:
-    """A named pose in a robot config: {mode: [joint angles]} (or a list of such lists): at least one numeric list."""
-    def nums(v):
-        return isinstance(v, (list, tuple)) and bool(v) and all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in v)
-    return isinstance(value, dict) and any(nums(v) or (isinstance(v, (list, tuple)) and v and all(nums(x) for x in v)) for v in value.values())
-
-
-def _poses(spec, group) -> list:
-    """The poses a function offers, read from the robot's own config group (no pose is named here): spec {from: <group name>, skill, param,
-    prefix?, keys?, names?}. Returns [{name, label, skill, params}]; the skill is run with {param: name}. [] when something is missing."""
-    if not isinstance(spec, dict) or not isinstance(group, dict):
-        return []
-    skill, param = str(spec.get('skill') or '').strip(), str(spec.get('param') or 'inputs').strip()
-    if not skill:
-        return []
-    prefix = str(spec.get('prefix') or '')
-    keys = spec.get('keys')           # the mode names a pose is keyed by (e.g. the arm sides): tells a pose from another table of numbers
-    names = spec.get('names')
-    out = []
-    for key, value in group.items():
-        if not isinstance(key, str) or not key.startswith(prefix) or not _is_pose(value):
-            continue
-        if isinstance(keys, (list, tuple)) and not set(value) <= set(keys):
-            continue
-        if isinstance(names, (list, tuple)) and key not in names:
-            continue
-        out.append({'name': key, 'label': key.replace('_', ' '), 'skill': skill, 'params': {param: key}})
-    return out
-
-
 class TeleopBridge:
-    def __init__(self, get_cfg, get_transport, get_group=lambda name: None):
+    def __init__(self, get_cfg, get_transport, get_group=None):
         """``get_cfg()`` -> the TELEOP group (or None); ``get_transport()`` -> a transport (or None when ROS is not up);
-        ``get_group(name)`` -> another config group (the poses of a function are read from one)."""
-        self._get_cfg, self._get_transport, self._get_group = get_cfg, get_transport, get_group
+        ``get_group`` is unused (kept so older callers still work)."""
+        self._get_cfg, self._get_transport = get_cfg, get_transport
         self._lock = threading.Lock()
         self._state: dict = {}          # name -> (decoded state, monotonic receive time)
         self._subscribed: set = set()
@@ -132,9 +102,7 @@ class TeleopBridge:
                 got = self._state.get(fn['name'])
             age = None if got is None else time.monotonic() - got[1]
             ok = got is not None and age <= STALE_S
-            spec = fn.get('poses')
-            poses = _poses(spec, self._get_group(str((spec or {}).get('from') or '')))
-            out.append({'name': fn['name'], 'label': fn['label'], 'available': ok, 'poses': poses,
+            out.append({'name': fn['name'], 'label': fn['label'], 'available': ok,
                         **({'state': got[0], 'age_s': round(age, 2)} if got is not None else {})})
         return out
 
@@ -183,8 +151,5 @@ def bridge() -> TeleopBridge:
             if cache.get('node') is not node:       # one transport per ROS node (it holds the publishers)
                 cache['node'], cache['tr'] = node, RosTransport(node)
             return cache['tr']
-        def group(name):
-            from ..state import current
-            return current().cm.get(name) if name else None
-        _BRIDGE = TeleopBridge(cfg, transport, group)
+        _BRIDGE = TeleopBridge(cfg, transport)
     return _BRIDGE

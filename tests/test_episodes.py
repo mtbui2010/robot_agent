@@ -156,26 +156,34 @@ def test_no_config_is_404(monkeypatch):
     assert TestClient(app).get('/recordings').status_code == 404
 
 
-def goto_events():
-    return [{'t': 0.1, 'kind': 'teleop', 'state': 'active'}, {'t': 6.0, 'kind': 'teleop', 'state': 'inactive'},
-            {'t': 9.0, 'kind': 'teleop', 'state': 'hold'}, {'t': 10.0, 'kind': 'teleop', 'state': 'active'}]
+def goto_events(named=False):
+    ev = [{'t': 0.1, 'kind': 'teleop', 'state': 'active'}, {'t': 6.0, 'kind': 'teleop', 'state': 'inactive'},
+          {'t': 9.0, 'kind': 'teleop', 'state': 'hold'}, {'t': 10.0, 'kind': 'teleop', 'state': 'active'}]
+    if named:
+        ev += [{'t': 6.0, 'kind': 'goto', 'name': 'approach drawer', 'phase': 'start'}, {'t': 9.5, 'kind': 'goto', 'name': 'approach drawer', 'phase': 'end', 'ok': True}]
+    return ev
 
 
-def test_a_move_with_teleop_off_is_not_a_demonstration_and_the_trim_skips_it(tmp_path):
+def test_a_go_to_pose_move_is_kept_as_the_init_part(tmp_path):
     make_episode(tmp_path / 'raw', move=(4.0, 18.0), events=goto_events(), dur=20.0)       # the arm moves all the time; teleop is off from 6 to 10 s
     s = E.row(tmp_path / 'raw', '2026-11-16', 'ep_0001')['summary']
-    assert s['auto_motion'] == [[6.0, 10.0]]                                                  # inactive + hold are one range
+    assert s['init_moves'] == [{'start': 6.0, 'end': 10.0, 'name': None}]                  # inactive + hold are one range
     a, b = s['trim_suggest']
-    assert a >= 10.0 and b > 17.5                                                             # the longer teleop part after it
-    assert any('moved with teleop off' in w for w in s['warnings'])
-    assert not any('teleop was off for' in w for w in s['warnings'])                          # not also reported as a gap inside the demonstration
+    assert a < 4.0 and b > 17.5                                                            # the trim does NOT cut it: only the idle ends go
+    assert any('with teleop off' in n and 'init part' in n for n in s['notes']) and not any('teleop was off for' in w for w in s['warnings'])
+
+
+def test_a_named_go_to_event_gives_the_pose_name(tmp_path):
+    make_episode(tmp_path / 'raw', move=(4.0, 18.0), events=goto_events(named=True), dur=20.0)
+    s = E.row(tmp_path / 'raw', '2026-11-16', 'ep_0001')['summary']
+    assert s['init_moves'] == [{'start': 6.0, 'end': 9.5, 'name': 'approach drawer'}] and 'approach drawer' in s['notes'][0]
 
 
 def test_teleop_off_while_the_arm_rests_is_no_automatic_motion(tmp_path):
     ev = [{'t': 0.1, 'kind': 'teleop', 'state': 'inactive'}, {'t': 1.0, 'kind': 'teleop', 'state': 'active'}]
     make_episode(tmp_path / 'raw', events=ev)
     s = E.row(tmp_path / 'raw', '2026-11-16', 'ep_0001')['summary']
-    assert s['auto_motion'] == [] and s['trim_suggest'][0] < 4.0
+    assert s['init_moves'] == [] and s['trim_suggest'][0] < 4.0
 
 
 def test_auto_clean_saves_the_suggested_trim_and_keeps_other_edits(tmp_path):
@@ -186,7 +194,7 @@ def test_auto_clean_saves_the_suggested_trim_and_keeps_other_edits(tmp_path):
     E.save_edit(raw, '2026-11-16', 'ep_0003', {'trim_start_s': 1, 'trim_end_s': 2, 'label': 'failure'})        # the operator already edited this one
     out = E.auto_clean(raw)
     assert out['cleaned'] == 2 and out['skipped'] == 1 and {r['id'] for r in out['rows']} == {'2026-11-16/ep_0001', '2026-11-16/ep_0002'}
-    assert E.row(raw, '2026-11-16', 'ep_0001')['edit']['trim_start_s'] >= 10.0
+    assert E.row(raw, '2026-11-16', 'ep_0001')['edit']['trim_start_s'] < 4.0               # the init move is not cut
     assert E.row(raw, '2026-11-16', 'ep_0003')['edit'] == {**E.row(raw, '2026-11-16', 'ep_0003')['edit']} and E.row(raw, '2026-11-16', 'ep_0003')['edit']['trim_end_s'] == 2.0
     E.save_edit(raw, '2026-11-16', 'ep_0002', {'label': 'failure', 'note': 'x'})
     out = E.auto_clean(raw, overwrite=True)
