@@ -1,6 +1,6 @@
 {
  "lang": "en",
- "heat_safety": {"refuse": "I won't do that: anything that can burn must be kept at least {m} m from a heat source.", "part": "I did the rest, but not all of it: anything that can burn must be kept at least {m} m from a heat source.", "assumed": true, "source": "assumed: plain English wording of option heat_safety's refusal; the rule and its distance are the robot pack's data with their own source (docs/heat_safety.md)"},
+ "heat_safety": {"refuse": "I won't do that: anything that can burn must be kept at least {m} m from a heat source.", "part": "I did the rest, but not all of it: anything that can burn must be kept at least {m} m from a heat source.", "after_head": ["with", "without", "of", "for", "from", "in", "on", "at", "that", "which", "containing"], "judge": "Request: \"{request}\". Object to put on or in the {place}: \"{object}\" (read from the request). First say what that object, as the request names it, is usually made of. Then answer: left on or in a {place} that is on, can the object itself catch fire, melt, char or give off fumes? Answer as JSON {\"material\": \"...\", \"burns\": true or false, \"unsure\": true when you cannot tell}.", "assumed": true, "source": "assumed: plain English wording of option heat_safety's refusal, the English words that start a post-modifier (after_head: the head noun is before them) and the judgement question (judge); the rule and its distance are the robot pack's data with their own source (docs/heat_safety.md)"},
  "words": {
   "putin": [
    "\\binto\\b",
