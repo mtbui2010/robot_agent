@@ -162,8 +162,22 @@
   "q_which_name": "{options} 말씀하시는 거예요?",
   "q_pick_one": "{text} 중에서 어느 쪽인지 말씀해 주세요.",
   "q_which_reading": "두 가지로 이해할 수 있어요. {first}, 아니면 {second}. 어느 쪽을 말씀하시는 거예요?",
+  "q_ask_next_find": "{object}을(를) 찾지 못했어요. 여기서 다시 찾을까요, 다른 곳을 찾아볼까요, 아니면 그만할까요?",
+  "q_ask_next_pick": "{object}을(를) 집지 못했어요. 여기서 다시 해 볼까요, 다른 곳을 찾아볼까요, 아니면 그만할까요?",
+  "q_ask_next_move": "{object}에 갈 수 없어요. 다시 해 볼까요, 아니면 그만할까요?",
+  "q_ask_next_again": "다시, 다른 곳, 그만 중에서 하나를 말씀해 주세요.",
+  "q_ask_next_again_move": "다시, 그만 중에서 하나를 말씀해 주세요.",
+  "q_ask_next_place": "{object}을(를) 어디에서 찾아볼까요?",
   "assumed": true,
   "source": "assumed: the robot's own questions in plain polite Korean, said when the robot pack has no phrase of its own for the key (the robot's i18n wins)"
+ },
+ "ask_next": {
+  "retry": ["다시", "다시 해", "다시 해 봐", "다시 해 줘", "다시 해요", "한 번 더", "다시 시도"],
+  "elsewhere": ["다른 곳", "다른 곳에", "다른 곳에서", "다른 곳을", "다른 데", "다른 데서", "딴 데", "딴 데서", "여기 말고"],
+  "anywhere": ["아무 데나", "아무데나", "아무 곳이나", "알아서", "알아서 해"],
+  "stop": ["그만", "그만해", "그만해요", "그만하자", "포기", "포기해", "됐어", "됐어요", "하지 마"],
+  "assumed": true,
+  "source": "assumed: plain Korean answers to the menu of option ask_next (again here / somewhere else / stop), matched as whole words (so inflected forms are listed); the run's stop words (dialogue.stop_prefix) and yes / no count too"
  },
  "patterns": {
   "into_after": "^\\s*(?:의\\s*)?(?:안|속|안쪽)|^(?:에|에다|에다가)?\\s*(?:\\S+\\s+){0,2}?\\S*넣",

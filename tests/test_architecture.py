@@ -71,6 +71,7 @@ THROUGH_THE_LOOP = {"ask_source": "test_option_ask_source.py", "hazard": "test_s
                     "ask_agree": "test_option_ask_agree.py", "plan_release": "test_option_plan_release.py",
                     "repair_sync": "test_option_repair_sync.py", "goal_ledger": "test_option_goal_ledger.py", "answer_align": "test_option_answer_align.py",
                     "reach_check": "test_option_reach_check.py"}
+THROUGH_THE_LOOP["ask_next"] = "test_option_ask_next.py"
 
 
 def _specs():
