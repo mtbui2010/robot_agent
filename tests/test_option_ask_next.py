@@ -1,6 +1,7 @@
 """Option ``ask_next`` (default OFF): after a failed Find / Pick / MoveTo used its own retries the robot asks the person what to do next (again
 here, somewhere else, stop) and does it. The pure answer reader on small tables of a made-up language ``zq``, the hook on a stub, and loop-level
 tests of the FINAL outcome through the real AssistLoop on the test house with a made-up object (``gizmo``). No real robot, task or benchmark id."""
+import json
 from types import SimpleNamespace as NS
 
 import pytest
@@ -247,3 +248,19 @@ def test_loop_final_regression_a_retry_that_fails_again_gets_no_second_menu(make
     loop, planner, evs = _loop(make_assist, robot)
     assert sum("Shall I try again here" in q for q in robot.asked) == 1
     assert [e["answer"] for e in loop.lab_log if e["flag"] == "ask_next"] == ["retry"] and done(evs)["status"] != "success"
+
+
+def test_loop_final_with_trace_on_the_menu_is_recorded_as_ask_and_the_outcome_is_as_without_it(make_assist, tmp_path):
+    """Interplay of two watch / decide options on the same failure: ``trace`` (order 0, sees the failure first) must not change what
+    ``ask_next`` does, and its file shows the recovery that asked the menu and the menu's lab entry."""
+    plain = _bot(["Try again, please."], fails=2)
+    _l, _p, evs_off = _loop(make_assist, plain)
+    robot = _bot(["Try again, please."], fails=2)
+    _l, _p, evs = _loop(make_assist, robot, trace="1", trace_dir=str(tmp_path))
+    rs = [json.loads(x) for f in tmp_path.rglob("trace.jsonl") for x in f.read_text(encoding="utf-8").splitlines()]
+    asked = [r for r in rs if r["k"] == "recovery" and r["chose"] == "ask"]
+    assert len(asked) == 1 and (asked[0]["action"], asked[0]["object"]) == ("Pick", "gizmo")
+    lab = [r["data"] for r in rs if r["k"] == "lab" and r["flag"] == "ask_next"]
+    assert lab == [{"kind": "pick", "object": "gizmo", "answer": "retry", "place": None}]
+    assert (done(evs)["status"], robot.obj, robot.asked) == (done(evs_off)["status"], plain.obj, plain.asked) == (
+        "success", {"gizmo": "side table@living room"}, plain.asked)
