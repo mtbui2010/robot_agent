@@ -46,12 +46,10 @@ def test_summary_finds_the_idle_ends_and_suggests_a_trim(tmp_path):
     assert any('wrist camera only' in w for w in s['warnings']) and not any('teleop was off' in w for w in s['warnings'])
 
 
-def test_teleop_off_in_the_middle_of_the_movement_is_a_warning(tmp_path):
+def test_inactive_time_between_two_moments():
     ev = [{'t': 0.1, 'kind': 'teleop', 'state': 'active'}, {'t': 8.0, 'kind': 'teleop', 'state': 'inactive'}, {'t': 11.0, 'kind': 'teleop', 'state': 'active'}]
-    make_episode(tmp_path / 'raw', events=ev)
-    s = E.row(tmp_path / 'raw', '2026-11-16', 'ep_0001')['summary']
-    assert abs(s['inactive_inside_s'] - 3.0) < 0.1 and any('teleop was off for' in w for w in s['warnings'])
-    assert E._inactive_between([], 0, 5) == 0.0
+    assert abs(E._inactive_between(ev, 4.0, 15.0) - 3.0) < 1e-9 and abs(E._inactive_between(ev, 9.0, 10.0) - 1.0) < 1e-9
+    assert E._inactive_between(ev, 0.5, 7.0) == 0.0 and E._inactive_between([], 0, 5) == 0.0
 
 
 def test_listing_totals_and_an_unfinished_episode_is_hidden(tmp_path):
@@ -141,6 +139,9 @@ def test_endpoints(client):
     assert c.get('/recordings/2026-11-16/ep_0009').status_code == 400
     assert c.put('/recordings/2026-11-16/ep_0001/edit', json={'trim_start_s': 1, 'trim_end_s': 5}).json()['trim_end_s'] == 5
     assert c.put('/recordings/2026-11-16/ep_0001/edit', json={'trim_start_s': 5, 'trim_end_s': 1}).status_code == 400
+    ac = c.post('/recordings/auto-clean', json={'overwrite': True}).json()
+    assert ac['cleaned'] == 1 and ac['rows'][0]['id'] == '2026-11-16/ep_0001' and ac['rows'][0]['was_s'] == 20.0
+    assert c.post('/recordings/auto-clean', json={}).json()['cleaned'] == 0                  # already has an edit now
     e = c.post('/recordings/export', json={'name': 'v1'}).json()
     assert e['episodes'] == 1 and 'export_lerobot.py' in e['command'] and e['manifest'].endswith('exports/v1.json')
     assert c.delete('/recordings/2026-11-16/ep_0001/edit').json() == {'ok': True}
@@ -153,3 +154,42 @@ def test_no_config_is_404(monkeypatch):
     monkeypatch.setattr(api, 'bridge', lambda: R.RecorderBridge(lambda: None, lambda: None))
     app = FastAPI(); app.include_router(api.router)
     assert TestClient(app).get('/recordings').status_code == 404
+
+
+def goto_events():
+    return [{'t': 0.1, 'kind': 'teleop', 'state': 'active'}, {'t': 6.0, 'kind': 'teleop', 'state': 'inactive'},
+            {'t': 9.0, 'kind': 'teleop', 'state': 'hold'}, {'t': 10.0, 'kind': 'teleop', 'state': 'active'}]
+
+
+def test_a_move_with_teleop_off_is_not_a_demonstration_and_the_trim_skips_it(tmp_path):
+    make_episode(tmp_path / 'raw', move=(4.0, 18.0), events=goto_events(), dur=20.0)       # the arm moves all the time; teleop is off from 6 to 10 s
+    s = E.row(tmp_path / 'raw', '2026-11-16', 'ep_0001')['summary']
+    assert s['auto_motion'] == [[6.0, 10.0]]                                                  # inactive + hold are one range
+    a, b = s['trim_suggest']
+    assert a >= 10.0 and b > 17.5                                                             # the longer teleop part after it
+    assert any('moved with teleop off' in w for w in s['warnings'])
+    assert not any('teleop was off for' in w for w in s['warnings'])                          # not also reported as a gap inside the demonstration
+
+
+def test_teleop_off_while_the_arm_rests_is_no_automatic_motion(tmp_path):
+    ev = [{'t': 0.1, 'kind': 'teleop', 'state': 'inactive'}, {'t': 1.0, 'kind': 'teleop', 'state': 'active'}]
+    make_episode(tmp_path / 'raw', events=ev)
+    s = E.row(tmp_path / 'raw', '2026-11-16', 'ep_0001')['summary']
+    assert s['auto_motion'] == [] and s['trim_suggest'][0] < 4.0
+
+
+def test_auto_clean_saves_the_suggested_trim_and_keeps_other_edits(tmp_path):
+    raw = tmp_path / 'raw'
+    make_episode(raw, move=(4.0, 18.0), events=goto_events())
+    make_episode(raw, ep='ep_0002')
+    make_episode(raw, ep='ep_0003')
+    E.save_edit(raw, '2026-11-16', 'ep_0003', {'trim_start_s': 1, 'trim_end_s': 2, 'label': 'failure'})        # the operator already edited this one
+    out = E.auto_clean(raw)
+    assert out['cleaned'] == 2 and out['skipped'] == 1 and {r['id'] for r in out['rows']} == {'2026-11-16/ep_0001', '2026-11-16/ep_0002'}
+    assert E.row(raw, '2026-11-16', 'ep_0001')['edit']['trim_start_s'] >= 10.0
+    assert E.row(raw, '2026-11-16', 'ep_0003')['edit'] == {**E.row(raw, '2026-11-16', 'ep_0003')['edit']} and E.row(raw, '2026-11-16', 'ep_0003')['edit']['trim_end_s'] == 2.0
+    E.save_edit(raw, '2026-11-16', 'ep_0002', {'label': 'failure', 'note': 'x'})
+    out = E.auto_clean(raw, overwrite=True)
+    e = E.row(raw, '2026-11-16', 'ep_0002')['edit']
+    assert e['label'] == 'failure' and e['note'] == 'x' and 'trim_start_s' in e                  # the label and the note survive an overwrite of the trim
+    assert E.auto_clean(raw, ids=['2026-11-16/ep_0001'])['cleaned'] == 0                         # already edited, no overwrite

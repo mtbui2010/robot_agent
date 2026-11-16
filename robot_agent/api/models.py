@@ -139,6 +139,17 @@ class RecordingEdit(_Open):
     version: int = 1
 
 
+class RecordingAutoCleanIn(_Open):
+    ids: Optional[list[str]] = None   # only these episodes (default: all)
+    overwrite: bool = False           # also replace an existing trim
+
+
+class RecordingAutoClean(_Open):
+    cleaned: int
+    skipped: int
+    rows: list[dict] = []
+
+
 class RecordingExportIn(_Open):
     name: str
     fps: int = 30

@@ -76,15 +76,21 @@ def summarise(meta: dict, z: dict) -> dict:
     out.update(max_speed_rad_s=round(float(speed.max()), 3), path_rad=round(float(np.abs(np.diff(st[:, :7], axis=0)).sum()), 2),
                moving_fraction=round(float(moving.mean()), 2))
     t1 = tt[1:]
-    if moving.any():
-        first, last = float(t1[moving][0]), float(t1[moving][-1])
+    auto = _auto_motion(meta.get('events') or [], t1, moving, dur)           # the arm moved while teleop was off (e.g. a Go to pose): not a demonstration
+    out['auto_motion'] = [[round(x, 2), round(y, 2)] for x, y in auto]
+    span = _demo_span(auto, t1, moving, dur)
+    ms = moving & (t1 >= span[0]) & (t1 <= span[1])
+    if ms.any():
+        first, last = float(t1[ms][0]), float(t1[ms][-1])
         out.update(idle_head_s=round(first, 2), idle_tail_s=round(max(0.0, dur - last), 2),
-                   trim_suggest=[round(max(0.0, first - PAD_S), 2), round(min(dur, last + PAD_S), 2)])
+                   trim_suggest=[round(max(span[0], first - PAD_S), 2), round(min(span[1], last + PAD_S), 2)])
         out['inactive_inside_s'] = round(_inactive_between(meta.get('events') or [], first, last), 2)
         if out['inactive_inside_s'] > 0.5:
             out['warnings'].append(f"teleop was off for {out['inactive_inside_s']} s in the middle of the movement")
     else:
         out['warnings'].append('the arm never moved')
+    for x, y in auto:
+        out['warnings'].append(f'the arm was moved with teleop off from {x:.1f} to {y:.1f} s (e.g. Go to pose): not a demonstration; the suggested trim keeps the longest teleop part')
     g = z.get('gripper_cmd')
     out['gripper_changes'] = int((np.abs(np.diff(g[:, 0])) > 0.01).sum()) if g is not None and len(g) > 1 else 0
     if out['gripper_changes'] == 0:
@@ -95,9 +101,52 @@ def summarise(meta: dict, z: dict) -> dict:
             out['warnings'].append(f'{cam} camera only {r} Hz')
         if out['max_gap_s'].get(cam, 0) > 0.5:
             out['warnings'].append(f"{cam} camera stopped for {out['max_gap_s'][cam]} s")
-    if out['max_gap_s'].get('action_servo', 0) > 1.0:
-        out['warnings'].append(f"the servo command stopped for {out['max_gap_s']['action_servo']} s")
+    ta = z.get('action_servo_t')
+    if ta is not None and len(ta) > 1:
+        for i in np.where(np.diff(ta) > 1.0)[0]:
+            g0, g1 = float(ta[i] - t0), float(ta[i + 1] - t0)
+            if not any(g0 < y + 0.5 and g1 > x - 0.5 for x, y in auto):            # a gap during a Go to pose is explained above
+                out['warnings'].append(f'the servo command stopped for {g1 - g0:.1f} s (at {g0:.1f} s)')
     return out
+
+
+def _states(events: list, dur: float) -> list:
+    """[(a, b, teleop state)] covering [0, dur] from the recorded state changes (before the first change: that first state)."""
+    ev = sorted((e for e in events if e.get('kind') == 'teleop'), key=lambda e: e['t'])
+    if not ev:
+        return [(0.0, dur, 'active')]
+    segs, t, cur = [], 0.0, ev[0].get('state')
+    for e in ev:
+        if e['t'] > t:
+            segs.append((t, min(e['t'], dur), cur))
+            t = e['t']
+        cur = e.get('state')
+    if t < dur:
+        segs.append((t, dur, cur))
+    return segs
+
+
+def _auto_motion(events: list, t1, moving, dur: float) -> list:
+    """Time ranges where the teleop function was not active AND the arm moved for more than 0.5 s (something else moved it: a Go to pose, MoveIt, ...).
+    Neighbouring non-active states (inactive, then hold while the servo starts) are one range."""
+    merged: list = []
+    for a, b, st in _states(events, dur):
+        if st == 'active':
+            continue
+        if merged and abs(merged[-1][1] - a) < 1e-6:
+            merged[-1][1] = b
+        else:
+            merged.append([a, b])
+    return [(a, b) for a, b in merged if (moving & (t1 >= a) & (t1 <= b)).sum() * 0.02 > 0.5]
+
+
+def _demo_span(auto: list, t1, moving, dur: float) -> tuple:
+    """The part of the episode between the automatic movements with the most operator movement (the whole episode when there is none)."""
+    if not auto:
+        return 0.0, dur
+    edges = [0.0] + [x for r in auto for x in r] + [dur]
+    spans = [(edges[i], edges[i + 1]) for i in range(0, len(edges), 2)]
+    return max(spans, key=lambda sp: int((moving & (t1 >= sp[0]) & (t1 <= sp[1])).sum()))
 
 
 def _inactive_between(events: list, a: float, b: float) -> float:
@@ -267,3 +316,24 @@ def export_manifest(raw_dir, name: str, fps: int = 30, action: str = 'future_sta
     f.parent.mkdir(parents=True, exist_ok=True)
     f.write_text(json.dumps(manifest, indent=1))
     return {'manifest': str(f), 'episodes': len(eps), 'hours': round(secs / 3600, 3), 'data_dir': str(_root(raw_dir).parent), 'name': name}
+
+
+def auto_clean(raw_dir, ids=None, overwrite: bool = False) -> dict:
+    """Save the suggested trim (the idle ends, and everything outside the teleop part when the arm was moved by something else) as the edit of each episode.
+    An episode that already has an edit is left alone unless ``overwrite``; an existing label / exclude / note is kept. Returns {cleaned, skipped, rows}."""
+    done, skipped = [], []
+    for r in list_episodes(raw_dir)['episodes']:
+        if 'error' in r or (ids is not None and r['id'] not in ids):
+            continue
+        sug = r['summary'].get('trim_suggest')
+        if not sug or (r.get('edit') and not overwrite):
+            skipped.append(r['id'])
+            continue
+        e = r.get('edit') or {}
+        edit = {'trim_start_s': sug[0], 'trim_end_s': sug[1], **{k: e[k] for k in ('label', 'exclude', 'note') if k in e}}
+        if edit['trim_end_s'] - edit['trim_start_s'] < 0.5:
+            skipped.append(r['id'])
+            continue
+        save_edit(raw_dir, r['day'], r['episode'], edit)
+        done.append({'id': r['id'], 'trim_start_s': sug[0], 'trim_end_s': sug[1], 'kept_s': round(sug[1] - sug[0], 1), 'was_s': r['summary']['duration_s']})
+    return {'cleaned': len(done), 'skipped': len(skipped), 'rows': done}

@@ -5,6 +5,7 @@
     GET    /recordings/{day}/{ep}/frame?cam=head&t=3.2     image/jpeg: the camera frame nearest to t seconds
     PUT    /recordings/{day}/{ep}/edit        {trim_start_s?, trim_end_s?, label?, exclude?, note?}   saved next to the raw folder, never into it
     DELETE /recordings/{day}/{ep}/edit
+    POST   /recordings/auto-clean             {ids?, overwrite?}   save the suggested trim as the edit of each episode (those without an edit; all with overwrite)
     POST   /recordings/export                 {name, fps, action, horizon_s, labels}   writes the manifest the export tool reads; answers with the command to run
 Reading changes nothing. The raw files are never modified.
 """
@@ -35,6 +36,11 @@ def _guard(fn, *a, **kw):
 @router.get('/recordings', response_model=M.RecordingList, **M.OPEN)
 def list_recordings():
     return _guard(E.list_episodes, _dir())
+
+
+@router.post('/recordings/auto-clean', response_model=M.RecordingAutoClean, **M.OPEN)
+def auto_clean(body: M.RecordingAutoCleanIn):
+    return _guard(E.auto_clean, _dir(), body.ids, body.overwrite)
 
 
 @router.post('/recordings/export', response_model=M.RecordingExport, **M.OPEN)

@@ -6,6 +6,9 @@ manifest format, the event schema). See `docs/contract.md`.
 ## Unreleased
 
 ### Look at and clean the raw VLA episodes (`/recordings`)
+- A move made while teleop was OFF (the dashboard's Go to pose during a recording) is detected (`summary.auto_motion`: the teleop state changes + the arm moving for > 0.5 s): it is not an
+  operator demonstration (3-4 rad/s, no servo command), so the suggested trim now keeps the teleop part with the most movement (ep_0001: 10.7-29.3 s, not 6.3-29.3 s) and the servo-gap warning is not
+  repeated for it. `POST /recordings/auto-clean {ids?, overwrite?}` saves that suggestion as the edit of every episode that has none (an existing label / note is kept). 3 tests.
 - `core/episodes.py` + `api/recordings.py`, from the `RECORDER` config's `dir` (404 without it): `GET /recordings` (every finished episode with numbers that tell a good one from a bad one:
   rates, camera gaps, idle start / end and a suggested trim, gripper changes, teleop off in the middle of the movement; totals), `GET /recordings/{day}/{ep}` (curves, camera info),
   `GET .../frame?cam&t` (the nearest JPEG), `PUT|DELETE .../edit` (trim, label, exclude, note: saved in `<data>/edits/`, NEVER into the raw folder), `POST /recordings/export`
