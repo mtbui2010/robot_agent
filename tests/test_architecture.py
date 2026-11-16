@@ -74,6 +74,7 @@ THROUGH_THE_LOOP = {"ask_source": "test_option_ask_source.py", "hazard": "test_s
 THROUGH_THE_LOOP["trace"] = "test_option_trace.py"
 THROUGH_THE_LOOP["ask_next"] = "test_option_ask_next.py"
 THROUGH_THE_LOOP["drop_search"] = "test_option_drop_search.py"
+THROUGH_THE_LOOP["heat_safety"] = "test_option_heat_safety.py"
 
 
 def _specs():
