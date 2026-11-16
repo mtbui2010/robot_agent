@@ -68,6 +68,7 @@ def llm_error_code(e: BaseException) -> FailureCode:
 
 class LLMBudget:
     """Counts the core's LLM calls in one run; ``take`` raises LLMBudgetExceeded past ``limit`` (0 = no cap)."""
+    last_what = ""                       # the label of the latest take of any budget: the purpose of the call that follows (a trace reads it)
 
     def __init__(self, limit: int):
         self.limit, self.used = int(limit), 0
@@ -76,6 +77,7 @@ class LLMBudget:
         if self.limit and self.used + n > self.limit:
             raise LLMBudgetExceeded(f"{what}: the LLM-call budget of this run ({self.limit}) is used up")
         self.used += n
+        LLMBudget.last_what = what
 
     def left(self) -> int:
         return max(0, self.limit - self.used) if self.limit else 1 << 30

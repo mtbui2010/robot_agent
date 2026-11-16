@@ -540,7 +540,7 @@ class ClosedLoop:
         ``progress`` hook (base.ProgressReporting; GRACE / SAGE has it). Best-effort."""
         try:
             if self._emit is not None and hasattr(planner, "progress"):
-                _emit = self._emit
+                _emit = self._pushed()
 
                 def _on_progress(d):
                     try:
@@ -559,9 +559,14 @@ class ClosedLoop:
             return None
         try:
             from ..unified_agent import _make_log_fn
-            return _make_log_fn(self._emit, i, allow_say=False)
+            return _make_log_fn(self._pushed(), i, allow_say=False)
         except Exception:
             return None
+
+    def _pushed(self):
+        """The host's live channel (``emit``) with the options' ``on_event`` watchers in front (an AssistLoop's trace); None stays None."""
+        opts = getattr(self, "options", None)
+        return opts.tap_push("on_event", self._emit) if opts is not None else self._emit
 
     # ── main loop ────────────────────────────────────────────────────────
     def run_blocking(self, task: str, lang: str = "en",

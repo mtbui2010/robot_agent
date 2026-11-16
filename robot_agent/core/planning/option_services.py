@@ -5,6 +5,7 @@ This is the one place where option hooks reach loop internals; an option module 
 
 from __future__ import annotations
 
+from ..options.dispatch import NULL
 from . import dialog_converge, speech
 
 
@@ -43,10 +44,22 @@ class LoopServices:
         """An event from a hook or service that cannot yield (not a flow hook): logged with the run's events (``run.ev``) and pushed through the
         host's live channel when it has one (``emit`` of the loop, the one ``plan_step`` uses). The event."""
         ev = run.ev(event, **fields)
+        getattr(self._lp, "options", NULL).observe("on_event", ev)     # not yielded: the watchers (trace) see it here
         push = getattr(self._lp, "_emit", None)
         if push is not None:
             push(ev)
         return ev
+
+    def llm_calls(self, fn):
+        """Tell ``fn(call)`` of every LLM call that goes through ``observe.llm.call`` from now on, ``call["purpose"]`` set to the label of
+        the latest LLM-budget take before it (``LLMBudget.take(what=)``, used up by the call; none: ""). Returns the function that stops it."""
+        from robot_agent.observe import llm as observed
+        from .understand import LLMBudget
+
+        def told(call):
+            call["purpose"], LLMBudget.last_what = LLMBudget.last_what, ""
+            fn(call)
+        return observed.listen(told)
 
     def look_for(self, run, obj):
         """One more Find of `obj`, made the way the end-of-run goal check makes it: (seen: bool, the skill)."""

@@ -104,6 +104,27 @@ class Dispatcher:
     def provides(self, hook: str) -> bool:
         return bool(self._by_hook[hook])
 
+    # ── watchers of a stream of events (observe hooks that see each event) ──
+    def tap(self, hook: str, events):
+        """``events`` (a generator) with ``hook(ev)`` called on each event before it is passed on, and ``hook(None)`` when the stream
+        ends (run over, or closed early); ``events`` itself when no option implements ``hook`` (the default path is the same object)."""
+        return events if not self._by_hook[hook] else self._tapped(hook, events)
+
+    def _tapped(self, hook, events):
+        try:
+            for ev in events:
+                self.observe(hook, ev)
+                yield ev
+        finally:
+            events.close()
+            self.observe(hook, None)
+
+    def tap_push(self, hook: str, push):
+        """A live push channel (``push(ev)``) with ``hook(ev)`` called first; ``push`` itself when there is none or nobody watches."""
+        if push is None or not self._by_hook[hook]:
+            return push
+        return lambda ev: (self.observe(hook, ev), push(ev))[1]
+
 
 # No option at all: what a loop built without ``__init__`` (a test double) or before its options are resolved uses.
 NULL = Dispatcher(None, {}, {}, None, registry=Registry(builtin=None, entry_points=None))

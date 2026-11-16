@@ -603,6 +603,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
     def _lab(self, flag: str, **info) -> None:
         """Record that an opt-in lab option acted in this run (``self.lab_log``: [{"flag": name, ...}]). Read by a
         harness after the run; never part of the event stream, never read by the loop. Off options never call it."""
+        self.options.observe("on_lab", flag, info)                # watchers see every entry, past the cap too (trace)
         log = self.__dict__.setdefault("lab_log", [])
         if len(log) < 50:
             log.append({"flag": flag, **info})
@@ -778,9 +779,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         if self.cfg.get("prompt_lang"):
             langdata.set_prompt_lang(self.cfg["prompt_lang"])      # the manifest / option names the prompt language
         gen = self._run_blocking(task, lang, plan_only, goals)
-        if not self._um_for(lang):
-            return gen                                        # today's generator, untouched
-        return self._with_understand_events(gen)
+        gen = self._with_understand_events(gen) if self._um_for(lang) else gen     # no understand model of its own: today's generator
+        return self.options.tap("on_event", gen)              # options that watch every event (trace); none: the generator itself
 
     def _with_understand_events(self, gen):
         """The run's events plus ``understand_fallback{reason}`` (set by ``_ask_understand_routed``), each placed before the
