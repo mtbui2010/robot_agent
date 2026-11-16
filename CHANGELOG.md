@@ -5,6 +5,12 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+### Teleop functions on the dashboard (`/teleop`)
+- A teleop function (the `robot_teleop` repo: arm servo driven by a SpaceMouse, or any device / function that speaks its two JSON-in-String
+  topics `/teleop/<name>/state` + `/command`) is listed from the `TELEOP` config group (`configs/tasks.py` or a site override; no group = nothing
+  shown). `GET /teleop` (state, never switches anything), `POST /teleop/{name}/enable {on, confirm}` (on needs `confirm: true`, a running function
+  and no run in flight), `POST /teleop/{name}/speed {scale}`. A run starting and Cancel switch every function off (`run_control._teleop_off`).
+  `core/teleop.py` names no device and no robot; its transport is injected, so it is tested without ROS (`tests/test_teleop.py`).
 ### Site languages (`PUT /robot/languages`)
 - The manifest says what the robot can talk in (`supported`); a site switches some off: `PUT /robot/languages` `{languages: [...]}` (a
   non-empty subset of `supported`, else 400) saves `<configs>/languages.json`. `GET /robot/languages` now returns `supported` too;

@@ -55,6 +55,28 @@ class LanguagesIn(_Open):
     languages: list[str]          # the languages to switch on: a non-empty subset of `supported`
 
 
+# --- teleop ------------------------------------------------------------------
+class TeleopFunction(_Open):
+    name: str
+    label: str
+    available: bool               # a fresh state has arrived (the function is running)
+    state: Optional[dict] = None  # its last state (core/teleop.py): state, ready, gripper_open, speed, input_age_s, stalled
+    age_s: Optional[float] = None
+
+
+class TeleopList(_Open):
+    functions: list[TeleopFunction]
+
+
+class TeleopEnableIn(_Open):
+    on: bool
+    confirm: bool = False         # required for on=true: a person is next to the robot
+
+
+class TeleopSpeedIn(_Open):
+    scale: float                  # 0..1, a fraction of the function's top speed
+
+
 # --- skills ------------------------------------------------------------------
 class SkillInfo(_Open):
     name: str
