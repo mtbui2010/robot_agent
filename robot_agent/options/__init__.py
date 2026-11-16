@@ -8,3 +8,4 @@ import it. A new option is a new module plus one line below.
 from . import ask_next
 from . import answer_align, ask_agree, ask_focus, asr_guard, ask_source, cond_extract, cond_goal, confirm_look, dedupe_keep_end, end_state, entity_cover, gate_prune, goal_ledger, goal_words, hazard, hw_wait, lang_words, name_recover, object_words, place_find, plan_complete, plan_release, precond_repair, reach_check, reach_delivery, recipient_keep, reopen_on_miss, repair_sync, replan_guard, search_budget, search_per_object, translate_retry, unapplied_change   # noqa: F401  (importing a module registers its option)
 from . import trace   # noqa: F401,E402  (a new option on a line of its own: no merge on the line above)
+from . import single_goals   # noqa: F401,E402  (a new option on a line of its own: no merge on the line above)

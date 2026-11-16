@@ -168,6 +168,7 @@
   "q_ask_next_again": "다시, 다른 곳, 그만 중에서 하나를 말씀해 주세요.",
   "q_ask_next_again_move": "다시, 그만 중에서 하나를 말씀해 주세요.",
   "q_ask_next_place": "{object}을(를) 어디에서 찾아볼까요?",
+  "say_found_at": "{object}을(를) {place}에서 찾았어요.",
   "assumed": true,
   "source": "assumed: the robot's own questions in plain polite Korean, said when the robot pack has no phrase of its own for the key (the robot's i18n wins)"
  },

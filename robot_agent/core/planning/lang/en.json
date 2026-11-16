@@ -338,6 +338,16 @@
    "bye"
   ]
  },
+ "single_goals": {
+  "prompt": [
+   "  EXTRA kinds for a single action (use them only when the user asks for exactly that one action and nothing more):",
+   "  \"find\" = look for an object and tell where it is, nothing to move: object = the object, from \"\" (or the place named), to \"\".",
+   "  \"pick\" = pick an object up and keep holding it: object = the object, from = the place it is on if named, to \"\".",
+   "  \"put_here\" = put down what the robot holds where it is now: object = \"\" (or what it holds), from \"\", to \"\"."
+  ],
+  "assumed": true,
+  "source": "assumed: hand-written rule lines of the understand prompt for option single_goals (find, pick, put_here), plain English; tried on made-up single-action commands, not taken from a benchmark"
+ },
  "speech": {
   "q_pick_one": "Which one do you mean: {text}?",
   "q_ask_next_find": "I couldn't find the {object}. Shall I look again here, look somewhere else, or stop?",
@@ -346,6 +356,7 @@
   "q_ask_next_again": "Please say one of: again, somewhere else, or stop.",
   "q_ask_next_again_move": "Please say one of: again, or stop.",
   "q_ask_next_place": "Where should I look for the {object}?",
+  "say_found_at": "I found the {object} at the {place}.",
   "assumed": true,
   "source": "assumed: the re-ask of option answer_align after a yes or no to an either-or, naming the options, and the menu of option ask_next after a failed step (again here, somewhere else, stop), plain English; the robot's i18n wins"
  },
