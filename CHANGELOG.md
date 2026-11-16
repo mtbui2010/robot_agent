@@ -6,6 +6,10 @@ manifest format, the event schema). See `docs/contract.md`.
 ## Unreleased
 
 ### Teleop functions on the dashboard (`/teleop`)
+- A function can offer named poses to go to (`GET /teleop` -> `functions[].poses: [{name, label, skill, params}]`): its TELEOP entry has
+  `poses: {from: <config group>, skill, param, prefix?, keys?, names?}` and the list is READ from that group of the robot's own config
+  (kcare: `ARM_CONFIGS`, keys `approach_*`), so a new pose is added in the config only. `keys` names the modes a pose is keyed by (tells a pose
+  from another table of numbers). The dashboard runs it with `POST /skill/<skill>` (which already switches teleop off). 2 tests.
 - A teleop function (the `robot_teleop` repo: arm servo driven by a SpaceMouse, or any device / function that speaks its two JSON-in-String
   topics `/teleop/<name>/state` + `/command`) is listed from the `TELEOP` config group (`configs/tasks.py` or a site override; no group = nothing
   shown). `GET /teleop` (state, never switches anything), `POST /teleop/{name}/enable {on, confirm}` (on needs `confirm: true`, a running function

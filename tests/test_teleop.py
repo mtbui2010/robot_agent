@@ -142,3 +142,27 @@ def test_a_run_starting_and_cancel_switch_teleop_off(monkeypatch):
     monkeypatch.setattr(T, 'bridge', lambda: b)
     rc._teleop_off()
     assert [s[1]['cmd'] for s in tr.sent] == ['disable', 'disable']
+
+
+ARM = {'range': {'x': [0, 1]}, 'base_x': 0.19, 'home': {'front': [0, 15, 0, 15, -180, 0, 0]},
+       'approach_lying': {'right': [1.0, 2.0], 'left': [3.0, 4.0]}, 'approach_drawer': {'front': [[1, 2], [3, 4]]}, 'approach_bad': {'x': 'text'}}
+
+
+def poses_of(spec, group=ARM):
+    b = T.TeleopBridge(lambda: {'functions': [{'name': 'arm', 'poses': spec}]}, lambda: None, lambda name: group if name == 'ARM_CONFIGS' else None)
+    return b.listing()[0]['poses']
+
+
+def test_poses_are_read_from_the_robots_config_group():
+    rows = poses_of({'from': 'ARM_CONFIGS', 'skill': 'movej', 'param': 'inputs', 'prefix': 'approach_'})
+    assert [r['name'] for r in rows] == ['approach_lying', 'approach_drawer']                       # only poses (dict of joint lists), only the prefix
+    assert rows[0] == {'name': 'approach_lying', 'label': 'approach lying', 'skill': 'movej', 'params': {'inputs': 'approach_lying'}}
+    modes = ['front', 'left', 'right']
+    assert [r['name'] for r in poses_of({'from': 'ARM_CONFIGS', 'skill': 'movej', 'keys': modes})] == ['home', 'approach_lying', 'approach_drawer']   # keys tell a pose from `range`
+    assert 'range' in [r['name'] for r in poses_of({'from': 'ARM_CONFIGS', 'skill': 'movej'})]                       # without them a table of numbers looks like a pose
+    assert [r['name'] for r in poses_of({'from': 'ARM_CONFIGS', 'skill': 'movej', 'names': ['home'], 'keys': ['front']})] == ['home']
+
+
+def test_no_poses_when_the_spec_or_the_group_is_missing():
+    assert poses_of(None) == [] and poses_of({'from': 'ARM_CONFIGS'}) == [] and poses_of({'from': 'NOPE', 'skill': 'movej'}) == []
+    assert poses_of({'from': 'ARM_CONFIGS', 'skill': 'movej'}, group='not a dict') == []

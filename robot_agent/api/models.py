@@ -56,12 +56,20 @@ class LanguagesIn(_Open):
 
 
 # --- teleop ------------------------------------------------------------------
+class TeleopPose(_Open):
+    name: str                     # a pose of the robot's own config (e.g. a key of ARM_CONFIGS)
+    label: str
+    skill: str                    # POST /skill/<skill> with `params` goes there
+    params: dict
+
+
 class TeleopFunction(_Open):
     name: str
     label: str
     available: bool               # a fresh state has arrived (the function is running)
     state: Optional[dict] = None  # its last state (core/teleop.py): state, ready, gripper_open, speed, input_age_s, stalled
     age_s: Optional[float] = None
+    poses: list[TeleopPose] = []  # named poses the function can go to, read from the robot's config (TELEOP ... poses); [] when none
 
 
 class TeleopList(_Open):
