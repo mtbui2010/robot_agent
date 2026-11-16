@@ -10,3 +10,4 @@ from . import answer_align, ask_agree, ask_focus, asr_guard, ask_source, cond_ex
 from . import trace   # noqa: F401,E402  (a new option on a line of its own: no merge on the line above)
 from . import drop_search   # noqa: F401,E402  (a new option on a line of its own)
 from . import heat_safety   # noqa: F401,E402  (a new option on a line of its own)
+from . import bt_goal   # noqa: F401,E402  (a new option on a line of its own)
