@@ -22,6 +22,22 @@ from .record import _MAX_LLM_STR, current_record, shrink
 
 _TLS = threading.local()
 _STORE = None                     # the active replay store, see serving()
+_LISTENERS: list = []             # told of every call, recorded run or not (listen(); an option's trace)
+
+
+def listen(fn: Callable[[dict], Any]) -> Callable[[], None]:
+    """``fn({source, request, response, error, t0, latency_ms, model})`` after every call from now on; returns the function that
+    stops it. A listener that raises is ignored (the call's answer is returned as it is)."""
+    _LISTENERS.append(fn)
+    return lambda: _LISTENERS.remove(fn) if fn in _LISTENERS else None
+
+
+def _tell(**call) -> None:
+    for fn in list(_LISTENERS):
+        try:
+            fn(dict(call))
+        except Exception:
+            pass
 
 
 class ReplayMismatch(AssertionError):
@@ -58,7 +74,7 @@ def call(source: str, real: Callable[[], Any], request: dict, *, model: Any = No
         out = store.serve(source, request)
         return tuple(out) if as_tuple and isinstance(out, list) else out
     rec = current_record()
-    if rec is None:
+    if rec is None and not _LISTENERS:
         return real()
     _TLS.depth = 1
     t0 = time.time()
@@ -72,13 +88,16 @@ def call(source: str, real: Callable[[], Any], request: dict, *, model: Any = No
         raise
     finally:
         _TLS.depth = 0
+        ms = round((time.time() - t0) * 1000, 1)
         try:
-            rec.llm(source=source, request=request, response=out, error=err,
-                    latency_ms=round((time.time() - t0) * 1000, 1), model=_val(model),
-                    backend=_val(backend), temperature=_val(temperature), seed=_val(seed),
-                    messages=_val(messages))
+            if rec is not None:
+                rec.llm(source=source, request=request, response=out, error=err, latency_ms=ms, model=_val(model),
+                        backend=_val(backend), temperature=_val(temperature), seed=_val(seed),
+                        messages=_val(messages))
         except Exception:
             pass
+        if _LISTENERS:
+            _tell(source=source, request=request, response=out, error=err, t0=t0, latency_ms=ms, model=_val(model))
 
 
 def records_itself(client) -> bool:

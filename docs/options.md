@@ -101,6 +101,8 @@ dropped. A *flow* hook is a generator (`yield from`): it may yield run events an
 | `on_final(run)` | decide | end of run, before the goals are checked; returns the `done` event | `unapplied_change` |
 | `on_goals_met(run)` | decide | the goals hold; returns the `done` event | `hazard` (partial refusal sentence) |
 | `on_finish(run, fields)` | observe | the fields of a `done` event, before it is built | `hazard` (`refusals`) |
+| `on_event(ev)` | observe | every event of the run as it is yielded (`Dispatcher.tap` around `run_blocking`), made by `svc.emit`, or pushed live (`step_log`, `plan_step`: `tap_push` on the host channel); `None` when the run's stream ended. No watcher: the same generator and channel | `trace` |
+| `on_lab(flag, info)` | observe | a lab_log entry as `AssistLoop._lab` records it (every entry, also past the cap) | `trace` |
 
 `goal_words` also answers the service `goal_guard(run, goals)` (a guard with `place(name)` and `frozen(goal)`) that the engine puts on `places.guard` before the goal repairs (`goal_fix.drop_invented`, `repair_destination`, `shared_listener` read it; None = old behaviour). `goal_ledger` answers the service `goal_keep(run, goals)`: a predicate `keep(goal, words)` that the engine passes to `goal_fix.drop_invented` (argument `keep_go`) for a `go` goal the F4.4 rule would drop (None = dropped as before).
 
@@ -538,6 +540,15 @@ max_shift_m}` with `source` or `assumed: true`; also the `pick` role of `planner
 shift block, a skill the robot does not know, no point, a MoveTo since the Find, or too far even after the shift: unchanged (the Pick runs and
 fails as before). Once per sighting. Key `enabled` (legacy `reach_check`). Hook `on_step` (order 32). Lab flag `reach_check`
 `{object, dist_m, reach_m, shift_m}`; run event `recover` kind `reach_check`. Module: `robot_agent/options/reach_check.py`.
+
+### `trace`
+One JSONL file per run, `<dir>/<run_id>/trace.jsonl`, to read why a run failed in one place (default off; schema: [trace.md](trace.md)).
+It records every event, every lab entry, every LLM call through `observe.llm.call` (purpose, model, start, duration, sizes) and, after
+each failed step, the FailureCode, the robot policy's rule, the reason and what the loop chose next. It only listens: no extra call, no
+event changed. Keys `enabled` (legacy `trace`, `$ROBOT_AGENT_TRACE`) and `dir` (legacy `trace_dir`; run option or environment only;
+empty: the folder of the run's log). Hooks `on_start`, `on_event`, `on_lab`, `on_step_failed` (order 0: it sees each failure first and
+returns None). Engine service `llm_calls(fn)`: `fn` is told of each call with its `purpose` (the label of the latest `LLMBudget.take`).
+Fail open: a write error gives one warning, then no trace for that run. Lab flag `trace` `{path}`. Module: `robot_agent/options/trace.py`.
 
 ### `unapplied_change`
 A correction the robot cannot apply is not dropped silently: the understand step's own question is asked once, and if the correction still

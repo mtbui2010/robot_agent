@@ -24,6 +24,7 @@ Core design:
 - [guard.md](guard.md): precondition layers (gate, per-step guard, skill), reconcile with the sensors, provenance
 - [search.md](search.md): search with a belief: location prior, one LLM ranking per object, searched places as a hard constraint
 - [observe.md](observe.md): RunRecord, metrics line, replay CLI, `ROBOT_AGENT_DATA_DIR`, `/ws/agent` event schema
+- [trace.md](trace.md): the run trace of option `trace` (one JSONL per run: events, lab entries, LLM calls, recovery decisions), schema 1
 - [action_model_divergence.md](action_model_divergence.md): the one action model and where the old copies differed
 
 Planning layer (moved here from kcare_robot/docs):

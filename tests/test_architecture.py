@@ -71,6 +71,7 @@ THROUGH_THE_LOOP = {"ask_source": "test_option_ask_source.py", "hazard": "test_s
                     "ask_agree": "test_option_ask_agree.py", "plan_release": "test_option_plan_release.py",
                     "repair_sync": "test_option_repair_sync.py", "goal_ledger": "test_option_goal_ledger.py", "answer_align": "test_option_answer_align.py",
                     "reach_check": "test_option_reach_check.py"}
+THROUGH_THE_LOOP["trace"] = "test_option_trace.py"
 
 
 def _specs():
@@ -95,7 +96,7 @@ def test_every_registered_option_is_documented_and_tested_through_the_loop(name)
 def test_the_option_modules_are_listed_explicitly_in_the_package_init():
     init = (ROOT / "robot_agent" / "options" / "__init__.py").read_text(encoding="utf-8")
     on_disk = {p.stem for p in (ROOT / "robot_agent" / "options").glob("*.py") if p.stem != "__init__"}
-    listed = set(re.findall(r"\b(\w+)\b", init.split("import", 1)[1].split("#")[0]))
+    listed = set(re.findall(r"\b(\w+)\b", " ".join(l.split("import", 1)[1].split("#")[0] for l in init.splitlines() if l.startswith("from . import"))))
     assert on_disk <= listed, f"modules in options/ that __init__ does not import: {on_disk - listed}"
 
 
