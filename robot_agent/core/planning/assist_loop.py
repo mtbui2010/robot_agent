@@ -1002,7 +1002,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             for slot in ("to", "from"):
                 v = g.get(slot) or ""
                 if not v:
-                    if slot == "to":
+                    if slot == "to" and goal_kinds.has_destination(t):
                         questions.append(speech.LocalText("q_where_put", {"object": g.get("said") or g["object"]},
                                                           text=f"Where should I put the {g['object']}?"))
                     continue
@@ -1262,7 +1262,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             if g.get("person"):
                 return L("rb_say", {"person": g["person"], "text": obj}, text=f"tell {g['person']}: \"{obj}\"")
             return L("rb_say_here", {"text": obj}, text=f"say \"{obj}\"")
-        if t in goal_kinds.TEMPLATE_KINDS:
+        if goal_kinds.by_steps(t):
             return goal_kinds.summary(g)
         return L(f"rb_{t}", {"place": obj}, text=f"{t} the {nice(obj)}") if t in ("open", "close") else f"{t} the {nice(obj)}"
 
@@ -1494,8 +1494,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
                 out.append(f"Open {g['object']}")
             elif t == "close" and g["object"] in opened:
                 out.append(f"Close {g['object']}")
-            elif t in goal_kinds.TEMPLATE_KINDS and not goal_kinds.reached(g, steps, world.arrived,
-                                                                           last=g is goals[-1]):
+            elif goal_kinds.by_steps(t) and not goal_kinds.reached(g, steps, world.arrived,
+                                                                   last=g is goals[-1]):
                 out.append(goal_kinds.summary(g))
         return out
 
@@ -1514,8 +1514,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
                 return False
             if t == "close" and g["object"] in opened:
                 return False
-            if t in goal_kinds.TEMPLATE_KINDS and not goal_kinds.reached(g, steps, world.arrived,
-                                                                         last=g is goals[-1]):
+            if goal_kinds.by_steps(t) and not goal_kinds.reached(g, steps, world.arrived,
+                                                                 last=g is goals[-1]):
                 return False
         return bool(goals) or bool(steps)
 
@@ -1529,7 +1529,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
                 # checks' own looks do not count (_observe_goals goes back there)
                 if not goal_kinds.reached(g, list(done), at, last=True) and world.arrived != g.get("to"):
                     return False
-            elif t in goal_kinds.TEMPLATE_KINDS and not goal_kinds.reached(g, list(done), at):
+            elif goal_kinds.by_steps(t) and not goal_kinds.reached(g, list(done), at):
                 return False
             if t in ("on", "in") and (placed.get(g["object"]) != g["to"] or world.holding == g["object"]):
                 return False

@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Optional
 
 from ..options import NEXT
+from . import goals as goal_kinds
 from . import search as search_belief
 from . import search_experience, search_route
 from .understand import LLMBadOutput, LLMBudgetExceeded, LLMUnavailable, ask_json
@@ -62,7 +63,7 @@ class SearchHooks:
         r.goals = [dict(g) for g in r.goals]           # the understand event keeps what was understood
         for g in r.goals:
             o = g.get("object")
-            if g.get("type") in ("on", "in") and not g.get("from") and not g.get("from_any") \
+            if g.get("type") in goal_kinds.SOUGHT and not g.get("from") and not g.get("from_any") \
                     and (r.search.needs_rank_first(o) or o in r.search.preferred):
                 yield from self._search_rank(r, o)
                 k = r.search.first_place(o, r.world.arrived if o in r.search.preferred else None)

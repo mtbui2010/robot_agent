@@ -10,6 +10,8 @@ it has no skill for, and how the goal is reached by a plan / holds after a run:
   say            the robot says a sentence (at a place, to someone) Say
   deliver        the robot takes what it carries to a place and
                  waits until a person takes it                      MoveTo + WaitForUnload
+  find / pick /  one action, no destination (only with the option   Find / Pick / Place
+  put_here       ``single_goals``: ``SINGLE_KINDS``)
 
 The manipulation kinds are planned by the planner (SAGE or a plug-in); the others (``TEMPLATE_KINDS``) are a fixed
 sequence of steps, compiled here without an LLM (``compile_steps``). Nothing in this module
@@ -52,13 +54,24 @@ OPTIONAL_KINDS: dict = {
                      '"give" = hand an object to a person: object = the item, from = where it is now or "", to = the '
                      'person ("me" when the speaker receives it). Not for putting an object on a place.'),
 }
+# Single-action kinds (option ``single_goals`` puts them in the understand schema; the default schema has none): ``find`` an object
+# (reached when a Find of it ran), ``pick`` it up and keep it (a Pick of it with no release after), ``put_here`` what the robot holds
+# where it is (a Place before any MoveTo: compiled, ``compile_steps``). None has a destination; find / pick are planned from
+# their sub-goal text like a move.
+SINGLE_KINDS: dict = {
+    "find": GoalKind("find", ("Find",)),
+    "pick": GoalKind("pick", ("Pick",)),
+    "put_here": GoalKind("put_here", ("Place",)),
+}
+SOUGHT = ("on", "in", "find", "pick")         # kinds whose object the robot must find first (its source is searched)
+_RELEASES = ("Place", "PutIn", "Pick")        # after these the hand no longer holds what an earlier Pick took
 
 
 def missing_actions(goal: dict, actions: Iterable[str]) -> list:
     """The actions `goal` needs that are not in `actions` (an any-of group by its first name).
     An unknown kind needs an action nobody has: [its type]."""
     acts = set(actions)
-    kind = GOAL_KINDS.get(goal.get("type"))
+    kind = GOAL_KINDS.get(goal.get("type")) or SINGLE_KINDS.get(goal.get("type"))
     if kind is None:
         return [str(goal.get("type"))]
     out = []
@@ -103,7 +116,17 @@ def prompt_lines(kinds: Iterable[str]) -> str:
 
 
 def is_template(goals: list) -> bool:
-    return bool(goals) and all(g.get("type") in TEMPLATE_KINDS for g in goals)
+    return bool(goals) and all(g.get("type") in TEMPLATE_KINDS + ("put_here",) for g in goals)
+
+
+def by_steps(kind) -> bool:
+    """Is a goal of ``kind`` judged by the steps that ran (``reached``): the template kinds and the single-action kinds."""
+    return kind in TEMPLATE_KINDS or kind in SINGLE_KINDS
+
+
+def has_destination(kind) -> bool:
+    """Does a goal of ``kind`` need a ``to`` (the grounding asks for a missing one)? Every kind but the single-action ones."""
+    return kind not in SINGLE_KINDS
 
 
 def dedupe(goals: list) -> list:
@@ -191,6 +214,9 @@ def subgoal_text(g: dict, places=None) -> str:
         return f"say \"{o}\"" + (f" at {who}" if who else "")
     if t == "deliver":
         return f"deliver the {o} to {g.get('to')}" if o else f"deliver what the robot carries to {g.get('to')}"
+    if t in SINGLE_KINDS:
+        return {"find": f"find the {o}{src}", "pick": f"pick up the {o}{src} and keep holding it",
+                "put_here": "put down what the robot holds where it is now"}[t]
     return describe(g)
 
 
@@ -208,6 +234,9 @@ def summary(g: dict) -> str:
     if g["type"] == "say":
         where = f" in the {nice}" if g.get("to") else (f" to {g['person']}" if g.get("person") else "")
         return f"say \"{g.get('object')}\"{where}"
+    if g["type"] in SINGLE_KINDS:
+        return {"find": f"find the {g.get('object')}", "pick": f"pick up the {g.get('object')}",
+                "put_here": "put down what I hold here"}[g["type"]]
     return f"deliver {('the ' + g['object']) if g.get('object') else 'what I carry'} to the {nice}"
 
 
@@ -232,6 +261,8 @@ def compile_steps(goals: list, at: Optional[str], delivery_text: str = "", can_s
             if can_say and delivery_text:
                 out.append({"action": "Say", "object": delivery_text})
             out.append({"action": "WaitForUnload", "object": ""})
+        elif t == "put_here" and at:
+            out.append({"action": "Place", "object": at})
     return out
 
 
@@ -241,6 +272,8 @@ def reached(g: dict, steps: list, at: Optional[str], last: bool = False) -> bool
     started there and left has not reached it, one that never left has); an earlier ``go`` is reached by a
     MoveTo there in the steps, or by starting there."""
     t, here = g.get("type"), at
+    if t in SINGLE_KINDS:
+        return single_reached(g, steps, at)
     if t == "go" and last:
         for st in steps:
             if st.get("action") == "MoveTo":
@@ -261,10 +294,24 @@ def reached(g: dict, steps: list, at: Optional[str], last: bool = False) -> bool
     return False
 
 
+def single_reached(g: dict, steps: list, at: Optional[str]) -> bool:
+    """A find goal: a Find of its object in `steps`; pick: a Pick of it with no release after; put_here: a Place at `at`, before
+    any MoveTo (the robot did not leave the place it was asked at)."""
+    t, o, acts = g.get("type"), g.get("object") or "", [(st.get("action"), st.get("object") or "") for st in steps]
+    if t == "find":
+        return ("Find", o) in acts
+    if t == "pick":
+        last = max((k for k, a in enumerate(acts) if a == ("Pick", o)), default=None)
+        return last is not None and not any(a in _RELEASES for a, _o in acts[last + 1:])
+    moved = next((k for k, (a, where) in enumerate(acts) if a == "MoveTo" and where != at), len(acts))
+    return bool(at) and ("Place", at) in acts[:moved]
+
+
 def _same_text(a, b) -> bool:
     norm = lambda s: " ".join(str(s or "").lower().replace(",", " ").replace(".", " ").split())
     return norm(a) == norm(b)
 
 
-__all__ = ["GoalKind", "GOAL_KINDS", "MANIPULATION", "TEMPLATE_KINDS", "missing_actions", "kinds_for",
+__all__ = ["GoalKind", "GOAL_KINDS", "MANIPULATION", "TEMPLATE_KINDS", "SINGLE_KINDS", "SOUGHT", "missing_actions", "kinds_for",
+           "by_steps", "has_destination", "single_reached",
            "prompt_lines", "is_template", "dedupe", "conflicts", "SPEAKER_WORDS", "is_speaker", "speaker_slots", "describe", "subgoal_text", "summary", "compile_steps", "reached"]
