@@ -3447,8 +3447,7 @@ class AssistLoop(WhichOne, SearchHooks, StepLadder, ClosedLoop):
             res, skill = (again, skill2) if again is not None else (res, skill)
             code = r.robot.failure_code(res, res.msg)
         if code is FailureCode.ABSENT:
-            own = self.options.decide("on_goal_missed", r, o, place)    # e.g. drop_search: it is on the floor next to its place
-            return own or (False, f"the {o} is not on the {nice} (looked after the task: {res.msg or 'not found'})", skill)
+            return False, f"the {o} is not on the {nice} (looked after the task: {res.msg or 'not found'})", skill
         return None, f"could not look for the {o} ({code.value}: {res.msg})", skill
 
     def _look(self, r, st):
