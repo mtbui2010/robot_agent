@@ -13,6 +13,7 @@ from __future__ import annotations
 from robot_agent.contract import STEP_LADDER, Recovery, step_rung
 
 from ..options import NEXT, STOP
+from .speech import HELP_MOVE, HELP_PICK
 
 
 class StepLadder:
@@ -59,7 +60,7 @@ class StepLadder:
             return NEXT, ""
         extra = ""
         if todo is Recovery.ASK_HELP:
-            q = (f"The {o} is too far for my arm. Could you move it closer to the edge, then say yes?" if out_of_reach else f"I can't pick up the {o}. Could you move it closer to the edge, then say yes?")
+            q = f"The {o} is too far for my arm. {HELP_PICK}" if out_of_reach else f"I can't pick up the {o}. {HELP_PICK}"
             out, ans = yield from self._ask_help(r, st, "pick", q)
             if out is not None: return out
             k = r.places.ground(ans, ans) if ans else None
@@ -92,7 +93,7 @@ class StepLadder:
             yield r.ev("recover", at_index=r.i, kind="retry", msg=f"move to {o} again")
             return NEXT, ""
         if todo is Recovery.ASK_HELP:
-            q = f"I can't get to the {o.replace('@', ' in the ')}. Is something in the way? Please clear the way and say yes."
+            q = f"I can't get to the {o.replace('@', ' in the ')}. {HELP_MOVE}"
             out, ans = yield from self._ask_help(r, st, "move", q)
             if out is not None: return out
             if self.yes_no(ans)[0] is True:

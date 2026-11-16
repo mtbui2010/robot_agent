@@ -90,3 +90,17 @@ def test_step_ladder_ask_help_off_ends_the_pick_ladder_in_the_failed_codes_then(
     evs = run_task(make_assist(robot, FakeLLM(GOALS), planner, ask_help=False, max_replans=1), TASK)
     assert done(evs)["status"] == "failed" and robot.asked == []
     assert any(c[0] == "replan" for c in planner.calls)                                # GRASP_FAILED then=REPLAN
+
+
+def test_step_ladder_loop_final_help_question_keeps_its_wording_in_speech(make_assist, env):
+    # regression: the ladders' move out of assist_loop.py took the help sentences out of the modules a bench's question
+    # parser anchors on (symbolic_robot test_dialog_structured_ra); they live once, in speech.py, and the question is unchanged
+    import inspect
+
+    from robot_agent.core.planning import speech, step_ladder
+    robot = FakeRobot(env, {"zibble": DS}, faults=_pick_fails([1, 2]), answers=["yes"])
+    evs = run_task(make_assist(robot, FakeLLM(GOALS), ScriptedPlanner(PLAN)), TASK)
+    assert done(evs)["status"] == "success"
+    assert robot.asked == ["I can't pick up the zibble. Could you move it closer to the edge, then say yes?"]
+    src = inspect.getsource(step_ladder)
+    assert speech.HELP_PICK not in src and speech.HELP_MOVE.endswith("Please clear the way and say yes.") and speech.HELP_MOVE not in src

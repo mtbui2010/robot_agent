@@ -82,6 +82,9 @@ CORE_PHRASES = {
     "say_untranslated": "Sorry, I cannot say that in your language right now.",
     "safety_partial": "I won't {what}: {why}.",
 }
+# the fixed ends of the Pick / MoveTo ladders' help questions (step_ladder.py; English free text, as before; a bench's question parser anchors on them)
+HELP_PICK = "Could you move it closer to the edge, then say yes?"
+HELP_MOVE = "Is something in the way? Please clear the way and say yes."
 
 # A question's kind survives the language layer's last resort (``language._fallback``): a read-back is never replaced by
 # "say the task in other words" (a different question). ``q_confirm_restated`` (a pack's whole-sentence phrase for a
