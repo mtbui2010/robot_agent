@@ -52,13 +52,14 @@ from pathlib import Path
 from typing import Iterator, Optional
 
 from robot_agent.observe.paths import data_dir
-from robot_agent.contract import FailureCode, Recovery, Unbindable, classify_legacy_failure
+from robot_agent.contract import STEP_LADDER, FailureCode, Recovery, Unbindable, classify_legacy_failure
 from robot_agent.state import current, host_id
 from .loop import _DONE, _NEXT, _STOP, ClosedLoop, _vr_list, reconcile_world
 from .records import StepRecord, VerifyResult
 from . import action_model, concrete, episode_memory, goal_change
 from . import search as search_belief
 from .search_hooks import SearchHooks
+from .step_ladder import StepLadder
 from .which_one import WhichOne
 from . import goals as goal_kinds
 from . import langdata
@@ -358,7 +359,7 @@ Task: {task}{original}
 # ─────────────────────────────────────────────────────────────────────────────
 # the loop
 # ─────────────────────────────────────────────────────────────────────────────
-class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
+class AssistLoop(WhichOne, SearchHooks, StepLadder, ClosedLoop):
     """See the module docstring."""
 
     _answer_source = "robot"          # where the last answer came from (interact.dialog: robot | typed | '')
@@ -379,11 +380,11 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         min_conf = (find_props.get("min_conf") or {}).get("default", 0)
         self.cfg.update({
             "clarify_rounds": int(overrides.get("clarify_rounds", env("ROBOT_AGENT_CLARIFY_ROUNDS", "3"))),
-            # Find failures before asking the person where the object is (each one goes to the planner first)
-            "search_max": int(overrides.get("search_max", env("ROBOT_AGENT_SEARCH_MAX", "3"))),
+            # Find failures before asking the person where the object is (each one goes to the planner first): the ABSENT rule's retries
+            "search_max": int(overrides.get("search_max", env("ROBOT_AGENT_SEARCH_MAX", self.robot.policy.rule_for(FailureCode.ABSENT).retries))),
             # searches now go through the planner's replan, so the budget is larger than the plain loop's 3
             "max_replans": int(overrides.get("max_replans", env("ROBOT_AGENT_MAX_REPLANS", "6"))),
-            "pick_retries": int(overrides.get("pick_retries", 1)),
+            "pick_retries": int(overrides.get("pick_retries", self.robot.policy.rule_for(STEP_LADDER["Pick"][0]).retries)),
             # planner repairs (SubgoalRepair) of the first plan driven by the checker's findings
             "edit_rounds": int(overrides.get("edit_rounds", env("ROBOT_AGENT_EDIT_ROUNDS", "3"))),
             # LLM calls the gate's edits leave for the rest of the run (subgoal_repair.edit_reserve)
@@ -3446,7 +3447,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             res, skill = (again, skill2) if again is not None else (res, skill)
             code = r.robot.failure_code(res, res.msg)
         if code is FailureCode.ABSENT:
-            return False, f"the {o} is not on the {nice} (looked after the task: {res.msg or 'not found'})", skill
+            own = self.options.decide("on_goal_missed", r, o, place)    # e.g. drop_search: it is on the floor next to its place
+            return own or (False, f"the {o} is not on the {nice} (looked after the task: {res.msg or 'not found'})", skill)
         return None, f"could not look for the {o} ({code.value}: {res.msg})", skill
 
     def _look(self, r, st):
@@ -3811,7 +3813,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         o, world = st["object"], r.world
         world.found = None
         here, code = world.arrived, r.failures[-1]["code"] if r.failures else ""
-        if code == FailureCode.ABSENT.value and here and r.found_at.get(o) == here and (o, here) not in r.relooked:
+        if rule.action is Recovery.CONTINUE_SEARCH and here and r.found_at.get(o) == here and (o, here) not in r.relooked:
             # the object was lost right here earlier in this run (a failed grasp, or it fell): one miss here is weak
             # evidence that it is gone, so look once more before the place counts as searched
             r.relooked.add((o, here))
@@ -3823,7 +3825,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             r.doubted.add(here); world.opened.discard(here)
             return None, (f"; precondition: {here} is not open (it was believed open, but the {o} is not visible "
                           f"inside): Open {here}, then Find the {o} again")
-        if self.cfg.get("relook") and code == FailureCode.ABSENT.value and rule.mark_searched and here:
+        if self.cfg.get("relook") and rule.action is Recovery.CONTINUE_SEARCH and rule.mark_searched and here:
             out = yield from self._relook_here(r, o, here)       # round 14: one more look, by another sense
             if out is not None:
                 return out
@@ -3834,12 +3836,10 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         # the belief has nowhere left to look (searched places are never searched again): ask / give up now
         nowhere = leg is None and rule.mark_searched and getattr(r, "search", None) is not None
         r.find_fails[o] = r.find_fails.get(o, 0) + 1
-        if (self._missed_enough(r, o) or nowhere or self._search_over(r, o, True)) and self.cfg["ask_help"] and ("where", o) not in r.helped:
-            r.helped.add(("where", o))
-            if (out := (yield from self.options.decide_flow("on_ask_help", r, st, "where"))) is not None: return out   # e.g. ask_next: a menu
+        if (self._missed_enough(r, o) or nowhere or self._search_over(r, o, True)) and self._may_ask(r, "where", o):
             q = speech.LocalText("q_where_is", {"object": self._said_of(r, o)}, text=f"I couldn't find the {o}. Where is it?")
-            yield r.ev("clarify", question=q, round=0)
-            ans, _n = self._ask_heard(q, r.node, self._log_fn(r.i), r.lang)   # silence: asked again (F3.8)
+            out, ans = yield from self._ask_help(r, st, "where", q)
+            if out is not None: return out
             k = r.places.ground(ans, ans) if ans else None
             if not k and ans:
                 k = (yield from self.options.decide_flow("on_where_answer", r, o, ans)) or (yield from self._confirm_near(r, ans))   # a room / unusable answer (ask_source); a noisy one: "Did you mean the X?" (F3.7)
@@ -3871,7 +3871,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             yield self._finish(r, "failed", msg=f"could not find the {o} (looked at {', '.join(r.searched)})")
             return _STOP, ""
         near = f" (it was seen near {r.seen_far[-1]})" if r.seen_far else ""
-        if code == FailureCode.UNREACHABLE.value:
+        if rule.action is Recovery.REAPPROACH:
             return None, f"; it is out of reach from {here}{near}"
         if not rule.mark_searched:
             # could not look: no evidence that it is not here (the replan reason is worded by code)
@@ -4052,93 +4052,6 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         yield r.ev("recover", at_index=r.i, kind="phantom", msg=f"the {o} is not at {here}: it was a false detection")
         return (yield from self._recover_find(r, find, reason, rule))
 
-    def _recover_pick(self, r, st, reason, rule):
-        """Look + grasp again in place (pick_retries, not when out of lateral reach), then ask the person to move it closer. Returns (outcome or None, replan hint)."""
-        o, world = st["object"], r.world
-        if (r.failures and r.failures[-1]["code"] == FailureCode.ABSENT.value and getattr(r, "search", None) is not None
-                and self.cfg.get("search_legs") and not getattr(r, "sensor_only", False)):
-            # nothing there to grasp: the Find that sent the robot here saw a phantom (or the detector missed at the
-            # pick), which is a search miss and not a grasp failure (no grasp retries, no "move it closer")
-            return (yield from self._recover_phantom(r, st, reason, rule))
-        votes = None
-        if getattr(r, "sensor_only", False):
-            # the skill reported success and only the check after it read an empty gripper: two more readings
-            # decide, two of three (a noisy sensor is not a failed grasp, and not a full gripper either)
-            votes = self._holding(r.node, default=False) and self._holding(r.node, default=False)
-        if votes:
-            self._effect(st, world, r.memory, r.placed)
-            r.completed.append(st)
-            for f in r.failures:
-                if f["sig"] == (st["action"], o):
-                    f["recovered"] = True
-            r.i += 1
-            yield r.ev("recover", at_index=r.i - 1, kind="reconcile", msg=f"the {o} is in the gripper (2 of 3 readings)")
-            return _NEXT, ""
-        if votes is None and self._holding(r.node, default=False):
-            # failed, yet something is in the gripper (a neighbour?): never carry on with an unknown object
-            world.holding = f"unknown object (picking {o})"
-            yield self._finish(r, "failed", msg=f"the pick of the {o} failed but something is in my gripper; "
-                                                f"please take it from me: {reason}")
-            return _STOP, ""
-        r.pick_tries[o] = r.pick_tries.get(o, 0) + 1
-        r.found_at[o] = world.arrived; r.relooked.discard((o, world.arrived))   # it is still here: a miss is weak evidence
-        p3 = r.seen_at.get(o)
-        out_of_reach = bool(p3) and abs(p3[1]) > self.cfg["reach_lateral"]
-        if r.pick_tries[o] <= self.cfg["pick_retries"] and not out_of_reach:
-            # retry the same skill pair in place: look again, grasp again
-            r.steps[r.i:r.i] = [{"action": "Find", "object": o}]
-            world.found = None
-            yield r.ev("recover", at_index=r.i, kind="retry", msg=f"pick {o} failed; looking again")
-            return _NEXT, ""
-        extra = ""
-        if self.cfg["ask_help"] and ("pick", o) not in r.helped:
-            r.helped.add(("pick", o))
-            if (out := (yield from self.options.decide_flow("on_ask_help", r, st, "pick"))) is not None: return out    # e.g. ask_next: a menu
-            q = (f"The {o} is too far for my arm. Could you move it closer to the edge, then say yes?" if out_of_reach else f"I can't pick up the {o}. Could you move it closer to the edge, then say yes?")
-            yield r.ev("clarify", question=q, round=0)
-            ans, _n = self._ask_heard(q, r.node, self._log_fn(r.i), r.lang)   # silence: asked again (F3.8)
-            k = r.places.ground(ans, ans) if ans else None
-            if ans and self.yes_no(ans)[0] is True:
-                r.steps[r.i:r.i] = [{"action": "Find", "object": o}]
-                world.found = None
-                yield r.ev("recover", at_index=r.i, kind="asked", msg="user helped; trying again")
-                return _NEXT, ""
-            if k and k != world.arrived:
-                r.memory.see(o, k, "user said"); world.found = None
-                self._search_told(r, o, k)
-                extra = f"; the user says the {o} is on {k}"
-        if not extra and rule is not None and rule.then is Recovery.REPLAN and r.replans < self.cfg["max_replans"] \
-                and not out_of_reach:
-            # F3.9: no help: the policy's next action (contract.recovery GRASP_FAILED then=REPLAN), a new plan
-            # that grasps again, bounded by max_replans; it used to end the run although the rule says replan
-            extra = f"; the grasp of the {o} failed {r.pick_tries[o]} times and nobody could help: try it again"
-        if not extra:
-            yield self._finish(r, "failed", msg=f"could not pick up the {o}: {reason}")
-            return _STOP, ""
-        return None, extra
-
-    def _recover_move(self, r, st, reason, rule):
-        """Move again once, then ask the person to clear the way; else stop."""
-        o = st["object"]
-        # a move that ended away from its target (the pose check) is another failure than a blocked path: it
-        # has its own retry, after the path retry and the person's help were used
-        key = (o, "arrival") if "localization" in getattr(r, "failed_layers", ()) else o
-        r.move_tries[key] = r.move_tries.get(key, 0) + 1
-        if r.move_tries[key] <= 1:
-            yield r.ev("recover", at_index=r.i, kind="retry", msg=f"move to {o} again")
-            return _NEXT, ""
-        if self.cfg["ask_help"] and ("move", o) not in r.helped:
-            r.helped.add(("move", o))
-            if (out := (yield from self.options.decide_flow("on_ask_help", r, st, "move"))) is not None: return out    # e.g. ask_next: a menu
-            q = f"I can't get to the {o.replace('@', ' in the ')}. Is something in the way? Please clear the way and say yes."
-            yield r.ev("clarify", question=q, round=0)
-            ans, _n = self._ask_heard(q, r.node, self._log_fn(r.i), r.lang)
-            if self.yes_no(ans)[0] is True:
-                yield r.ev("recover", at_index=r.i, kind="asked", msg="user cleared the way; trying again")
-                return _NEXT, ""
-        yield self._finish(r, "failed", msg=f"could not get to {o}: {reason}")
-        return _STOP, ""
-
     def _refuted(self, r, st, no) -> str:
         """A step the VLM post-check refuted: its effects stay out of the belief; a release that
         emptied the hand leaves the object's place unknown. The replan hint."""
@@ -4150,45 +4063,6 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             world.holding = world.holding_since = None
         world.found = None
         return f"; the check after {st.get('action')} {st.get('object')} says it did not happen ({no.detail})"
-
-    def _recover_place(self, r, st, reason, rule):
-        """A failed release with an empty hand: the object is gone, stop; else the planner replans."""
-        world = r.world
-        if not self._holding(r.node, default=True):
-            if world.holding:
-                r.memory.see(world.holding, None, "dropped")
-            held = world.holding
-            world.holding = world.holding_since = None
-            if self._refind_dropped(r, st, rule):
-                yield r.ev("recover", at_index=r.i, kind="refind", msg=f"the {held or 'object'} fell; picking it up again")
-                return _NEXT, ""
-            yield self._finish(r, "failed", msg=f"place failed and the object is no longer in the hand: {reason}")
-            return _STOP, ""
-        return None, ""
-
-    def _refind_dropped(self, r, st, rule) -> bool:
-        """The contract's DROPPED rule is REFIND: the object fell where the robot stands, so look for it there
-        on that room's floor (a place the map must have), pick it up and do the failed step again. The steps are
-        spliced in place (no planner call), at most ``rule.retries`` times per object; False when it cannot."""
-        held = next((x.get("object") for x in reversed(r.steps[:r.i]) if x.get("action") == "Pick"), None)
-        if not held or rule is None or getattr(rule, "action", None) is not Recovery.REFIND:
-            return False
-        n = r.refinds[held] = r.refinds.get(held, 0) + 1
-        if n > max(int(getattr(rule, "retries", 1) or 1), 1):
-            return False
-        here = [r.world.arrived, (r.places.env.get(st.get("object")) or {}).get("spot"), st.get("object")]
-        room = next((r.places.room(k) for k in here if k and r.places.room(str(k))), "")   # a person's spot: its place
-        floor = next((k for k in r.places.keys if r.places.room(k) == room and r.places.head(k).lower() == "floor"), None)
-        if not floor:
-            return False                  # the map has no floor to pick things up from: the person is asked instead
-        redo = [{"action": "MoveTo", "object": floor}, {"action": "Find", "object": held}, {"action": "Pick", "object": held}]
-        if st.get("action") in ("Place", "PutIn", "Handover") and st.get("object"):
-            redo.append({"action": "MoveTo", "object": st["object"]})
-        r.steps[r.i:r.i] = redo
-        r.world.found = None
-        r.found_at[held] = floor or r.world.arrived      # it fell here: a miss here is weak evidence
-        r.relooked.discard((held, floor or r.world.arrived))
-        return True
 
     # ── 4. done only when the goals hold ──────────────────────────────────
     def _final_check(self, r) -> dict:

@@ -156,6 +156,27 @@ class LoopServices:
         instead of searching on alone until `search_max` misses."""
         run.__dict__.setdefault("pre_fails", {})[obj] = int(self._lp.cfg["search_max"])
 
+    # ── the hand and a lost object (option drop_search) ──
+    def hand_sensor(self, run):
+        """The raw result of the robot's hand sensor (the skill that verifies its Pick); None when it has none or the call raised."""
+        skill = self._lp.robot.holding_sensor()
+        try:
+            return self._lp.sr.execute(skill, {}, run.node) if skill else None
+        except Exception:
+            return None
+
+    def let_go(self, run, why: str):
+        """The belief lets go of what it holds (the object memory: place unknown, ``why``): the object, or None when it held nothing."""
+        held = run.world.holding
+        if held:
+            run.memory.see(held, None, why)
+            run.world.holding = run.world.holding_since = None
+        return held
+
+    def refind_on(self, run, step, obj, floor) -> None:
+        """The engine's REFIND rung (``_splice_refind``): MoveTo ``floor``, Find and Pick ``obj``, back to ``step``'s place, then ``step`` again."""
+        self._lp._splice_refind(run, step, obj, floor)
+
     # ── the person's choice after a failed step (option ask_next, hook on_ask_help) ──
     def retry_here(self, run, step) -> None:
         """The failed ``step`` runs once more where the robot is, as the loop's own retry does: the look is made again (a Pick gets a

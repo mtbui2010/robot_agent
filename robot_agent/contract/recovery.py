@@ -78,7 +78,7 @@ DEFAULT_RECOVERY: dict = {
     FailureCode.UNREACHABLE: RecoveryRule(R.REAPPROACH, retries=1, then=R.REPLAN,
                                           note="seen but out of reach: get closer"),
     FailureCode.BLOCKED: RecoveryRule(R.RETRY, retries=1, then=R.ASK_HELP, note="path / spot occupied"),
-    # 3 = assist_loop's search_max: then the person is asked where it is
+    # retries = the default of assist_loop's search_max: then the person is asked where it is
     FailureCode.ABSENT: RecoveryRule(R.CONTINUE_SEARCH, retries=3, then=R.ASK_HELP, mark_searched=True,
                                      note="not here: search on from the belief"),
     FailureCode.GRASP_FAILED: RecoveryRule(R.RETRY, retries=1, then=R.REPLAN, note="look + grasp again once"),
@@ -90,6 +90,25 @@ DEFAULT_RECOVERY: dict = {
                                       note="no usable reason: observe, then replan"),
 }
 del R
+
+# The step actions with a ladder of their own, after the policy's rung (STOP / WAIT_HEALTH / HEALTH_CHECK): the code
+# whose rule gives the ladder's first rung and how often it is used, and whether the failed code's own ``then``
+# (REPLAN) may end the ladder (else it stops). An action not listed has no ladder: its failure goes to the planner.
+STEP_LADDER = {"Pick": (FailureCode.GRASP_FAILED, True), "MoveTo": (FailureCode.BLOCKED, False)}
+
+
+def step_rung(ladder: RecoveryRule, failed: Optional[RecoveryRule], tried: int, asked: bool, *,
+              retries: Optional[int] = None, can_retry: bool = True, replan_after: bool = False) -> Recovery:
+    """The rung of a step's own ladder at its ``tried``-th failure: the ladder rule's action (RETRY) while ``tried`` <=
+    its retries (``retries`` in their place) and ``can_retry``; then ASK_HELP unless ``asked`` (asked already, or the
+    loop may not ask); then REPLAN when ``replan_after`` and the failed code's rule says ``then=REPLAN``; else STOP."""
+    if can_retry and tried <= (ladder.retries if retries is None else retries):
+        return ladder.action
+    if not asked:
+        return Recovery.ASK_HELP
+    if replan_after and failed is not None and failed.then is Recovery.REPLAN:
+        return Recovery.REPLAN
+    return Recovery.STOP
 
 
 class RecoveryPolicy:
@@ -117,4 +136,4 @@ def policy_for(adapter: Any = None) -> RecoveryPolicy:
     return RecoveryPolicy(ov or None)
 
 
-__all__ = ["Recovery", "RecoveryRule", "RecoveryPolicy", "DEFAULT_RECOVERY", "policy_for"]
+__all__ = ["Recovery", "RecoveryRule", "RecoveryPolicy", "DEFAULT_RECOVERY", "policy_for", "STEP_LADDER", "step_rung"]
