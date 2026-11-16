@@ -347,15 +347,22 @@ def test_g_judge_uses_only_held_english(make_assist):
     assert DA.judge([ko, "put it in the fridge"], READ["goals"], places)[0] == "agree"      # the held English counts
 
 
+WALL_CLOCK = ("run_id", "t", "ts", "elapsed_s", "started_at", "plan_sec")    # plan_sec = round(time, 2): 0.0 or 0.01
+
+
+def scrub(x, drop_event=None):
+    """Events without the per-run ids and wall-clock fields (and without the events named ``drop_event``)."""
+    if isinstance(x, dict):
+        return {k: scrub(v, drop_event) for k, v in x.items() if k not in WALL_CLOCK}
+    if isinstance(x, list):
+        return [scrub(v, drop_event) for v in x if not (drop_event and isinstance(v, dict) and v.get("event") == drop_event)]
+    return x
+
+
 # (h) option off: identical events
 def test_h_option_off_is_the_earlier_events(make_assist):
     def run(**o):
         _l, robot, evs = play(make_assist, FakeLLM(default=READ), ["No.", TASK, "In the fridge, please."], dialog_unstick="1", **o)
-
-        def scrub(x):
-            if isinstance(x, dict):
-                return {k: scrub(v) for k, v in x.items() if k not in ("run_id", "t", "ts", "elapsed_s", "started_at")}
-            return [scrub(v) for v in x] if isinstance(x, list) else x
         return json.dumps(scrub(evs), sort_keys=True, default=str), robot.asked
     assert run() == run(dialog_agree="0")
 
@@ -363,12 +370,7 @@ def test_h_option_off_is_the_earlier_events(make_assist):
 def test_h_a_clean_run_is_the_same_with_the_option_on(make_assist):
     def run(**o):
         _l, robot, evs = play(make_assist, FakeLLM(default=READ), ["yes"], **o)
-
-        def scrub(x):
-            if isinstance(x, dict):
-                return {k: scrub(v) for k, v in x.items() if k not in ("run_id", "t", "ts", "elapsed_s", "started_at")}
-            return [scrub(v) for v in x if not (isinstance(v, dict) and v.get("event") == "reconcile")] if isinstance(x, list) else x
-        return json.dumps(scrub(evs), sort_keys=True, default=str), robot.trace
+        return json.dumps(scrub(evs, "reconcile"), sort_keys=True, default=str), robot.trace
     assert run() == run(dialog_agree="1")
 
 
