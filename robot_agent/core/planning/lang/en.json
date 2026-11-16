@@ -339,14 +339,13 @@
   ]
  },
  "single_goals": {
-  "prompt": [
-   "  EXTRA kinds for a single action (use them only when the user asks for exactly that one action and nothing more):",
-   "  \"find\" = look for an object and tell where it is, nothing to move: object = the object, from \"\" (or the place named), to \"\".",
-   "  \"pick\" = pick an object up and keep holding it: object = the object, from = the place it is on if named, to \"\".",
-   "  \"put_here\" = put down what the robot holds where it is now: object = \"\" (or what it holds), from \"\", to \"\"."
-  ],
+  "prompt": {
+   "find": ["  \"find\" = only look for an object and tell where it is, when the user asks for nothing more: object = the object, from = the place named or \"\", to \"\"."],
+   "pick": ["  \"pick\" = pick an object up and keep holding it: object = the object, from = the place it is on if named, to \"\"."],
+   "put_here": ["  \"put_here\" = put down what the robot holds where it is now: object = \"\" (or what it holds), from \"\", to \"\"."]
+  },
   "assumed": true,
-  "source": "assumed: hand-written rule lines of the understand prompt for option single_goals (find, pick, put_here), plain English; tried on made-up single-action commands, not taken from a benchmark"
+  "source": "assumed: hand-written rule lines of the understand prompt for option single_goals, one per kind (the option uses the kinds of its key kinds), plain English; tried on made-up commands, not taken from a benchmark"
  },
  "speech": {
   "q_pick_one": "Which one do you mean: {text}?",

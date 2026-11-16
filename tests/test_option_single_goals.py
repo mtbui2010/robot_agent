@@ -14,7 +14,7 @@ from robot_agent.core.planning import langdata, speech
 from robot_agent.core.planning.assist_loop import ASSIST_OPTIONS, UNDERSTAND_PROMPT
 from robot_agent.options.single_goals import SPEC, SingleGoals, found, kinds_for, rule_lines, with_rules
 
-ZQ = {"single_goals": {"prompt": ["  \"find\" = sercxu {objekto}.", "  \"pick\" = prenu."], "assumed": True},
+ZQ = {"single_goals": {"prompt": {"find": ["  \"find\" = sercxu {objekto}."], "pick": ["  \"pick\" = prenu.", "  ne portu."]}, "assumed": True},
       "speech": {"say_found_at": "Mi trovis {object} ĉe {place}.", "assumed": True}}
 ACTS = ("MoveTo", "Find", "Pick", "Place")
 DESK, SIDE, COUNTER = "desk@study room", "side table@living room", "counter@kitchen"
@@ -68,16 +68,18 @@ def test_compile_put_here_is_a_place_where_the_robot_is_and_other_kinds_keep_the
 
 
 # ── the option's pure helpers ──────────────────────────────────────────────────────────────────────────────────────────
-def test_rule_lines_need_a_labelled_block(zq, monkeypatch):
-    assert rule_lines(zq) == "  \"find\" = sercxu {objekto}.\n  \"pick\" = prenu."
-    for blk in ({**ZQ["single_goals"], "assumed": False}, {"assumed": True}, {"prompt": [], "assumed": True}):
+def test_rule_lines_per_kind_need_a_labelled_block(zq, monkeypatch):
+    assert rule_lines(zq, ["pick", "find", "put_here"]) == {"pick": "  \"pick\" = prenu.\n  ne portu.", "find": "  \"find\" = sercxu {objekto}."}
+    assert rule_lines(zq, ["find"]) == {"find": "  \"find\" = sercxu {objekto}."} and rule_lines(zq, []) == {}
+    for blk in ({**ZQ["single_goals"], "assumed": False}, {"assumed": True}, {"prompt": {"find": []}, "assumed": True}, {"prompt": ["x"], "assumed": True}):
         monkeypatch.setitem(langdata._CACHE, "zq", {"single_goals": blk})
-        assert rule_lines("zq") == "", blk
-    assert rule_lines("xx") == ""                                                   # a language with no pack
+        assert rule_lines("zq", ["find"]) == {}, blk
+    assert rule_lines("xx", ["find"]) == {}                                         # a language with no pack
 
 
 def test_kinds_for_a_robot_only_the_ones_it_has_actions_for():
     assert kinds_for(ACTS) == ["find", "pick", "put_here"] and kinds_for(("MoveTo", "Find")) == ["find"] and kinds_for(()) == []
+    assert kinds_for(ACTS, ["pick", "fetchy"]) == ["pick"]                         # only listed, known kinds
 
 
 def test_with_rules_puts_the_lines_after_the_goal_kind_lines_escaped():
@@ -91,22 +93,26 @@ def test_found_lists_find_goals_with_a_known_place():
 
 
 # ── the hooks on a stub ────────────────────────────────────────────────────────────────────────────────────────────────────
-def make_opt(acts=ACTS):
+def make_opt(acts=ACTS, kinds="find"):
     labs = []
     svc = NS(robot=NS(plan_actions=acts, i18n=None), lab=lambda flag, **i: labs.append((flag, i)))
-    return SingleGoals({}, svc), labs
+    return SingleGoals({"kinds": kinds}, svc), labs
 
 
 def schema():
     return {"properties": {"goals": {"items": {"properties": {"type": {"enum": ["on", "in", "go"]}}}}}}
 
 
-def test_schema_gets_the_kinds_with_pack_lines(monkeypatch, zq):
+def test_schema_gets_only_the_listed_kinds_that_have_pack_lines(monkeypatch, zq):
     monkeypatch.setattr(langdata, "prompt_lang", lambda: "zq")
-    opt, labs = make_opt()
+    opt, labs = make_opt()                                                          # the default: find only
     out = opt.on_understand_schema(schema())
-    assert out["properties"]["goals"]["items"]["properties"]["type"]["enum"] == ["on", "in", "go", "find", "pick", "put_here"]
-    assert labs == [("single_goals", {"part": "schema", "kinds": ["find", "pick", "put_here"]})]
+    assert out["properties"]["goals"]["items"]["properties"]["type"]["enum"] == ["on", "in", "go", "find"]
+    assert labs == [("single_goals", {"part": "schema", "kinds": ["find"]})]
+    assert opt.on_understand_prompt(UNDERSTAND_PROMPT).count("sercxu") == 1 and "prenu" not in opt.on_understand_prompt(UNDERSTAND_PROMPT)
+    opt, labs = make_opt(kinds="find,pick,put_here")                                # put_here has no zq line: not offered
+    out = opt.on_understand_schema(schema())
+    assert out["properties"]["goals"]["items"]["properties"]["type"]["enum"] == ["on", "in", "go", "find", "pick"]
 
 
 def test_single_goals_without_pack_lines_changes_neither_schema_nor_prompt_empty(monkeypatch):
@@ -144,7 +150,13 @@ def test_reader_schema_with_the_key_on_has_the_kinds_and_the_pack_lines(make_ass
     run_task(loop, "Go to the desk.")
     p, f = _understand_call(llm)
     enum = f["properties"]["goals"]["items"]["properties"]["type"]["enum"]
-    assert enum[-3:] == ["find", "pick", "put_here"] and rule_lines("en") in p and p.index(rule_lines("en")) < p.index("  Object names:")
+    line = rule_lines("en", ["find"])["find"]
+    assert enum[-1] == "find" and "pick" not in enum and "put_here" not in enum           # the default kinds: find only
+    assert line in p and p.index(line) < p.index("  Object names:") and '"pick" =' not in p
+    llm = FakeLLM(default={**UND, "goals": [goal("go", "", "", DESK)]})
+    run_task(make_assist(robot, llm, ScriptedPlanner([]), single_goals="1", **{"single_goals.kinds": "find,pick,put_here"}), "Go to the desk.")
+    p, f = _understand_call(llm)
+    assert f["properties"]["goals"]["items"]["properties"]["type"]["enum"][-3:] == ["find", "pick", "put_here"] and '"put_here" =' in p
 
 
 # ── the three kinds through the real AssistLoop: the FINAL outcome ─────────────────────────────────────────────────────────

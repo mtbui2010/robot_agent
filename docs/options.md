@@ -570,15 +570,16 @@ as stop. Module: `robot_agent/options/ask_next.py`.
 ### `single_goals`
 A request for ONE action with no destination is read as that action (default off). Before, the reader had no kind for it: "Find the red cup"
 became a delivery to the person (picked up and brought), "Where is the apple?" and "Put it down here" a question. With the option the understand
-schema gets the goal kinds `find`, `pick`, `put_here` (engine table `goals.SINGLE_KINDS`, only those whose actions the robot has: Find / Pick /
-Place) and the prompt the rule lines of the prompt language's pack (block `single_goals`, key `prompt`, labelled; inserted after the goal-kind
-lines). The engine plans and checks them (`goals.py`): `find` and `pick` are planned from their sub-goal text like a move (the source is
+schema gets the goal kinds listed in key `kinds` (comma list, default `find` only; `pick`, `put_here` on request) of the engine table
+`goals.SINGLE_KINDS` whose actions the robot has (Find / Pick / Place) and that have a rule line, and the prompt those lines (block
+`single_goals`, `prompt` {kind: [lines]} of the prompt language's pack, labelled; inserted after the goal-kind lines). The default is find
+only because the three-kind prompt changed 10 of 40 other readings in a reader probe (2026-11-16). The engine plans and checks them (`goals.py`): `find` and `pick` are planned from their sub-goal text like a move (the source is
 searched as for `on`, a missed Find takes the usual recovery); `find` holds once a Find of the object ran, `pick` once a Pick of it ran with no
 release after (the run ends there: the plan's extra steps are not run); `put_here` is compiled to one Place at the robot's place (no planner
 call). When the goals hold, a find ends saying where the object was seen (phrase `say_found_at`, slots `object`, `place`, in the run's
 language; done event field `found`). With the key off the schema and the prompt are unchanged; a reader without a grammar that writes such a
 kind anyway is now planned instead of refused (see risks in the change card). Fail open: no labelled lines = nothing changes; no phrase in
-the run's language or no remembered place = the usual "done". Key `enabled` (legacy `single_goals`). Hooks `on_understand_schema`,
+the run's language or no remembered place = the usual "done". Keys `enabled` (legacy `single_goals`), `kinds` (`single_goals_kinds`). Hooks `on_understand_schema`,
 `on_understand_prompt`, `on_goals_met` (order 46). Lab flag `single_goals` `{part: schema, kinds}` / `{part: found, object, place}`.
 Limits: the follow-up question ("anything else?") is not part of it; Korean pick / put_here are read less well by the current reader (probe in
 the change card). Module: `robot_agent/options/single_goals.py`.

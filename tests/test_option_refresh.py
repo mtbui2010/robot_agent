@@ -68,8 +68,8 @@ def test_refresh_options_an_option_switched_on_only_by_the_merged_manifest_is_ma
 
 
 def made_up(key: Key):
-    return {"bool": not key.default, "int": int(key.default or 0) + 7, "float": float(key.default or 0) + 0.5,
-            "str": "zq made-up text", "dict": {"zq": {"made_up": 1}, "assumed": True}}[key.type]
+    return {"bool": lambda: not key.default, "int": lambda: int(key.default or 0) + 7, "float": lambda: float(key.default or 0) + 0.5,
+            "str": lambda: "zq made-up text", "dict": lambda: {"zq": {"made_up": 1}, "assumed": True}}[key.type]()   # lazy: a str default need not be a number
 
 
 def test_refresh_options_every_registered_option_sees_a_manifest_key_merged_after_build_none_is_silently_inert(loop, monkeypatch):
