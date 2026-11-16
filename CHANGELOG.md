@@ -5,6 +5,13 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+### Look at and clean the raw VLA episodes (`/recordings`)
+- `core/episodes.py` + `api/recordings.py`, from the `RECORDER` config's `dir` (404 without it): `GET /recordings` (every finished episode with numbers that tell a good one from a bad one:
+  rates, camera gaps, idle start / end and a suggested trim, gripper changes, teleop off in the middle of the movement; totals), `GET /recordings/{day}/{ep}` (curves, camera info),
+  `GET .../frame?cam&t` (the nearest JPEG), `PUT|DELETE .../edit` (trim, label, exclude, note: saved in `<data>/edits/`, NEVER into the raw folder), `POST /recordings/export`
+  (writes `<data>/exports/<name>.json`, the manifest `robot_teleop/tools/export_lerobot.py` turns into a LeRobot dataset; answers with the command). Ids are checked (no path leaves
+  the data folder). 11 tests; tried on the first two real episodes (it flagged ep_0001: teleop off 4.3 s in the middle of the movement, servo command stopped 3.7 s).
+
 ### Record raw VLA episodes from the dashboard (`/recorder`)
 - `RECORDER` config group (kcare: `configs/tasks.py`; none = nothing shown): `{dir, teleop, prompts: {fields, templates, synonyms}}`. `GET /recorder` (state of
   `robot_teleop.recorder`, the prompt fields, `404` without the group), `POST /recorder/prompt {fields}` -> a RANDOM sentence from the robot's templates that uses every

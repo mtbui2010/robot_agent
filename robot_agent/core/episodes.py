@@ -1,0 +1,269 @@
+"""Read the raw VLA episodes the recorder wrote (``robot_teleop`` format ``robot_teleop.raw/1``): list them, summarise one, serve a frame, keep an edit list.
+
+Layout under the data folder ``D`` (the ``RECORDER`` config's ``dir`` is ``D/raw``):  ``raw/<YYYY-MM-DD>/ep_NNNN/{meta.json, streams.npz, DONE, head/, wrist/}`` is
+READ ONLY here; what the operator decides is written next to it, never into it:  ``edits/<YYYY-MM-DD>/ep_NNNN.json``
+    {version: 1, trim_start_s, trim_end_s, label?, exclude?, note?}      (times in seconds from the start of the episode)
+The export tool (``robot_teleop/tools/export_lerobot.py``) reads the same files. Only episodes with a ``DONE`` file are listed (the rest are being copied).
+"""
+from __future__ import annotations
+
+import json
+import re
+import time
+from pathlib import Path
+
+import numpy as np
+
+DAY = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+EP = re.compile(r'^ep_\d{4}$')
+MOVING_RAD_S = 0.02          # summed joint speed above this = the arm is moving
+PAD_S = 0.5                  # margin kept around the movement in the suggested trim
+LABELS = ('success', 'failure')
+_CACHE: dict = {}
+
+
+class EpisodeError(ValueError):
+    """A request the operator can read (bad id, nothing there, bad edit)."""
+
+
+def _root(raw_dir) -> Path:
+    if not raw_dir:
+        raise EpisodeError('no data folder is configured')
+    return Path(raw_dir)
+
+
+def episode_dir(raw_dir, day: str, ep: str) -> Path:
+    if not DAY.match(day or '') or not EP.match(ep or ''):
+        raise EpisodeError('bad episode id')
+    p = _root(raw_dir) / day / ep
+    if not (p / 'DONE').is_file():
+        raise EpisodeError(f'{day}/{ep} is not there (or still being copied)')
+    return p
+
+
+def edits_path(raw_dir, day: str, ep: str) -> Path:
+    return _root(raw_dir).parent / 'edits' / day / f'{ep}.json'
+
+
+# ── numbers from one episode ──────────────────────────────────────────────────────────
+def _streams(p: Path) -> dict:
+    with np.load(p / 'streams.npz') as z:
+        return {k: z[k] for k in z.files}
+
+
+def _rate(t) -> float:
+    return round(float((len(t) - 1) / (t[-1] - t[0])), 1) if len(t) > 1 and t[-1] > t[0] else 0.0
+
+
+def summarise(meta: dict, z: dict) -> dict:
+    """Numbers that tell a good episode from a bad one, and a suggested trim (the idle start and end)."""
+    t0, dur = float(meta['started_at']), float(meta.get('duration_s') or 0)
+    out: dict = {'duration_s': round(dur, 2), 'rates_hz': {}, 'max_gap_s': {}, 'warnings': []}
+    for k in ('state', 'action_servo', 'action_ref', 'gripper_cmd', *(meta.get('cameras') or {})):
+        t = z.get(f'{k}_t')
+        if t is not None and len(t) > 1:
+            out['rates_hz'][k] = _rate(t)
+            out['max_gap_s'][k] = round(float(np.diff(t).max()), 2)
+    st, tt = z.get('state'), z.get('state_t')
+    if st is None or len(st) < 3:
+        out['warnings'].append('no joint state recorded')
+        return out
+    tt = tt - t0
+    dt = np.maximum(np.diff(tt), 1e-3)
+    speed = np.abs(np.diff(st[:, :7], axis=0)).sum(1) / dt
+    speed = np.convolve(speed, np.ones(10) / 10, mode='same')          # ~0.2 s at 50 Hz: a twitch is not movement
+    moving = speed > MOVING_RAD_S
+    out.update(max_speed_rad_s=round(float(speed.max()), 3), path_rad=round(float(np.abs(np.diff(st[:, :7], axis=0)).sum()), 2),
+               moving_fraction=round(float(moving.mean()), 2))
+    t1 = tt[1:]
+    if moving.any():
+        first, last = float(t1[moving][0]), float(t1[moving][-1])
+        out.update(idle_head_s=round(first, 2), idle_tail_s=round(max(0.0, dur - last), 2),
+                   trim_suggest=[round(max(0.0, first - PAD_S), 2), round(min(dur, last + PAD_S), 2)])
+        out['inactive_inside_s'] = round(_inactive_between(meta.get('events') or [], first, last), 2)
+        if out['inactive_inside_s'] > 0.5:
+            out['warnings'].append(f"teleop was off for {out['inactive_inside_s']} s in the middle of the movement")
+    else:
+        out['warnings'].append('the arm never moved')
+    g = z.get('gripper_cmd')
+    out['gripper_changes'] = int((np.abs(np.diff(g[:, 0])) > 0.01).sum()) if g is not None and len(g) > 1 else 0
+    if out['gripper_changes'] == 0:
+        out['warnings'].append('the gripper command never changed')
+    for cam in (meta.get('cameras') or {}):
+        r = out['rates_hz'].get(cam, 0)
+        if r and r < 15:
+            out['warnings'].append(f'{cam} camera only {r} Hz')
+        if out['max_gap_s'].get(cam, 0) > 0.5:
+            out['warnings'].append(f"{cam} camera stopped for {out['max_gap_s'][cam]} s")
+    if out['max_gap_s'].get('action_servo', 0) > 1.0:
+        out['warnings'].append(f"the servo command stopped for {out['max_gap_s']['action_servo']} s")
+    return out
+
+
+def _inactive_between(events: list, a: float, b: float) -> float:
+    """Seconds in [a, b] during which the teleop function was not `active` (from the recorded state changes)."""
+    ev = sorted((e for e in events if e.get('kind') == 'teleop'), key=lambda e: e['t'])
+    if not ev:
+        return 0.0
+    total, cur, t = 0.0, ev[0].get('state'), a
+    for e in ev:
+        if e['t'] > a:
+            if e['t'] >= b:
+                break
+            if cur != 'active':
+                total += e['t'] - t
+            t = e['t']
+        cur = e.get('state')
+    if cur != 'active':
+        total += b - t
+    return total
+
+
+def _load(p: Path) -> tuple:
+    key = str(p)
+    mt = (p / 'meta.json').stat().st_mtime
+    hit = _CACHE.get(key)
+    if hit and hit[0] == mt:
+        return hit[1], hit[2]
+    meta = json.loads((p / 'meta.json').read_text())
+    z = _streams(p)
+    summ = summarise(meta, z)
+    _CACHE[key] = (mt, meta, summ)
+    return meta, summ
+
+
+def load_edit(raw_dir, day: str, ep: str) -> dict | None:
+    f = edits_path(raw_dir, day, ep)
+    try:
+        return json.loads(f.read_text()) if f.is_file() else None
+    except (OSError, ValueError):
+        return None
+
+
+def row(raw_dir, day: str, ep: str) -> dict:
+    p = episode_dir(raw_dir, day, ep)
+    meta, summ = _load(p)
+    return {'id': f'{day}/{ep}', 'day': day, 'episode': ep, 'prompt': meta.get('prompt', ''), 'label': meta.get('label'), 'kind_fields': meta.get('fields'),
+            'started_at': meta.get('started_at'), 'counts': meta.get('counts'), 'summary': summ, 'edit': load_edit(raw_dir, day, ep)}
+
+
+def list_episodes(raw_dir) -> dict:
+    """{dir, episodes: [row], totals}: newest first; an episode that cannot be read is listed with an `error`."""
+    root = _root(raw_dir)
+    rows = []
+    if root.is_dir():
+        for d in sorted((x for x in root.iterdir() if x.is_dir() and DAY.match(x.name)), reverse=True):
+            for e in sorted((x for x in d.iterdir() if x.is_dir() and EP.match(x.name) and (x / 'DONE').is_file()), reverse=True):
+                try:
+                    rows.append(row(raw_dir, d.name, e.name))
+                except Exception as ex:                                   # a damaged episode must not hide the others
+                    rows.append({'id': f'{d.name}/{e.name}', 'day': d.name, 'episode': e.name, 'error': str(ex)})
+    ok = [r for r in rows if 'error' not in r]
+    eff = lambda r: (r.get('edit') or {}).get('label') or r.get('label')
+    secs = sum(r['summary']['duration_s'] for r in ok)
+    return {'dir': str(root), 'episodes': rows,
+            'totals': {'episodes': len(ok), 'hours': round(secs / 3600, 2), 'success': sum(eff(r) == 'success' for r in ok),
+                       'failure': sum(eff(r) == 'failure' for r in ok), 'excluded': sum(bool((r.get('edit') or {}).get('exclude')) for r in ok)}}
+
+
+def detail(raw_dir, day: str, ep: str, points: int = 400) -> dict:
+    """One episode: the row plus curves (down-sampled to ``points``) for the chart and the cameras' frame times."""
+    p = episode_dir(raw_dir, day, ep)
+    r = row(raw_dir, day, ep)
+    meta = json.loads((p / 'meta.json').read_text())
+    z = _streams(p)
+    t0 = float(meta['started_at'])
+    tt = z['state_t'] - t0
+    idx = np.unique(np.linspace(0, len(tt) - 1, min(points, len(tt))).astype(int))
+    grid = tt[idx]
+    series = {'t': np.round(grid, 3).tolist(), 'joints': np.round(z['state'][idx, :7].T, 4).tolist(), 'gripper': np.round(z['state'][idx, 7], 4).tolist()}
+    if 'gripper_cmd' in z and len(z['gripper_cmd']):
+        gi = np.clip(np.searchsorted(z['gripper_cmd_t'] - t0, grid, side='right') - 1, 0, len(z['gripper_cmd']) - 1)
+        series['gripper_cmd'] = np.round(z['gripper_cmd'][gi, 0], 4).tolist()
+    cams = {c: {'frames': int(len(z[f'{c}_t'])), 'first_t': round(float(z[f'{c}_t'][0] - t0), 3)} for c in (meta.get('cameras') or {}) if f'{c}_t' in z}
+    return {**r, 'meta': {k: meta.get(k) for k in ('prompt', 'label', 'fields', 'robot', 'joint_names', 'cameras', 'events', 'started_at', 'ended_at')},
+            'series': series, 'cameras': cams}
+
+
+def frame_path(raw_dir, day: str, ep: str, cam: str, t: float) -> Path:
+    """The camera frame nearest to ``t`` seconds after the start of the episode."""
+    p = episode_dir(raw_dir, day, ep)
+    meta = json.loads((p / 'meta.json').read_text())
+    if cam not in (meta.get('cameras') or {}):
+        raise EpisodeError(f'no camera "{cam}"')
+    ts = _streams(p)[f'{cam}_t'] - float(meta['started_at'])
+    i = int(np.abs(ts - t).argmin())
+    f = p / cam / f'{i:06d}.jpg'
+    if not f.is_file():
+        raise EpisodeError('frame missing')
+    return f
+
+
+# ── the edit list ───────────────────────────────────────────────────────────────────
+def save_edit(raw_dir, day: str, ep: str, edit: dict) -> dict:
+    p = episode_dir(raw_dir, day, ep)
+    meta, summ = _load(p)
+    dur = float(summ['duration_s'])
+    out: dict = {'version': 1, 'saved_at': round(time.time(), 1)}
+    a, b = edit.get('trim_start_s'), edit.get('trim_end_s')
+    if a is not None or b is not None:
+        a = 0.0 if a is None else float(a)
+        b = dur if b is None else float(b)
+        if not (0 <= a < b <= dur + 0.05):
+            raise EpisodeError(f'trim must satisfy 0 <= start < end <= {dur} s')
+        out.update(trim_start_s=round(a, 3), trim_end_s=round(min(b, dur), 3))
+    if edit.get('label') is not None:
+        if edit['label'] not in LABELS:
+            raise EpisodeError(f'label: one of {LABELS}')
+        out['label'] = edit['label']
+    if edit.get('exclude'):
+        out['exclude'] = True
+    if edit.get('note'):
+        out['note'] = str(edit['note'])[:300]
+    f = edits_path(raw_dir, day, ep)
+    f.parent.mkdir(parents=True, exist_ok=True)
+    tmp = f.with_suffix('.tmp')
+    tmp.write_text(json.dumps(out, indent=1))
+    tmp.replace(f)
+    return out
+
+
+def delete_edit(raw_dir, day: str, ep: str) -> None:
+    episode_dir(raw_dir, day, ep)
+    edits_path(raw_dir, day, ep).unlink(missing_ok=True)
+
+
+# ── the export manifest: what the export tool (on a machine with LeRobot) turns into a dataset ──────────────────────
+ACTIONS = ('future_state', 'servo', 'ref')
+
+
+def export_manifest(raw_dir, name: str, fps: int = 30, action: str = 'future_state', horizon_s: float = 0.3, labels=('success',)) -> dict:
+    """Write ``<data>/exports/<name>.json``: the episodes to include (not excluded, with an accepted label), each with its prompt and trim."""
+    if not re.match(r'^[A-Za-z0-9_\-]{1,60}$', name or ''):
+        raise EpisodeError('name: letters, digits, _ and - only')
+    if not 1 <= int(fps) <= 120:
+        raise EpisodeError('fps must be 1..120')
+    if action not in ACTIONS:
+        raise EpisodeError(f'action: one of {ACTIONS}')
+    if not 0 <= float(horizon_s) <= 3:
+        raise EpisodeError('horizon_s must be 0..3')
+    eps, secs = [], 0.0
+    for r in list_episodes(raw_dir)['episodes']:
+        if 'error' in r:
+            continue
+        e = r.get('edit') or {}
+        label = e.get('label') or r.get('label')
+        if e.get('exclude') or label not in labels:
+            continue
+        dur = r['summary']['duration_s']
+        a, b = e.get('trim_start_s', 0.0), e.get('trim_end_s', dur)
+        secs += b - a
+        eps.append({'id': r['id'], 'prompt': r['prompt'], 'label': label, 'trim_start_s': a, 'trim_end_s': b})
+    if not eps:
+        raise EpisodeError('no episode matches (check the labels and the excluded ones)')
+    manifest = {'version': 1, 'name': name, 'created_at': round(time.time(), 1), 'fps': int(fps), 'action': {'source': action, 'horizon_s': float(horizon_s)},
+                'labels': list(labels), 'episodes': eps}
+    f = _root(raw_dir).parent / 'exports' / f'{name}.json'
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps(manifest, indent=1))
+    return {'manifest': str(f), 'episodes': len(eps), 'hours': round(secs / 3600, 3), 'data_dir': str(_root(raw_dir).parent), 'name': name}

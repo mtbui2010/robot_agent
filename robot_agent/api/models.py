@@ -112,6 +112,48 @@ class RecorderStopIn(_Open):
     label: str                    # success | failure | discard
 
 
+class RecordingList(_Open):
+    dir: str
+    episodes: list[dict]          # rows: id, day, episode, prompt, label, summary{...}, edit?, or {id, error}
+    totals: dict                  # episodes, hours, success, failure, excluded
+
+
+class RecordingDetail(_Open):
+    id: str
+    prompt: str = ''
+    summary: dict = {}
+    series: dict = {}             # t, joints (7 x N), gripper, gripper_cmd: down-sampled curves
+    cameras: dict = {}            # name -> {frames, first_t}
+    edit: Optional[dict] = None
+
+
+class RecordingEditIn(_Open):
+    trim_start_s: Optional[float] = None
+    trim_end_s: Optional[float] = None
+    label: Optional[str] = None   # success | failure: overrides the label given when recording
+    exclude: Optional[bool] = None
+    note: Optional[str] = None
+
+
+class RecordingEdit(_Open):
+    version: int = 1
+
+
+class RecordingExportIn(_Open):
+    name: str
+    fps: int = 30
+    action: str = 'future_state'  # future_state | servo | ref
+    horizon_s: float = 0.3
+    labels: list[str] = ['success']
+
+
+class RecordingExport(_Open):
+    manifest: str
+    episodes: int
+    hours: float
+    command: str = ''
+
+
 # --- skills ------------------------------------------------------------------
 class SkillInfo(_Open):
     name: str
