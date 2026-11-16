@@ -143,6 +143,28 @@ class LoopServices:
         instead of searching on alone until `search_max` misses."""
         run.__dict__.setdefault("pre_fails", {})[obj] = int(self._lp.cfg["search_max"])
 
+    # ── the person's choice after a failed step (option ask_next, hook on_ask_help) ──
+    def retry_here(self, run, step) -> None:
+        """The failed ``step`` runs once more where the robot is, as the loop's own retry does: the look is made again (a Pick gets a
+        Find before it); the step stays the next one."""
+        run.world.found = None
+        if step.get("action") == "Pick":
+            run.steps[run.i:run.i] = [{"action": "Find", "object": step.get("object")}]
+
+    def told_at(self, run, obj, place) -> str:
+        """The person said ``obj`` is at ``place`` (``note_answer`` remembers it): the search trusts it as the loop does with a where answer
+        (``_search_told``), the place no longer counts as searched; the replan hint that names it."""
+        run.world.found = None
+        self._lp._search_told(run, obj, place)
+        if place in run.searched:
+            run.searched.remove(place)
+        return f"; the user says the {obj} is on {place}"
+
+    def search_on(self, run, obj):
+        """Flow: the search for ``obj`` goes on over the likely places not searched yet, without the person (the loop's answer to an
+        "I don't know"): (outcome or None, replan hint)."""
+        return self._lp._search_on(run, obj)
+
     # ── an answer that names no place (option ask_source: use_room, clarify_unusable, confirm_near) ──
     def room_places(self, run, text) -> tuple:
         """(room, the searchable places in it) when the answer names a room and no place in it, else ("", [])."""

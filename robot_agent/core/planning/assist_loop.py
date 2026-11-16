@@ -3836,6 +3836,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         r.find_fails[o] = r.find_fails.get(o, 0) + 1
         if (self._missed_enough(r, o) or nowhere or self._search_over(r, o, True)) and self.cfg["ask_help"] and ("where", o) not in r.helped:
             r.helped.add(("where", o))
+            if (out := (yield from self.options.decide_flow("on_ask_help", r, st, "where"))) is not None: return out   # e.g. ask_next: a menu
             q = speech.LocalText("q_where_is", {"object": self._said_of(r, o)}, text=f"I couldn't find the {o}. Where is it?")
             yield r.ev("clarify", question=q, round=0)
             ans, _n = self._ask_heard(q, r.node, self._log_fn(r.i), r.lang)   # silence: asked again (F3.8)
@@ -4052,8 +4053,7 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         return (yield from self._recover_find(r, find, reason, rule))
 
     def _recover_pick(self, r, st, reason, rule):
-        """Look + grasp again in place (pick_retries, not when out of lateral reach), then ask the person
-        to move it closer. Returns (outcome or None, replan hint)."""
+        """Look + grasp again in place (pick_retries, not when out of lateral reach), then ask the person to move it closer. Returns (outcome or None, replan hint)."""
         o, world = st["object"], r.world
         if (r.failures and r.failures[-1]["code"] == FailureCode.ABSENT.value and getattr(r, "search", None) is not None
                 and self.cfg.get("search_legs") and not getattr(r, "sensor_only", False)):
@@ -4093,8 +4093,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
         extra = ""
         if self.cfg["ask_help"] and ("pick", o) not in r.helped:
             r.helped.add(("pick", o))
-            q = (f"The {o} is too far for my arm. Could you move it closer to the edge, then say yes?"
-                 if out_of_reach else f"I can't pick up the {o}. Could you move it closer to the edge, then say yes?")
+            if (out := (yield from self.options.decide_flow("on_ask_help", r, st, "pick"))) is not None: return out    # e.g. ask_next: a menu
+            q = (f"The {o} is too far for my arm. Could you move it closer to the edge, then say yes?" if out_of_reach else f"I can't pick up the {o}. Could you move it closer to the edge, then say yes?")
             yield r.ev("clarify", question=q, round=0)
             ans, _n = self._ask_heard(q, r.node, self._log_fn(r.i), r.lang)   # silence: asked again (F3.8)
             k = r.places.ground(ans, ans) if ans else None
@@ -4129,8 +4129,8 @@ class AssistLoop(WhichOne, SearchHooks, ClosedLoop):
             return _NEXT, ""
         if self.cfg["ask_help"] and ("move", o) not in r.helped:
             r.helped.add(("move", o))
-            q = (f"I can't get to the {o.replace('@', ' in the ')}. Is something in the way? "
-                 f"Please clear the way and say yes.")
+            if (out := (yield from self.options.decide_flow("on_ask_help", r, st, "move"))) is not None: return out    # e.g. ask_next: a menu
+            q = f"I can't get to the {o.replace('@', ' in the ')}. Is something in the way? Please clear the way and say yes."
             yield r.ev("clarify", question=q, round=0)
             ans, _n = self._ask_heard(q, r.node, self._log_fn(r.i), r.lang)
             if self.yes_no(ans)[0] is True:
