@@ -583,6 +583,17 @@ engine's DROPPED rule (`_refind_dropped`: only the room of the place the robot s
 deleted `effect_check` (91bbced: the same sensor read, the current room only; 0 of 600 changed). Lab flag `drop_search` `{part, object, floors,
 seen}`; run event `recover` kind `drop_search`. Module: `robot_agent/options/drop_search.py`.
 
+### `heat_safety`
+A goal that puts a thing that can burn on or in a heat-source place is refused (default off; design and limits: [heat_safety.md](heat_safety.md)).
+Pure function `heat_verdict(goal, heat, burnable)`: an `on` / `in` goal whose `to` is a declared heat place (ENV key, or a head for every room)
+and whose `object` / `said` holds a declared burnable word (whole words, plurals folded). Hook `on_goals` (order 11, after `hazard`): every goal
+refused: the run ends `refused` (kind `safety`); some: they are dropped, `on_goals_met` says the `part` sentence, `on_finish` adds them to
+`refusals`. Services `forbids` (the engine's `safety_gate` runs it again) and `refused_goals`. Data `planner.options.heat_safety`: `places`
+`{<place>: {clearance_m, source | assumed}}`, `burnable` `{words, source | assumed}`; sentences: language-pack block `heat_safety` (`refuse`,
+`part`, slot `{m}`; en, ko, assumed). Missing, unlabelled or a clearance <= 0: nothing. Overlaps: `hazard` (the same gate; its profile has no
+distance and its sentence is not from a language pack) and the deleted `safety_profile` (e329a71: map distance `within_m`, not rebuilt).
+Lab flag `heat_safety` `{part: refuse | drop | no_phrase, places, refused, goals}`. Module: `robot_agent/options/heat_safety.py`.
+
 ### `unapplied_change`
 A correction the robot cannot apply is not dropped silently: the understand step's own question is asked once, and if the correction still
 changes nothing the run ends `failed` ("I could not apply your change") instead of `success`. Key `enabled` (legacy `unapplied_change`).

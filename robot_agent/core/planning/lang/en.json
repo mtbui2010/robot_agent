@@ -1,5 +1,6 @@
 {
  "lang": "en",
+ "heat_safety": {"refuse": "I won't do that: anything that can burn must be kept at least {m} m from a heat source.", "part": "I did the rest, but not all of it: anything that can burn must be kept at least {m} m from a heat source.", "assumed": true, "source": "assumed: plain English wording of option heat_safety's refusal; the rule and its distance are the robot pack's data with their own source (docs/heat_safety.md)"},
  "words": {
   "putin": [
    "\\binto\\b",
