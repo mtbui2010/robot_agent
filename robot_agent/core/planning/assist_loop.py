@@ -2645,11 +2645,6 @@ class AssistLoop(WhichOne, SearchHooks, StepLadder, ClosedLoop):
             txt += "\nAlready looked (object not there): " + ", ".join(r.searched)
         return txt + self._search_obs(r)
 
-    @staticmethod
-    def _goal_text(goals) -> str:
-        """The goals as the planner reads them: 'on apple from desk to dining table; ...'."""
-        return "; ".join(goal_kinds.describe(g) for g in goals)
-
     def _ground_all(self, r, seq) -> list:
         return [self._ground_step(x, r.places, r.goals, r.task) for x in seq]
 
@@ -2659,9 +2654,11 @@ class AssistLoop(WhichOne, SearchHooks, StepLadder, ClosedLoop):
         r.restated = r.task + ("" if not r.dialogue else " (" + "; ".join(t for w_, t in r.dialogue if w_ == "user") + ")")
         r.searched, r.seen_far, r.uncertified = [], [], []
         yield from self._search_start(r)                 # may give a goal its source (search.py)
-        r.goal_txt = self._goal_text(r.goals)
+        r.goal_txt = goal_kinds.goal_text(r.goals)
         r.planner = self._make_planner()
         self._hook_progress(r.planner)
+        if not r.plan_only and self.options.query("runs_goals", r):    # e.g. bt_goal: its declared trees run the goals, no planner call
+            r.steps, r.certified, r.gate_findings, r.plan_error, r.run.plan_meta = [], True, [], None, {"method": "option"}; return False
         yield from self._generate_and_certify(r)
         skill_map = r.robot.skill_map
         plan_text = "\n".join(f"{x.get('skill') or skill_map.get(x['action'], x['action'])}::{x['object']}" for x in r.steps)
@@ -3193,7 +3190,7 @@ class AssistLoop(WhichOne, SearchHooks, StepLadder, ClosedLoop):
 
     def _repair_goals(self, r, said):
         """The goals changed: the planner's suffix repair from here. _NEXT or _STOP."""
-        r.goal_txt = self._goal_text(r.goals)
+        r.goal_txt = goal_kinds.goal_text(r.goals)
         r.run.obs = "goals: " + json.dumps(r.goals, ensure_ascii=False)
         if self._goals_hold(r.goals, r.world, r.placed, r.completed, r.world_at_start.arrived):
             r.steps = r.steps[:r.i]
@@ -3214,6 +3211,8 @@ class AssistLoop(WhichOne, SearchHooks, StepLadder, ClosedLoop):
         r.code_tries, r.doubted, r.failures, r.goal_checks, r.health = {}, set(), [], [], None
         r.world_at_start = r.world.copy()
         r.suspended = 0                      # tasks this run put on the task stack (a NEW one went first)
+        if (yield from self.options.decide_flow("on_run_goals", r)) is _STOP:     # e.g. bt_goal: the goals its trees run, before the plan's end
+            return True
         while True:
             # a paused run holds here, between two steps; after a resume (RunManager on_resume) the belief
             # is reconciled and a Pick on a Find made before the pause looks again first
@@ -3287,7 +3286,7 @@ class AssistLoop(WhichOne, SearchHooks, StepLadder, ClosedLoop):
         lim = request_coverage.limits(getattr(self.robot.manifest, "planner", None))     # pack data; a cap not declared is no cap
         try:
             d = ask_json(self._llm(), request_coverage.prompt(" ".join([self.original or r.task] + said),
-                                                              self._goal_text(r.goals), steps, lim.get("max_steps")),
+                                                              goal_kinds.goal_text(r.goals), steps, lim.get("max_steps")),
                          request_coverage.SCHEMA, budget=r.llm_budget, retries=0, where="request coverage",
                          call=call_cancellable, passthrough=is_cancel, options=self._sampling(0))
         except Exception as e:                          # noqa: BLE001 - fail open: the run says done as before

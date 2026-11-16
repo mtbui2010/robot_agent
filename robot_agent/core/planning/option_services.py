@@ -6,6 +6,7 @@ This is the one place where option hooks reach loop internals; an option module 
 from __future__ import annotations
 
 from ..options.dispatch import NULL
+from ..options.spec import STOP
 from . import dialog_converge, speech
 
 
@@ -69,6 +70,17 @@ class LoopServices:
     def run_step(self, run, step: dict):
         """One more step of the end-of-run check (MoveTo, or the pack's end action), its effect applied on success: the skill result or None."""
         return self._lp._look(run, dict(step))[0]
+
+    def try_step(self, run, st):
+        """Flow: one step ``st`` through the engine's own step path (``on_step`` options, guard, bind, the skill, its verify, the record and
+        events), appended to the run's plan as it runs, for an option that runs the goals itself (``runs_goals``). True when it succeeded,
+        False when it failed (the recovery is the caller's: it answers ``on_step_failed`` meanwhile), None when the run ended."""
+        n = len(run.completed)
+        run.steps.append(dict(st))
+        run.i = len(run.steps) - 1
+        out = yield from self._lp._run_step(run, run.steps[-1])
+        run.i = len(run.steps)
+        return None if out == STOP else len(run.completed) > n
 
     def ask_clarify(self, run, question):
         """Flow: ask ``question`` as the loop's own clarify step (the answer joins the dialogue); the step's result (go on reading, or stop)."""

@@ -200,6 +200,11 @@ def describe(g: dict) -> str:
             + (f" to {g['to']}" if g.get("to") else ""))
 
 
+def goal_text(goals) -> str:
+    """The goals as the planner reads them: 'on apple from desk to dining table; ...'."""
+    return "; ".join(describe(g) for g in goals)
+
+
 def summary(g: dict) -> str:
     """The read-back phrase of a template goal."""
     nice = (g.get("to") or "").replace("@", " in the ")
@@ -267,4 +272,4 @@ def _same_text(a, b) -> bool:
 
 
 __all__ = ["GoalKind", "GOAL_KINDS", "MANIPULATION", "TEMPLATE_KINDS", "missing_actions", "kinds_for",
-           "prompt_lines", "is_template", "dedupe", "conflicts", "SPEAKER_WORDS", "is_speaker", "speaker_slots", "describe", "subgoal_text", "summary", "compile_steps", "reached"]
+           "prompt_lines", "is_template", "dedupe", "conflicts", "SPEAKER_WORDS", "is_speaker", "speaker_slots", "describe", "goal_text", "subgoal_text", "summary", "compile_steps", "reached"]
