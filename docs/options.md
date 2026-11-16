@@ -95,6 +95,7 @@ dropped. A *flow* hook is a generator (`yield from`): it may yield run events an
 | `on_step(run, step)` | decide, flow | before a step runs; returns the step that replaces it | `reach_delivery`, `reach_check` |
 | `on_step_done(run, step, held)` | observe | a step succeeded (`held`: the object in the hand before it) | `reach_delivery` |
 | `on_step_failed(run, step, code, reason, action, obj)` | decide, flow | a step failed, before the recovery policy | `reach_delivery`, `reopen_on_miss` |
+| `on_ask_help(run, step, kind)` | decide, flow | a failed step used its own retries and the engine is about to put its help question (`kind`: `where` of `_recover_find`, `pick`, `move`; once per object and kind, only with `ask_help`): `(outcome, replan hint)` returned as the recovery's own, or None (the engine's question) | `ask_next` |
 | `on_goal_check(run, obj)` | decide | the end-of-run check of one goal: `(ok, why, skill)` | `reach_delivery` |
 | `on_translation_lost(text, lost, translate)` | decide | the input translation lost a place name the person said: the English to use, or None | `translate_retry` |
 | `on_second_look(run, obj, place)` | decide | the goal check's first look missed and the second saw the object: `(ok, why, skill)` or None (the second look is believed) | `confirm_look` |
@@ -549,6 +550,22 @@ event changed. Keys `enabled` (legacy `trace`, `$ROBOT_AGENT_TRACE`) and `dir` (
 empty: the folder of the run's log). Hooks `on_start`, `on_event`, `on_lab`, `on_step_failed` (order 0: it sees each failure first and
 returns None). Engine service `llm_calls(fn)`: `fn` is told of each call with its `purpose` (the label of the latest `LLMBudget.take`).
 Fail open: a write error gives one warning, then no trace for that run. Lab flag `trace` `{path}`. Module: `robot_agent/options/trace.py`.
+### `ask_next`
+After a failed Find, Pick or MoveTo used its own retries, the robot asks the person what to do next and does it (default off; design:
+[ask_next.md](ask_next.md)). Hook `on_ask_help` (order 40): the menu replaces the engine's help question ("move it closer and say yes", "Where is
+it?", "clear the way and say yes"), once per object and kind, at most `max_menus` (2, assumed) per run, never after a stop. The sentence is a
+phrase of the language pack (`q_ask_next_find` / `_pick` / `_move`, slot `object`, block `speech`; the robot's i18n wins). The answer is read by
+the pure `parse_answer(text, pack, place)` with the pack's declared words only (block `ask_next` `{retry, elsewhere, anywhere, stop}` with
+`source` / `assumed`, plus `dialogue.stop` / `stop_prefix`, `yes`, `no`, `answer_unsure`; whole words) and the ENV place the answer names (a room:
+its best place not searched yet; never the place the robot is at). Order: stop word, place, anywhere, elsewhere, again, "I don't know"
+(unclear), no (stop), yes (again). retry: engine service `retry_here` (a Pick looks again first), one more try. A place: `note_answer` +
+`told_at` (the engine's handling of a told place) and its replan hint. Elsewhere with no place: a Find gets the engine's own "Where is it?", a
+Pick one `q_ask_next_place`. anywhere (Find): `search_on` (the engine's search goes on). stop: the run ends `aborted` saying `say_stopped`. Unclear:
+asked once more (`q_ask_next_again`, `_again_move`), then the engine's own question. A MoveTo offers only again or stop. Fail open: no Ask skill,
+no labelled `ask_next` words or no phrase in the run's language, silence, the caps: the engine's question as when off. Data in `lang/en.json`
+and `ko.json` (assumed). Keys `enabled` (legacy `ask_next`), `max_menus`. Lab flag `ask_next` `{kind, object, answer, place}`; run events
+`clarify` and `recover` kind `ask_next`. Limits: Korean words must be listed inflected (whole-word match); a negated stop ("don't stop") reads
+as stop. Module: `robot_agent/options/ask_next.py`.
 
 ### `unapplied_change`
 A correction the robot cannot apply is not dropped silently: the understand step's own question is asked once, and if the correction still
