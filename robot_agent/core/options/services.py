@@ -28,6 +28,9 @@ class Services(Protocol):
     def replan_or_fail(self, run, step, reason: str, msg: str): ...            # generator: the replan / give-up path
     def replan_round(self, run) -> tuple: ...                                   # (replans recorded, planner calls left in max_replans)
     def readback_left(self, run) -> bool: ...                                   # would the loop read the goals back once more now (its cap, confirm_limit)
+    def hand_sensor(self, run) -> Optional[dict]: ...                           # the hand sensor's raw result (the skill that verifies a Pick), None: no sensor / it raised
+    def let_go(self, run, why: str) -> Optional[str]: ...                       # the belief lets go of the held object (unknown where it is): its name, or None
+    def refind_on(self, run, step: dict, obj: str, floor: str) -> None: ...     # the engine's REFIND rung: look for ``obj`` on ``floor``, pick it up, back to ``step``'s place
     def ask_model(self, run, prompt: str, schema: dict) -> Optional[dict]: ...  # ONE extra model call (no repair, stoppable, in the run's budget): the JSON dict or None
     def request_english(self, run) -> str: ...                                 # the request's words in the prompt language ("" if no trusted reading)
     def unsure_leftover(self, run, text) -> Optional[str]: ...                 # an "I don't know" answer without its phrases ("" = nothing else); None = not one

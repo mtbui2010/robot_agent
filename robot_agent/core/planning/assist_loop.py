@@ -3447,7 +3447,8 @@ class AssistLoop(WhichOne, SearchHooks, StepLadder, ClosedLoop):
             res, skill = (again, skill2) if again is not None else (res, skill)
             code = r.robot.failure_code(res, res.msg)
         if code is FailureCode.ABSENT:
-            return False, f"the {o} is not on the {nice} (looked after the task: {res.msg or 'not found'})", skill
+            own = self.options.decide("on_goal_missed", r, o, place)    # e.g. drop_search: it is on the floor next to its place
+            return own or (False, f"the {o} is not on the {nice} (looked after the task: {res.msg or 'not found'})", skill)
         return None, f"could not look for the {o} ({code.value}: {res.msg})", skill
 
     def _look(self, r, st):
@@ -4062,45 +4063,6 @@ class AssistLoop(WhichOne, SearchHooks, StepLadder, ClosedLoop):
             world.holding = world.holding_since = None
         world.found = None
         return f"; the check after {st.get('action')} {st.get('object')} says it did not happen ({no.detail})"
-
-    def _recover_place(self, r, st, reason, rule):
-        """A failed release with an empty hand: the object is gone, stop; else the planner replans."""
-        world = r.world
-        if not self._holding(r.node, default=True):
-            if world.holding:
-                r.memory.see(world.holding, None, "dropped")
-            held = world.holding
-            world.holding = world.holding_since = None
-            if self._refind_dropped(r, st, rule):
-                yield r.ev("recover", at_index=r.i, kind="refind", msg=f"the {held or 'object'} fell; picking it up again")
-                return _NEXT, ""
-            yield self._finish(r, "failed", msg=f"place failed and the object is no longer in the hand: {reason}")
-            return _STOP, ""
-        return None, ""
-
-    def _refind_dropped(self, r, st, rule) -> bool:
-        """The contract's DROPPED rule is REFIND: the object fell where the robot stands, so look for it there
-        on that room's floor (a place the map must have), pick it up and do the failed step again. The steps are
-        spliced in place (no planner call), at most ``rule.retries`` times per object; False when it cannot."""
-        held = next((x.get("object") for x in reversed(r.steps[:r.i]) if x.get("action") == "Pick"), None)
-        if not held or rule is None or getattr(rule, "action", None) is not Recovery.REFIND:
-            return False
-        n = r.refinds[held] = r.refinds.get(held, 0) + 1
-        if n > max(int(getattr(rule, "retries", 1) or 1), 1):
-            return False
-        here = [r.world.arrived, (r.places.env.get(st.get("object")) or {}).get("spot"), st.get("object")]
-        room = next((r.places.room(k) for k in here if k and r.places.room(str(k))), "")   # a person's spot: its place
-        floor = next((k for k in r.places.keys if r.places.room(k) == room and r.places.head(k).lower() == "floor"), None)
-        if not floor:
-            return False                  # the map has no floor to pick things up from: the person is asked instead
-        redo = [{"action": "MoveTo", "object": floor}, {"action": "Find", "object": held}, {"action": "Pick", "object": held}]
-        if st.get("action") in ("Place", "PutIn", "Handover") and st.get("object"):
-            redo.append({"action": "MoveTo", "object": st["object"]})
-        r.steps[r.i:r.i] = redo
-        r.world.found = None
-        r.found_at[held] = floor or r.world.arrived      # it fell here: a miss here is weak evidence
-        r.relooked.discard((held, floor or r.world.arrived))
-        return True
 
     # ── 4. done only when the goals hold ──────────────────────────────────
     def _final_check(self, r) -> dict:

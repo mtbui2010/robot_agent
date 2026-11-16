@@ -1,10 +1,11 @@
-"""The own ladders of a failed Pick and MoveTo (after the recovery policy's rung), as a mixin of AssistLoop.
+"""The own ladders of a failed Pick, MoveTo and release (after the recovery policy's rung), as a mixin of AssistLoop.
 
 The rungs come from the declared table (``contract.recovery``): ``STEP_LADDER`` names the code whose rule is the
 step's ladder (its action, RETRY, and its retries), ``step_rung`` picks the rung (RETRY, then ASK_HELP once, then
 the failed code's REPLAN or STOP); the methods here run the rung. A robot changes a ladder through its
 ``recovery_overrides``; ``ask_help`` off closes the ASK_HELP rung. ``AssistLoop._step_failed`` calls
-``_recover_pick`` / ``_recover_move``; ``_recover_find`` shares the ASK_HELP rung (``_may_ask`` / ``_ask_help``).
+``_recover_pick`` / ``_recover_move`` / ``_recover_place``; ``_recover_find`` shares the ASK_HELP rung (``_may_ask`` /
+``_ask_help``); a release whose hand is empty runs the DROPPED rule's REFIND rung (``_refind_dropped``, ``_splice_refind``).
 """
 
 from __future__ import annotations
@@ -126,3 +127,47 @@ class StepLadder:
         r.steps[r.i:r.i] = [{"action": "Find", "object": o}]
         r.world.found = None
         return r.ev("recover", at_index=r.i, kind=kind, msg=msg)
+
+    def _recover_place(self, r, st, reason, rule):
+        """A failed release with an empty hand: the object is gone, stop; else the planner replans."""
+        world = r.world
+        if not self._holding(r.node, default=True):
+            if world.holding:
+                r.memory.see(world.holding, None, "dropped")
+            held = world.holding
+            world.holding = world.holding_since = None
+            if self._refind_dropped(r, st, rule):
+                yield r.ev("recover", at_index=r.i, kind="refind", msg=f"the {held or 'object'} fell; picking it up again")
+                return NEXT, ""
+            yield self._finish(r, "failed", msg=f"place failed and the object is no longer in the hand: {reason}")
+            return STOP, ""
+        return None, ""
+
+    def _refind_dropped(self, r, st, rule) -> bool:
+        """The contract's DROPPED rule is REFIND: the object fell where the robot stands, so look for it there
+        on that room's floor (a place the map must have), pick it up and do the failed step again. The steps are
+        spliced in place (no planner call), at most ``rule.retries`` times per object; False when it cannot."""
+        held = next((x.get("object") for x in reversed(r.steps[:r.i]) if x.get("action") == "Pick"), None)
+        if not held or rule is None or getattr(rule, "action", None) is not Recovery.REFIND:
+            return False
+        n = r.refinds[held] = r.refinds.get(held, 0) + 1
+        if n > max(int(getattr(rule, "retries", 1) or 1), 1):
+            return False
+        here = [r.world.arrived, (r.places.env.get(st.get("object")) or {}).get("spot"), st.get("object")]
+        room = next((r.places.room(k) for k in here if k and r.places.room(str(k))), "")   # a person's spot: its place
+        floor = next((k for k in r.places.keys if r.places.room(k) == room and r.places.head(k).lower() == "floor"), None)
+        if not floor:
+            return False                  # the map has no floor to pick things up from: the person is asked instead
+        self._splice_refind(r, st, held, floor)
+        return True
+
+    @staticmethod
+    def _splice_refind(r, st, held, floor) -> None:
+        """The REFIND rung: look for ``held`` on ``floor``, pick it up, go back to the failed release's place (it runs again)."""
+        redo = [{"action": "MoveTo", "object": floor}, {"action": "Find", "object": held}, {"action": "Pick", "object": held}]
+        if st.get("action") in ("Place", "PutIn", "Handover") and st.get("object"):
+            redo.append({"action": "MoveTo", "object": st["object"]})
+        r.steps[r.i:r.i] = redo
+        r.world.found = None
+        r.found_at[held] = floor or r.world.arrived      # it fell here: a miss here is weak evidence
+        r.relooked.discard((held, floor or r.world.arrived))
