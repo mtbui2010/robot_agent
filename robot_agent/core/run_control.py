@@ -302,12 +302,23 @@ def begin_run(node=None) -> None:
             return
         _CANCEL.clear()
         _END_DIALOG.clear()
+        _teleop_off()
         n = _node(node)
         if n is not None:
             try:
                 n.clear_cancel()
             except Exception:
                 pass
+
+
+def _teleop_off() -> None:
+    """A run starts or Cancel is pressed: every teleop function goes OFF (the arm must not follow a knob while a plan drives it).
+    Best effort; nothing when no TELEOP group is configured."""
+    try:
+        from .teleop import bridge
+        bridge().stop_all()
+    except Exception:
+        pass
 
 
 def request_cancel(node=None) -> dict:
@@ -329,6 +340,7 @@ def request_cancel(node=None) -> dict:
                 result['run_id'] = run.run_id
         except Exception as e:
             result['errors']['run'] = str(e)
+        _teleop_off()
         out = _stop_robot(node)
         result['errors'].update(out.pop('errors'))
         result.update(out)

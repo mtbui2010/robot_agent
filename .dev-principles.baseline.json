@@ -1,0 +1,23 @@
+{
+ "files": {
+  "robot_agent/core/planning/assist_loop.py": 2151
+ },
+ "functions": {
+  "robot_agent/api/agent.py::agent_ws#0": 88,
+  "robot_agent/app_factory.py::create_app#0": 91,
+  "robot_agent/connect/ros/node.py::ServiceClientAgent.send#0": 87,
+  "robot_agent/core/device_manager.py::DeviceManager.add_connect#0": 240,
+  "robot_agent/core/plan_skill.py::run_plan_skill#0": 91,
+  "robot_agent/core/unified_agent.py::UnifiedAgent.run#0": 140,
+  "robot_agent/core/unified_agent.py::UnifiedAgent.run._blocking#0": 116,
+  "robot_agent/core/unified_agent.py::UnifiedAgent.run_direct#0": 176,
+  "robot_agent/core/unified_agent.py::UnifiedAgent.run_direct._blocking#0": 81,
+  "robot_agent/delete_skill.py::main#0": 101,
+  "robot_agent/diagnose.py::main#0": 169,
+  "robot_agent/new_robot.py::main#0": 97,
+  "robot_agent/new_skill.py::main#0": 100,
+  "robot_agent/observe/replay.py::replay#0": 127,
+  "robot_agent/rename_skill.py::main#0": 108,
+  "robot_agent/runtime.py::bootstrap#0": 93
+ }
+}

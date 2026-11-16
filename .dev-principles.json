@@ -1,0 +1,42 @@
+{
+  "package": "robot_agent",
+  "layers": [
+    {
+      "name": "contract",
+      "paths": [
+        "robot_agent/contract"
+      ],
+      "may_import": []
+    },
+    {
+      "name": "core",
+      "paths": [
+        "robot_agent/core"
+      ],
+      "may_import": [
+        "contract"
+      ]
+    },
+    {
+      "name": "api",
+      "paths": [
+        "robot_agent/api"
+      ],
+      "may_import": [
+        "core",
+        "contract"
+      ]
+    }
+  ],
+  "size": {
+    "paths": [
+      "robot_agent"
+    ],
+    "max_function_lines": 80,
+    "max_file_lines": 1200,
+    "baseline": ".dev-principles.baseline.json"
+  },
+  "allow": [
+    "robot_agent/contract/legacy_adapter.py -> robot_agent.core.planning.loop"
+  ]
+}

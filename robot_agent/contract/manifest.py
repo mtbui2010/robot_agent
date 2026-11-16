@@ -4,7 +4,8 @@ Format (``<pkg>/configs/manifest.yaml``)::
 
     robot: my_robot
     version: "1.0"
-    language: en
+    language: en                  # the robot's default language
+    languages: [en, ko]           # optional: every language it can talk in (default [language]); must include `language`
     capabilities: {base: true, arms: 1, hands: [right], lift: true, head: true, drawer: true}
     geometry: {arrive_tol_m: 0.3, reach_m: 0.78}
     planner: {seed_memory: ../planner/seed_memory.jsonl}   # optional, paths relative to this file
@@ -36,7 +37,7 @@ from typing import Optional
 
 from .types import VERIFY_KINDS, FailureCode, Geometry, SkillSpec, VerifySpec
 
-_TOP_KEYS = {"robot", "version", "language", "capabilities", "geometry", "planner", "skills", "limits", "safety"}
+_TOP_KEYS = {"robot", "version", "language", "languages", "capabilities", "geometry", "planner", "skills", "limits", "safety"}
 # keys of the optional `planner:` section (planner data the robot ships; docs/env.md):
 #   seed_memory, notes; llm_budget (the run's cap on core LLM calls), translate_model / translate_url (the model
 #   that translates what the robot says into the user's language, default the planner's), translate_budget (its
@@ -126,12 +127,38 @@ class ManifestError(ValueError):
                                   if len(self.errors) > 1 else f"invalid manifest: {self.errors[0]}"))
 
 
+_LANG_CODE = re.compile(r"^[a-z]{2,3}$")
+
+
+def _languages(raw, default: str, errs: list) -> list:
+    """``languages:`` -> a list of lower-case codes ('ko', 'en'), [] when absent; it must hold the default language."""
+    if raw is None:
+        return []
+    if not isinstance(raw, list) or not raw:
+        errs.append("languages: must be a non-empty list of language codes such as [ko, en]")
+        return []
+    out, bad = [], False
+    for i, x in enumerate(raw):
+        code = x.strip().lower() if isinstance(x, str) else ""
+        if not _LANG_CODE.match(code):
+            errs.append(f"languages[{i}]: must be a two- or three-letter language code such as 'ko', got {x!r}"); bad = True
+        elif code in out:
+            errs.append(f"languages[{i}]: {code!r} is listed twice"); bad = True
+        else:
+            out.append(code)
+    if default and not bad and default.strip().lower() not in out:
+        errs.append(f"languages: must include the default language {default.strip().lower()!r}, got {out}")
+    return out
+
+
 @dataclass
 class Manifest:
     robot: str
     version: str = "1.0"
     capabilities: dict = field(default_factory=dict)
-    language: str = "en"
+    language: str = "en"                              # the default language
+    languages: list = field(default_factory=list)    # every language it can talk in ([] = just `language`)
+    language_declared: bool = False                  # the manifest names a language at all (`language` / `languages`)
     geometry: dict = field(default_factory=dict)
     skills: list = field(default_factory=list)        # list[SkillSpec]
     # optional planner data: {seed_memory: <path to a JSONL seed pool, relative to the manifest>}
@@ -171,6 +198,8 @@ class Manifest:
         language = d.get("language", "en")
         if not isinstance(language, str) or not language.strip():
             errs.append("language: must be a language code such as 'en' or 'ko'")
+        languages = _languages(d.get("languages"), language if isinstance(language, str) else "", errs)
+        declared = "language" in d or "languages" in d
         caps = d.get("capabilities") or {}
         if not isinstance(caps, dict):
             errs.append(f"capabilities: must be a mapping, got {type(caps).__name__}")
@@ -211,12 +240,13 @@ class Manifest:
 
         if errs:
             raise ManifestError(errs, source)
-        return cls(robot=robot.strip(), version=version, capabilities=dict(caps), language=language.strip(),
+        return cls(robot=robot.strip(), version=version, capabilities=dict(caps), language=language.strip(), languages=languages, language_declared=declared,
                    geometry=dict(geom), skills=skills, planner=planner, limits=limits, safety=safety, safety_profile=safety_profile,
                    extra={k: v for k, v in d.items() if k not in _TOP_KEYS}, source=source)
 
     def to_dict(self) -> dict:
         d = {"robot": self.robot, "version": self.version, "language": self.language,
+             **({"languages": list(self.languages)} if self.languages else {}),
              "capabilities": dict(self.capabilities), "geometry": dict(self.geometry),
              "skills": [s.to_dict() for s in self.skills]}
         if self.planner:
@@ -227,6 +257,12 @@ class Manifest:
             d["safety"] = dict(self.safety)
         d.update(self.extra)
         return d
+
+    @property
+    def supported_languages(self) -> list:
+        """Every language the robot talks in, the default first: ``languages``, else just ``language``."""
+        default = (self.language or "en").strip().lower()
+        return [default] + [x for x in self.languages if x != default] if self.languages else [default]
 
     # ── lookups ──────────────────────────────────────────────────────────
     def skill_for(self, action: str) -> Optional[SkillSpec]:

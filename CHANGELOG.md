@@ -213,6 +213,50 @@ manifest format, the event schema). See `docs/contract.md`.
   `goals.dedupe` drops an exact repeat of a goal. A fixed block gets no LLM edit and is never emptied. Off: nothing
   changes.
 
+### Teleop functions on the dashboard (`/teleop`)
+- A function can offer named poses to go to (`GET /teleop` -> `functions[].poses: [{name, label, skill, params}]`): its TELEOP entry has
+  `poses: {from: <config group>, skill, param, prefix?, keys?, names?}` and the list is READ from that group of the robot's own config
+  (kcare: `ARM_CONFIGS`, keys `approach_*`), so a new pose is added in the config only. `keys` names the modes a pose is keyed by (tells a pose
+  from another table of numbers). The dashboard runs it with `POST /skill/<skill>` (which already switches teleop off). 2 tests.
+- A teleop function (the `robot_teleop` repo: arm servo driven by a SpaceMouse, or any device / function that speaks its two JSON-in-String
+  topics `/teleop/<name>/state` + `/command`) is listed from the `TELEOP` config group (`configs/tasks.py` or a site override; no group = nothing
+  shown). `GET /teleop` (state, never switches anything), `POST /teleop/{name}/enable {on, confirm}` (on needs `confirm: true`, a running function
+  and no run in flight), `POST /teleop/{name}/speed {scale}`. A run starting and Cancel switch every function off (`run_control._teleop_off`).
+  `core/teleop.py` names no device and no robot; its transport is injected, so it is tested without ROS (`tests/test_teleop.py`).
+### Site languages (`PUT /robot/languages`)
+- The manifest says what the robot can talk in (`supported`); a site switches some off: `PUT /robot/languages` `{languages: [...]}` (a
+  non-empty subset of `supported`, else 400) saves `<configs>/languages.json`. `GET /robot/languages` now returns `supported` too;
+  `languages` is what the site has on, `language` the default (the first one on when the default was switched off). Skills that follow
+  the user's language (hri) take `current_languages()['languages']`. A language the manifest lacks can never be added.
+  `core/languages.py`: `site_languages`, `set_site_languages`, `current_languages`.
+### Detect the user's language (`lang: 'auto'`)
+- `/ws/agent` with `lang: 'auto'` starts the run in the manifest's default language and switches detection on for the run
+  (`core/languages.py`: `start_run_language`, `run_language_auto`; cleared when the run ends). A skill that listens then lets Whisper
+  hear the phrase unpinned: `utils.speech_to_text(auto=True, candidates=[...])` takes the language Whisper reports (the stt client's
+  new `last_language`) when it is one of `candidates` and the phrase has at least 6 letters, else transcribes again pinned to the
+  language in use; `last_stt_language()` gives it. `listen_dashboard(auto, candidates, info_out)` and `transcribe_listen_audio`
+  carry it back to the skill.
+- `GET /robot/languages` also says `declared`: False when the manifest names no language (`languages` is then `[]`; the dashboard
+  offers only "detect"). `Manifest.language_declared`. Tests: `tests/test_detect_language.py`, `tests/test_robot_languages.py`.
+
+### Shortcut-button groups
+- A button has an optional `group` (a group id, `''` = Other); the groups are an ordered list in `<data_dir>/button_groups.json`
+  (`[{id, name}]`), shared and merged like `buttons.json`. New `GET/POST /buttons/groups`, `PUT/DELETE /buttons/groups/{id}`,
+  `POST /buttons/groups/reorder`; `POST /buttons` and `PUT /buttons/{id}` take `group`. Deleting a group moves its buttons to
+  Other (they are not deleted); a button of an unknown group reads as Other. `core/button_manager.py`, test `tests/test_button_groups.py`.
+
+### Text to speech as audio (`GET /tts`)
+- `GET /tts?text=…&lang=…` returns the sentence as `audio/mpeg` (gTTS, `core/tts.py`, a 64-sentence cache; `lang` defaults to
+  the manifest's language; 400 empty / over 600 characters, 503 when gTTS or the internet is missing). For clients that
+  record the robot's voice: the dashboard's screen recording cannot capture the browser's speech synthesis on every
+  machine, so it plays this audio through its own recordable audio graph. Test: `tests/test_tts.py`.
+
+### Languages per robot (manifest `language` / `languages`)
+- `manifest.yaml` may list `languages: [ko, en]` (every language the robot talks in; must include `language`, the
+  default). `Manifest.languages` / `supported_languages`; validated by field. New `GET /robot/languages` ->
+  `{robot, language, languages}` (`api/robot.py`, `core/languages.py`); `/ws/agent` without `lang` now uses the
+  manifest's `language` (was `en`). Test: `tests/test_robot_languages.py`. `docs/contract.md`.
+
 ### Direct planner steps run in the closed loops (docs/direct_prompt.md "Steps and binding")
 - `llm_direct` steps keep the robot's call (`skill`, `params` read as Structured mode reads them, `flags`)
   and carry the skill's manifest action (`move` -> `MoveTo`; `""` for a skill with no plan action). Binding
