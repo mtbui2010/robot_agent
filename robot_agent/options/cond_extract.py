@@ -23,12 +23,13 @@ is read again from the manifest at run time. Hook ``on_goals`` (order 15). Uses 
 ``goal_dropped`` for the goals it dropped (as ``cond_goal`` does for its branches), so the read-back counts them as covered and a re-sampled
 reading does not bring them back. Keys: ``enabled`` (legacy ``cond_extract``),
 ``ask_when_unsure`` (true), ``prompt``, ``clauses``, ``q_unclear``, ``source``, ``assumed``. Lab flag ``cond_extract``: ``{state, object, at, if, else, drop}``.
+Layer cond_schema (docs/options.md, keys ``kinds`` and ``heard_match``, both off by default): a condition no look settles is asked; unheard words: UNKNOWN.
 """
 
 from __future__ import annotations
 
 from robot_agent.core.options import STOP, Key, Option, OptionSpec, register
-from robot_agent.core.planning import clauses, dialog_converge, pack_data
+from robot_agent.core.planning import clauses, dialog_converge, names, pack_data, word_match
 
 SPEC = OptionSpec(
     name="cond_extract",
@@ -38,7 +39,9 @@ SPEC = OptionSpec(
           Key("clauses", "dict", {}, sources=("manifest",)),
           Key("q_unclear", "str", ""),
           Key("source", "str", ""),
-          Key("assumed", "bool", False)),
+          Key("assumed", "bool", False),
+          Key("kinds", "bool", False),
+          Key("heard_match", "dict", {}, sources=("manifest",))),
     hooks=("on_goals",),
     services=("refused_goals", "goal_dropped"),
     order=15,
@@ -51,6 +54,12 @@ SCHEMA = {"type": "object",
           "properties": {"conditional": {"type": "boolean"}, "object": {"type": "string"}, "at": {"type": "string"}, "present": {"type": "boolean"},
                          "if_goals": _INDEXES, "else_goals": _INDEXES, "drop": _INDEXES, "unsure": {"type": "boolean"}},
           "required": ["conditional", "object", "at", "present", "if_goals", "else_goals", "drop", "unsure"]}
+KINDS = ("presence", "state", "unobservable")     # an object at a place (the robot looks) | open / closed / on / off | no look settles it (ask)
+_KIND_KEYS = ("conditional", "kind", "object", "at", "present", "if_goals", "else_goals", "always", "drop", "question", "unsure")
+SCHEMA_KINDS = {"type": "object",
+                "properties": {k: {**SCHEMA["properties"], "kind": {"type": "string", "enum": list(KINDS)}, "always": _INDEXES,
+                                   "question": {"type": "string"}}[k] for k in _KIND_KEYS},
+                "required": list(_KIND_KEYS)}
 
 
 def _indexes(v, n):
@@ -60,25 +69,68 @@ def _indexes(v, n):
     return list(dict.fromkeys(v))
 
 
+def _lists(d, n, keys):
+    """The goal-number lists ``keys`` of ``d`` (each by ``_indexes``), or None when one is bad or a goal is in two of them (contradictory)."""
+    lists = [_indexes(d.get(k) or [], n) for k in keys]
+    if None in lists or sum(map(len, lists)) != len(set().union(*lists)):
+        return None
+    return lists
+
+
 def parse(d, n):
     """The extraction as {state, object, at, present, if, else, drop}; ``state``: ``none`` (not a condition or not usable: goals unchanged),
     ``ready`` (complete) or ``unsure`` (a condition, but the place is missing or the model is not sure, or the lists clash)."""
     if not isinstance(d, dict) or d.get("conditional") is not True:
         return {"state": "none"}
-    lists = [_indexes(d.get(k) or [], n) for k in ("if_goals", "else_goals", "drop")]
+    lists = _lists(d, n, ("if_goals", "else_goals", "drop"))
     obj, at = str(d.get("object") or "").strip(), str(d.get("at") or "").strip()
-    if None in lists or not obj or not isinstance(d.get("present"), bool) or not (lists[0] or lists[1]):
-        return {"state": "none"}
-    if sum(map(len, lists)) != len(set(lists[0]) | set(lists[1]) | set(lists[2])):      # a goal in two lists: contradictory, the reader's goals stand
-        return {"state": "none"}
+    if lists is None or not obj or not isinstance(d.get("present"), bool) or not (lists[0] or lists[1]):
+        return {"state": "none"}                         # (a goal in two lists: contradictory, the reader's goals stand)
     out = {"object": obj, "at": at, "present": d["present"], "if": lists[0], "else": lists[1], "drop": lists[2]}
     return {**out, "state": "unsure" if d.get("unsure") is True or not at else "ready"}
+
+
+def parse_kinds(d, n):
+    """Key ``kinds``: the extraction of ``SCHEMA_KINDS``: as ``parse`` for a ``presence`` condition (the ``always`` goals in no other list);
+    a ``state`` or ``unobservable`` one (the robot's look sees only an object at a place) with a ``question``: state ``ask`` (object "": the
+    question decides, asked by ``cond_goal``); without a question, no kind, a clash: none (the reader's goals stand)."""
+    kind = d.get("kind") if isinstance(d, dict) else None
+    if kind not in KINDS or _lists(d, n, ("if_goals", "else_goals", "drop", "always")) is None:
+        return {"state": "none", **({"kind": kind} if kind in KINDS else {})}
+    q = str(d.get("question") or "").strip()
+    if kind != "presence":
+        d = {**d, "object": q, "at": "-", "unsure": False}       # the question is the condition; no place to look at
+    plan = parse(d, n)
+    if plan["state"] == "none":
+        return {"state": "none", "kind": kind}
+    return {**plan, "kind": kind, **({"state": "ask", "object": "", "at": "", "question": q} if kind != "presence" else {})}
+
+
+def unheard(plan, heard, lim, words=names.words) -> list:
+    """Pure: the condition parts (``object``, ``at``) none of whose words a heard token matches (``word_match.token_found``); a word in a
+    script no heard token has is not checked (fail open). [] without limits or heard tokens."""
+    if lim is None or not heard:
+        return []
+    out = []
+    for part in ("object", "at"):
+        found = []
+        for t in words(str(plan.get(part) or "")):
+            same = [h for h in heard if word_match.main_script(h) == word_match.main_script(t)]
+            found.append(not same or word_match.token_found(t, same, *lim))
+        if found and not any(found):
+            out.append(part)
+    return out
 
 
 def condition_regex(lang, declared):
     """The compiled condition words of the run's language (packs plus declared), or None."""
     cl = clauses.build(lang, declared if isinstance(declared, dict) else {})
     return cl.cond if cl is not None else None
+
+
+def _extra(plan) -> dict:
+    """The lab fields of the cond_schema keys a plan carries (``kind``, ``unheard``); {} without them (the lab entry as before)."""
+    return {k: plan[k] for k in ("kind", "unheard") if k in plan}
 
 
 class CondExtract(Option):
@@ -123,7 +175,7 @@ class CondExtract(Option):
 
     def _apply(self, run, plan) -> None:
         """Write ``when`` on the branch goals, drop the goals that only state the condition (listed in ``run.filtered``)."""
-        base = {"object": plan["object"], "at": plan["at"]}
+        base = {"object": plan["object"], "at": plan["at"], **({"ask": plan["question"]} if plan["state"] == "ask" else {})}
         out, dropped = [], []
         for i, g in enumerate(run.goals, 1):
             if i in plan["drop"]:
@@ -157,19 +209,40 @@ class CondExtract(Option):
         if not goals or not data["prompt"].strip() or any("when" in g for g in goals) or not self._has_condition(run, data):
             return None
         done["seen"] = True                                  # one extra call per run, whatever the reader reads next
-        plan = parse(self.svc.ask_model(run, self._prompt(run, data["prompt"]), SCHEMA), len(goals))
+        plan = self._extract(run, data["prompt"], len(goals))
         if plan["state"] == "unsure" or (plan["state"] == "ready" and not self._place_of(run, plan["at"])):
             at = self._ask_place(run, plan, data["q_unclear"])
             stop = self.svc.cancelled(run)
             if stop:
                 yield stop
                 return STOP
-            plan = {**plan, "at": at, "state": "ready"} if at else {"state": "none"}
-        self.svc.lab("cond_extract", **{k: plan.get(k) for k in ("state", "object", "at", "if", "else", "drop")})
-        if plan["state"] == "ready":
+            plan = {**plan, "at": at, "state": "ready"} if at else {"state": "none", **_extra(plan)}
+        self.svc.lab("cond_extract", **{k: plan.get(k) for k in ("state", "object", "at", "if", "else", "drop")}, **_extra(plan))
+        if plan["state"] == "unknown":                       # key heard_match: the condition's object was not heard; no guess
+            yield self.svc.finish(run, "failed", msg="cannot tell what the condition is about: its object is not in what was heard")
+            return STOP
+        if plan["state"] in ("ready", "ask"):
             done["plan"], done["sig"] = plan, dialog_converge.goal_sig(goals)
             self._apply(run, plan)
         return None
+
+    def _heard(self, run) -> list:
+        """The heard word tokens: the request (as said and its prompt-language reading) and the person's answers so far."""
+        said = [str(t) for w, t in getattr(run, "dialogue", None) or [] if w == "user"]
+        return word_match.tokens(" ".join(self._texts(run) + said))
+
+    def _extract(self, run, prompt, n):
+        """The one extraction call, parsed (key ``kinds``: ``SCHEMA_KINDS`` and ``parse_kinds``), its condition words checked against the heard
+        words (key ``heard_match``): an object no heard word matches is UNKNOWN (state ``unknown``: the run ends failed, nothing invented is
+        looked for or done), a place no heard word matches is unsure (the question ``q_unclear``)."""
+        kinds = self.cfg["kinds"]
+        raw = self.svc.ask_model(run, self._prompt(run, prompt), SCHEMA_KINDS if kinds else SCHEMA)
+        plan = parse_kinds(raw, n) if kinds else parse(raw, n)
+        lim = word_match.limits(pack_data.fresh(SPEC, self.cfg, pack_data.planner_of(self.svc), "heard_match"))
+        bad = unheard(plan, self._heard(run), lim) if plan["state"] in ("ready", "unsure") else []
+        if "object" in bad:
+            return {"state": "unknown", "unheard": bad, **_extra(plan)}
+        return {**plan, "at": "", "state": "unsure", "unheard": bad} if bad else plan
 
     def _again(self, run, done, goals):
         """A goal list read again after the first one (the person answered a question, the reader was called again): the first plan applies when the
