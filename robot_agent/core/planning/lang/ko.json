@@ -171,8 +171,9 @@
   "q_ask_next_place": "{object}을(를) 어디에서 찾아볼까요?",
   "say_bt_goal_done": "{object}을(를) {place}에 놓았어요.",
   "say_bt_goal_stop_held": "멈춰야 했어요. {object}을(를) 아직 들고 있어요.",
+  "q_metal_microwave": "{object}이(가) 금속인가요? 금속을 전자레인지에 넣으면 불꽃이 튀고 불이 날 수 있어요.",
   "assumed": true,
-  "source": "assumed: the robot's own questions in plain polite Korean, said when the robot pack has no phrase of its own for the key (the robot's i18n wins)"
+  "source": "assumed: the robot's own questions in plain polite Korean, said when the robot pack has no phrase of its own for the key (the robot's i18n wins); q_metal_microwave: an assumed translation of the en phrase"
  },
  "ask_next": {
   "retry": ["다시", "다시 해", "다시 해 봐", "다시 해 줘", "다시 해요", "한 번 더", "다시 시도"],
