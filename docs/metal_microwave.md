@@ -40,8 +40,21 @@ don't know", "never mind", "no, it's fine" (fail safe: metal is not ruled out). 
 `goal_dropped`: a re-sample does not bring a refused goal back). Changed after the first cache-only dev replay: the first rule ("not a
 yes = go on") read a Korean withdrawal ("아, 그렇네요. 그럼 됐어요.") as a no while its English twin parsed as a yes. A material word decides without a question: `metal fork`, `steel spoon` are refused by the metal
 entries (they run first); `plastic spoon`, `wooden spoon` match `unless` and pass. Key off: an `ask` entry neither asks nor refuses. Lab
-flag `hazard` `{asked, answer}`. Not covered: a sealed metal can (not in these pages; a separate source search), containers ("takeout box"),
+flag `hazard` `{asked, answer}`. Not covered: a sealed can (see "Closed can"), containers ("takeout box"),
 a reader that drops the noun. Tests: `tests/test_safety_metal_ask.py` (made-up packs, language `zq`, off / empty byte-identical).
+
+**Closed can: a closed / sealed can, jar or bottle (data only, refused, not asked; 2026-11-18).** The risk is not the metal (a glass jar
+too) but the closed container, which can burst; so it is REFUSED, not asked. Same form as the metal rule: entries of the manifest list
+`safety.hazards` (`objects` x the oven, `say` "a closed can, jar or bottle can explode in a microwave oven", wording assumed), no code.
+Sources (quotes verified by the task's author; the exact page URLs are unknown, none is in this doc): NDSU Extension FN1622 ("metal cans"
+among the things not for a microwave oven); Panasonic HL-MX465S manual: "Do not heat any closed cans or bottles because they might
+explode."; GE JE1240L manual: "sealed containers—for example, closed jars—will explode". Words from the quotes: closed, sealed x can,
+bottle, jar; assumed: unopened, tin, up to two words between ("sealed soup can"), the form "the can is still sealed", the Korean words
+(밀봉된, 밀폐된, 닫힌, 따지 않은, 안 딴, 미개봉 ... x 캔, 통조림, 병, 깡통). Not denied (assumed): `unsealed`, `not / non- / no longer / never
+sealed`, `open the sealed can ...` (and Korean `... 캔을 따서`), an open / empty word in between, `... can that is open / empty`, `with no lid`;
+a modal `can you` is no can. A bare `can` or `soup can` (no closed word) is not decided. The bench's data: symbolic_robot layer
+`closed_can_microwave` (`CLOSED_CAN` of `bench/suites/home/planners/d1_options.py`, its made-up word table in
+`tests/home/bench/test_closed_can_microwave_layer.py`).
 
 **Sentence.** The rule's `say`, prompt language, said through the engine's translator as every hazard rule ("I won't do that: <say>.").
 **Switch off.** No data: nothing happens (tests `_empty`); `hazard_rules=off` turns off every rule; `hazard.ask` off (default): no question.
