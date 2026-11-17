@@ -195,6 +195,7 @@ class RecordingExportIn(_Open):
     horizon_s: float = 0.3
     labels: list[str] = ['success']
     crop: bool = False            # cut the camera views with the robot's crop spec (RECORDER config)
+    auto_trim: bool = True        # an episode with no saved trim is cut to its suggested range: the idle start and end, where nothing changes, are left out
 
 
 class RecordingExport(_Open):

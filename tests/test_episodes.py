@@ -299,3 +299,19 @@ def test_the_list_and_the_export_know_the_robots_crop(monkeypatch, tmp_path):
     assert ok['episodes'] == 2 and json.loads((tmp_path / 'exports' / 'x2.json').read_text())['crop'] == CROP
     monkeypatch.setattr(api, 'bridge', lambda: R.RecorderBridge(lambda: {'dir': str(tmp_path / 'raw')}, lambda: None))
     assert c.post('/recordings/export', json={'name': 'x3', 'crop': True}).status_code == 400          # this robot defines no crop
+
+
+def test_the_export_cuts_the_idle_start_and_end_of_an_episode_with_no_saved_trim(tmp_path):
+    raw = tmp_path / 'raw'
+    make_episode(raw)                                                                   # moves from 4 to 15 s of 20 s
+    make_episode(raw, ep='ep_0002')
+    E.save_edit(raw, '2026-11-16', 'ep_0002', {'trim_start_s': 1.0, 'trim_end_s': 19.0})     # the operator's own trim wins
+    out = E.export_manifest(raw, 'a1')
+    m = {e['id']: e for e in json.loads((tmp_path / 'exports' / 'a1.json').read_text())['episodes']}
+    sug = E.row(raw, '2026-11-16', 'ep_0001')['summary']['trim_suggest']
+    assert (m['2026-11-16/ep_0001']['trim_start_s'], m['2026-11-16/ep_0001']['trim_end_s']) == tuple(sug) and sug[0] > 3 and sug[1] < 17          # the idle ends are out
+    assert (m['2026-11-16/ep_0002']['trim_start_s'], m['2026-11-16/ep_0002']['trim_end_s']) == (1.0, 19.0)
+    assert out['hours'] == round(((sug[1] - sug[0]) + 18.0) / 3600, 3)
+    E.export_manifest(raw, 'a2', auto_trim=False)                                       # switched off: the whole episode, as before
+    m2 = {e['id']: e for e in json.loads((tmp_path / 'exports' / 'a2.json').read_text())['episodes']}
+    assert (m2['2026-11-16/ep_0001']['trim_start_s'], m2['2026-11-16/ep_0001']['trim_end_s']) == (0.0, 20.0)

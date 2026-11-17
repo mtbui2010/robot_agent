@@ -297,7 +297,7 @@ def delete_edit(raw_dir, day: str, ep: str) -> None:
 ACTIONS = ('future_state', 'servo', 'ref')
 
 
-def export_manifest(raw_dir, name: str, fps: int = 30, action: str = 'future_state', horizon_s: float = 0.3, labels=('success',), crop: dict = None) -> dict:
+def export_manifest(raw_dir, name: str, fps: int = 30, action: str = 'future_state', horizon_s: float = 0.3, labels=('success',), crop: dict = None, auto_trim: bool = True) -> dict:
     """Write ``<data>/exports/<name>.json``: the episodes to include (not excluded, with an accepted label), each with its prompt and trim."""
     if not re.match(r'^[A-Za-z0-9_\-]{1,60}$', name or ''):
         raise EpisodeError('name: letters, digits, _ and - only')
@@ -316,7 +316,9 @@ def export_manifest(raw_dir, name: str, fps: int = 30, action: str = 'future_sta
         if e.get('exclude') or label not in labels:
             continue
         dur = r['summary']['duration_s']
-        a, b = e.get('trim_start_s', 0.0), e.get('trim_end_s', dur)
+        sug = r['summary'].get('trim_suggest') if auto_trim else None            # no trim saved: the idle start and end (nothing changes there) are cut anyway
+        a = e.get('trim_start_s', sug[0] if sug else 0.0)
+        b = e.get('trim_end_s', sug[1] if sug else dur)
         secs += b - a
         eps.append({'id': r['id'], 'prompt': r['prompt'], 'label': label, 'robot_mode': r.get('robot_mode'), 'trim_start_s': a, 'trim_end_s': b})
     if not eps:

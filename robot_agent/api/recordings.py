@@ -59,7 +59,7 @@ def export(body: M.RecordingExportIn):
     d = _dir()
     if body.crop and _crop_spec() is None:
         raise HTTPException(status_code=400, detail='this robot defines no crop (RECORDER config "crop")')
-    out = _guard(E.export_manifest, d, body.name, body.fps, body.action, body.horizon_s, tuple(body.labels), _crop_spec() if body.crop else None)
+    out = _guard(E.export_manifest, d, body.name, body.fps, body.action, body.horizon_s, tuple(body.labels), _crop_spec() if body.crop else None, body.auto_trim)
     out['command'] = (f'python robot_teleop/tools/export_lerobot.py --data {out["data_dir"]} --manifest {out["manifest"]}'
                       '   # run it where LeRobot is installed (the training server)')
     return out

@@ -14,6 +14,8 @@ manifest format, the event schema). See `docs/contract.md`.
 - Episodes: a Go to pose move is no longer cut by the suggested trim (the model should learn the init move): `summary.init_moves` lists it (pose name from the mark) and `summary.notes` says so.
 
 ### Look at and clean the raw VLA episodes (`/recordings`)
+- `POST /recordings/export {auto_trim}` (default true): an episode with no saved trim is exported cut to its suggested range (the idle start and end, where nothing changes), no need to press Auto-clean first; a trim the
+  operator saved wins; `auto_trim: false` exports whole episodes. The manifest lists the trims actually used. 1 test.
 - Square crop of a camera in the export: the `RECORDER` config's `crop` ({camera: {square, offset, size, anchor by mode}}) is offered by `GET /recordings` (`crop`, `modes`); `POST /recordings/export {crop: true}` writes
   it into the manifest. The crop depends on the robot mode, so every exported episode needs one: the operator can set it per episode (`PUT .../edit {robot_mode}`; it wins over the recorded one, `recorded_mode` is kept)
   and the export is refused with the list of the episodes that have none. 3 tests.
