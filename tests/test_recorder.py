@@ -145,3 +145,22 @@ def test_a_template_can_be_limited_to_some_actions():
     assert P.generate(spec, {'action': 'pick', 'target_object': 'cup', 'target_location': 'table'}) == 'pick the cup on the table'
     with pytest.raises(ValueError):
         P.generate({'templates': [{'text': '{action} {target_object}', 'actions': ['open']}]}, {'action': 'pick', 'target_object': 'cup'})
+
+
+def test_generate_again_gives_another_sentence_when_there_is_one():
+    rng = random.Random(3)
+    f = {'action': 'pick', 'target_object': 'cup', 'target_location': 'sink', 'destination_object': 'tray', 'destination_location': 'table'}
+    last = None
+    for _ in range(30):                                                 # every press differs from the one before
+        s = P.generate(SPEC, f, rng, avoid=last)
+        assert s != last
+        last = s
+    f1 = {'action': 'open', 'target_object': 'drawer'}                  # only one sentence possible: it is returned again, not an error
+    assert P.generate(SPEC, f1, rng, avoid='open drawer') == 'open drawer'
+
+
+def test_prompt_endpoint_takes_avoid(client):
+    c, *_ = client
+    f = {'action': 'open', 'target_object': 'drawer', 'target_location': 'top'}
+    got = {c.post('/recorder/prompt', json={'fields': f, 'avoid': 'open the top drawer'}).json()['prompt'] for _ in range(12)}
+    assert 'open the top drawer' not in got and got <= {'open the first drawer', 'open the upper drawer'}

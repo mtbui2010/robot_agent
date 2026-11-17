@@ -52,8 +52,9 @@ def usable(spec: dict, values: dict) -> list:
     return [t for t in ok if len(template_fields(t)) == best]
 
 
-def generate(spec: dict, values: dict, rng=None) -> str:
-    """One sentence for ``values`` ({field: text}); ValueError (a sentence the operator can read) when no template fits."""
+def generate(spec: dict, values: dict, rng=None, avoid: str = None) -> str:
+    """One sentence for ``values`` ({field: text}); ValueError (a sentence the operator can read) when no template fits.
+    ``avoid`` (the sentence given last time): another one is drawn when the fields allow one, so pressing Generate again changes the sentence."""
     rng = rng or random
     spec = spec or {}
     values = {k: _clean(v) for k, v in (values or {}).items()}
@@ -68,4 +69,11 @@ def generate(spec: dict, values: dict, rng=None) -> str:
     def fill(m):
         v = values[m.group(1)]
         return rng.choice(syn[v.lower()]) if v.lower() in syn else v
-    return _clean(_FIELD.sub(fill, _text(rng.choice(cands))))
+    def one():
+        return _clean(_FIELD.sub(fill, _text(rng.choice(cands))))
+    out = one()
+    for _ in range(40 if avoid else 0):                  # a few draws are enough: the combinations are few and each is likely
+        if out != _clean(avoid):
+            break
+        out = one()
+    return out

@@ -1,7 +1,7 @@
 """Raw VLA episodes: record while teleoperating (see ``core/recorder.py``, ``core/prompts.py``).
 
     GET  /recorder          {available, state?, age_s?, dir, teleop, fields}   (404 when the robot has no RECORDER config)
-    POST /recorder/prompt   {fields: {action, target_object, ...}}  ->  {prompt}   a random sentence from the robot's templates
+    POST /recorder/prompt   {fields: {action, target_object, ...}, avoid?}  ->  {prompt}   a random sentence from the robot's templates (not `avoid`, the last one, when another exists)
     POST /recorder/start    {prompt, meta?}   starts remote control (the configured teleop function) and the recording
     POST /recorder/stop     {label: success | failure | discard}   stops remote control and saves (or throws away) the episode
 Reading never starts anything. A run in flight blocks start.
@@ -32,7 +32,7 @@ def get_recorder():
 def make_prompt(body: M.RecorderPromptIn):
     _cfg()
     try:
-        return {'prompt': prompts.generate((bridge().config() or {}).get('prompts') or {}, body.fields)}
+        return {'prompt': prompts.generate((bridge().config() or {}).get('prompts') or {}, body.fields, avoid=body.avoid)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

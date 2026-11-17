@@ -126,6 +126,7 @@ class RecorderStatus(_Open):
 
 class RecorderPromptIn(_Open):
     fields: dict[str, str]
+    avoid: Optional[str] = None   # the sentence made last time: the next one is another sentence when there is one
 
 
 class RecorderPrompt(_Open):
