@@ -145,6 +145,9 @@ def test_endpoints(client):
     e = c.post('/recordings/export', json={'name': 'v1'}).json()
     assert e['episodes'] == 1 and 'export_lerobot.py' in e['command'] and e['manifest'].endswith('exports/v1.json')
     assert c.delete('/recordings/2026-11-16/ep_0001/edit').json() == {'ok': True}
+    gone = c.delete('/recordings/2026-11-16/ep_0001').json()
+    assert gone['ok'] is True and gone['trash'].endswith('trash/2026-11-16/ep_0001') and c.get('/recordings').json()['totals']['episodes'] == 0
+    assert c.delete('/recordings/2026-11-16/ep_0001').status_code == 400
 
 
 def test_no_config_is_404(monkeypatch):
@@ -201,3 +204,34 @@ def test_auto_clean_saves_the_suggested_trim_and_keeps_other_edits(tmp_path):
     e = E.row(raw, '2026-11-16', 'ep_0002')['edit']
     assert e['label'] == 'failure' and e['note'] == 'x' and 'trim_start_s' in e                  # the label and the note survive an overwrite of the trim
     assert E.auto_clean(raw, ids=['2026-11-16/ep_0001'])['cleaned'] == 0                         # already edited, no overwrite
+
+
+def test_delete_moves_the_episode_and_its_edit_to_the_trash_and_nothing_is_lost(tmp_path):
+    raw = tmp_path / 'raw'
+    make_episode(raw)
+    make_episode(raw, ep='ep_0002')
+    E.save_edit(raw, '2026-11-16', 'ep_0001', {'trim_start_s': 1, 'trim_end_s': 5, 'label': 'failure'})
+    E.row(raw, '2026-11-16', 'ep_0001')                                              # warm the cache
+    out = E.delete_episode(raw, '2026-11-16', 'ep_0001')
+    t = tmp_path / 'trash' / '2026-11-16' / 'ep_0001'
+    assert out['trash'] == str(t) and (t / 'DONE').is_file() and (t / 'streams.npz').is_file() and (t / 'head' / '000000.jpg').is_file()      # the raw files are all there
+    assert json.loads((t / 'edit.json').read_text())['label'] == 'failure'                                                                   # with the decision
+    assert not (raw / '2026-11-16' / 'ep_0001').exists() and not (tmp_path / 'edits' / '2026-11-16' / 'ep_0001.json').exists()
+    assert [r['episode'] for r in E.list_episodes(raw)['episodes']] == ['ep_0002']                                                          # gone from the list
+    with pytest.raises(E.EpisodeError):
+        E.delete_episode(raw, '2026-11-16', 'ep_0001')                               # already gone
+    with pytest.raises(E.EpisodeError):
+        E.delete_episode(raw, '..', 'ep_0002')
+    half = make_episode(raw, ep='ep_0003')
+    (half / 'DONE').unlink()
+    with pytest.raises(E.EpisodeError):
+        E.delete_episode(raw, '2026-11-16', 'ep_0003')                               # still being copied: not touched
+
+
+def test_a_second_episode_with_the_same_name_in_the_trash_gets_a_suffix(tmp_path):
+    raw = tmp_path / 'raw'
+    make_episode(raw)
+    E.delete_episode(raw, '2026-11-16', 'ep_0001')
+    make_episode(raw)                                                                 # the same name again (e.g. restored and recorded over)
+    out = E.delete_episode(raw, '2026-11-16', 'ep_0001')
+    assert out['trash'] != str(tmp_path / 'trash' / '2026-11-16' / 'ep_0001') and (tmp_path / 'trash' / '2026-11-16' / 'ep_0001').is_dir()

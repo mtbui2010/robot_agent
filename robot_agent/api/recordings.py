@@ -5,6 +5,7 @@
     GET    /recordings/{day}/{ep}/frame?cam=head&t=3.2     image/jpeg: the camera frame nearest to t seconds
     PUT    /recordings/{day}/{ep}/edit        {trim_start_s?, trim_end_s?, label?, exclude?, note?}   saved next to the raw folder, never into it
     DELETE /recordings/{day}/{ep}/edit
+    DELETE /recordings/{day}/{ep}             move the episode (and its edit list) to <data>/trash/: nothing is deleted for good
     POST   /recordings/auto-clean             {ids?, overwrite?}   save the suggested trim as the edit of each episode (those without an edit; all with overwrite)
     POST   /recordings/export                 {name, fps, action, horizon_s, labels}   writes the manifest the export tool reads; answers with the command to run
 Reading changes nothing. The raw files are never modified.
@@ -71,3 +72,8 @@ def put_edit(day: str, ep: str, body: M.RecordingEditIn):
 def delete_edit(day: str, ep: str):
     _guard(E.delete_edit, _dir(), day, ep)
     return {'ok': True}
+
+
+@router.delete('/recordings/{day}/{ep}', response_model=M.RecordingTrashed, **M.OPEN)
+def trash_recording(day: str, ep: str):
+    return _guard(E.delete_episode, _dir(), day, ep)

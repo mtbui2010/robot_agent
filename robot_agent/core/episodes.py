@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import time
 from pathlib import Path
 
@@ -339,3 +340,27 @@ def auto_clean(raw_dir, ids=None, overwrite: bool = False) -> dict:
         save_edit(raw_dir, r['day'], r['episode'], edit)
         done.append({'id': r['id'], 'trim_start_s': sug[0], 'trim_end_s': sug[1], 'kept_s': round(sug[1] - sug[0], 1), 'was_s': r['summary']['duration_s']})
     return {'cleaned': len(done), 'skipped': len(skipped), 'rows': done}
+
+
+# ── delete: into the trash folder, never for good ─────────────────────────────────────────────────────────────────
+def trash_dir(raw_dir) -> Path:
+    return _root(raw_dir).parent / 'trash'
+
+
+def delete_episode(raw_dir, day: str, ep: str) -> dict:
+    """Move an episode (and its edit list) to ``<data>/trash/<day>/<ep>``: the raw files are kept there, so a deleted episode can be put back by moving
+    the folder back. A folder with that name already in the trash gets a time suffix. Only finished episodes (DONE) can be moved."""
+    p = episode_dir(raw_dir, day, ep)
+    dest = trash_dir(raw_dir) / day / ep
+    if dest.exists():
+        dest = dest.with_name(f'{ep}_{int(time.time())}')
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        p.rename(dest)                                   # one filesystem (the data folder): atomic
+    except OSError:
+        shutil.move(str(p), str(dest))
+    e = edits_path(raw_dir, day, ep)
+    if e.is_file():
+        e.rename(dest / 'edit.json')                     # the operator's decision travels with the episode
+    _CACHE.pop(str(p), None)
+    return {'ok': True, 'trash': str(dest)}

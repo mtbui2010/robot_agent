@@ -168,6 +168,11 @@ class RecordingEdit(_Open):
     version: int = 1
 
 
+class RecordingTrashed(_Open):
+    ok: bool
+    trash: str                    # where the episode went: <data>/trash/<day>/<ep>
+
+
 class RecordingAutoCleanIn(_Open):
     ids: Optional[list[str]] = None   # only these episodes (default: all)
     overwrite: bool = False           # also replace an existing trim
