@@ -21,10 +21,29 @@ the Korean words are assumed translations. A word counts whole (`_`, `-`, space 
 microwave-safe", which the robot cannot check), and they name metal trim. So `a ceramic mug with a metal handle`, `a metal-free bowl with a
 foil lid` and `a microwave-safe metal rack` are refused; `a metal-free glass bowl` passes. An object with no metal word passes.
 
-**Known gaps.** A bare `fork`, `knife`, `spoon`, `can`, `takeout box`: no material word, not decided (a plastic fork is fine). A reader that
+**Known gaps.** A bare `can`, `takeout box`: no material word, not decided (a bare utensil word: see "Ask" below). A reader that
 paraphrases the object without the material ("the leftovers") passes unless the person's own words (`said`) hold it. Some oven manuals allow
 a little foil (pages not opened): the rule refuses it anyway. The profile's `checks` (on, in) also refuse a put ON TOP of the oven.
 
+**Ask: a bare utensil word (key `hazard.ask`, legacy `hazard_ask`, default off; 2026-11-17).** The pages name "metal utensils" a risk, but
+a spoon may be plastic or wooden: for a bare utensil word the honest rule is to ASK, not to refuse. Design (b): the gate has a question path
+(the option service `ask`, as `cond_goal` / `ask_next` use it) but the rule schema has no ask form (a), and an object issue (c) would ask
+"say it again" and re-sample the reader. So an entry of the manifest list `safety.hazards` may carry `ask: <phrase key>` and `unless:
+[regex]` (a declared safe material word; `objects`, `places`, `say` as any entry). With `hazard.ask` on, a goal that no refusing rule stops,
+that such an entry fires for and that holds no `unless` word gets ONE question per goal (the phrase of the language pack or the robot's
+i18n, slot `{object}` = the person's words; en / ko `q_metal_microwave` "Is the {object} metal? Metal in a microwave can cause sparks and a
+fire.", wording assumed; another language: the prompt-language phrase through the translator; no phrase in any pack: not asked). Answer:
+silence -> the engine's unanswered end (status `failed`, "no answer to: ...", `say_no_answer`); only a CLEAR no goes on (the engine's
+`yes_no` says no and nothing else is said, or the rest holds an `unless` word: "no", "plastic", "no, it's wooden"); anything else is refused
+as any rule (the entry's `say`, partial drop, the oven's open / close, `refusals`, rule `""`): a yes, a refusing word ("it is steel"), "I
+don't know", "never mind", "no, it's fine" (fail safe: metal is not ruled out). Asked once per goal kind x object x place per run (service
+`goal_dropped`: a re-sample does not bring a refused goal back). Changed after the first cache-only dev replay: the first rule ("not a
+yes = go on") read a Korean withdrawal ("아, 그렇네요. 그럼 됐어요.") as a no while its English twin parsed as a yes. A material word decides without a question: `metal fork`, `steel spoon` are refused by the metal
+entries (they run first); `plastic spoon`, `wooden spoon` match `unless` and pass. Key off: an `ask` entry neither asks nor refuses. Lab
+flag `hazard` `{asked, answer}`. Not covered: a sealed metal can (not in these pages; a separate source search), containers ("takeout box"),
+a reader that drops the noun. Tests: `tests/test_safety_metal_ask.py` (made-up packs, language `zq`, off / empty byte-identical).
+
 **Sentence.** The rule's `say`, prompt language, said through the engine's translator as every hazard rule ("I won't do that: <say>.").
-**Switch off.** No data: nothing happens (tests `_empty`); `hazard_rules=off` turns off every rule. Event: lab flag `hazard` {rules}.
+**Switch off.** No data: nothing happens (tests `_empty`); `hazard_rules=off` turns off every rule; `hazard.ask` off (default): no question.
+Event: lab flag `hazard` {rules} (refusal), {asked, answer} (question).
 Tests: `tests/test_safety_metal_microwave.py` (two made-up packs, language `zq`, empty and off byte-identical).

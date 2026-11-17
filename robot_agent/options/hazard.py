@@ -5,25 +5,31 @@ is the option around that engine: the gate after the understand step, the questi
 that other steps ask, the partial-refusal sentence at the end and the ``refusals`` of the ``done`` event.
 
 Keys: ``rules`` (legacy ``hazard_rules``; ``core`` | ``pack`` | ``off``, default ``core``; run option and environment only, never
-the manifest) and ``receivers`` (legacy ``hazard_receiver``; turns on the profile rules with ``enabled_by: hazard.receivers``).
+the manifest), ``receivers`` (legacy ``hazard_receiver``; turns on the profile rules with ``enabled_by: hazard.receivers``), ``ask``
+(legacy ``hazard_ask``, default off): an entry of ``safety.hazards`` with ``ask`` (a phrase key) asks first (docs/metal_microwave.md).
 Hooks: ``on_goals`` (the gate), ``on_goals_met`` (the partial-refusal sentence), ``on_finish`` (the ``refusals`` field).
-Services: ``forbids`` (the sentence that forbids a goal), ``refused_goals``, ``gate_off``.
-Lab flag ``hazard``: ``{rules, refused, goals}`` each time the gate refuses or drops goals (the rule ids that forbid them).
+Services: ``forbids`` (the sentence that forbids a goal), ``refused_goals``, ``gate_off``, ``goal_dropped`` (refused after an answer).
+Lab flag ``hazard``: ``{rules, refused, goals}`` each time the gate refuses or drops goals (the rule ids that forbid them); ``{asked, answer}``.
+Switch off: ``rules=off`` (no rule at all), ``ask`` off (the default: an ``ask`` entry neither asks nor refuses).
 """
 
 from __future__ import annotations
 
+import re
+
 from robot_agent.core.options import STOP, Key, Option, OptionSpec, register
 from robot_agent.core.planning import goals as goal_kinds
-from robot_agent.core.planning import speech
-from robot_agent.core.safety import find_rule, profile_of
+from robot_agent.core.planning import langdata, speech
+from robot_agent.core.run_control import yes_no
+from robot_agent.core.safety import Verdict, find_rule, profile_of
+from robot_agent.core.safety.hazards import NOT_SAFE
 
 SPEC = OptionSpec(
     name="hazard",
     keys=(Key("rules", "str", "core", aliases=("hazard_rules",), sources=("run", "env"), choices=("core", "profile", "pack", "off")),
-          Key("receivers", "bool", False, aliases=("hazard_receiver",))),
+          Key("receivers", "bool", False, aliases=("hazard_receiver",)), Key("ask", "bool", False, aliases=("hazard_ask",))),
     hooks=("on_goals", "on_goals_met", "on_finish"),
-    services=("forbids", "refused_goals", "gate_off"),
+    services=("forbids", "refused_goals", "gate_off", "goal_dropped"),
     order=10,
     doc="Safety rules of the robot's profile refuse a goal (or drop it and say so); product x place and product x receiver rules.",
 )
@@ -37,6 +43,27 @@ def support_goals(goals, refused) -> list:
     uses = lambda k: any(h.get("type") in ("on", "in") and k in (h.get("to"), h.get("from")) for h in kept)   # noqa: E731
     return [g for g in kept if g.get("type") in ("open", "close") and not uses(g.get("object"))
             and any(g.get("object") in (b.get("to"), b.get("from")) for b in refused)]
+
+
+def answer_says(answer: str, metal: bool, reply: tuple, safe: bool) -> str:
+    """What the person's answer to an ``ask`` entry's question decides (fail safe): ``unanswered`` (silence); ``proceed`` only for a
+    clear no (``reply`` = ``yes_no`` of it: False with nothing else, or with a declared safe word: "no", "plastic", "no, it is wooden");
+    else ``refuse``: a yes, a word a refusing rule holds, "I don't know", "never mind", any other answer (metal is not ruled out)."""
+    if not str(answer or "").strip():
+        return "unanswered"
+    yes, rest = reply
+    return "proceed" if not metal and yes is False and (not str(rest or "").strip() or safe) else "refuse"
+
+
+def unless_hit(entry: dict, goal: dict) -> bool:
+    """Does the goal's object or ``said`` hold one of the entry's ``unless`` words (a declared material: no question)?"""
+    text = " ".join(str(goal.get(k) or "") for k in ("object", "said")).lower()
+    return any(re.search(p, text) for p in entry.get("unless") or ())
+
+
+def thing_at(goal) -> tuple:
+    """What an answer is about: the goal's kind, object and place (a re-reading with other ``said`` words is not asked again)."""
+    return tuple(str(goal.get(k) or "").lower() for k in ("type", "object", "to"))
 
 
 def refusal_record(goal, verdict) -> dict:
@@ -53,9 +80,24 @@ class Hazard(Option):
     def verdict(self, goal, places):
         """The safety rule (profile + the manifest's legacy list) that forbids ``goal``, as a ``Verdict``; None."""
         manifest = getattr(self.svc.robot, "manifest", None)
-        pack = (getattr(manifest, "safety", None) or {}).get("hazards") or []
+        pack = [h for h in self._pack() if not h.get("ask")]           # an ``ask`` entry never refuses silently
         return find_rule(goal, places, profile_of(self.svc.robot), pack, str(self.cfg["rules"]),
                          {"hazard.receivers"} if self.cfg["receivers"] else ())
+
+    def _pack(self) -> list:
+        return (getattr(getattr(self.svc.robot, "manifest", None), "safety", None) or {}).get("hazards") or []
+
+    def ask_entry(self, goal, places):
+        """The first ``ask`` entry (key ``ask`` on, rules not off) whose objects x places fire for ``goal`` and whose ``unless`` words it
+        lacks; None."""
+        if not self.cfg["ask"] or str(self.cfg["rules"]) == "off":
+            return None
+        prof = profile_of(self.svc.robot)
+        for e in (h for h in self._pack() if h.get("ask") and not unless_hit(h, goal)):
+            v = find_rule(goal, places, prof, [e], "pack")
+            if v is not None and not v.rule:                               # the entry itself (a profile receiver rule has an id)
+                return e
+        return None
 
     # ── services ────────────────────────────────────────────────────────────
     def forbids(self, goal, places):
@@ -69,11 +111,60 @@ class Hazard(Option):
     def gate_off(self):
         return True if str(self.cfg["rules"]) == "off" else None
 
+    def goal_dropped(self, run, goal):
+        """True for a goal refused after the person's answer (a re-sampled reading does not bring it back); None otherwise."""
+        return True if self._state(run).get("answers", {}).get(thing_at(goal)) == "refuse" else None
+
+    # ── the question of an ``ask`` entry ────────────────────────────────────
+    def _asked(self, run, found):
+        """Flow: ``found`` with the verdict of each goal no rule refuses but an ``ask`` entry names (asked once per goal); STOP."""
+        out = []
+        for g, v in found:
+            e = None if v else self.ask_entry(g, run.places)
+            if e is not None:
+                v = yield from self._ask(run, g, e)
+                if v == STOP:
+                    return STOP
+            out.append((g, v))
+        return out
+
+    def _ask(self, run, g, e):
+        """Flow: the entry's question about ``g`` (no phrase in any pack: not asked); a Verdict (refuse), None (proceed) or STOP."""
+        answers, sig = self._state(run).setdefault("answers", {}), thing_at(g)
+        if sig not in answers:
+            q = self._question(run, g, e)
+            if q is None:
+                return None
+            yield run.ev("clarify", question=q, round=0, kind=SPEC.name)
+            ans = self.svc.ask(run, q) or ""
+            stop = self.svc.cancelled(run)
+            if stop:
+                yield stop
+                return STOP
+            answers[sig] = answer_says(ans, self.verdict({**g, "said": ans}, run.places) is not None, yes_no(ans),
+                                       unless_hit(e, {"object": ans}))
+            self.svc.lab(SPEC.name, asked=str(g.get("object") or ""), answer=answers[sig])
+            if answers[sig] == "unanswered":
+                yield self.svc.finish(run, "failed", msg=f"no answer to: {q}")
+                return STOP
+        return Verdict(str(e.get("say") or NOT_SAFE), "") if answers[sig] == "refuse" else None
+
+    def _question(self, run, g, e):
+        """The entry's phrase (language pack / robot i18n) with the object in the person's words, in the run's language, else the
+        prompt language's (said through the translator); None when no pack has it."""
+        obj, robot, key = self.svc.said_of(run, str(g.get("object") or "")), self.svc.robot, str(e["ask"])
+        lang = getattr(run, "lang", None) or langdata.prompt_lang()
+        return speech.pack_phrase(robot, key, lang, object=obj) or speech.pack_phrase(robot, key, langdata.prompt_lang(), object=obj)
+
     # ── hooks ───────────────────────────────────────────────────────────────
     def on_goals(self, run):
         """Goals the safety rules forbid: all of them -> a typed safety refusal (STOP); some -> those are dropped and said at the
         end; None."""
         found = [(g, self.verdict(g, run.places)) for g in run.goals]
+        if self.cfg["ask"]:
+            found = yield from self._asked(run, found)
+            if found == STOP:
+                return STOP
         bad = [(g, v.say) for g, v in found if v]
         if not bad:
             return None
