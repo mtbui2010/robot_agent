@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from fakes import FakeLLM, FakeRobot, ScriptedPlanner, done, run_task, steps
+from fakes import FakeLLM, FakeRobot, ScriptedPlanner, done, run_task, scrub, steps
 from robot_agent.core.planning import langdata
 from robot_agent.core.planning.assist_loop import Places
 from robot_agent.core.safety import EMPTY, find_rule, load_profile
@@ -106,14 +106,6 @@ def _run(make_assist, goals, prof=None, legacy=None, task="Heat the foil-wrapped
     if legacy is not None:
         loop.robot.manifest.safety = {**(loop.robot.manifest.safety or {}), "hazards": legacy}
     return loop, robot, planner, run_task(loop, task, lang=lang, max_events=3000)
-
-
-def scrub(x):
-    if isinstance(x, dict):
-        return {k: scrub(v) for k, v in x.items() if k not in ("run_id", "t", "ts", "elapsed_s", "started_at", "plan_sec")}
-    if isinstance(x, list):
-        return [scrub(v) for v in x if not (isinstance(v, dict) and v.get("event") == "reconcile")]
-    return x
 
 
 def test_metal_microwave_loop_final_foil_into_the_microwave_is_refused_and_nothing_moves(make_assist):
