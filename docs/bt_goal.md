@@ -25,15 +25,17 @@ call; the Act fails and the tree's Fallback / Retry go on.
 - `ask_or_stop` (default, policy A): a code a person can help with (its rule is not a robot-health rule: absent, unreachable, blocked,
   grasp_failed, dropped, unknown) is asked once per goal with the menu phrase of the failed action (key `menu`, e.g. ask_next's
   `q_ask_next_find` / `_pick` / `_move`); an answer with a `menu.retry` word or a place ticks the goal's tree once more (a named place is
-  remembered as said, the tree is filled again from the memory); else, and for a health code (hw_fault, timeout, perception_unavailable after
+  remembered as said, the tree is filled again from the memory; the goal's own destination named is no place of the object: not understood); else, and for a health code (hw_fault, timeout, perception_unavailable after
   the wait schedule), report and stop (`done failed` with the code; no question).
 - `sage_once` (policy B): where A stops (not after a person's stop word), the REMAINING goals and the facts (code, step, reason, what was done)
   go to the SAGE planner once (`replan_or_fail`); its plan then runs on the engine's normal path; no plan from it: the run stops.
 
-**Data.** `planner.options.bt_goal`: `trees` `{<goal type>: {"tree": [...], "skip_if": [goal fields], "source" | "assumed"}}`; `menu` `{"phrases":
-{<action>: <phrase key>}, "retry": [<pack list refs>], "source" | "assumed"}` (none: no question, A stops); `exhausted` (`ask_or_stop` |
-`sage_once`). Trees for `on`, `open`, `close`, `go` are pack data of a robot (the bench declares them from its mock robot's skills);
-`in`, `say`, `deliver`, `give` have none and stay SAGE.
+**Data.** `planner.options.bt_goal`: `trees` `{<goal type>: {"tree": [...], "skip_if": [goal fields], "source" | "assumed"}}` or a LIST of such
+entries (the first one the goal fills and the robot can run: a `say` with a place, then one without; a `deliver` with the robot's `{delivery}`
+phrase, then one without, as `goals.compile_steps`); `menu` `{"phrases": {<action>: <phrase key>}, "retry": [<pack list refs>], "source" |
+"assumed"}` (none: no question, A stops); `exhausted` (`ask_or_stop` | `sage_once`). Trees are pack data of a robot (the bench declares `on`,
+`in`, `open`, `close`, `go`, `say` from its mock robot's skills); a `say` / `deliver` tree is a data view of the engine's template (same robot
+calls when nothing fails) and has no entry condition (no belief predicate reads "said" / "handed over": the engine's end check does).
 
 **Engine touch (core).** Service `runs_goals` (asked once in `_plan_phase`), hook `on_run_goals` (start of `_execute_phase`), service `try_step`
 (key `ladder`: drain the ladder's spliced steps), `changes_waiting` and service `no_replan` (asked at the top of `_sage_replan`; nobody answers it by default).
