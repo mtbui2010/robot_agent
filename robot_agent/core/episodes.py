@@ -195,7 +195,7 @@ def load_edit(raw_dir, day: str, ep: str) -> dict | None:
 def row(raw_dir, day: str, ep: str) -> dict:
     p = episode_dir(raw_dir, day, ep)
     meta, summ = _load(p)
-    return {'id': f'{day}/{ep}', 'day': day, 'episode': ep, 'prompt': meta.get('prompt', ''), 'label': meta.get('label'), 'kind_fields': meta.get('fields'),
+    return {'id': f'{day}/{ep}', 'day': day, 'episode': ep, 'prompt': meta.get('prompt', ''), 'label': meta.get('label'), 'kind_fields': meta.get('fields'), 'robot_mode': meta.get('robot_mode'),
             'started_at': meta.get('started_at'), 'counts': meta.get('counts'), 'summary': summ, 'edit': load_edit(raw_dir, day, ep)}
 
 
@@ -310,7 +310,7 @@ def export_manifest(raw_dir, name: str, fps: int = 30, action: str = 'future_sta
         dur = r['summary']['duration_s']
         a, b = e.get('trim_start_s', 0.0), e.get('trim_end_s', dur)
         secs += b - a
-        eps.append({'id': r['id'], 'prompt': r['prompt'], 'label': label, 'trim_start_s': a, 'trim_end_s': b})
+        eps.append({'id': r['id'], 'prompt': r['prompt'], 'label': label, 'robot_mode': r.get('robot_mode'), 'trim_start_s': a, 'trim_end_s': b})
     if not eps:
         raise EpisodeError('no episode matches (check the labels and the excluded ones)')
     manifest = {'version': 1, 'name': name, 'created_at': round(time.time(), 1), 'fps': int(fps), 'action': {'source': action, 'horizon_s': float(horizon_s)},

@@ -10,7 +10,7 @@ from robot_agent.core import recorder as R
 T0 = 1_700_000_000.0
 
 
-def make_episode(raw, day='2026-11-16', ep='ep_0001', dur=20.0, move=(4.0, 15.0), label='success', events=None, prompt='open drawer'):
+def make_episode(raw, day='2026-11-16', ep='ep_0001', dur=20.0, move=(4.0, 15.0), label='success', events=None, prompt='open drawer', mode=None):
     """50 Hz state that moves joint 1 between ``move``; head 30 Hz / wrist 12 Hz tiny jpeg files; a gripper step at 10 s."""
     d = raw / day / ep
     (d / 'head').mkdir(parents=True)
@@ -29,7 +29,7 @@ def make_episode(raw, day='2026-11-16', ep='ep_0001', dur=20.0, move=(4.0, 15.0)
              action_servo_t=T0 + ts, action_servo=st[:, :7])
     meta = {'format': 'robot_teleop.raw/1', 'episode': ep, 'prompt': prompt, 'started_at': T0, 'duration_s': dur, 'label': label,
             'cameras': {'head': '/h', 'wrist': '/w'}, 'fields': {'action': 'open'}, 'counts': {'state': len(ts)},
-            'events': events if events is not None else [{'t': 0.1, 'kind': 'teleop', 'state': 'active'}]}
+            'events': events if events is not None else [{'t': 0.1, 'kind': 'teleop', 'state': 'active'}], **({'robot_mode': mode} if mode else {})}
     (d / 'meta.json').write_text(json.dumps(meta))
     (d / 'DONE').write_text('1')
     return d
@@ -235,3 +235,14 @@ def test_a_second_episode_with_the_same_name_in_the_trash_gets_a_suffix(tmp_path
     make_episode(raw)                                                                 # the same name again (e.g. restored and recorded over)
     out = E.delete_episode(raw, '2026-11-16', 'ep_0001')
     assert out['trash'] != str(tmp_path / 'trash' / '2026-11-16' / 'ep_0001') and (tmp_path / 'trash' / '2026-11-16' / 'ep_0001').is_dir()
+
+
+def test_the_robot_mode_is_in_the_row_and_in_the_export_manifest(tmp_path):
+    raw = tmp_path / 'raw'
+    make_episode(raw, mode='left')
+    make_episode(raw, ep='ep_0002')                                                   # recorded before the mode was saved
+    rows = {r['episode']: r for r in E.list_episodes(raw)['episodes']}
+    assert rows['ep_0001']['robot_mode'] == 'left' and rows['ep_0002']['robot_mode'] is None
+    E.export_manifest(raw, 'm1')
+    m = json.loads((tmp_path / 'exports' / 'm1.json').read_text())
+    assert {e['id']: e['robot_mode'] for e in m['episodes']} == {'2026-11-16/ep_0001': 'left', '2026-11-16/ep_0002': None}
