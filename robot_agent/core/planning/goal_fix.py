@@ -472,6 +472,12 @@ def _alias_form(name: str, groups: list) -> str:
     return " ".join(n.split())
 
 
+def _instance_id(rec):
+    """The instance id of a memory record (``instance`` / ``id`` / ``sighting``: one sighting of one thing), or None."""
+    rec = rec or {}
+    return next((rec[k] for k in ("instance", "id", "sighting") if rec.get(k) not in (None, "")), None)
+
+
 def instances(names: list, memory_objects: dict, groups=None) -> list:
     """[[name, ...]] the remembered instances behind `names`: names that refer to the same one are collapsed. Two names
     are the same instance when their memory records carry the same instance id (``instance`` / ``id`` / ``sighting``
@@ -487,8 +493,7 @@ def instances(names: list, memory_objects: dict, groups=None) -> list:
         return x
     ident, form = {}, {}
     for n in names:
-        rec = (memory_objects or {}).get(n) or {}
-        i = next((rec[k] for k in ("instance", "id", "sighting") if rec.get(k) not in (None, "")), None)
+        i = _instance_id((memory_objects or {}).get(n))
         for key, table in ((("id", str(i)) if i is not None else None, ident), (_alias_form(n, groups), form)):
             if key is None:
                 continue
@@ -502,8 +507,28 @@ def instances(names: list, memory_objects: dict, groups=None) -> list:
     return [sorted(g, key=lambda n: (len(n), n)) for g in out.values()]
 
 
+def shared_instances(name: str, memory_objects: dict, aliases=None) -> list:
+    """[[name, ...]] the instances a BARE record stands for (option ``shared_instances``): the record named exactly `name` has no
+    instance id, and the records that have one and hold `name` as whole words are two or more instances (:func:`instances`).
+    [] otherwise (no such record, a record with an id, fewer than two instances): the exact name is resolved."""
+    mem = memory_objects or {}
+    if not name or name not in mem or _instance_id(mem[name]) is not None:
+        return []
+    inside = [n for n in mem if n != name and _instance_id(mem[n]) is not None and re.search(rf"(?<!\w){re.escape(name)}(?!\w)", n)]
+    groups = instances(inside, mem, aliases)
+    return groups if len(groups) > 1 else []
+
+
+def said_fits(groups: list, name: str, said: set, sing) -> list:
+    """The instance groups the person's words fit: a group fits when, for one of its names, the words beyond `name` (folded
+    by `sing`) are all in `said` (a name with no word beyond `name` fits nothing)."""
+    def extra(n):
+        return {sing(t) for t in n.split()} - {name}
+    return [grp for grp in groups if any(extra(n) and extra(n) <= said for n in grp)]
+
+
 def canon_inventory(goals: list, memory_objects: dict, places, lang: str = "en", rules=None, english: str = "",
-                    aliases=None) -> tuple:
+                    aliases=None, shared=None) -> tuple:
     """(goals, which, notes): option ``inventory_ask``, ``name_canon`` made general. The model's object name of a move
     goal that is not in the robot's object memory, a place or a person is matched with the memory's names (equal after
     plural folding, or the same head word). Instances are counted, not names: names of one remembered instance (the
@@ -513,7 +538,8 @@ def canon_inventory(goals: list, memory_objects: dict, places, lang: str = "en",
     be said), and when more than one still fits the person is asked once (``which`` = (said, [one name per
     instance])), wherever the instances are. ``lang`` is the language of the core's object labels (pack data
     ``planner.canonical_lang``): ``en`` keeps Latin-script names only; ``none`` skips the rule; another code uses the
-    pack's ``plural_fold`` rules (none: exact or head-word match). Robot-side memory only."""
+    pack's ``plural_fold`` rules (none: exact or head-word match). Robot-side memory only. ``shared(name, memory, aliases)``
+    (option ``shared_instances``; None: off) gives the instances behind an EXACT name: two or more are a choice as above."""
     if lang in ("none", "off"):
         return goals, None, []
     rules = fold_rules(None, lang) if rules is None else rules
@@ -526,17 +552,16 @@ def canon_inventory(goals: list, memory_objects: dict, places, lang: str = "en",
     out, notes, which = [], [], None
     for g in goals:
         o = _plain(g.get("object"), lang)
-        if g.get("type") not in ("on", "in") or not o or o in names or places.env.get(o) or places.candidates(o, ""):
+        many = shared(o, memory_objects, aliases) if shared and o in names and g.get("type") in ("on", "in") else []
+        if g.get("type") not in ("on", "in") or not o or (o in names and not many) or places.env.get(o) or places.candidates(o, ""):
             out.append(g)
             continue
         so, head = sing(o), sing(o.split()[-1])
         cand = [n for n in names if n not in used and (
             sing(n) == so or sing(n.split()[-1]) == so or (len(o.split()) > 1 and sing(n) == head))]
-        inst = instances(cand, memory_objects, aliases)                                 # one entry per instance
+        inst = many or instances(cand, memory_objects, aliases)                         # one entry per instance
         if len(inst) > 1 and said:                                                      # the user's words first
-            def fits(grp):
-                return any({sing(t) for t in n.split()} - {so} <= said and {sing(t) for t in n.split()} - {so} for n in grp)
-            fit = [grp for grp in inst if fits(grp)]
+            fit = said_fits(inst, so, said, sing)
             inst = fit if len(fit) == 1 else inst
         if len(inst) == 1:
             best = inst[0][0]
@@ -605,5 +630,5 @@ def covers_objects(goals: list, objects: list) -> bool:
     return all(any(key(o)[0] == key(h)[0] or key(o)[1] == key(h)[1] for h in have) for o in objects)
 
 
-__all__ = ["abstains_on_location", "anchored", "covers_objects", "shared_listener", "go_steps", "kind_anchor_open", "canon_names", "canon_inventory", "alias_groups", "instances", "fold_rules", "OPEN_WORDS", "says_into", "kind_from_destination", "drop_empty", "drop_invented", "relay_check", "ko_object_issues",
+__all__ = ["abstains_on_location", "anchored", "covers_objects", "shared_listener", "go_steps", "kind_anchor_open", "canon_names", "canon_inventory", "alias_groups", "instances", "shared_instances", "said_fits", "fold_rules", "OPEN_WORDS", "says_into", "kind_from_destination", "drop_empty", "drop_invented", "relay_check", "ko_object_issues",
            "repair_destination", "unsaid_speaker"]
