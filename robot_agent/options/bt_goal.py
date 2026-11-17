@@ -109,6 +109,12 @@ def read_menu(answer: str, words: dict, place: Optional[str], lang: str) -> str:
     return "none"
 
 
+def source_place(place: Optional[str], goal: dict) -> Optional[str]:
+    """The place a menu answer names as where the goal's object is (pure): None for the goal's own destination (an answer that repeats where
+    the object should go says nothing about where it is; read as a source it would be a false sighting)."""
+    return None if place and place == goal.get("to") else place
+
+
 def pack_words(lang: str, refs) -> list:
     """The words of the language-pack lists ``refs`` (``block.key``, e.g. ``ask_next.retry``) of ``lang``; [] for a list it lacks."""
     out = []
@@ -283,7 +289,7 @@ class BtGoal(Option):
         ans = yield from _Leaves(self.svc, run, goal, -1).put(q)
         if ans is None:
             return None, "cancelled"
-        place = self.svc.ground_place(run, ans)
+        place = source_place(self.svc.ground_place(run, ans), goal)
         said = read_menu(ans, {k: pack_words(lang, menu.get(k)) for k in ("stop", "retry")}, place, lang)
         if said == "place" and obj:
             self.svc.note_answer(run, q, ans, obj, place)

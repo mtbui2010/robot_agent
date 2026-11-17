@@ -246,3 +246,11 @@ def test_a_made_up_language_gets_the_second_robot_own_delivery_phrase_zq(env):
     tree = B.tree_for({"type": "deliver", "object": "", "from": "", "to": CT}, TREES, view.plan_actions, False, ok,
                       extra={B.DELIVERY: view.text(B.DELIVERY, "zq")})
     assert acts(tree) == [("MoveTo", CT), ("Say", "Vree tak."), ("WaitForUnload", "")]
+
+
+# ── a menu answer that names the goal's destination (the class of a d5dev pilot episode: "In the dresser, please." to "shall I look elsewhere?")
+@pytest.mark.parametrize("place,goal,want", [("crate@den", {"to": "bench@den"}, "crate@den"), ("bench@den", {"to": "bench@den"}, None),
+                                             (None, {"to": "bench@den"}, None), ("crate@den", {}, "crate@den")])
+def test_a_place_answer_is_a_source_unless_it_is_the_goal_destination_table(place, goal, want):
+    assert B.source_place(place, goal) == want
+

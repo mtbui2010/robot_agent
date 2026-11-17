@@ -437,3 +437,10 @@ def test_loop_regression_a_goal_change_said_during_a_tree_ends_the_trees_and_the
     assert [f["status"] for f in _flags(loop)][-1] == B.CHANGED and ("move", BENCH) not in _skills(robot)
     assert any(e["event"] == "goal_change" for e in evs) and [c[0] for c in planner.calls] == ["replan"]
     assert done(evs)["status"] == "success" and robot.obj["gizmo"] == CRATE
+
+
+def test_loop_regression_a_menu_answer_naming_the_destination_is_no_sighting_of_the_object(make_assist):
+    """The class: the answer named where the object should GO; it was remembered as where the object IS, the tree went there to look."""
+    loop, robot, planner, evs = _run(make_assist, objects={"gizmo": CRATE}, search_legs=0, answers=["Put it on the bench."])
+    assert robot.asked[0] == FIND_MENU and planner.calls == [] and done(evs)["status"] == "failed" and done(evs)["code"] == "absent"
+    assert ("move", BENCH) not in _skills(robot) and _exh(loop) == ["none", "stop"]

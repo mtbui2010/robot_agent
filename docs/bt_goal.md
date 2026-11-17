@@ -25,7 +25,7 @@ call; the Act fails and the tree's Fallback / Retry go on.
 - `ask_or_stop` (default, policy A): a code a person can help with (its rule is not a robot-health rule: absent, unreachable, blocked,
   grasp_failed, dropped, unknown) is asked once per goal with the menu phrase of the failed action (key `menu`, e.g. ask_next's
   `q_ask_next_find` / `_pick` / `_move`); an answer with a `menu.retry` word or a place ticks the goal's tree once more (a named place is
-  remembered as said, the tree is filled again from the memory); else, and for a health code (hw_fault, timeout, perception_unavailable after
+  remembered as said, the tree is filled again from the memory; the goal's own destination named is no place of the object: not understood); else, and for a health code (hw_fault, timeout, perception_unavailable after
   the wait schedule), report and stop (`done failed` with the code; no question).
 - `sage_once` (policy B): where A stops (not after a person's stop word), the REMAINING goals and the facts (code, step, reason, what was done)
   go to the SAGE planner once (`replan_or_fail`); its plan then runs on the engine's normal path; no plan from it: the run stops.
