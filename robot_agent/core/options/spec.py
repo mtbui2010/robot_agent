@@ -32,6 +32,7 @@ HOOKS: Dict[str, Tuple[str, bool]] = {
     "on_goal_edit": ("observe", False),      # a goal change (correction) is about to be read
     "on_goal_reread": ("observe", False),    # the understand LLM re-read a correction: what it asked, found
     "on_goal_unapplied": ("decide", True),   # a correction could not be applied: ask, record
+    "on_run_goals": ("decide", True),        # the execute phase starts, the plan is empty because an option answered ``runs_goals``: it runs the goals (STOP: the run ended)
     "on_step": ("decide", True),             # before a step runs: the step may be replaced
     "on_step_done": ("observe", False),      # a step succeeded
     "on_step_failed": ("decide", True),      # a step failed, before the recovery policy

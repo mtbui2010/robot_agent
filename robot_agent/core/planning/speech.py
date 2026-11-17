@@ -242,6 +242,17 @@ def phrase(robot, key: str, lang: str) -> Optional[str]:
     return CORE_PHRASES.get(key) if lg == "en" else None
 
 
+def pack_phrase(robot, key: str, lang: str, **slots) -> Optional[LocalText]:
+    """The phrase ``key`` (``phrase``) with ``slots`` as a LocalText said in ``lang`` (its English text from the en phrase); None when ``lang``
+    has no such phrase or a slot is missing."""
+    tpl = phrase(robot, key, lang) if key else None
+    en = phrase(robot, key, "en") or tpl
+    try:
+        return LocalText(key, slots, text=en.format(**slots)) if tpl else None
+    except (KeyError, IndexError, ValueError):
+        return None
+
+
 def render(text, lang: str, robot=None, places=None, name_slots=("place", "person", "options"), slot_tr=None) -> Optional[str]:
     """``text`` said in ``lang`` from the robot's phrases (None: a slot / phrase is missing in that language,
     the caller translates instead). A plain str is returned as is for en, else None."""
@@ -327,7 +338,7 @@ def guard(text: str, lang: str, keep=()) -> Optional[str]:
     return None
 
 
-__all__ = ["CORE_PHRASES", "APOLOGY_KEYS", "calm", "LocalText", "say_name", "phrase", "render", "guard"]
+__all__ = ["CORE_PHRASES", "APOLOGY_KEYS", "calm", "LocalText", "say_name", "phrase", "pack_phrase", "render", "guard"]
 
 
 def script_ok(alias: str, lang: str) -> bool:

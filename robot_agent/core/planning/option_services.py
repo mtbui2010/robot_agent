@@ -6,6 +6,7 @@ This is the one place where option hooks reach loop internals; an option module 
 from __future__ import annotations
 
 from ..options.dispatch import NULL
+from ..options.spec import STOP
 from . import dialog_converge, speech
 
 
@@ -69,6 +70,32 @@ class LoopServices:
     def run_step(self, run, step: dict):
         """One more step of the end-of-run check (MoveTo, or the pack's end action), its effect applied on success: the skill result or None."""
         return self._lp._look(run, dict(step))[0]
+
+    def try_step(self, run, st, ladder: bool = False):
+        """Flow: one step ``st`` through the engine's own step path (``on_step`` options, guard, bind, the skill, its verify, the record and
+        events), appended to the run's plan as it runs, for an option that runs the goals itself (``runs_goals``). True when it succeeded,
+        False when it failed, None when the run ended. ``ladder`` False: the recovery is the caller's (it answers ``on_step_failed``).
+        ``ladder`` True: the engine's own recovery runs too, and the steps it puts in place (a retry, a look before a grasp, a search
+        leg, a refind) run before this returns; a planner rung the caller holds back (service ``no_replan``) leaves the step failed."""
+        n, k = len(run.completed), len(run.run.steps)
+        run.steps.append(dict(st))
+        run.i = len(run.steps) - 1
+        while True:
+            out = yield from self._lp._run_step(run, run.steps[run.i])
+            if out == STOP or not ladder or run.i >= len(run.steps):
+                break
+        run.i = len(run.steps)
+        if out == STOP or not ladder:
+            return None if out == STOP else len(run.completed) > n
+        last = run.run.steps[-1] if len(run.run.steps) > k else None   # the last record made here (none: stopped at the guard, or done by a reconcile)
+        own = last is not None and last.index == len(run.steps) - 1      # of the step itself, not of a step the ladder put before it
+        return (own and last.status == "success") or any(c is run.steps[-1] for c in run.completed[n:])
+
+    def changes_waiting(self, run) -> bool:
+        """Is a goal change said during the run (MODIFY / ADD / DROP / NEW) waiting for the loop's next step boundary? Not taken: the loop
+        applies it there (``_apply_pending``), e.g. once the option that runs the goals itself (``runs_goals``) gives the run back."""
+        from ..run_control import current_run
+        return bool(getattr(current_run(), "pending", None))
 
     def ask_clarify(self, run, question):
         """Flow: ask ``question`` as the loop's own clarify step (the answer joins the dialogue); the step's result (go on reading, or stop)."""
