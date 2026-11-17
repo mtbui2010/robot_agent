@@ -1,51 +1,57 @@
-"""Option ``bt_goal`` (default off, prototype): each goal is run by a behaviour tree declared as data for its kind, not by a SAGE plan.
+"""Option ``bt_goal`` (default off): each goal is a small declared system, a behaviour tree given as data for its kind, not a SAGE plan.
 
-What: service ``runs_goals`` says yes when EVERY goal has a usable tree (``tree_for``: a labelled tree for its type, no ``skip_if`` field set, every
-slot filled, every ``act`` action and condition known, an Ask skill and a phrase in the run's language for ``ask`` / ``confirm`` / ``reply``); the
-planner is then not called. Hook ``on_run_goals`` ticks the trees in goal order (``core/planning/behavior_tree.py``): ``act`` = one engine step
-(service ``try_step``: guard, verify, records as always), ``cond`` reads the belief, ``ask`` / ``confirm`` / ``reply`` are language-pack phrases.
-While a tree runs, ``on_step_failed`` keeps the engine's recovery out: the tree's Fallback / Retry / Ask decide. A failed tree ends the trees; the
-engine's plan end then looks at the goals and gives what does not hold to the SAGE replan (the LLM takes over).
-Why: a readable, declared control flow per goal kind and no planner call for it (docs/bt_goal.md).
-Data: ``planner.options.bt_goal.trees`` {type: {tree, skip_if, source | assumed}}; none or unlabelled: nothing happens (SAGE, as when off).
-Switch off: key ``enabled`` (run option ``bt_goal``), off by default. Event: lab flag ``bt_goal`` {goal, status} ("claimed" once, then per goal).
+What: service ``runs_goals`` says yes when EVERY goal has a usable tree (``tree_for``); the planner is then not called. Hook ``on_run_goals`` ticks
+the trees in goal order (``core/planning/behavior_tree.py``): ``act`` = one engine step WITH the engine's own recovery ladder (``try_step`` ladder:
+retry, wait schedule, search legs, refind, its help question); only the ladder's planner rung is held back (service ``no_replan``) and fails the
+Act. A no-retry code ends the run at once. A tree with no way left: ``exhausted_action`` on the failed code's rule of the same declared table.
+Key ``exhausted``: ``ask_or_stop`` (default) asks once per goal (``menu`` phrases) when a person can help and ticks the tree once more on a yes or
+a place, else reports and stops; ``sage_once`` hands the remaining goals and the facts to the SAGE planner once where A would stop.
+Why: a declared control flow per goal kind, the engine's own recovery inside it, no planner call unless the policy says so (docs/bt_goal.md).
+Data: ``planner.options.bt_goal.trees`` {type: {tree, skip_if, source | assumed}}, ``menu`` {phrases, retry, stop, source | assumed}.
+Switch off: key ``enabled`` (run option ``bt_goal``), off by default. Event: lab flag ``bt_goal``: {goal, status} ("claimed", per goal, the
+exhausted action) and {goal, node, status} per node.
 """
 
 from __future__ import annotations
 
 from typing import Optional
 
+from robot_agent.contract.recovery import Recovery
 from robot_agent.core.options import NEXT, STOP, Key, Option, OptionSpec, register
 from robot_agent.core.planning import behavior_tree as bt
+from robot_agent.core.planning import goals as goal_kinds
 from robot_agent.core.planning import langdata, names, pack_data, speech
 from robot_agent.core.run_control import yes_no
 
 FLAG = "bt_goal"
 SLOTS = ("object", "from", "to")               # the goal fields a tree may name (the engine's goal contract)
 ASKS = ("ask", "confirm")
+POLICIES = ("ask_or_stop", "sage_once")
+HEALTH = (Recovery.WAIT_HEALTH, Recovery.HEALTH_CHECK)   # rules about the robot's own health: no person can help
 SPEC = OptionSpec(
     name=FLAG,
-    keys=(Key("enabled", "bool", False, aliases=(FLAG,)), Key("trees", "dict", {}, sources=("manifest",))),
+    keys=(Key("enabled", "bool", False, aliases=(FLAG,)), Key("trees", "dict", {}, sources=("manifest",)),
+          Key("exhausted", "str", POLICIES[0], choices=POLICIES), Key("menu", "dict", {}, sources=("manifest",))),
     hooks=("on_run_goals", "on_step_failed"),
-    services=("runs_goals",),
+    services=("runs_goals", "no_replan"),
     order=5,
     enabled="enabled",
-    doc="Each goal of a kind with a declared behaviour tree (planner.options.bt_goal.trees) is run by that tree, not by a planner call.",
+    doc="Each goal of a kind with a declared behaviour tree is run by that tree with the engine's own recovery ladder; no way left: ask or stop (or SAGE once).",
 )
 
 
 def holds(name: str, args, world, placed) -> bool:
-    """The belief predicate ``name`` (pure): holding o, hand_free, at p, placed o p (put at p and not in the hand)."""
-    held = getattr(world, "holding", None)
+    """The belief predicate ``name`` (pure): holding o, hand_free, at p, placed o p (put at p and not in the hand), opened c, closed c."""
+    held, opened = getattr(world, "holding", None), set(getattr(world, "opened", None) or ())
     preds = {"holding": lambda o: held == o, "hand_free": lambda: held is None, "at": lambda p: getattr(world, "arrived", None) == p,
-             "placed": lambda o, p: (placed or {}).get(o) == p and held != o}
+             "placed": lambda o, p: (placed or {}).get(o) == p and held != o, "opened": lambda c: c in opened, "closed": lambda c: c not in opened}
     try:
         return bool(preds[name](*args))
     except (KeyError, TypeError):
         return False
 
 
-CONDITIONS = ("holding", "hand_free", "at", "placed")
+CONDITIONS = ("holding", "hand_free", "at", "placed", "opened", "closed")
 
 
 def tree_for(goal: dict, trees, actions, can_ask: bool, has_phrase, source=None) -> Optional[list]:
@@ -69,34 +75,64 @@ def plan_trees(goals, trees, actions, can_ask: bool, has_phrase, source=lambda o
     return out if out and all(t is not None for t in out) else None
 
 
+def exhausted_action(rule, policy: str, asked: bool) -> str:
+    """What follows when a goal's tree has no way left (pure), from the failed code's rule of the declared recovery table (None: no step
+    failed, a condition did): "stop" for a code never retried (the engine has ended the run already); "ask" once (``asked`` False) when a
+    person can help (the rule is no robot-health rule); else "sage" under policy ``sage_once``, "stop" under ``ask_or_stop``."""
+    if rule is not None and not rule.retry_allowed:
+        return "stop"
+    if rule is not None and not asked and rule.action not in HEALTH:
+        return "ask"
+    return "sage" if policy == "sage_once" else "stop"
+
+
+def read_menu(answer: str, words: dict, place: Optional[str], lang: str) -> str:
+    """The menu answer (pure): "stop" (a stop word: the person's own stop, under every policy), "place" (it names a place), "retry" (a retry
+    word), else "none" (silence, not understood)."""
+    if not answer:
+        return "none"
+    for kind, ok in (("stop", True), ("place", bool(place)), ("retry", True)):
+        if ok and (kind == "place" or names.says([answer], words.get(kind) or (), (lang,))):
+            return kind
+    return "none"
+
+
 def pack_words(lang: str, refs) -> list:
     """The words of the language-pack lists ``refs`` (``block.key``, e.g. ``ask_next.retry``) of ``lang``; [] for a list it lacks."""
     out = []
-    for ref in refs:
-        blk, _dot, key = ref.partition(".")
+    for ref in refs or ():
+        blk, _dot, key = str(ref).partition(".")
         words = langdata.block(lang, blk).get(key)
         out += [w for w in words if isinstance(w, str) and w.strip()] if isinstance(words, list) else []
     return out
 
 
+def label(node) -> str:
+    """A node as the trace names it: a leaf with its arguments, a composite by its type."""
+    return node[0] if node[0] in bt.COMPOSITES else f"retry {node[1]}" if node[0] == "retry" else " ".join(map(str, node))
+
+
 class _Leaves:
     """The leaves of one goal's tree over the engine services (the host of ``behavior_tree.tick``)."""
 
-    def __init__(self, svc, run, goal) -> None:
-        self.svc, self.run, self.goal, self.lang = svc, run, goal, getattr(run, "lang", None) or "en"
+    def __init__(self, svc, run, goal, idx) -> None:
+        self.svc, self.run, self.goal, self.idx, self.lang = svc, run, goal, idx, getattr(run, "lang", None) or "en"
+
+    def note(self, path, node, status):
+        self.svc.lab(FLAG, goal=self.idx, node=f"{path} {label(node)}", status=status)
 
     def cond(self, name, *args):
         return holds(name, args, self.run.world, getattr(self.run, "placed", None))
 
     def act(self, action, obj):
-        return (yield from self.svc.try_step(self.run, {"action": action, "object": obj}))
+        return (yield from self.svc.try_step(self.run, {"action": action, "object": obj}, ladder=True))
 
     def ask(self, key, *refs):
-        ans = yield from self._ask(key)
+        ans = yield from self.put(self._phrase(key))
         return None if ans is None else names.says([ans], pack_words(self.lang, refs), (self.lang,))
 
     def confirm(self, key):
-        ans = yield from self._ask(key)
+        ans = yield from self.put(self._phrase(key))
         return None if ans is None else yes_no(ans)[0] is True
 
     def reply(self, key):
@@ -108,9 +144,8 @@ class _Leaves:
         obj = self.svc.said_of(self.run, self.goal.get("object")) if self.goal.get("object") else ""
         return speech.pack_phrase(self.svc.robot, key, self.lang, object=obj, place=self.goal.get("to") or "")
 
-    def _ask(self, key):
-        """Flow: the question ``key`` (a clarify event, the engine's ``ask``): the answer ('' on silence), None when the run was stopped."""
-        q = self._phrase(key)
+    def put(self, q):
+        """Flow: the question ``q`` (a clarify event, the engine's ``ask``): the answer ('' on silence), None when the run was stopped."""
         yield self.run.ev("clarify", question=q, round=0, kind=FLAG)
         ans = self.svc.ask(self.run, q) or ""
         stop = self.svc.cancelled(self.run)
@@ -124,41 +159,135 @@ class BtGoal(Option):
     spec = SPEC
 
     def _state(self, run) -> dict:
-        return run.__dict__.setdefault("opt", {}).setdefault(FLAG, {"trees": None, "active": False})
+        return run.__dict__.setdefault("opt", {}).setdefault(FLAG, {"trees": None, "active": False, "failed": None})
+
+    def _key(self, name):
+        return pack_data.fresh(SPEC, self.cfg, pack_data.planner_of(self.svc), name)
+
+    def _trees(self, run, goals):
+        robot, lang = self.svc.robot, getattr(run, "lang", None) or "en"
+        spec = getattr(robot, "ask_spec", None)
+        return plan_trees(goals, self._key("trees"), set(getattr(robot, "plan_actions", None) or ()), callable(spec) and spec() is not None,
+                          lambda k: speech.pack_phrase(robot, k, lang, object="", place="") is not None,
+                          lambda obj: self.svc.remembered(run, obj) if obj else None)
 
     def runs_goals(self, run):
         """Service: True when every goal of ``run`` has a usable tree (they are kept for ``on_run_goals``), else None (SAGE plans)."""
-        trees = pack_data.fresh(SPEC, self.cfg, pack_data.planner_of(self.svc), "trees")
-        robot, lang = self.svc.robot, getattr(run, "lang", None) or "en"
-        spec = getattr(robot, "ask_spec", None)
-        found = plan_trees(list(getattr(run, "goals", None) or ()), trees, set(getattr(robot, "plan_actions", None) or ()),
-                           callable(spec) and spec() is not None, lambda k: speech.pack_phrase(robot, k, lang, object="", place="") is not None,
-                           lambda obj: self.svc.remembered(run, obj) if obj else None)
+        found = self._trees(run, list(getattr(run, "goals", None) or ()))
         self._state(run)["trees"] = found
         if found:
             self.svc.lab(FLAG, goal=len(found), status="claimed")
         return True if found else None
 
-    def on_run_goals(self, run):
-        """Flow: tick each goal's tree in order; a failed one ends the trees (the plan end and the SAGE replan follow). STOP: the run ended."""
+    def no_replan(self, run, step):
+        """Service: while a tree runs, the ladder's planner rung is held back (the Act fails, the tree decides); else None."""
         s = self._state(run)
-        for goal, tree in zip(list(run.goals), s["trees"] or ()):
-            s["active"] = True
-            try:
-                status = yield from bt.tick(tree, _Leaves(self.svc, run, goal))
-            finally:
-                s["active"] = False
-            self.svc.lab(FLAG, goal=f"{goal.get('type')} {goal.get('object')} {goal.get('to')}", status=status)
-            if status == bt.STOPPED:
-                return STOP
-            if status != bt.SUCCESS:
-                break
-        return NEXT if s["trees"] else None
+        if not s["active"]:
+            return None
+        s["failed"] = {**(s["failed"] or {"code": None, "reason": ""}), "step": dict(step), "rung": "planner"}
+        return True
 
     def on_step_failed(self, run, st, code, reason, action, obj):
-        """Flow: a step of a tree failed: the tree decides (NEXT, no engine recovery); outside a tree None (the engine's path)."""
-        return NEXT if self._state(run)["active"] else None
+        """Flow: a step of a tree failed: its facts are kept (code, step, reason); None: the engine's own recovery runs."""
+        if self._state(run)["active"]:
+            self._state(run)["failed"] = {"code": code, "step": dict(st), "reason": str(reason), "rung": "ladder"}
+        return None
         yield                                            # a flow hook: a generator that yields nothing
+
+    def _tick(self, run, idx, goal, tree):
+        """Flow: one pass of ``tree`` for goal number ``idx``: SUCCESS, FAILURE or STOPPED."""
+        s = self._state(run)
+        s["active"], s["failed"] = True, None
+        s.setdefault("from", {})[idx] = goal.get("from") or (self.svc.remembered(run, goal["object"]) if goal.get("object") else None)
+        try:
+            return (yield from bt.tick(tree, _Leaves(self.svc, run, goal, idx)))
+        finally:
+            s["active"] = False
+
+    def on_run_goals(self, run):
+        """Flow: tick each goal's tree in order; a tree with no way left goes to ``_exhausted``. STOP: the run ended; NEXT: the plan's end."""
+        goals, trees = list(run.goals), self._state(run)["trees"]
+        for idx, (goal, tree) in enumerate(zip(goals, trees or ())):
+            status = yield from self._tick(run, idx, goal, tree)
+            if status == bt.FAILURE:
+                status = yield from self._exhausted(run, idx, goal, goals[idx:])
+            self.svc.lab(FLAG, goal=f"{goal.get('type')} {goal.get('object')} {goal.get('to')}", status=status)
+            if status in (bt.STOPPED, STOP):
+                return STOP
+            if status == NEXT:
+                return NEXT                                  # SAGE took the remaining goals over
+        return NEXT if trees else None
+
+    def _exhausted(self, run, idx, goal, left):
+        """Flow: the goal's tree has no way left: one more tick when the object memory now names another place (a person's answer to the
+        ladder's question, a sighting) or the menu answer asks for it, else the policy's action (stop, SAGE once). A tree status, NEXT or STOP."""
+        facts = self._state(run)["failed"] or {}
+        rule = self.svc.robot.policy.rule_for(facts.get("code")) if facts else None
+        policy = self._key("exhausted") if self._key("exhausted") in POLICIES else POLICIES[0]
+        act = exhausted_action(rule, policy, asked=False)
+        moved = self._moved(run, idx, goal)
+        again, said = ({**goal, "from": moved}, "memory") if moved and act != "stop" else (None, None)
+        if again is None and act == "ask":
+            again, said = yield from self._ask_menu(run, goal, facts)
+        if said == "cancelled":
+            return STOP
+        tree = (self._trees(run, [again]) or [None])[0] if again is not None else None
+        self.svc.lab(FLAG, goal=idx, status="exhausted", action=said or act, code=getattr(facts.get("code"), "value", None), rung=facts.get("rung"))
+        if tree is not None:
+            status = yield from self._tick(run, idx, again, tree)
+            if status != bt.FAILURE:
+                return status
+            facts = self._state(run)["failed"] or facts
+        act = "stop" if said == "stop" or act == "stop" else exhausted_action(rule, policy, asked=True)
+        self.svc.lab(FLAG, goal=idx, status="exhausted", action=act)
+        if act == "sage":
+            return (yield from self._to_sage(run, facts, left))
+        return (yield from self._stop(run, goal, facts, said_stop=said == "stop"))
+
+    def _moved(self, run, idx, goal):
+        """The place the object memory names now for the goal's object when it is not the one its tree went to, else None."""
+        obj, went = goal.get("object"), (self._state(run).get("from") or {}).get(idx)
+        now = self.svc.remembered(run, obj) if obj and went else None
+        return now if now and now != went else None
+
+    def _ask_menu(self, run, goal, facts):
+        """Flow: the menu question of the failed action: (the goal to tick again or None, what the answer said)."""
+        menu, lang = self._key("menu"), getattr(run, "lang", None) or "en"
+        step, obj = facts.get("step") or {}, goal.get("object")
+        key = ((menu.get("phrases") or {}).get(step.get("action")) if pack_data.labelled(menu) else None)
+        spec = getattr(self.svc.robot, "ask_spec", None)
+        what = obj or step.get("object")
+        q = speech.pack_phrase(self.svc.robot, key, lang, object=self.svc.said_of(run, what) if what else "") if key else None
+        if q is None or not (callable(spec) and spec() is not None):
+            return None, "no question"
+        ans = yield from _Leaves(self.svc, run, goal, -1).put(q)
+        if ans is None:
+            return None, "cancelled"
+        place = self.svc.ground_place(run, ans)
+        said = read_menu(ans, {k: pack_words(lang, menu.get(k)) for k in ("stop", "retry")}, place, lang)
+        if said == "place" and obj:
+            self.svc.note_answer(run, q, ans, obj, place)
+        src = (place if said == "place" else None) or (self.svc.remembered(run, obj) if obj else None)
+        return ({**goal, "from": src or goal.get("from")} if said in ("place", "retry") else None), said
+
+    def _stop(self, run, goal, facts, said_stop=False):
+        """Flow: report and stop: ``done failed`` with the failed code (the person said stop: ``aborted``, as option ask_next ends it); holding
+        an object, the pack phrase says so."""
+        step, code, held = facts.get("step") or {}, facts.get("code"), getattr(run.world, "holding", None)
+        msg = f"{step.get('action', goal.get('type'))} {step.get('object', goal.get('object'))} failed ({FLAG}: no way left): {facts.get('reason') or ''}"
+        lang = getattr(run, "lang", None) or "en"
+        say = speech.pack_phrase(self.svc.robot, "say_bt_goal_stop_held", lang, object=self.svc.said_of(run, held)) if held else None
+        say = say or (speech.LocalText("say_stopped") if said_stop else None)
+        yield self.svc.finish(run, "aborted" if said_stop else "failed", msg=msg, **({"code": code} if code else {}), **({"say": say} if say else {}))
+        return STOP
+
+    def _to_sage(self, run, facts, left):
+        """Flow: the remaining goals and the facts to the SAGE planner once (``replan_or_fail``): NEXT (its plan runs) or STOP."""
+        step = facts.get("step") or {"action": "Check", "object": "goals"}
+        code = getattr(facts.get("code"), "value", facts.get("code")) or "no way left"
+        reason = f"{code}: {facts.get('reason') or ''}; goals left: {goal_kinds.goal_text(left)}"
+        out = yield from self.svc.replan_or_fail(run, step, reason, f"{step.get('action')} {step.get('object')} failed and no new plan ({FLAG})")
+        return STOP if out == STOP else NEXT
 
 
 register(SPEC, BtGoal)

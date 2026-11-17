@@ -348,6 +348,7 @@
   "q_ask_next_again_move": "Please say one of: again, or stop.",
   "q_ask_next_place": "Where should I look for the {object}?",
   "say_bt_goal_done": "I put the {object} on the {place}.",
+  "say_bt_goal_stop_held": "I had to stop. I am still holding the {object}.",
   "assumed": true,
   "source": "assumed: the re-ask of option answer_align after a yes or no to an either-or, naming the options, the menu of option ask_next after a failed step (again here, somewhere else, stop) and the reply of option bt_goal after a goal its tree ran, plain English; the robot's i18n wins"
  },

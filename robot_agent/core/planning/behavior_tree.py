@@ -5,7 +5,8 @@ What: ``tick(node, host)`` makes one pass through the tree (a generator: it yiel
 and the leaves ``cond name *args`` (``host.cond``, a plain bool: it never acts), ``act`` / ``ask`` / ``confirm`` / ``reply`` (``host.<type>(*args)``,
 generators returning True, False or None = the run ended). ``fill`` puts a goal's values into ``{slot}`` arguments; ``leaves`` lists what a tree
 needs, so a caller can refuse a tree it cannot run. Why: a declared control flow per goal kind instead of a plan written by an LLM each time.
-No clock, no thread, no domain word. ``running`` is never returned: the robot's skills block (one call, one result). Used by option ``bt_goal``.
+No clock, no thread, no domain word. ``running`` is never returned: the robot's skills block (one call, one result). After each node the
+host's ``note(path, node, status)`` is called when it has one (a trace per node). Used by option ``bt_goal``.
 """
 
 from __future__ import annotations
@@ -55,24 +56,28 @@ def fill(node, values: dict) -> Optional[list]:
     return out
 
 
-def tick(node, host):
-    """Generator: one pass through ``node`` (a valid, filled tree). Returns SUCCESS, FAILURE or STOPPED (the run ended: stop at once)."""
+def tick(node, host, path: str = "0"):
+    """Generator: one pass through ``node`` (a valid, filled tree). Returns SUCCESS, FAILURE or STOPPED (the run ended: stop at once).
+    After each node, ``host.note(path, node, status)`` when the host has it (``path``: the node's place, "0.1.2")."""
+    status = yield from _tick(node, host, path)
+    note = getattr(host, "note", None)
+    if note is not None:
+        note(path, node, status)
+    return status
+
+
+def _tick(node, host, path):
     kind, args = node[0], node[1:]
-    if kind == "sequence":
-        for c in args:
-            status = yield from tick(c, host)
-            if status != SUCCESS:
+    if kind in COMPOSITES:
+        stop_on = FAILURE if kind == "sequence" else SUCCESS
+        for i, c in enumerate(args):
+            status = yield from tick(c, host, f"{path}.{i}")
+            if status in (stop_on, STOPPED):
                 return status
-        return SUCCESS
-    if kind == "fallback":
-        for c in args:
-            status = yield from tick(c, host)
-            if status != FAILURE:
-                return status
-        return FAILURE
+        return SUCCESS if kind == "sequence" else FAILURE
     if kind == "retry":
         for _ in range(args[0]):
-            status = yield from tick(args[1], host)
+            status = yield from tick(args[1], host, f"{path}.0")
             if status != FAILURE:
                 return status
         return FAILURE
