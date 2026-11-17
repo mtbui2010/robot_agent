@@ -34,9 +34,19 @@ def _guard(fn, *a, **kw):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+def _crop_spec():
+    spec = (bridge().config() or {}).get('crop')
+    return spec if isinstance(spec, dict) and spec else None
+
+
 @router.get('/recordings', response_model=M.RecordingList, **M.OPEN)
 def list_recordings():
-    return _guard(E.list_episodes, _dir())
+    out = _guard(E.list_episodes, _dir())
+    spec = _crop_spec()
+    if spec:
+        out['crop'] = spec
+        out['modes'] = sorted(set(out['modes']) | {m for sp in spec.values() for m in (sp.get('anchor') or {})})
+    return out
 
 
 @router.post('/recordings/auto-clean', response_model=M.RecordingAutoClean, **M.OPEN)
@@ -47,7 +57,9 @@ def auto_clean(body: M.RecordingAutoCleanIn):
 @router.post('/recordings/export', response_model=M.RecordingExport, **M.OPEN)
 def export(body: M.RecordingExportIn):
     d = _dir()
-    out = _guard(E.export_manifest, d, body.name, body.fps, body.action, body.horizon_s, tuple(body.labels))
+    if body.crop and _crop_spec() is None:
+        raise HTTPException(status_code=400, detail='this robot defines no crop (RECORDER config "crop")')
+    out = _guard(E.export_manifest, d, body.name, body.fps, body.action, body.horizon_s, tuple(body.labels), _crop_spec() if body.crop else None)
     out['command'] = (f'python robot_teleop/tools/export_lerobot.py --data {out["data_dir"]} --manifest {out["manifest"]}'
                       '   # run it where LeRobot is installed (the training server)')
     return out

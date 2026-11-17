@@ -144,6 +144,8 @@ class RecorderStopIn(_Open):
 
 class RecordingList(_Open):
     dir: str
+    modes: list[str] = []          # the robot modes the listed episodes have (and the crop's modes)
+    crop: Optional[dict] = None    # the robot's export crop spec (RECORDER config) or None: the export may cut the camera views with it
     episodes: list[dict]          # rows: id, day, episode, prompt, label, summary{...}, edit?, or {id, error}
     totals: dict                  # episodes, hours, success, failure, excluded
 
@@ -163,6 +165,7 @@ class RecordingEditIn(_Open):
     label: Optional[str] = None   # success | failure: overrides the label given when recording
     exclude: Optional[bool] = None
     note: Optional[str] = None
+    robot_mode: Optional[str] = None   # overrides the mode recorded with the episode (left | right | front ...)
 
 
 class RecordingEdit(_Open):
@@ -191,6 +194,7 @@ class RecordingExportIn(_Open):
     action: str = 'future_state'  # future_state | servo | ref
     horizon_s: float = 0.3
     labels: list[str] = ['success']
+    crop: bool = False            # cut the camera views with the robot's crop spec (RECORDER config)
 
 
 class RecordingExport(_Open):

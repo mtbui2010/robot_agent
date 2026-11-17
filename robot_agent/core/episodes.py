@@ -195,8 +195,11 @@ def load_edit(raw_dir, day: str, ep: str) -> dict | None:
 def row(raw_dir, day: str, ep: str) -> dict:
     p = episode_dir(raw_dir, day, ep)
     meta, summ = _load(p)
-    return {'id': f'{day}/{ep}', 'day': day, 'episode': ep, 'prompt': meta.get('prompt', ''), 'label': meta.get('label'), 'kind_fields': meta.get('fields'), 'robot_mode': meta.get('robot_mode'),
-            'started_at': meta.get('started_at'), 'counts': meta.get('counts'), 'summary': summ, 'edit': load_edit(raw_dir, day, ep)}
+    edit = load_edit(raw_dir, day, ep)
+    return {'id': f'{day}/{ep}', 'day': day, 'episode': ep, 'prompt': meta.get('prompt', ''), 'label': meta.get('label'), 'kind_fields': meta.get('fields'),
+            'robot_mode': (edit or {}).get('robot_mode') or meta.get('robot_mode'),           # the operator's setting wins over the one recorded
+            'recorded_mode': meta.get('robot_mode'),
+            'started_at': meta.get('started_at'), 'counts': meta.get('counts'), 'summary': summ, 'edit': edit}
 
 
 def list_episodes(raw_dir) -> dict:
@@ -213,7 +216,8 @@ def list_episodes(raw_dir) -> dict:
     ok = [r for r in rows if 'error' not in r]
     eff = lambda r: (r.get('edit') or {}).get('label') or r.get('label')
     secs = sum(r['summary']['duration_s'] for r in ok)
-    return {'dir': str(root), 'episodes': rows,
+    modes = sorted({r['robot_mode'] for r in ok if r.get('robot_mode')})
+    return {'dir': str(root), 'episodes': rows, 'modes': modes,
             'totals': {'episodes': len(ok), 'hours': round(secs / 3600, 2), 'success': sum(eff(r) == 'success' for r in ok),
                        'failure': sum(eff(r) == 'failure' for r in ok), 'excluded': sum(bool((r.get('edit') or {}).get('exclude')) for r in ok)}}
 
@@ -268,6 +272,10 @@ def save_edit(raw_dir, day: str, ep: str, edit: dict) -> dict:
         if edit['label'] not in LABELS:
             raise EpisodeError(f'label: one of {LABELS}')
         out['label'] = edit['label']
+    if edit.get('robot_mode'):
+        if not re.match(r'^[a-z][a-z_\-]{0,19}$', str(edit['robot_mode'])):
+            raise EpisodeError('robot_mode: a short lower-case name (left, right, front ...)')
+        out['robot_mode'] = str(edit['robot_mode'])
     if edit.get('exclude'):
         out['exclude'] = True
     if edit.get('note'):
@@ -289,7 +297,7 @@ def delete_edit(raw_dir, day: str, ep: str) -> None:
 ACTIONS = ('future_state', 'servo', 'ref')
 
 
-def export_manifest(raw_dir, name: str, fps: int = 30, action: str = 'future_state', horizon_s: float = 0.3, labels=('success',)) -> dict:
+def export_manifest(raw_dir, name: str, fps: int = 30, action: str = 'future_state', horizon_s: float = 0.3, labels=('success',), crop: dict = None) -> dict:
     """Write ``<data>/exports/<name>.json``: the episodes to include (not excluded, with an accepted label), each with its prompt and trim."""
     if not re.match(r'^[A-Za-z0-9_\-]{1,60}$', name or ''):
         raise EpisodeError('name: letters, digits, _ and - only')
@@ -313,8 +321,12 @@ def export_manifest(raw_dir, name: str, fps: int = 30, action: str = 'future_sta
         eps.append({'id': r['id'], 'prompt': r['prompt'], 'label': label, 'robot_mode': r.get('robot_mode'), 'trim_start_s': a, 'trim_end_s': b})
     if not eps:
         raise EpisodeError('no episode matches (check the labels and the excluded ones)')
+    if crop and any(len(set((sp.get('anchor') or {}).values())) > 1 for sp in crop.values()):       # a crop placed by the mode: every episode needs one
+        missing = [e['id'] for e in eps if not e['robot_mode']]
+        if missing:
+            raise EpisodeError(f'the crop depends on the robot mode and {len(missing)} episode(s) have none: {", ".join(missing[:6])}{" ..." if len(missing) > 6 else ""}. Set it in the episode\'s detail panel.')
     manifest = {'version': 1, 'name': name, 'created_at': round(time.time(), 1), 'fps': int(fps), 'action': {'source': action, 'horizon_s': float(horizon_s)},
-                'labels': list(labels), 'episodes': eps}
+                'labels': list(labels), **({'crop': crop} if crop else {}), 'episodes': eps}
     f = _root(raw_dir).parent / 'exports' / f'{name}.json'
     f.parent.mkdir(parents=True, exist_ok=True)
     f.write_text(json.dumps(manifest, indent=1))

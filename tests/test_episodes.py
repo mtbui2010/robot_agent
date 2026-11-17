@@ -246,3 +246,56 @@ def test_the_robot_mode_is_in_the_row_and_in_the_export_manifest(tmp_path):
     E.export_manifest(raw, 'm1')
     m = json.loads((tmp_path / 'exports' / 'm1.json').read_text())
     assert {e['id']: e['robot_mode'] for e in m['episodes']} == {'2026-11-16/ep_0001': 'left', '2026-11-16/ep_0002': None}
+
+
+CROP = {'head': {'square': True, 'offset': 120, 'size': 480, 'anchor': {'left': 'left', 'right': 'right', 'front': 'centre'}}}
+
+
+def test_the_operator_can_set_the_mode_of_an_episode_and_it_wins(tmp_path):
+    raw = tmp_path / 'raw'
+    make_episode(raw)                                                                  # recorded without a mode
+    make_episode(raw, ep='ep_0002', mode='right')
+    assert E.row(raw, '2026-11-16', 'ep_0001')['robot_mode'] is None
+    E.save_edit(raw, '2026-11-16', 'ep_0001', {'robot_mode': 'left'})
+    E.save_edit(raw, '2026-11-16', 'ep_0002', {'robot_mode': 'left'})
+    r1, r2 = E.row(raw, '2026-11-16', 'ep_0001'), E.row(raw, '2026-11-16', 'ep_0002')
+    assert (r1['robot_mode'], r1['recorded_mode']) == ('left', None) and (r2['robot_mode'], r2['recorded_mode']) == ('left', 'right')       # the setting wins, the recorded one is kept
+    for bad in ('Left', '1x', 'a b', 'x' * 30):
+        with pytest.raises(E.EpisodeError):
+            E.save_edit(raw, '2026-11-16', 'ep_0001', {'robot_mode': bad})
+    assert E.list_episodes(raw)['modes'] == ['left']
+
+
+def test_a_crop_placed_by_the_mode_needs_a_mode_on_every_episode_and_travels_in_the_manifest(tmp_path):
+    raw = tmp_path / 'raw'
+    make_episode(raw, mode='left')
+    make_episode(raw, ep='ep_0002')                                                    # no mode
+    with pytest.raises(E.EpisodeError, match='ep_0002'):
+        E.export_manifest(raw, 'c1', crop=CROP)
+    E.export_manifest(raw, 'c0')                                                       # no crop: no mode needed
+    E.save_edit(raw, '2026-11-16', 'ep_0002', {'robot_mode': 'right'})
+    E.export_manifest(raw, 'c2', crop=CROP)
+    m = json.loads((tmp_path / 'exports' / 'c2.json').read_text())
+    assert m['crop'] == CROP and {e['id']: e['robot_mode'] for e in m['episodes']} == {'2026-11-16/ep_0001': 'left', '2026-11-16/ep_0002': 'right'}
+    assert 'crop' not in json.loads((tmp_path / 'exports' / 'c0.json').read_text())
+    E.export_manifest(raw, 'c3', crop={'head': {'square': True, 'anchor': {'left': 'centre', 'right': 'centre'}}})     # a crop that does not depend on the mode needs none
+
+
+def test_the_list_and_the_export_know_the_robots_crop(monkeypatch, tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from robot_agent.api import recordings as api
+    make_episode(tmp_path / 'raw', mode='left')
+    make_episode(tmp_path / 'raw', ep='ep_0002')
+    monkeypatch.setattr(api, 'bridge', lambda: R.RecorderBridge(lambda: {'dir': str(tmp_path / 'raw'), 'crop': CROP}, lambda: None))
+    app = FastAPI(); app.include_router(api.router)
+    c = TestClient(app)
+    lst = c.get('/recordings').json()
+    assert lst['crop'] == CROP and lst['modes'] == ['front', 'left', 'right']          # the modes the crop knows, so the operator can set one
+    r = c.post('/recordings/export', json={'name': 'x1', 'crop': True})
+    assert r.status_code == 400 and 'ep_0002' in r.json()['detail']                    # one episode has no mode
+    assert c.put('/recordings/2026-11-16/ep_0002/edit', json={'robot_mode': 'left'}).json()['robot_mode'] == 'left'
+    ok = c.post('/recordings/export', json={'name': 'x2', 'crop': True}).json()
+    assert ok['episodes'] == 2 and json.loads((tmp_path / 'exports' / 'x2.json').read_text())['crop'] == CROP
+    monkeypatch.setattr(api, 'bridge', lambda: R.RecorderBridge(lambda: {'dir': str(tmp_path / 'raw')}, lambda: None))
+    assert c.post('/recordings/export', json={'name': 'x3', 'crop': True}).status_code == 400          # this robot defines no crop
