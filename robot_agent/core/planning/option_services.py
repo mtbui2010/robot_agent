@@ -91,6 +91,12 @@ class LoopServices:
         own = last is not None and last.index == len(run.steps) - 1      # of the step itself, not of a step the ladder put before it
         return (own and last.status == "success") or any(c is run.steps[-1] for c in run.completed[n:])
 
+    def changes_waiting(self, run) -> bool:
+        """Is a goal change said during the run (MODIFY / ADD / DROP / NEW) waiting for the loop's next step boundary? Not taken: the loop
+        applies it there (``_apply_pending``), e.g. once the option that runs the goals itself (``runs_goals``) gives the run back."""
+        from ..run_control import current_run
+        return bool(getattr(current_run(), "pending", None))
+
     def ask_clarify(self, run, question):
         """Flow: ask ``question`` as the loop's own clarify step (the answer joins the dialogue); the step's result (go on reading, or stop)."""
         return self._lp._ask_clarify(run, question)
