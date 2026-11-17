@@ -287,6 +287,15 @@ def done(evs) -> dict:
     return d[-1]
 
 
+def scrub(x):
+    """Events without wall-clock values at any depth and without the run-start reconcile: two runs compared byte for byte (``_empty`` / ``_off``)."""
+    if isinstance(x, dict):
+        return {k: scrub(v) for k, v in x.items() if k not in ("run_id", "t", "ts", "elapsed_s", "started_at", "plan_sec")}
+    if isinstance(x, list):
+        return [scrub(v) for v in x if not (isinstance(v, dict) and v.get("event") == "reconcile")]
+    return x
+
+
 def safety_profile(name: str = "household_fixture"):
     """A SafetyProfile from tests/fixtures/safety/<name>.yaml (test data: the household copy, the illustrative factory one)."""
     from pathlib import Path

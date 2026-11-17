@@ -14,6 +14,7 @@ Core design:
 - [architecture.md](architecture.md): layers (contract <- engine <- options), what `tools/lint_arch.py` enforces, size baseline and the plan to shrink it
 - [options.md](options.md): the option plug-in interface (spec, keys, hooks, registry), how to write an option, the registered options
 - [safety.md](safety.md): the per-robot safety profile (hazard / place / receiver classes and rules as data), the engine, the `refusals` event key
+- [metal_microwave.md](metal_microwave.md): the rule 'no metal in a microwave oven' as safety data (sources, words, gaps); no code
 - [run_manager.md](run_manager.md): run ids, one active run per robot, cancel / pause / inject, intent router
 - [languages.md](languages.md): language packs (data), what a pack may hold, adding a language, scripts
 - [dialog.md](dialog.md): the robot's questions, yes / no answers (unclear ones asked again), typed refusals, the understand call's sampling
