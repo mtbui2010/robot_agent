@@ -354,6 +354,16 @@ language packs' `patterns.condition`; an entry with neither label is not used), 
 `ask_when_unsure`, `prompt`, `clauses`, `q_unclear`, `source`, `assumed`. Hook `on_goals`; lab flag `cond_extract`: `{state, object, at, if, else, drop}`. Module: `robot_agent/options/cond_extract.py`.
 Its pack data is read through its keys, and a key the loop resolved empty is read again from the manifest at run time (as the D2 options do): a host that merges the data into a loop already built gets a working option with or
 without `refresh_options` ("Keys and where they come from").
+Keys of layer cond_schema (each default off; needs layer cond_answer of `cond_goal`; classes A and I of the cond20 analysis: goals to do in every case put in the else branch, a condition object the
+model invented from a misheard word, a condition no look can settle read as an object to look for). `kinds`: the extraction uses `SCHEMA_KINDS` (the old keys in their order plus `kind`
+(`presence` | `state` | `unobservable`), `always` (the goals to do in every case: in no other list, no `when`) and `question`); pure `parse_kinds`: `presence` as before; `state` or
+`unobservable` with a `question` (the robot's look sees only an object at a place) writes a `when` {object "", at "", `ask`: the question, present} that `cond_goal` key `answer`
+asks once and reads by itself (yes / no / negation; anything else UNKNOWN: failed with the question); without a question, a clash or no kind: the reader's goals stand. Without
+`cond_goal.answer` such a `when` is incomplete and removed (nothing asked, the goals run as read: test `..._without_cond_goal_answer_...`). `heard_match` (manifest only,
+`{min_prefix, min_ratio, source | assumed}`, the shape of `heard_check.match`; unlabelled or missing = nothing checked): pure `unheard` checks the condition's `object` and `at`
+words against the heard tokens (the request as said, its prompt-language reading, the person's answers; `core/planning/word_match`, shared with `heard_check`, which is unchanged:
+`tests/test_word_match.py`); a word in a script no heard token has is not checked. No object word heard: UNKNOWN, the run ends failed (lab state `unknown`, nothing invented is
+looked for or done); no place word heard: unsure (`q_unclear`). Lab fields `kind`, `unheard` only with the keys. No regex moves goals between lists. Tests: `tests/test_option_cond_schema.py`.
 
 ### `else_ask`
 Removed on 2026-11-15 (retired by the D4 stay gate, D4 L25, no outcome changed on the development set; symbolic_robot `docs/home/bench/d4_layers.md` `## Removed`). Its code and tests are in git history: added in 47eeb14, last version at 2b2ba67.

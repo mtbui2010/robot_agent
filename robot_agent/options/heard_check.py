@@ -12,13 +12,9 @@ Switch off: key ``enabled`` (run option ``heard_check``), off by default. Event:
 
 from __future__ import annotations
 
-import difflib
-import re
-import unicodedata
-from collections import Counter
-
 from robot_agent.core.options import Key, Option, OptionSpec, register
 from robot_agent.core.planning import pack_data, understand
+from robot_agent.core.planning.word_match import limits, main_script, token_found, tokens
 
 FLAG = "heard_check"
 
@@ -32,17 +28,6 @@ SPEC = OptionSpec(
 )
 
 
-def tokens(text) -> list:
-    """The lower-cased word tokens of ``text`` (Unicode word characters)."""
-    return re.findall(r"\w+", str(text or "").lower())
-
-
-def main_script(text) -> str:
-    """The Unicode script of most letters of ``text`` (the first word of each letter's Unicode name); '' when it has no letter."""
-    c = Counter(unicodedata.name(ch, " ").split(" ")[0] for ch in str(text or "") if ch.isalpha())
-    return c.most_common(1)[0][0] if c else ""
-
-
 def quote(goal) -> str:
     """The goal's own quote of the person: ``said`` of an on / in goal, the message of a say goal; '' for any other goal."""
     if not isinstance(goal, dict):
@@ -50,27 +35,6 @@ def quote(goal) -> str:
     if goal.get("type") in ("on", "in"):
         return str(goal.get("said") or "")
     return str(goal.get("content") or goal.get("object") or "") if goal.get("type") == "say" else ""
-
-
-def limits(data):
-    """``(min_prefix, min_ratio)`` of labelled match data, or None (missing, unlabelled or not numbers: the option does nothing)."""
-    if not pack_data.labelled(data):
-        return None
-    try:
-        return int(data["min_prefix"]), float(data["min_ratio"])
-    except (KeyError, TypeError, ValueError):
-        return None
-
-
-def token_found(q: str, heard, min_prefix: int, min_ratio: float) -> bool:
-    """A heard token starts like ``q`` (its first ``min_prefix`` characters, all of a shorter ``q``), or is ``min_ratio`` similar cut to its length."""
-    need = min(min_prefix, len(q))
-    for h in heard:
-        if need > 0 and h[:need] == q[:need]:
-            return True
-        if difflib.SequenceMatcher(None, q, h[:len(q)]).ratio() >= min_ratio:
-            return True
-    return False
 
 
 def unheard_goals(goals, heard_tokens, data, strip=None) -> list:
