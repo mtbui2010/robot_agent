@@ -31,6 +31,8 @@ manifest format, the event schema). See `docs/contract.md`.
   the data folder). 11 tests; tried on the first two real episodes (it flagged ep_0001: teleop off 4.3 s in the middle of the movement, servo command stopped 3.7 s).
 
 ### Record raw VLA episodes from the dashboard (`/recorder`)
+- `RECORDER['data_dir']` (the folder with raw/ edits/ exports/ trash/): a RELATIVE path is taken from the robot package's repo root (`../vla_data` = the vla_data folder next to the repo), so one config serves every machine; absolute
+  paths work, the older `dir` (the raw folder) still works. `RecorderBridge.config()` returns the resolved `data_dir` and `dir`; the export command is relative too when the config is. 2 tests.
 - `POST /recorder/prompt` takes `avoid` (the sentence made last time): Generate pressed again gives another sentence whenever the fields allow one. 2 tests.
 - `RECORDER` config group (kcare: `configs/tasks.py`; none = nothing shown): `{dir, teleop, prompts: {fields, templates, synonyms}}`. `GET /recorder` (state of
   `robot_teleop.recorder`, the prompt fields, `404` without the group), `POST /recorder/prompt {fields}` -> a RANDOM sentence from the robot's templates that uses every

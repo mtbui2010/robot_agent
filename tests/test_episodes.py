@@ -315,3 +315,35 @@ def test_the_export_cuts_the_idle_start_and_end_of_an_episode_with_no_saved_trim
     E.export_manifest(raw, 'a2', auto_trim=False)                                       # switched off: the whole episode, as before
     m2 = {e['id']: e for e in json.loads((tmp_path / 'exports' / 'a2.json').read_text())['episodes']}
     assert (m2['2026-11-16/ep_0001']['trim_start_s'], m2['2026-11-16/ep_0001']['trim_end_s']) == (0.0, 20.0)
+
+
+def test_the_data_folder_may_be_relative_to_the_robot_packages_repo(tmp_path):
+    base = tmp_path / 'ws' / 'kcare_robot'
+    base.mkdir(parents=True)
+    rel = R.RecorderBridge(lambda: {'data_dir': '../vla_data'}, lambda: None, lambda: base).config()
+    assert rel['data_dir'] == str(tmp_path / 'ws' / 'vla_data') and rel['dir'] == str(tmp_path / 'ws' / 'vla_data' / 'raw') and rel['data_dir_given'] == '../vla_data'
+    ab = R.RecorderBridge(lambda: {'data_dir': str(tmp_path / 'x')}, lambda: None, lambda: base).config()
+    assert ab['data_dir'] == str(tmp_path / 'x') and ab['dir'] == str(tmp_path / 'x' / 'raw')                  # absolute: as it is
+    old = R.RecorderBridge(lambda: {'dir': '../vla_data/raw'}, lambda: None, lambda: base).config()              # the older key: the raw folder itself
+    assert old['dir'] == str(tmp_path / 'ws' / 'vla_data' / 'raw') and old['data_dir'] == str(tmp_path / 'ws' / 'vla_data') and 'data_dir_given' not in old
+    assert R.RecorderBridge(lambda: {'teleop': 'arm'}, lambda: None, lambda: base).config() == {'teleop': 'arm'}   # no folder: nothing added
+    other = tmp_path / 'ws2' / 'kcare_robot'                                                                      # another machine: the same config, another place
+    assert R.RecorderBridge(lambda: {'data_dir': '../vla_data'}, lambda: None, lambda: other).config()['data_dir'] == str(tmp_path / 'ws2' / 'vla_data')
+
+
+def test_a_relative_data_folder_gives_a_relative_export_command(monkeypatch, tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from robot_agent.api import recordings as api
+    base = tmp_path / 'kcare_robot'
+    base.mkdir()
+    make_episode(tmp_path / 'vla_data' / 'raw')
+    monkeypatch.setattr(api, 'bridge', lambda: R.RecorderBridge(lambda: {'data_dir': '../vla_data'}, lambda: None, lambda: base))
+    app = FastAPI(); app.include_router(api.router)
+    c = TestClient(app)
+    assert c.get('/recordings').json()['totals']['episodes'] == 1                      # read from <repo>/../vla_data/raw
+    out = c.post('/recordings/export', json={'name': 'r1'}).json()
+    assert out['command'].startswith('cd robot_teleop && python tools/export_lerobot.py --data ../vla_data --manifest ../vla_data/exports/r1.json')
+    assert (tmp_path / 'vla_data' / 'exports' / 'r1.json').is_file()
+    monkeypatch.setattr(api, 'bridge', lambda: R.RecorderBridge(lambda: {'data_dir': str(tmp_path / 'vla_data')}, lambda: None, lambda: base))
+    assert c.post('/recordings/export', json={'name': 'r2'}).json()['command'].startswith('python robot_teleop/tools/export_lerobot.py --data /')       # absolute: absolute
