@@ -395,3 +395,45 @@ def test_loop_final_a_failed_grasp_gets_the_engine_retries_and_its_help_question
     loop, robot, planner, evs = _run(make_assist, answers=["yes"], faults=[{"skill": "pick", "kind": "fail", "nth": [1, 2], "msg": "grasp failed: it slipped"}])
     assert done(evs)["status"] == "success" and robot.obj["gizmo"] == BENCH and planner.calls == [] and not _exh(loop)
     assert len(robot.asked) == 1 and "move it closer" in robot.asked[0] and _skills(robot).count(("pick", "gizmo")) == 3
+
+
+# ── a goal change said while a tree runs (the class of a d5dev pilot episode: the tree finished the OLD goal) ─────────────────────
+@pytest.fixture
+def managed_run():
+    from robot_agent.core import run_control
+    from robot_agent.interact.run_manager import reset_manager
+    reset_manager()
+    run_control._CANCEL.clear()
+    r = run_control.manager().start("Take the gizmo from the shelf and put it on the bench.", user_id="zq", role="member").run
+    run_control.begin_run()
+    yield r
+    reset_manager()
+    run_control._CANCEL.clear()
+
+
+class SaysAfterPick(FakeRobot):
+    """Says ``text`` into the run right after its first pick (a person speaking while the robot works)."""
+    text = ""
+
+    def execute(self, skill, params, node=None, log_fn=None):
+        out = super().execute(skill, params, node, log_fn)
+        if skill == "pick" and self.text:
+            from robot_agent.core import run_control
+            run_control.manager().inject(run_control.current_run().run_id, self.text, role="member")
+            self.text = ""
+        return out
+
+
+def test_loop_regression_a_goal_change_said_during_a_tree_ends_the_trees_and_the_engine_applies_it(make_assist, managed_run):
+    """The class: corrections were read only after the trees ended, so the tree finished the OLD goal (and met faults there). Now a change
+    waiting before the next Act ends the trees; the engine applies it as between two plan steps (its repair: a replan for the new goal)."""
+    robot = SaysAfterPick(ENV, {"gizmo": SHELF, "widget": BENCH}, start=CRATE)
+    robot.text = "actually, put it on the crate instead"
+    planner = ScriptedPlanner(PLAN, replans=[steps(f"MoveTo {CRATE}", f"Place {CRATE}")])
+    loop = make_assist(robot, FakeLLM(default={"status": "clear", "reason": "", "question": "", "goals": [dict(GOAL)]}), planner,
+                       detector_miss_rate=0, search_legs=1, bt_goal="1")
+    loop.robot.manifest.planner = {**(loop.robot.manifest.planner or {}), "options": {"bt_goal": {"trees": LOOP_TREES, "menu": MENU}}}
+    evs = run_task(loop, "Take the gizmo from the shelf and put it on the bench.", max_events=3000)
+    assert [f["status"] for f in _flags(loop)][-1] == B.CHANGED and ("move", BENCH) not in _skills(robot)
+    assert any(e["event"] == "goal_change" for e in evs) and [c[0] for c in planner.calls] == ["replan"]
+    assert done(evs)["status"] == "success" and robot.obj["gizmo"] == CRATE

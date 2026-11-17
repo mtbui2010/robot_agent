@@ -36,9 +36,11 @@ call; the Act fails and the tree's Fallback / Retry go on.
 `in`, `say`, `deliver`, `give` have none and stay SAGE.
 
 **Engine touch (core).** Service `runs_goals` (asked once in `_plan_phase`), hook `on_run_goals` (start of `_execute_phase`), service `try_step`
-(key `ladder`: drain the ladder's spliced steps) and service `no_replan` (asked at the top of `_sage_replan`; nobody answers it by default).
+(key `ladder`: drain the ladder's spliced steps), `changes_waiting` and service `no_replan` (asked at the top of `_sage_replan`; nobody answers it by default).
 
 **Switch off:** key `enabled` (run option `bt_goal`), default off. **Event:** lab flag `bt_goal`: `{goal, status}` ("claimed" once, per goal its
 end, `exhausted` with the action taken) and `{goal, node, status}` per node.
-**Limits.** Goals run in the reader's order; corrections said meanwhile are read after the trees end; the menu answer is read with the pack's
-words only (a person who does not understand a menu question is a stop under A).
+**Goal changes.** A correction said while a tree runs ends the trees before the next Act (status `changed`, service `changes_waiting`); the
+engine applies it at its step boundary as for a plan (its repair, a SAGE replan for the new goals).
+**Limits.** Goals run in the reader's order; the menu answer is read with the pack's words only (a person who does not understand a menu
+question is a stop under A).

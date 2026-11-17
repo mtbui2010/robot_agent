@@ -27,6 +27,7 @@ FLAG = "bt_goal"
 SLOTS = ("object", "from", "to")               # the goal fields a tree may name (the engine's goal contract)
 ASKS = ("ask", "confirm")
 POLICIES = ("ask_or_stop", "sage_once")
+CHANGED = "changed"                            # a tree status of its own: a goal change said meanwhile ends the trees
 HEALTH = (Recovery.WAIT_HEALTH, Recovery.HEALTH_CHECK)   # rules about the robot's own health: no person can help
 SPEC = OptionSpec(
     name=FLAG,
@@ -117,6 +118,7 @@ class _Leaves:
 
     def __init__(self, svc, run, goal, idx) -> None:
         self.svc, self.run, self.goal, self.idx, self.lang = svc, run, goal, idx, getattr(run, "lang", None) or "en"
+        self.changed = False                         # a goal change was said: the tree gave the run back before its next step
 
     def note(self, path, node, status):
         self.svc.lab(FLAG, goal=self.idx, node=f"{path} {label(node)}", status=status)
@@ -125,6 +127,10 @@ class _Leaves:
         return holds(name, args, self.run.world, getattr(self.run, "placed", None))
 
     def act(self, action, obj):
+        waits = getattr(self.svc, "changes_waiting", None)
+        if callable(waits) and waits(self.run):      # the engine applies the change at its next step boundary, as between two plan steps
+            self.changed = True
+            return None
         return (yield from self.svc.try_step(self.run, {"action": action, "object": obj}, ladder=True))
 
     def ask(self, key, *refs):
@@ -195,12 +201,14 @@ class BtGoal(Option):
         yield                                            # a flow hook: a generator that yields nothing
 
     def _tick(self, run, idx, goal, tree):
-        """Flow: one pass of ``tree`` for goal number ``idx``: SUCCESS, FAILURE or STOPPED."""
+        """Flow: one pass of ``tree`` for goal number ``idx``: SUCCESS, FAILURE, STOPPED or CHANGED (a goal change waits: the run goes back)."""
         s = self._state(run)
         s["active"], s["failed"] = True, None
         s.setdefault("from", {})[idx] = goal.get("from") or (self.svc.remembered(run, goal["object"]) if goal.get("object") else None)
+        host = _Leaves(self.svc, run, goal, idx)
         try:
-            return (yield from bt.tick(tree, _Leaves(self.svc, run, goal, idx)))
+            status = yield from bt.tick(tree, host)
+            return CHANGED if host.changed else status
         finally:
             s["active"] = False
 
@@ -214,8 +222,8 @@ class BtGoal(Option):
             self.svc.lab(FLAG, goal=f"{goal.get('type')} {goal.get('object')} {goal.get('to')}", status=status)
             if status in (bt.STOPPED, STOP):
                 return STOP
-            if status == NEXT:
-                return NEXT                                  # SAGE took the remaining goals over
+            if status in (NEXT, CHANGED):
+                return NEXT                                  # SAGE took the remaining goals over / the engine applies the change
         return NEXT if trees else None
 
     def _exhausted(self, run, idx, goal, left):
