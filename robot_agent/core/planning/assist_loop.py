@@ -2960,14 +2960,15 @@ class AssistLoop(WhichOne, SearchHooks, StepLadder, ClosedLoop):
     def _sage_replan(self, r, failed, reason) -> Optional[dict]:
         """The planner's suffix repair from step r.i. Returns the event to yield, or None when out of budget or
         the new suffix fails the gate (``r.uncertified``: why)."""
+        if self.options.query("no_replan", r, failed):    # e.g. bt_goal: a tree's own step; no planner call, the step stays failed
+            r.i += 1; return r.ev("status", msg=f"{failed.get('action')} {failed.get('object')} failed, not replanned: {reason}")
         r.uncertified = []
         if r.replans >= self.cfg["max_replans"] or getattr(r, "compiled", False):
             # a compiled plan has no planner to repair it: the failure ends the run
             return None
         r.replans += 1
         world = r.world
-        ers = (f"E: {failed.get('action')} {failed.get('object')} failed. R: {reason}. "
-               f"S: robot at {world.arrived}, holding {world.holding or 'nothing'}; goals: {r.goal_txt}")
+        ers = f"E: {failed.get('action')} {failed.get('object')} failed. R: {reason}. S: robot at {world.arrived}, holding {world.holding or 'nothing'}; goals: {r.goal_txt}"
         r.replan_error = None
         suffix, ers, bad = self._replan_suffix(r, failed, ers)
         if bad and r.replans < self.cfg["max_replans"]:
@@ -3704,8 +3705,7 @@ class AssistLoop(WhichOne, SearchHooks, StepLadder, ClosedLoop):
         if out is not None:
             return out
         # ── a new plan: the planner's suffix repair ──
-        return (yield from self._replan_or_fail(r, st, f"{reason}{extra}",
-                                                f"{a} {o} failed: {reason} (replan budget used)"))
+        return (yield from self._replan_or_fail(r, st, f"{reason}{extra}", f"{a} {o} failed: {reason} (replan budget used)"))
 
     def _reset_container(self, r, st, res, reason):
         """Option ``reset_container``: a PutIn that fails BLOCKED into a container the belief holds open, once per
