@@ -32,7 +32,9 @@ call; the Act fails and the tree's Fallback / Retry go on.
 
 **Data.** `planner.options.bt_goal`: `trees` `{<goal type>: {"tree": [...], "skip_if": [goal fields], "source" | "assumed"}}` or a LIST of such
 entries (the first one the goal fills and the robot can run: a `say` with a place, then one without; a `deliver` with the robot's `{delivery}`
-phrase, then one without, as `goals.compile_steps`); `menu` `{"phrases": {<action>: <phrase key>}, "retry": [<pack list refs>], "source" |
+phrase, then one without, as `goals.compile_steps`; an entry with `"needs_openable": [slots]` only when each slot names a place the robot
+declares openable, i.e. an ENV entry with an `openable` field the robot's rule (`Places.openable`) says yes to; a surface, no field, not an
+ENV key: the next entry. E.g. `Open {from}` behind `cond opened {from}` before the Find, then the tree without it); `menu` `{"phrases": {<action>: <phrase key>}, "retry": [<pack list refs>], "source" |
 "assumed"}` (none: no question, A stops); `exhausted` (`ask_or_stop` | `sage_once`). Trees are pack data of a robot (the bench declares `on`,
 `in`, `open`, `close`, `go`, `say` from its mock robot's skills); a `say` / `deliver` tree is a data view of the engine's template (same robot
 calls when nothing fails) and has no entry condition (no belief predicate reads "said" / "handed over": the engine's end check does).

@@ -7,7 +7,7 @@ Act. A no-retry code ends the run at once. A tree with no way left: ``exhausted_
 Key ``exhausted``: ``ask_or_stop`` (default) asks once per goal (``menu`` phrases) when a person can help and ticks the tree once more on a yes or
 a place, else reports and stops; ``sage_once`` hands the remaining goals and the facts to the SAGE planner once where A would stop.
 Why: a declared control flow per goal kind, the engine's own recovery inside it, no planner call unless the policy says so (docs/bt_goal.md).
-Data: ``planner.options.bt_goal.trees`` {type: {tree, skip_if, source | assumed} or a list of them, first usable}, ``menu`` {phrases, retry, stop}.
+Data: ``planner.options.bt_goal.trees`` {type: {tree, skip_if, needs_openable, source | assumed} or a list, first usable}, ``menu``.
 Switch off: key ``enabled`` (run option ``bt_goal``), off by default. Event: lab flag ``bt_goal``: {goal, status} ("claimed", per goal, the
 exhausted action) and {goal, node, status} per node.
 """
@@ -56,21 +56,31 @@ def holds(name: str, args, world, placed) -> bool:
 CONDITIONS = ("holding", "hand_free", "at", "placed", "opened", "closed")
 
 
-def tree_for(goal: dict, trees, actions, can_ask: bool, has_phrase, source=None, extra=None) -> Optional[list]:
+def declared_openable(env, key, rule) -> bool:
+    """Is ``key`` a place the robot declares openable (pure): its ENV entry carries an ``openable`` field and the robot's rule (``rule(key)``,
+    the adapter's or the field) says yes. Not an ENV key, no field (state unknown): False, so an entry that needs it is not used."""
+    entry = (env or {}).get(key) if key else None
+    return isinstance(entry, dict) and "openable" in entry and bool(rule(key))
+
+
+def tree_for(goal: dict, trees, actions, can_ask: bool, has_phrase, source=None, extra=None, openable=None) -> Optional[list]:
     """The tree that runs ``goal``, its slots filled (pure; ``source``: where the object is when the goal names no ``from``, e.g. the
     engine's trusted object memory; ``extra``: more slot values, e.g. ``delivery``); None when no usable tree is declared for it. A kind
-    may declare a list of entries: the first one the goal and the robot can use (e.g. a ``say`` with a place, then one without)."""
+    may declare a list of entries: the first one the goal and the robot can use (e.g. a ``say`` with a place, then one without; an entry
+    with ``needs_openable`` slots only when ``openable(place)`` says yes for each, e.g. Open the source before Find, then one without)."""
     entries = trees.get(goal.get("type")) if isinstance(trees, dict) else None
     for entry in entries if isinstance(entries, list) else [entries]:
-        tree = _filled(entry, goal, actions, can_ask, has_phrase, {**(extra or {}), "from": goal.get("from") or source})
+        tree = _filled(entry, goal, actions, can_ask, has_phrase, {**(extra or {}), "from": goal.get("from") or source}, openable)
         if tree is not None:
             return tree
     return None
 
 
-def _filled(entry, goal, actions, can_ask, has_phrase, values) -> Optional[list]:
+def _filled(entry, goal, actions, can_ask, has_phrase, values, openable=None) -> Optional[list]:
     """One declared entry filled for ``goal``, or None when the robot, the language or the goal cannot use it."""
     if not pack_data.labelled(entry) or not bt.valid(entry.get("tree")) or any(goal.get(f) for f in entry.get("skip_if") or ()):
+        return None
+    if any(not (openable and openable({**goal, **values}.get(s))) for s in entry.get("needs_openable") or ()):
         return None
     tree = bt.fill(entry["tree"], {**values, **{k: goal.get(k) for k in SLOTS if k != "from"}})
     for leaf in bt.leaves(tree) if tree else ():
@@ -81,9 +91,9 @@ def _filled(entry, goal, actions, can_ask, has_phrase, values) -> Optional[list]
     return tree
 
 
-def plan_trees(goals, trees, actions, can_ask: bool, has_phrase, source=lambda obj: None, extra=None) -> Optional[list]:
+def plan_trees(goals, trees, actions, can_ask: bool, has_phrase, source=lambda obj: None, extra=None, openable=None) -> Optional[list]:
     """One filled tree per goal, in goal order; None when any goal has none (then SAGE plans the whole run)."""
-    out = [tree_for(g, trees, actions, can_ask, has_phrase, source(g.get("object")), extra) for g in goals or ()]
+    out = [tree_for(g, trees, actions, can_ask, has_phrase, source(g.get("object")), extra, openable) for g in goals or ()]
     return out if out and all(t is not None for t in out) else None
 
 
@@ -189,11 +199,12 @@ class BtGoal(Option):
 
     def _trees(self, run, goals):
         robot, lang = self.svc.robot, getattr(run, "lang", None) or "en"
-        spec, text = getattr(robot, "ask_spec", None), getattr(robot, "text", None)
+        spec, text, places = getattr(robot, "ask_spec", None), getattr(robot, "text", None), getattr(run, "places", None)
         return plan_trees(goals, self._key("trees"), set(getattr(robot, "plan_actions", None) or ()), callable(spec) and spec() is not None,
                           lambda k: speech.pack_phrase(robot, k, lang, object="", place="") is not None,
                           lambda obj: self.svc.remembered(run, obj) if obj else None,
-                          {DELIVERY: text(DELIVERY, lang) if callable(text) else ""})
+                          {DELIVERY: text(DELIVERY, lang) if callable(text) else ""},
+                          lambda k: places is not None and declared_openable(getattr(places, "env", None), k, places.openable))
 
     def runs_goals(self, run):
         """Service: True when every goal of ``run`` has a usable tree (they are kept for ``on_run_goals``), else None (SAGE plans)."""
