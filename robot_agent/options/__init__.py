@@ -12,3 +12,4 @@ from . import drop_search   # noqa: F401,E402  (a new option on a line of its ow
 from . import heat_safety   # noqa: F401,E402  (a new option on a line of its own)
 from . import bt_goal   # noqa: F401,E402  (a new option on a line of its own)
 from . import heard_check   # noqa: F401,E402  (a new option on a line of its own)
+from . import shared_instances   # noqa: F401,E402  (a new option on a line of its own)

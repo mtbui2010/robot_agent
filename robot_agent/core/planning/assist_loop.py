@@ -2299,7 +2299,7 @@ class AssistLoop(WhichOne, SearchHooks, StepLadder, ClosedLoop):
             heard = getattr(self.language, "heard", {}).get(r.task)
             eng = heard.english if heard is not None and heard.trusted else ""
         return goal_fix.canon_inventory(goals, mem, r.places, lang, goal_fix.fold_rules(self.robot, lang), eng,
-                                        goal_fix.alias_groups(self.robot, lang))
+                                        goal_fix.alias_groups(self.robot, lang), self.options.query("shared_names", r))   # option shared_instances
 
     def _issues(self, r, goals) -> list:
         """understand.find_issues of `goals` against everything the person said (task, own words, answers)."""

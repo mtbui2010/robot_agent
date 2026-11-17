@@ -109,7 +109,7 @@ dropped. A *flow* hook is a generator (`yield from`): it may yield run events an
 `goal_words` also answers the service `goal_guard(run, goals)` (a guard with `place(name)` and `frozen(goal)`) that the engine puts on `places.guard` before the goal repairs (`goal_fix.drop_invented`, `repair_destination`, `shared_listener` read it; None = old behaviour). `goal_ledger` answers the service `goal_keep(run, goals)`: a predicate `keep(goal, words)` that the engine passes to `goal_fix.drop_invented` (argument `keep_go`) for a `go` goal the F4.4 rule would drop (None = dropped as before).
 
 Services (`OptionSpec.services`, asked with `Dispatcher.query(name, *args, default=...)`): `hazard.forbids(goal, places)`,
-`hazard.refused_goals(run)`, `hazard.gate_off()`, `bt_goal.runs_goals(run)` (asked once in the plan phase; yes = the planner is not called, hook `on_run_goals` runs the goals), `bt_goal.no_replan(run, step)` (asked at the top of `_sage_replan`: yes = no planner call, the failed step stays failed and the run goes on with the next one, e.g. the tree that ran it decides), `reach_delivery.no_refetch()`, `dedupe_keep_end.keep_after_dedupe()`, `repair_sync.repair_kwargs(run)` (asked by the gate's and the suffix's symbolic repair: extra arguments of `plan_repair.repair`, `sync` and `finish_rest`; no answer = no extra argument, the repair as before). A query returns the first answer that is not None; `Dispatcher.collect(name, *args)` joins the lists of every option that serves `name` (`refused_goals`: `hazard`, `cond_extract` and `cond_goal`). `Dispatcher.decide_flow_of(service, hook, *args)` runs a flow hook of only the options that serve `service`; the engine service `safety_gate(run)` uses it to put the goals through the safety gate again (`on_goals` of the options serving `forbids`) for an option that changed a goal after the gate ran (`name_recover`).
+`hazard.refused_goals(run)`, `hazard.gate_off()`, `bt_goal.runs_goals(run)` (asked once in the plan phase; yes = the planner is not called, hook `on_run_goals` runs the goals), `bt_goal.no_replan(run, step)` (asked at the top of `_sage_replan`: yes = no planner call, the failed step stays failed and the run goes on with the next one, e.g. the tree that ran it decides), `reach_delivery.no_refetch()`, `shared_instances.shared_names(run)` (asked by `_canon` with `inventory_ask`: a check `shared(name, memory, aliases)` passed to `goal_fix.canon_inventory`; no answer = exact names resolved, as before), `dedupe_keep_end.keep_after_dedupe()`, `repair_sync.repair_kwargs(run)` (asked by the gate's and the suffix's symbolic repair: extra arguments of `plan_repair.repair`, `sync` and `finish_rest`; no answer = no extra argument, the repair as before). A query returns the first answer that is not None; `Dispatcher.collect(name, *args)` joins the lists of every option that serves `name` (`refused_goals`: `hazard`, `cond_extract` and `cond_goal`). `Dispatcher.decide_flow_of(service, hook, *args)` runs a flow hook of only the options that serve `service`; the engine service `safety_gate(run)` uses it to put the goals through the safety gate again (`on_goals` of the options serving `forbids`) for an option that changed a goal after the gate ran (`name_recover`).
 
 ## The options
 
@@ -386,6 +386,24 @@ and one more after a correction, so the default only caps the `dialog_converge` 
 `ask_focus`), `max_confirms`. Hook `on_issues`, services `confirm_limit(run)`, `unrefused(run, ans)`; lab flag `ask_focus`: `{rule, ...}`.
 "I don't know" is no refusal only when the answer says nothing else (service `unsure_leftover(run, text)`: the answer without its "not sure" phrases; a no, a correction or a reason is a refusal). Articles from the language pack.
 Module: `robot_agent/options/ask_focus.py`.
+
+### `shared_instances`
+An exact memory name that two or more remembered instances share is asked about (default off; class C1 of the clarify analysis,
+"an exact name hides a shared memory record"). A memory may keep one bare record for a name two objects share at one usual place
+("lantern" for two lanterns, with no `instance` id) next to the records of each instance ("amber lantern" id L1, "teal lantern" id L2).
+`inventory_ask` (`goal_fix.canon_inventory`) and `ask_focus` (`fits`) both took an object named EXACTLY like a record as resolved, so
+the robot never asked and took either one. Rule (pure, `goal_fix.shared_instances(name, memory, aliases)`): the record named `name`
+has no instance id, and the records that have one and hold `name` as whole words fall into two or more instances
+(`goal_fix.instances`): the name is not resolved. Used in two places: (1) grounding, through `inventory_ask`: the engine asks the
+service `shared_names(run)` and passes its answer to `canon_inventory` (argument `shared`), which then treats the exact name as it
+treats a name with several candidates: the person's own words first (`goal_fix.said_fits`: a group whose extra words, e.g. a colour,
+are all said renames the goal; `said` keeps the person's word), else its which-question (`q_which_known`, one name per instance);
+(2) the read-back (hook `on_issues`, order 81, after `ask_focus`): a `choice` issue "Which X do you mean: A or B?" unless the
+request and answers fit exactly one instance or a `choice` issue for the name is there. A record with an id, one instance, or a memory
+with no instance ids: nothing changes. No pack data, no words of a language (folding is the packs' `plural_rules`). Key `enabled`
+(legacy `shared_instances`, `$ROBOT_AGENT_SHARED_INSTANCES`). Lab flag `shared_instances`: `{at: canon | issues, name, n}`.
+Not covered: a bare name the memory writer gave no instance records for (nothing to ask between); a non-English request whose
+words carry particles narrows nothing in the read-back (it asks). Module: `robot_agent/options/shared_instances.py`.
 
 ### `ask_agree`
 Read-back dialogue (default off, D3 layer L14). Closes the ask loops and the answers accepted although they contradict the person. (1) A bare no, then the same request:
