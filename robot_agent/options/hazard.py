@@ -20,7 +20,6 @@ import re
 from robot_agent.core.options import STOP, Key, Option, OptionSpec, register
 from robot_agent.core.planning import goals as goal_kinds
 from robot_agent.core.planning import langdata, speech
-from robot_agent.core.planning.dialog_converge import goal_sig
 from robot_agent.core.run_control import yes_no
 from robot_agent.core.safety import Verdict, find_rule, profile_of
 from robot_agent.core.safety.hazards import NOT_SAFE
@@ -46,18 +45,25 @@ def support_goals(goals, refused) -> list:
             and any(g.get("object") in (b.get("to"), b.get("from")) for b in refused)]
 
 
-def answer_says(answer: str, metal: bool, yes, unsure: bool) -> str:
-    """What the person's answer to an ``ask`` entry's question decides: ``unanswered`` (silence), ``refuse`` (a yes, an answer with a
-    word a refusing rule holds, or "I don't know": the robot cannot rule it out), else ``proceed`` (a no, "plastic", "it is wooden")."""
+def answer_says(answer: str, metal: bool, reply: tuple, safe: bool) -> str:
+    """What the person's answer to an ``ask`` entry's question decides (fail safe): ``unanswered`` (silence); ``proceed`` only for a
+    clear no (``reply`` = ``yes_no`` of it: False with nothing else, or with a declared safe word: "no", "plastic", "no, it is wooden");
+    else ``refuse``: a yes, a word a refusing rule holds, "I don't know", "never mind", any other answer (metal is not ruled out)."""
     if not str(answer or "").strip():
         return "unanswered"
-    return "refuse" if metal or yes is True or unsure else "proceed"
+    yes, rest = reply
+    return "proceed" if not metal and yes is False and (not str(rest or "").strip() or safe) else "refuse"
 
 
 def unless_hit(entry: dict, goal: dict) -> bool:
     """Does the goal's object or ``said`` hold one of the entry's ``unless`` words (a declared material: no question)?"""
     text = " ".join(str(goal.get(k) or "") for k in ("object", "said")).lower()
     return any(re.search(p, text) for p in entry.get("unless") or ())
+
+
+def thing_at(goal) -> tuple:
+    """What an answer is about: the goal's kind, object and place (a re-reading with other ``said`` words is not asked again)."""
+    return tuple(str(goal.get(k) or "").lower() for k in ("type", "object", "to"))
 
 
 def refusal_record(goal, verdict) -> dict:
@@ -107,7 +113,7 @@ class Hazard(Option):
 
     def goal_dropped(self, run, goal):
         """True for a goal refused after the person's answer (a re-sampled reading does not bring it back); None otherwise."""
-        return True if self._state(run).get("answers", {}).get(goal_sig([goal])) == "refuse" else None
+        return True if self._state(run).get("answers", {}).get(thing_at(goal)) == "refuse" else None
 
     # ── the question of an ``ask`` entry ────────────────────────────────────
     def _asked(self, run, found):
@@ -124,7 +130,7 @@ class Hazard(Option):
 
     def _ask(self, run, g, e):
         """Flow: the entry's question about ``g`` (no phrase in any pack: not asked); a Verdict (refuse), None (proceed) or STOP."""
-        answers, sig = self._state(run).setdefault("answers", {}), goal_sig([g])
+        answers, sig = self._state(run).setdefault("answers", {}), thing_at(g)
         if sig not in answers:
             q = self._question(run, g, e)
             if q is None:
@@ -135,8 +141,8 @@ class Hazard(Option):
             if stop:
                 yield stop
                 return STOP
-            answers[sig] = answer_says(ans, self.verdict({**g, "said": ans}, run.places) is not None, yes_no(ans)[0],
-                                       bool(ans) and self.svc.is_unsure(run, ans))
+            answers[sig] = answer_says(ans, self.verdict({**g, "said": ans}, run.places) is not None, yes_no(ans),
+                                       unless_hit(e, {"object": ans}))
             self.svc.lab(SPEC.name, asked=str(g.get("object") or ""), answer=answers[sig])
             if answers[sig] == "unanswered":
                 yield self.svc.finish(run, "failed", msg=f"no answer to: {q}")

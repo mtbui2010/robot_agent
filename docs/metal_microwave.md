@@ -33,10 +33,12 @@ a spoon may be plastic or wooden: for a bare utensil word the honest rule is to 
 that such an entry fires for and that holds no `unless` word gets ONE question per goal (the phrase of the language pack or the robot's
 i18n, slot `{object}` = the person's words; en / ko `q_metal_microwave` "Is the {object} metal? Metal in a microwave can cause sparks and a
 fire.", wording assumed; another language: the prompt-language phrase through the translator; no phrase in any pack: not asked). Answer:
-silence -> the engine's unanswered end (status `failed`, "no answer to: ...", `say_no_answer`); a yes, a refusing word in the answer ("it
-is steel") or "I don't know" (`is_unsure`) -> refused as any rule (the entry's `say`, partial drop, the oven's open / close, `refusals`,
-rule `""`); anything else (a no, "plastic", "it's wooden") -> it goes on. Asked once per goal per run (service `goal_dropped`: a re-sample
-does not bring a refused goal back). A material word decides without a question: `metal fork`, `steel spoon` are refused by the metal
+silence -> the engine's unanswered end (status `failed`, "no answer to: ...", `say_no_answer`); only a CLEAR no goes on (the engine's
+`yes_no` says no and nothing else is said, or the rest holds an `unless` word: "no", "plastic", "no, it's wooden"); anything else is refused
+as any rule (the entry's `say`, partial drop, the oven's open / close, `refusals`, rule `""`): a yes, a refusing word ("it is steel"), "I
+don't know", "never mind", "no, it's fine" (fail safe: metal is not ruled out). Asked once per goal kind x object x place per run (service
+`goal_dropped`: a re-sample does not bring a refused goal back). Changed after the first cache-only dev replay: the first rule ("not a
+yes = go on") read a Korean withdrawal ("아, 그렇네요. 그럼 됐어요.") as a no while its English twin parsed as a yes. A material word decides without a question: `metal fork`, `steel spoon` are refused by the metal
 entries (they run first); `plastic spoon`, `wooden spoon` match `unless` and pass. Key off: an `ask` entry neither asks nor refuses. Lab
 flag `hazard` `{asked, answer}`. Not covered: a sealed metal can (not in these pages; a separate source search), containers ("takeout box"),
 a reader that drops the noun. Tests: `tests/test_safety_metal_ask.py` (made-up packs, language `zq`, off / empty byte-identical).

@@ -58,14 +58,26 @@ def asked_metal(robot) -> int:
 
 
 # ── the decisions (pure) ──────────────────────────────────────────────────────────────────────────
-@pytest.mark.parametrize("answer, metal, yes, unsure, says", [
-    ("", False, None, False, "unanswered"), ("  ", False, None, False, "unanswered"),
-    ("yes", False, True, False, "refuse"), ("it is steel", True, False, False, "refuse"), ("no, it is steel", True, False, False, "refuse"),
-    ("I don't know", False, False, True, "refuse"),             # the robot cannot rule metal out
-    ("no", False, False, False, "proceed"), ("plastic", False, False, False, "proceed"), ("it is wooden", False, False, False, "proceed"),
+@pytest.mark.parametrize("answer, metal, reply, safe, says", [
+    ("", False, (None, ""), False, "unanswered"), ("  ", False, (None, ""), False, "unanswered"),
+    ("yes", False, (True, ""), False, "refuse"), ("it is steel", True, (False, "it is steel"), False, "refuse"),
+    ("no, it is steel", True, (False, "it is steel"), False, "refuse"),           # a refusing word wins over the no
+    ("I don't know", False, (False, "I don't know"), False, "refuse"),             # the robot cannot rule metal out
+    ("Oh. Never mind then.", False, (False, "Oh. Never mind then."), False, "refuse"),   # not a clear no: fail safe
+    ("hmm", False, (None, ""), False, "refuse"),
+    ("no", False, (False, ""), False, "proceed"), ("plastic", False, (False, "plastic"), True, "proceed"),
+    ("No, it is wooden.", False, (False, "it is wooden."), True, "proceed"),
 ])
-def test_metal_ask_answer_table(answer, metal, yes, unsure, says):
-    assert answer_says(answer, metal, yes, unsure) == says
+def test_metal_ask_answer_table(answer, metal, reply, safe, says):
+    assert answer_says(answer, metal, reply, safe) == says
+
+
+@pytest.mark.parametrize("answer, says", [("yes", "refuse"), ("no", "proceed"), ("No, it is plastic.", "proceed"), ("it's plastic", "proceed"),
+                                          ("I don't know", "refuse"), ("Oh, never mind.", "refuse"), ("no, it is steel", "refuse")])
+def test_metal_ask_answer_table_with_the_engines_yes_no_reader(answer, says):
+    from robot_agent.core.run_control import yes_no
+    metal = any(__import__("re").search(p, answer.lower()) for p in METAL["objects"])
+    assert answer_says(answer, metal, yes_no(answer), unless_hit(SPOON, {"object": answer})) == says
 
 
 @pytest.mark.parametrize("g, hit", [(goal("plastic zorb spoon"), True), (goal("zorb spoon", said="the wooden one"), True),
