@@ -36,6 +36,11 @@ def test_registered_and_off_by_default():
     assert resolve(SPEC, {}, {}, None)["enabled"] is False
 
 
+def test_cond_goal_layer_cond_answer_keys_off():
+    cfg = resolve(SPEC, {"cond_goal": "1"}, {}, None)
+    assert (cfg["answer"], cfg["open_closed"], cfg["confirm_none"], cfg["clauses"]) == (False, False, False, {})
+
+
 def bare(loop):
     """What the loop's schema and prompt are with no option dispatcher at all."""
     from robot_agent.core.options.dispatch import NULL
