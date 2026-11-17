@@ -329,6 +329,17 @@ in the section `planner.options.cond_goal` (or the run options `cond_goal.source
 (as the D2 options do), so pack data a host merges after the loop is built is seen without `refresh_options`. Use it with a reader trained on `when` (an older reader may ignore it or
 use it wrongly: measure it on requests with no condition before turning it on). Keys `enabled` (legacy `cond_goal`), `looks`, `ask_when_unsure`, `prompt`, `q_where`, `q_unsure`, `say_seen`,
 `say_not_seen`, `source`, `assumed`. Hooks `on_understand_schema`, `on_understand_prompt`, `on_goals`; lab flag `cond_goal`: `{object, at, place, seen, holds}`. Module: `robot_agent/options/cond_goal.py`.
+Keys of layer cond_answer (each default off; class B of the cond20 analysis: a location answer read as "no", a look into a closed container read as absent, then
+"success" with nothing done). `answer`: the answer to `q_unsure` is read by itself (pure `answer_holds`): an "I don't know" (`is_unsure`) or silence is UNKNOWN; a
+negation (the packs' `patterns.negation` plus key `clauses`, `{lang: {"negation": regex, "source" | "assumed": true}}`, manifest only) is False; a yes is True and a no
+False unless the place the answer names says the opposite (UNKNOWN); no yes / no word: the place it names decides (the condition's place: True, another: False), none: UNKNOWN.
+Before, `interact.dialog.yes_no` read every answer without a yes / no word as no (a default False). UNKNOWN takes the path above (the run ends failed with the question).
+With `answer` a `when` that carries `ask` (a yes / no question, empty `at`; written by `cond_extract` key `kinds` for a condition no look can settle) is decided by asking
+it once; without `answer` such a `when` is incomplete, i.e. no condition (the goal stays). `open_closed`: after the move, a place the ENV declares openable (an `openable`
+field the robot's rule says yes to, as `bt_goal`'s `declared_openable`) that the belief holds closed is opened with role `open` before the look (lab `{part: open, place, ok}`;
+it stays open). `confirm_none`: every goal was dropped on a decision no look made (looks into a place still closed, or, with `answer` off, an answer with no yes / no word):
+`q_unsure` is asked once more and read as `answer` reads it (holds: the goals are kept; not: success as before; UNKNOWN: failed); a miss the robot could see stays silent
+success. No `q_unsure` text: nothing is asked (as before). Tests: `tests/test_option_cond_answer.py`.
 
 ### `cond_extract`
 A request with a condition word is split by ONE extra model call and handed to `cond_goal` (default off; D3 layer L9). The reader stays unchanged (it has no `when` field; an untrained reader turns "if X is at P, do A,

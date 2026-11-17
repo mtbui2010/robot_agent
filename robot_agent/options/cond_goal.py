@@ -19,6 +19,7 @@ texts count as none. A text the loop resolved empty is read again from the manif
 schema nor the prompt; an empty question = not asked; an empty sentence = nothing said. Needs the pack's action role ``move`` (none = the
 condition is read as absent). Use it with a reader trained on ``when``.
 
+Keys of layer cond_answer (docs/options.md): ``answer``, ``open_closed``, ``confirm_none``, ``clauses``. Switch off: every key is off by default.
 Hooks: ``on_understand_schema``, ``on_understand_prompt``, ``on_goals``. Keys: ``enabled`` (legacy ``cond_goal``), ``looks`` (2),
 ``ask_when_unsure`` (true), ``prompt``, ``q_where``, ``q_unsure``, ``say_seen``, ``say_not_seen``, ``source``, ``assumed``. Lab flag ``cond_goal``.
 """
@@ -26,7 +27,7 @@ Hooks: ``on_understand_schema``, ``on_understand_prompt``, ``on_goals``. Keys: `
 from __future__ import annotations
 
 from robot_agent.core.options import STOP, Key, Option, OptionSpec, register
-from robot_agent.core.planning import pack_data
+from robot_agent.core.planning import clauses, pack_data
 
 SPEC = OptionSpec(
     name="cond_goal",
@@ -39,7 +40,11 @@ SPEC = OptionSpec(
           Key("say_seen", "str", ""),
           Key("say_not_seen", "str", ""),
           Key("source", "str", ""),
-          Key("assumed", "bool", False)),
+          Key("assumed", "bool", False),
+          Key("answer", "bool", False),
+          Key("open_closed", "bool", False),
+          Key("confirm_none", "bool", False),
+          Key("clauses", "dict", {}, sources=("manifest",))),
     hooks=("on_understand_schema", "on_understand_prompt", "on_goals"),
     services=("refused_goals", "goal_dropped"),
     order=20,
@@ -54,6 +59,7 @@ _WHEN = {"type": "object",
 
 
 _UNKNOWN = "unknown"          # neither present nor absent: the robot could not tell and the person did not say
+_GUESS = "guess"              # how a decision was made when no look could make it (a closed place, an answer with no yes or no): key confirm_none
 
 
 def valid_when(g):
@@ -67,6 +73,42 @@ def valid_when(g):
 
 def without_when(g) -> dict:
     return {k: v for k, v in g.items() if k != "when"}
+
+
+def ask_when(g):
+    """The goal's ``when`` as {object, at: "", present, ask} when it holds a yes / no question ``ask`` (a condition no look settles), else None."""
+    w = g.get("when") if isinstance(g, dict) else None
+    q = str(w.get("ask") or "").strip() if isinstance(w, dict) else ""
+    return {"object": str(w.get("object") or q), "at": "", "present": w["present"], "ask": q} if q and isinstance(w.get("present"), bool) else None
+
+
+def answer_holds(yes: bool, no: bool, negated: bool, named, place, unsure: bool):
+    """Pure: the condition by the person's own answer to "is the X at P?": True, False or _UNKNOWN (never a default). An "I don't know":
+    unknown. A negation ("it is not there"): False. A yes: True, a no: False, unless it names a place that says the opposite (unknown).
+    No yes / no word: the place it names decides (P: True, another place: False); none named: unknown."""
+    if unsure:
+        return _UNKNOWN
+    if negated:
+        return False
+    if yes or no:
+        return _UNKNOWN if named is not None and (named == place) != yes else yes
+    return _UNKNOWN if named is None else named == place
+
+
+def closed_openable(entry, rule_says: bool, opened, key) -> bool:
+    """Pure: ``key`` is a place the robot declares openable (its ENV entry has an ``openable`` field and the robot's rule says yes) and the
+    belief holds it closed (not in ``opened``)."""
+    return isinstance(entry, dict) and "openable" in entry and bool(rule_says) and key not in set(opened or ())
+
+
+def split(goals, done, when_of) -> tuple:
+    """Pure: (kept, dropped) goals, ``when`` removed: a goal with a condition (``when_of``: its {key, present} or None) is kept when the
+    decision ``done[key]`` equals its ``present``."""
+    kept, dropped = [], []
+    for g in goals:
+        w = when_of(g)
+        (kept if w is None or done.get(w["key"]) == w["present"] else dropped).append(without_when(g))
+    return kept, dropped
 
 
 class CondGoal(Option):
@@ -115,6 +157,8 @@ class CondGoal(Option):
         if getattr(run.world, "arrived", None) != place:
             if not getattr(self.svc.run_step(run, {"action": move, "object": place}), "ok", False):
                 return None
+        if self.cfg["open_closed"]:
+            self._open_first(run, place)
         seen = []
         for _ in range(max(1, int(self.cfg["looks"]))):
             seen.append(bool(self.svc.look_for(run, obj)[0]))
@@ -126,9 +170,45 @@ class CondGoal(Option):
         """The looks do not settle it: a miss then a sighting, or a trusted memory of ``obj`` at ``place`` that no look saw."""
         return seen == [False, True] or (not any(seen) and self.svc.remembered(run, obj) == place)
 
-    def _decide(self, run, w):
-        """Flow: does ``w.object`` hold at ``w.at`` (True / False), _UNKNOWN when it cannot be told, or STOP."""
+    def _blind(self, run, place) -> bool:
+        """The look cannot see inside ``place``: the ENV declares it openable and the belief holds it closed."""
+        places = getattr(run, "places", None)
+        entry = (getattr(places, "env", None) or {}).get(place) if places is not None else None
+        return closed_openable(entry, entry is not None and places.openable(place), getattr(run.world, "opened", None), place)
+
+    def _open_first(self, run, place) -> None:
+        """Key ``open_closed``: a declared openable place the belief holds closed is opened (role ``open``) before the look."""
+        open_ = self.svc.role("open")
+        if open_ and self._blind(run, place):
+            ok = getattr(self.svc.run_step(run, {"action": open_, "object": place}), "ok", False)
+            self.svc.lab("cond_goal", part="open", place=place, ok=bool(ok))
+
+    def _read(self, run, ans, place):
+        """Key ``answer``: the answer read by itself (``answer_holds``): True, False or _UNKNOWN; ``place`` None: a yes / no question."""
         from robot_agent.core.run_control import yes_no
+        t = str(ans or "").strip()
+        if not t:
+            return _UNKNOWN
+        ok, rest = yes_no(t)
+        cl = clauses.build(getattr(run, "lang", None), pack_data.fresh(SPEC, self.cfg, pack_data.planner_of(self.svc), "clauses"))
+        neg = cl.neg if cl is not None else None
+        named = self.svc.ground_place(run, t) if place else None
+        unsure = bool(getattr(self.svc, "is_unsure", lambda r, x: False)(run, t))
+        return answer_holds(ok is True, ok is False and rest != t, bool(neg and neg.search(t)), named, place, unsure)
+
+    def _asked(self, run, obj, place) -> tuple:
+        """(holds, how): the ``q_unsure`` answer; with ``answer`` read by itself, else as before (a yes or a no decides, silence: unknown;
+        an answer with no yes / no word reads as no, a default: how = _GUESS)."""
+        from robot_agent.core.run_control import yes_no
+        ans = self._ask(run, "cond_unsure", self._text("q_unsure"), object=obj, place=place)
+        if self.cfg["answer"]:
+            return self._read(run, ans, place), "told"
+        said, rest = yes_no(ans)
+        return (_UNKNOWN if said is None else said), (_GUESS if said is False and rest == ans.strip() else "told")
+
+    def _decide(self, run, w):
+        """Flow: (holds, how, place): does ``w.object`` hold at ``w.at`` (True / False), _UNKNOWN when it cannot be told; how: "seen", "told"
+        or _GUESS (no look could see it, key ``confirm_none``); or STOP."""
         obj = w["object"]
         place = self.svc.ground_place(run, w["at"])
         if not place:
@@ -139,11 +219,22 @@ class CondGoal(Option):
             yield stop
             return STOP
         holds = _UNKNOWN if not place else bool(seen) and seen[-1]
+        how = _GUESS if self.cfg["confirm_none"] and holds is False and self._blind(run, place) else "seen"
         if place and (seen is None or self._unsure(run, obj, place, seen)):
-            said = yes_no(self._ask(run, "cond_unsure", self._text("q_unsure"), object=obj, place=place))[0]
-            holds = _UNKNOWN if said is None else said
+            holds, how = self._asked(run, obj, place)
         self.svc.lab("cond_goal", object=obj, at=w["at"], place=place or "", seen=seen, holds=holds)
-        return holds
+        return holds, how, place
+
+    def _decide_ask(self, run, w):
+        """Flow: (holds, "told", None) of a ``when`` with a yes / no question (key ``answer``): asked once, read by itself; or STOP."""
+        ans = (self.svc.ask(run, w["ask"]) or "") if self.cfg["ask_when_unsure"] else ""
+        stop = self.svc.cancelled(run)
+        if stop:
+            yield stop
+            return STOP
+        holds = self._read(run, ans, None)
+        self.svc.lab("cond_goal", object=w["object"], at="", place="", seen=None, holds=holds, part="ask")
+        return holds, "told", None
 
     def _say(self, run, holds, obj, place):
         key, text = ("cond_seen", self._text("say_seen")) if holds else ("cond_not_seen", self._text("say_not_seen"))
@@ -164,32 +255,65 @@ class CondGoal(Option):
 
     def _cannot_tell(self, run, w):
         """Flow: the run ends as failed, saying the question: the robot does not know the condition and does not guess."""
-        ph = self._phrase("cond_unsure", self._text("q_unsure"), object=w["object"], place=w["at"])
+        ph = w.get("ask") or self._phrase("cond_unsure", self._text("q_unsure"), object=w["object"], place=w["at"])
         yield self.svc.finish(run, "failed", msg=f"cannot tell whether the {w['object']} is at {w['at']}",
                               **({"say": self.svc.in_lang(ph, run.lang)} if ph else {}))
         return STOP
+
+    def _when(self, g):
+        """The goal's condition with its decision key, or None (no condition, an incomplete one; a question ``when`` only with ``answer``)."""
+        w = valid_when(g)
+        if w is not None:
+            return {**w, "key": (w["object"].lower(), w["at"].lower())}
+        w = ask_when(g) if self.cfg["answer"] else None
+        return {**w, "key": ("?", w["ask"].lower())} if w else None
+
+    def _confirm(self, run, guesses):
+        """Flow, key ``confirm_none``: every goal was dropped on a decision no look made: ``q_unsure`` once more, read by itself.
+        (key, holds) of the first such decision; None when there is none, no question, or it was asked already."""
+        st = run.__dict__.setdefault("opt", {}).setdefault("cond_goal_confirm", {})
+        w = next(iter(guesses.values()), None)
+        if w is None or st.get("asked") or not self._text("q_unsure"):
+            return None
+        st["asked"] = True
+        place = w["place"]
+        holds = self._read(run, self._ask(run, "cond_unsure", self._text("q_unsure"), object=w["object"], place=place), place)
+        self.svc.lab("cond_goal", part="confirm", object=w["object"], place=place or "", holds=holds)
+        stop = self.svc.cancelled(run)
+        if stop:
+            yield stop
+            return STOP
+        return w, holds
 
     def on_goals(self, run):
         """Flow: the goals with a ``when`` are kept or dropped by what the robot sees; the ``when`` field is removed from all."""
         if not any(isinstance(g, dict) and "when" in g for g in run.goals):
             return None
-        done = run.__dict__.setdefault("opt", {}).setdefault("cond_goal", {})
-        kept, dropped = [], []
+        done, guesses = run.__dict__.setdefault("opt", {}).setdefault("cond_goal", {}), {}
         for g in run.goals:
-            w = valid_when(g)
-            if w is None:                       # no condition, or an incomplete one (read as none)
-                kept.append(without_when(g))
+            w = self._when(g)
+            if w is None or w["key"] in done:
                 continue
-            key = (w["object"].lower(), w["at"].lower())
-            if key not in done:
-                done[key] = yield from self._decide(run, w)
-                if done[key] is STOP:
-                    return STOP
-                if done[key] == _UNKNOWN:
-                    return (yield from self._cannot_tell(run, w))
-                for ev in self._say(run, done[key], w["object"], w["at"]):
-                    yield ev
-            (kept if done[key] == w["present"] else dropped).append(without_when(g))
+            res = yield from (self._decide_ask(run, w) if w.get("ask") else self._decide(run, w))
+            done[w["key"]] = res if res is STOP else res[0]
+            if res is STOP:
+                return STOP
+            if done[w["key"]] == _UNKNOWN:
+                return (yield from self._cannot_tell(run, w))
+            if res[1] == _GUESS:
+                guesses[w["key"]] = {**w, "place": res[2]}
+            for ev in ([] if w.get("ask") else self._say(run, done[w["key"]], w["object"], w["at"])):
+                yield ev
+        kept, dropped = split(run.goals, done, self._when)
+        if not kept and self.cfg["confirm_none"] and guesses:
+            c = yield from self._confirm(run, guesses)
+            if c is STOP:
+                return STOP
+            if c is not None and c[1] == _UNKNOWN:
+                return (yield from self._cannot_tell(run, c[0]))
+            if c is not None:
+                done[c[0]["key"]] = c[1]
+                kept, dropped = split(run.goals, done, self._when)
         run.goals = kept
         self._dropped(run).extend(dropped)
         run.filtered = list(getattr(run, "filtered", None) or []) + dropped      # goal dicts, as the engine's own filters record
