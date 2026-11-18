@@ -266,10 +266,20 @@ def reached(g: dict, steps: list, at: Optional[str], last: bool = False) -> bool
     return False
 
 
+def ends_at(goal: dict, obj: str, place: str, ground=None, langs=None) -> bool:
+    """Pure: ``goal`` (an ``on`` / ``in`` goal) puts ``obj`` at ``place``: its object and ``obj`` are one name (the words of one are whole
+    words of the other, ``names.has``) and its destination is ``place`` or grounds to it (``ground``: text -> place key or None)."""
+    from . import names
+    o, to = str(goal.get("object") or ""), str(goal.get("to") or "")
+    if goal.get("type") not in ("on", "in") or not place or not to or not (names.has(o, obj, langs) or names.has(obj, o, langs)):
+        return False
+    return to == place or (ground is not None and ground(to) == place)
+
+
 def _same_text(a, b) -> bool:
     norm = lambda s: " ".join(str(s or "").lower().replace(",", " ").replace(".", " ").split())
     return norm(a) == norm(b)
 
 
 __all__ = ["GoalKind", "GOAL_KINDS", "MANIPULATION", "TEMPLATE_KINDS", "missing_actions", "kinds_for",
-           "prompt_lines", "is_template", "dedupe", "conflicts", "SPEAKER_WORDS", "is_speaker", "speaker_slots", "describe", "goal_text", "subgoal_text", "summary", "compile_steps", "reached"]
+           "prompt_lines", "is_template", "dedupe", "conflicts", "SPEAKER_WORDS", "is_speaker", "speaker_slots", "describe", "goal_text", "subgoal_text", "summary", "compile_steps", "reached", "ends_at"]

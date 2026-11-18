@@ -19,15 +19,17 @@ texts count as none. A text the loop resolved empty is read again from the manif
 schema nor the prompt; an empty question = not asked; an empty sentence = nothing said. Needs the pack's action role ``move`` (none = the
 condition is read as absent). Use it with a reader trained on ``when``.
 
-Keys of layer cond_answer (docs/options.md): ``answer``, ``open_closed``, ``confirm_none``, ``clauses``. Switch off: every key is off by default.
+Keys of layer cond_answer (docs/options.md, with its round 2): ``answer``, ``open_closed``, ``confirm_none``, ``clauses``. Switch off: every key is off by default.
 Hooks: ``on_understand_schema``, ``on_understand_prompt``, ``on_goals``. Keys: ``enabled`` (legacy ``cond_goal``), ``looks`` (2),
 ``ask_when_unsure`` (true), ``prompt``, ``q_where``, ``q_unsure``, ``say_seen``, ``say_not_seen``, ``source``, ``assumed``. Lab flag ``cond_goal``.
 """
 
 from __future__ import annotations
 
+import re
+
 from robot_agent.core.options import STOP, Key, Option, OptionSpec, register
-from robot_agent.core.planning import clauses, pack_data
+from robot_agent.core.planning import clauses, goals, langdata, names, pack_data
 
 SPEC = OptionSpec(
     name="cond_goal",
@@ -60,6 +62,8 @@ _WHEN = {"type": "object",
 
 _UNKNOWN = "unknown"          # neither present nor absent: the robot could not tell and the person did not say
 _GUESS = "guess"              # how a decision was made when no look could make it (a closed place, an answer with no yes or no): key confirm_none
+_OPENED = "opened"            # a miss inside a place this option opened itself (key confirm_none asks before "nothing to do")
+_TOLD = "told"                # the person's answer decided
 
 
 def valid_when(g):
@@ -82,17 +86,39 @@ def ask_when(g):
     return {"object": str(w.get("object") or q), "at": "", "present": w["present"], "ask": q} if q and isinstance(w.get("present"), bool) else None
 
 
-def answer_holds(yes: bool, no: bool, negated: bool, named, place, unsure: bool):
+def answer_holds(yes: bool, no: bool, negated: bool, named, place, unsure: bool, more: bool = False):
     """Pure: the condition by the person's own answer to "is the X at P?": True, False or _UNKNOWN (never a default). An "I don't know":
     unknown. A negation ("it is not there"): False. A yes: True, a no: False, unless it names a place that says the opposite (unknown).
-    No yes / no word: the place it names decides (P: True, another place: False); none named: unknown."""
-    if unsure:
+    No yes / no word: the place it names decides (P: True, another place: False); none named: unknown. ``more``: a yes / no word with more
+    words than the condition's, the packs' fillers and a negation (``bare`` False), no place named: unknown ("yes, probably late", "no,
+    bring the other one" decide nothing); a negation with no yes / no word ("it isn't there") still reads False."""
+    if unsure or (more and named is None and (yes or no)):
         return _UNKNOWN
     if negated:
         return False
     if yes or no:
         return _UNKNOWN if named is not None and (named == place) != yes else yes
     return _UNKNOWN if named is None else named == place
+
+
+def bare(text, skip, neg, keep, langs=None) -> bool:
+    """Pure: every word of ``text`` (lower case) is inside a match of ``skip`` (the packs' yes, no, filler, polite words) or of ``neg`` (a
+    negation), a word of the condition itself (``keep``, folded) or a fragment (a latin token of 1-2 letters, as ``interact.dialog`` reads one)."""
+    spans = [m.span() for rx in (skip, neg) if rx is not None for m in rx.finditer(text)]
+    for m in re.finditer(r"\w+", text):
+        w = m.group()
+        if not (any(a < m.end() and m.start() < b for a, b in spans) or names.fold(w, langs) in keep or (w.isascii() and len(w) <= 2)):
+            return False
+    return True
+
+
+def reply_rx(langs):
+    """The packs' dialogue words that carry no content of their own (yes, no, fillers, polite words, near-misses of yes / no) for
+    ``langs`` as one whole-word regex, or None."""
+    got = langdata.dialogue_all("yes", langs) + langdata.dialogue_all("no", langs) + langdata.dialogue_all("fillers", langs)
+    got += langdata.dialogue_all("polite", langs) + langdata.dialogue_all("near_yes_no", langs)
+    ws = sorted({str(w).lower() for w in got if str(w).strip()}, key=len, reverse=True)
+    return re.compile(r"(?<!\w)(?:" + "|".join(map(re.escape, ws)) + r")(?!\w)") if ws else None
 
 
 def closed_openable(entry, rule_says: bool, opened, key) -> bool:
@@ -158,7 +184,7 @@ class CondGoal(Option):
             if not getattr(self.svc.run_step(run, {"action": move, "object": place}), "ok", False):
                 return None
         if self.cfg["open_closed"]:
-            self._open_first(run, place)
+            self._open_first(run, place, obj)
         seen = []
         for _ in range(max(1, int(self.cfg["looks"]))):
             seen.append(bool(self.svc.look_for(run, obj)[0]))
@@ -176,18 +202,44 @@ class CondGoal(Option):
         entry = (getattr(places, "env", None) or {}).get(place) if places is not None else None
         return closed_openable(entry, entry is not None and places.openable(place), getattr(run.world, "opened", None), place)
 
-    def _open_first(self, run, place) -> None:
+    def _open_first(self, run, place, obj) -> None:
         """Key ``open_closed``: a declared openable place the belief holds closed is opened (role ``open``) before the look; once open it
-        counts as opened just now for the run (service ``opened_now``), so a later miss inside is not doubted as a stale open belief."""
+        counts as opened just now for the run (service ``opened_now``), so a later miss inside is not doubted as a stale open belief.
+        Not opened (the blind look stays) when the place plays another role than the condition's: ``_role``."""
         open_ = self.svc.role("open")
         if open_ and self._blind(run, place):
+            why = self._role(run, place, obj)
+            if why:
+                self.svc.lab("cond_goal", part="open_skip", place=place, why=why)
+                return
             ok = getattr(self.svc.run_step(run, {"action": open_, "object": place}), "ok", False)
             if ok:
                 getattr(self.svc, "opened_now", lambda r, k: None)(run, place)
+                run.__dict__.setdefault("opt", {}).setdefault("cond_goal_opened", set()).add(place)
             self.svc.lab("cond_goal", part="open", place=place, ok=bool(ok))
 
-    def _read(self, run, ans, place):
-        """Key ``answer``: the answer read by itself (``answer_holds``): True, False or _UNKNOWN; ``place`` None: a yes / no question."""
+    def _role(self, run, place, obj) -> str:
+        """Why ``place`` is not the condition's container: "object" (the condition's object names the place itself) or "destination" (a
+        goal of the request puts the condition's object there, ``goals.ends_at``); "" when neither."""
+        ground = lambda t: self.svc.ground_place(run, t)              # noqa: E731
+        if ground(obj) == place:
+            return "object"
+        langs = names.langs_of(run)
+        return "destination" if any(goals.ends_at(g, obj, place, ground, langs) for g in run.goals if isinstance(g, dict)) else ""
+
+    def _evidence(self, run, holds, place) -> str:
+        """Key ``confirm_none``: how a look decided: _GUESS (a miss into a place still closed), _OPENED (a miss inside a place this option
+        opened itself) or "seen" (a sighting, or a miss the robot could see; also with the key off)."""
+        if not self.cfg["confirm_none"] or holds is not False:
+            return "seen"
+        if self._blind(run, place):
+            return _GUESS
+        return _OPENED if place in run.__dict__.get("opt", {}).get("cond_goal_opened", ()) else "seen"
+
+    def _read(self, run, ans, place, said=""):
+        """Key ``answer``: the answer read by itself (``answer_holds``): True, False or _UNKNOWN; ``place`` None: a yes / no question.
+        ``said``: the condition's own words (its object, or its question): an answer that says more than them, its yes / no and the
+        packs' fillers names no place: UNKNOWN (``bare``)."""
         from robot_agent.core.run_control import yes_no
         t = str(ans or "").strip()
         if not t:
@@ -197,7 +249,9 @@ class CondGoal(Option):
         neg = cl.neg if cl is not None else None
         named = self.svc.ground_place(run, t) if place else None
         unsure = bool(getattr(self.svc, "is_unsure", lambda r, x: False)(run, t))
-        return answer_holds(ok is True, ok is False and rest != t, bool(neg and neg.search(t)), named, place, unsure)
+        langs = names.langs_of(run)
+        more = not bare(t.lower(), reply_rx(langs), neg, names.words(said, langs), langs)
+        return answer_holds(ok is True, ok is False and rest != t, bool(neg and neg.search(t)), named, place, unsure, more)
 
     def _asked(self, run, obj, place) -> tuple:
         """(holds, how): the ``q_unsure`` answer; with ``answer`` read by itself, else as before (a yes or a no decides, silence: unknown;
@@ -205,7 +259,7 @@ class CondGoal(Option):
         from robot_agent.core.run_control import yes_no
         ans = self._ask(run, "cond_unsure", self._text("q_unsure"), object=obj, place=place)
         if self.cfg["answer"]:
-            return self._read(run, ans, place), "told"
+            return self._read(run, ans, place, obj), _TOLD
         said, rest = yes_no(ans)
         return (_UNKNOWN if said is None else said), (_GUESS if said is False and rest == ans.strip() else "told")
 
@@ -222,7 +276,7 @@ class CondGoal(Option):
             yield stop
             return STOP
         holds = _UNKNOWN if not place else bool(seen) and seen[-1]
-        how = _GUESS if self.cfg["confirm_none"] and holds is False and self._blind(run, place) else "seen"
+        how = self._evidence(run, holds, place)
         if place and (seen is None or self._unsure(run, obj, place, seen)):
             holds, how = self._asked(run, obj, place)
         self.svc.lab("cond_goal", object=obj, at=w["at"], place=place or "", seen=seen, holds=holds)
@@ -235,9 +289,9 @@ class CondGoal(Option):
         if stop:
             yield stop
             return STOP
-        holds = self._read(run, ans, None)
+        holds = self._read(run, ans, None, w["object"])
         self.svc.lab("cond_goal", object=w["object"], at="", place="", seen=None, holds=holds, part="ask")
-        return holds, "told", None
+        return holds, _TOLD, None
 
     def _say(self, run, holds, obj, place):
         key, text = ("cond_seen", self._text("say_seen")) if holds else ("cond_not_seen", self._text("say_not_seen"))
@@ -272,15 +326,20 @@ class CondGoal(Option):
         return {**w, "key": ("?", w["ask"].lower())} if w else None
 
     def _confirm(self, run, guesses):
-        """Flow, key ``confirm_none``: every goal was dropped on a decision no look made: ``q_unsure`` once more, read by itself.
-        (key, holds) of the first such decision; None when there is none, no question, or it was asked already."""
+        """Flow, key ``confirm_none``: every goal was dropped on a decision that was no sighting (a closed place, a miss inside a place this
+        option opened, an answer): ``q_unsure`` (a question ``when``: its own question) once more, read by itself. (key, holds) of the first
+        such decision; None when there is none, no ``q_unsure`` text, or it was asked already."""
         st = run.__dict__.setdefault("opt", {}).setdefault("cond_goal_confirm", {})
         w = next(iter(guesses.values()), None)
         if w is None or st.get("asked") or not self._text("q_unsure"):
             return None
         st["asked"] = True
         place = w["place"]
-        holds = self._read(run, self._ask(run, "cond_unsure", self._text("q_unsure"), object=w["object"], place=place), place)
+        if w.get("ask"):
+            ans = (self.svc.ask(run, w["ask"]) or "") if self.cfg["ask_when_unsure"] else ""
+        else:
+            ans = self._ask(run, "cond_unsure", self._text("q_unsure"), object=w["object"], place=place)
+        holds = self._read(run, ans, place, w["object"])
         self.svc.lab("cond_goal", part="confirm", object=w["object"], place=place or "", holds=holds)
         stop = self.svc.cancelled(run)
         if stop:
@@ -303,7 +362,7 @@ class CondGoal(Option):
                 return STOP
             if done[w["key"]] == _UNKNOWN:
                 return (yield from self._cannot_tell(run, w))
-            if res[1] == _GUESS:
+            if res[1] in (_GUESS, _OPENED, _TOLD):           # not a sighting: key confirm_none asks before "nothing to do"
                 guesses[w["key"]] = {**w, "place": res[2]}
             for ev in ([] if w.get("ask") else self._say(run, done[w["key"]], w["object"], w["at"])):
                 yield ev

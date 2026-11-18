@@ -23,13 +23,13 @@ is read again from the manifest at run time. Hook ``on_goals`` (order 15). Uses 
 ``goal_dropped`` for the goals it dropped (as ``cond_goal`` does for its branches), so the read-back counts them as covered and a re-sampled
 reading does not bring them back. Keys: ``enabled`` (legacy ``cond_extract``),
 ``ask_when_unsure`` (true), ``prompt``, ``clauses``, ``q_unclear``, ``source``, ``assumed``. Lab flag ``cond_extract``: ``{state, object, at, if, else, drop}`` (+ ``present``, ``kind`` when read).
-Layer cond_schema (docs/options.md, keys ``kinds`` and ``heard_match``, both off by default): a condition no look settles is asked; unheard words: UNKNOWN.
+Layer cond_schema (docs/options.md, keys ``kinds`` and ``heard_match``, off by default): a condition no look settles is asked, one restating its goals' end is none; unheard words: UNKNOWN.
 """
 
 from __future__ import annotations
 
 from robot_agent.core.options import STOP, Key, Option, OptionSpec, register
-from robot_agent.core.planning import clauses, dialog_converge, names, pack_data, word_match
+from robot_agent.core.planning import clauses, dialog_converge, goals as goal_kinds, names, pack_data, word_match
 
 SPEC = OptionSpec(
     name="cond_extract",
@@ -131,7 +131,15 @@ def condition_regex(lang, declared):
 def _extra(plan) -> dict:
     """The lab fields a plan carries: ``present`` (a flip of the condition's polarity shows in the events) and those of the cond_schema keys
     (``kind``, ``unheard``); {} without them (the lab entry as before)."""
-    return {k: plan[k] for k in ("present", "kind", "unheard") if k in plan}
+    return {k: plan[k] for k in ("present", "kind", "unheard", "restates") if k in plan}
+
+
+def restates(plan, goals, place, ground, langs=None) -> bool:
+    """Pure, key ``kinds``: a ready ``presence`` condition at ``place`` (grounded) whose every branch goal puts the condition's object
+    there (``goals.ends_at``): the condition only restates the goals' own end, which the goal check sees anyway."""
+    branch = [goals[i - 1] for i in list(plan.get("if") or []) + list(plan.get("else") or []) if 0 < i <= len(goals)]
+    return (plan.get("state") == "ready" and plan.get("kind") == "presence" and bool(place) and bool(branch)
+            and all(goal_kinds.ends_at(g, plan["object"], place, ground, langs) for g in branch))
 
 
 class CondExtract(Option):
@@ -218,6 +226,8 @@ class CondExtract(Option):
                 yield stop
                 return STOP
             plan = {**plan, "at": at, "state": "ready"} if at else {"state": "none", **_extra(plan)}
+        if self.cfg["kinds"] and restates(plan, goals, self._place_of(run, plan.get("at")), lambda t: self._place_of(run, t), names.langs_of(run)):
+            plan = {"state": "none", "object": plan["object"], "at": plan["at"], **_extra(plan), "restates": True}   # the reader's goals stand
         self.svc.lab("cond_extract", **{k: plan.get(k) for k in ("state", "object", "at", "if", "else", "drop")}, **_extra(plan))
         if plan["state"] == "unknown":                       # key heard_match: the condition's object was not heard; no guess
             yield self.svc.finish(run, "failed", msg="cannot tell what the condition is about: its object is not in what was heard")
