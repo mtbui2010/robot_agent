@@ -118,7 +118,7 @@ manifest format, the event schema). See `docs/contract.md`.
 - `AssistLoop._verdict` / `_forbids` replace the four copies of the hazard lookup.
 - Pins: golden decision table of the r17 tables reproduced by the household profile (28k decisions); `--llm fake` 12 dev tasks EN/KO x 6 sage variants
   and the offline replay of r17 fresh / fresh_asr rep1 (s8n, s9, EN/KO, 798 episodes) are byte-identical to r17 with the same data in the pack.
-- Packs that rely on the implicit household rules and declare no profile (manifest scan of the sibling packs: kcare_robot, base_robot; homeloop_robot gets its profile in its own repo) lose them. base_robot: it loses the implicit food-place rule (it cannot put anything into a fridge). No recorded base_robot result changes.
+- Packs that rely on the implicit household rules and declare no profile (manifest scan of the sibling packs: kcare_robot, base_robot; homeloop_robot (now `symbolic_robot` `domains/home`) gets its profile in its own repo) lose them. base_robot: it loses the implicit food-place rule (it cannot put anything into a fridge). No recorded base_robot result changes.
 
 ### Round 17: option `hazard_receiver` (default off, defaults byte-identical)
 - `core/safety/receiver_class.py`, `hazards.RECEIVER_RULES`, `check_goal(..., receivers=)`: a hazardous product given to a person entry of a vulnerable class is refused (partial refusals are said at the end). Words: new pack key `patterns.person_vulnerable` in `en`, `ko`, `vi`. Tests: `tests/test_sage_lab_r17_hazard_receiver.py`.

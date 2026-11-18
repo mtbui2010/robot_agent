@@ -1,5 +1,5 @@
 # TEST FIXTURE of robot_agent, not shipped, not a safety assessment. A copy of the household robot's profile (English and
-# Korean words) so that robot_agent's own tests can run the engine on a household profile. Same data as the homeloop robot pack's
+# Korean words) so that robot_agent's own tests can run the engine on a household profile. Same data as the symbolic_robot home robot pack's
 # configs/safety/household.yaml. Generated from the r17 language packs (the hazard / place / receiver / refusal keys of
 # lang/{en,ko}.json) when they were moved out of the core. Words under `sourced` come from the CHOP page in `sources`; everything
 # else is `assumed` (general vocabulary). The child rule is `assumed`: the CHOP page does not state it.

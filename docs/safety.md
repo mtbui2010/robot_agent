@@ -118,7 +118,7 @@ Only test fixtures (`tests/fixtures/safety/`), not shipped:
   bleach into a fridge is allowed, acetone onto a welding bay is refused.
 - `xx_language.yaml`: a made-up language.
 
-A robot pack ships its own profile (the homeloop household robot: `homeloop_robot/configs/safety/household.yaml`).
+A robot pack ships its own profile (the symbolic_robot household robot: `symbolic_robot/domains/home/configs/safety/household.yaml`).
 
 ## Migration from r17
 

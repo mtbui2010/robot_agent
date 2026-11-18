@@ -23,7 +23,7 @@ contract  <-  engine  <-  options  <-  robot profiles (robot packs: manifest, sa
   name (`importlib`, one place), and calls hooks through the dispatcher. A static import of `robot_agent.options` from the engine is
   an error.
 * An **option** never imports another option. Code two options need goes DOWN into the engine as a public function.
-* Nothing imports the tests, the benchmark (`homeloop_bench`, `homeloop_robot`, and their successors `bench` and `symbolic_robot`) or a robot pack. `embodiplan` is imported only in
+* Nothing imports the tests, the benchmark (`symbolic_robot`: its `bench` suite and its `domains/home` simulator; formerly the repositories `homeloop_bench` and `homeloop_robot`; the bench variable `HOMELOOP_D1_LAYERS` keeps the old name) or a robot pack. `embodiplan` is imported only in
   `core/planning/backends/` and `core/planning/action_model.py` (rule 3).
 * No module imports a `_private` name of another module.
 * The **robot profile** is data outside the code: manifest, safety profile, language overlays. The engine and the options hold no fact of

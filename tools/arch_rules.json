@@ -14,7 +14,7 @@
   "api": ["contract", "engine", "interact"]
  },
  "no_cross": ["options"],
- "forbidden_modules": ["homeloop_bench", "homeloop_robot", "bench", "symbolic_robot", "tests", "pytest"],
+ "forbidden_modules": ["bench", "symbolic_robot", "tests", "pytest"],
  "only_in": {"embodiplan": ["robot_agent/core/planning/backends/", "robot_agent/core/planning/action_model.py"]},
  "size": [
   {"path": "robot_agent/core", "max_function": 80, "max_file": 1200},

@@ -110,7 +110,7 @@ def test_the_option_modules_are_listed_explicitly_in_the_package_init():
 RULES = {"layers": {"contract": ["robot_agent/contract"], "engine": ["robot_agent/core"], "options": ["robot_agent/options"],
                     "api": ["robot_agent/api"]},
          "may_import": {"contract": [], "engine": ["contract"], "options": ["contract", "engine"], "api": ["contract", "engine"]},
-         "no_cross": ["options"], "forbidden_modules": ["homeloop_bench"], "only_in": {"embodiplan": ["robot_agent/core/planning/backends/"]},
+         "no_cross": ["options"], "forbidden_modules": ["symbolic_robot"], "only_in": {"embodiplan": ["robot_agent/core/planning/backends/"]},
          "size": [{"path": "robot_agent/core", "max_function": 5, "max_file": 30}, {"path": "robot_agent/options", "max_function": 4, "max_file": 10}]}
 
 
@@ -129,7 +129,7 @@ def test_the_linter_resolves_relative_imports_and_finds_each_kind_of_violation(t
         "core/engine.py": "from ..options import a\nfrom ..contract import types\n",          # engine -> options (relative)
         "core/deep/x.py": "from ...options import a as _a\nimport embodiplan\n",             # three levels up; embodiplan outside its home
         "contract/types.py": "from ..core import engine\n",                                    # contract -> engine
-        "options/a.py": "from . import b\nfrom ..core.engine import _hidden\nimport homeloop_bench\n",
+        "options/a.py": "from . import b\nfrom ..core.engine import _hidden\nimport symbolic_robot\n",
         "options/b.py": "X = 1\n",
         "api/z.py": "from ..options import b\n"})
     f = lint.check_layers(root, RULES)
@@ -138,7 +138,7 @@ def test_the_linter_resolves_relative_imports_and_finds_each_kind_of_violation(t
     assert "layer: robot_agent/contract/types.py -> robot_agent.core.engine" in f
     assert "cross: robot_agent/options/a.py -> robot_agent.options.b" in f
     assert "private: robot_agent/options/a.py -> robot_agent.core.engine._hidden" in f
-    assert "forbidden: robot_agent/options/a.py -> homeloop_bench" in f
+    assert "forbidden: robot_agent/options/a.py -> symbolic_robot" in f
     assert "only_in: robot_agent/core/deep/x.py -> embodiplan" in f
     assert "layer: robot_agent/api/z.py -> robot_agent.options.b" in f
     assert "layer: robot_agent/core/engine.py -> robot_agent.contract.types" not in f             # allowed edge
