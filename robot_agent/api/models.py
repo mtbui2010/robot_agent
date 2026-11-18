@@ -166,6 +166,7 @@ class RecordingEditIn(_Open):
     exclude: Optional[bool] = None
     note: Optional[str] = None
     robot_mode: Optional[str] = None   # overrides the mode recorded with the episode (left | right | front ...)
+    prompt: Optional[str] = None       # overrides the prompt recorded with the episode (used by the list and the export; the raw files are not changed)
 
 
 class RecordingEdit(_Open):

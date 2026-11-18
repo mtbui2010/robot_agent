@@ -347,3 +347,36 @@ def test_a_relative_data_folder_gives_a_relative_export_command(monkeypatch, tmp
     assert (tmp_path / 'vla_data' / 'exports' / 'r1.json').is_file()
     monkeypatch.setattr(api, 'bridge', lambda: R.RecorderBridge(lambda: {'data_dir': str(tmp_path / 'vla_data')}, lambda: None, lambda: base))
     assert c.post('/recordings/export', json={'name': 'r2'}).json()['command'].startswith('python robot_teleop/tools/export_lerobot.py --data /')       # absolute: absolute
+
+
+def test_a_prompt_edit_wins_in_the_list_and_the_export_and_the_raw_files_stay(tmp_path):
+    raw = tmp_path / 'raw'
+    make_episode(raw, prompt='shut drawer')
+    r = E.row(raw, '2026-11-16', 'ep_0001')
+    assert r['prompt'] == 'shut drawer' and r['recorded_prompt'] == 'shut drawer'
+    E.save_edit(raw, '2026-11-16', 'ep_0001', {'prompt': '  close   the drawer '})
+    r = E.row(raw, '2026-11-16', 'ep_0001')
+    assert r['prompt'] == 'close the drawer' and r['recorded_prompt'] == 'shut drawer' and r['edit']['prompt'] == 'close the drawer'
+    assert json.loads((raw / '2026-11-16' / 'ep_0001' / 'meta.json').read_text())['prompt'] == 'shut drawer'     # raw untouched
+    E.export_manifest(raw, 'p_v1')
+    assert json.loads((tmp_path / 'exports' / 'p_v1.json').read_text())['episodes'][0]['prompt'] == 'close the drawer'
+
+
+def test_saving_the_recorded_prompt_again_or_an_empty_one_removes_the_override(tmp_path):
+    raw = tmp_path / 'raw'
+    make_episode(raw, prompt='open drawer')
+    for same in ('open drawer', '   ', ''):
+        E.save_edit(raw, '2026-11-16', 'ep_0001', {'prompt': 'something else'})
+        out = E.save_edit(raw, '2026-11-16', 'ep_0001', {'prompt': same})
+        assert 'prompt' not in out and E.row(raw, '2026-11-16', 'ep_0001')['prompt'] == 'open drawer'
+    with pytest.raises(E.EpisodeError):
+        E.save_edit(raw, '2026-11-16', 'ep_0001', {'prompt': 'x' * 301})
+
+
+def test_auto_clean_keeps_the_prompt_and_the_mode_you_set(tmp_path):
+    raw = tmp_path / 'raw'
+    make_episode(raw)
+    E.save_edit(raw, '2026-11-16', 'ep_0001', {'prompt': 'open the drawer', 'robot_mode': 'left'})
+    E.auto_clean(raw, overwrite=True)
+    e = E.row(raw, '2026-11-16', 'ep_0001')['edit']
+    assert e['prompt'] == 'open the drawer' and e['robot_mode'] == 'left' and 'trim_start_s' in e

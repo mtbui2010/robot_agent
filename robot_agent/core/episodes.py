@@ -196,7 +196,8 @@ def row(raw_dir, day: str, ep: str) -> dict:
     p = episode_dir(raw_dir, day, ep)
     meta, summ = _load(p)
     edit = load_edit(raw_dir, day, ep)
-    return {'id': f'{day}/{ep}', 'day': day, 'episode': ep, 'prompt': meta.get('prompt', ''), 'label': meta.get('label'), 'kind_fields': meta.get('fields'),
+    return {'id': f'{day}/{ep}', 'day': day, 'episode': ep, 'prompt': (edit or {}).get('prompt') or meta.get('prompt', ''), 'recorded_prompt': meta.get('prompt', ''),   # the operator's wording wins (edit list)
+            'label': meta.get('label'), 'kind_fields': meta.get('fields'),
             'robot_mode': (edit or {}).get('robot_mode') or meta.get('robot_mode'),           # the operator's setting wins over the one recorded
             'recorded_mode': meta.get('robot_mode'),
             'started_at': meta.get('started_at'), 'counts': meta.get('counts'), 'summary': summ, 'edit': edit}
@@ -276,6 +277,11 @@ def save_edit(raw_dir, day: str, ep: str, edit: dict) -> dict:
         if not re.match(r'^[a-z][a-z_\-]{0,19}$', str(edit['robot_mode'])):
             raise EpisodeError('robot_mode: a short lower-case name (left, right, front ...)')
         out['robot_mode'] = str(edit['robot_mode'])
+    prompt = re.sub(r'\s+', ' ', str(edit.get('prompt') or '')).strip()
+    if prompt and prompt != (meta.get('prompt') or '').strip():            # the same as recorded is no edit
+        if len(prompt) > 300:
+            raise EpisodeError('prompt: at most 300 characters')
+        out['prompt'] = prompt
     if edit.get('exclude'):
         out['exclude'] = True
     if edit.get('note'):
@@ -337,7 +343,7 @@ def export_manifest(raw_dir, name: str, fps: int = 30, action: str = 'future_sta
 
 def auto_clean(raw_dir, ids=None, overwrite: bool = False) -> dict:
     """Save the suggested trim (the idle ends, and everything outside the teleop part when the arm was moved by something else) as the edit of each episode.
-    An episode that already has an edit is left alone unless ``overwrite``; an existing label / exclude / note is kept. Returns {cleaned, skipped, rows}."""
+    An episode that already has an edit is left alone unless ``overwrite``; an existing label / exclude / note / robot_mode / prompt is kept. Returns {cleaned, skipped, rows}."""
     done, skipped = [], []
     for r in list_episodes(raw_dir)['episodes']:
         if 'error' in r or (ids is not None and r['id'] not in ids):
@@ -347,7 +353,7 @@ def auto_clean(raw_dir, ids=None, overwrite: bool = False) -> dict:
             skipped.append(r['id'])
             continue
         e = r.get('edit') or {}
-        edit = {'trim_start_s': sug[0], 'trim_end_s': sug[1], **{k: e[k] for k in ('label', 'exclude', 'note') if k in e}}
+        edit = {'trim_start_s': sug[0], 'trim_end_s': sug[1], **{k: e[k] for k in ('label', 'exclude', 'note', 'robot_mode', 'prompt') if k in e}}
         if edit['trim_end_s'] - edit['trim_start_s'] < 0.5:
             skipped.append(r['id'])
             continue
