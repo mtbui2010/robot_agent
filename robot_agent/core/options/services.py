@@ -24,6 +24,7 @@ class Services(Protocol):
     def first_unsearched(self, run, obj: str, keys) -> Optional[str]: ...        # the best of ``keys`` not looked at yet
     def run_step(self, run, step: dict) -> Any: ...                            # one step of the end-of-run check, effect applied on success: the result or None
     def try_step(self, run, step: dict, ladder: bool = False): ...               # generator: one step through the engine's step path (ladder: and its own recovery), appended to the plan: True | False | None (stopped)
+    def opened_now(self, run, place: str) -> None: ...                         # an option opened ``place`` before the plan: a miss inside is no stale open belief
     def changes_waiting(self, run) -> bool: ...                                 # a goal change said during the run waits for the loop's next step boundary
     def cancelled(self, run) -> Optional[dict]: ...                             # the stop event if the run was cancelled
     def safety_gate(self, run): ...                                              # generator: the goals through the safety gate again (STOP or None)

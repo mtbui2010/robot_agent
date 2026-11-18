@@ -177,10 +177,13 @@ class CondGoal(Option):
         return closed_openable(entry, entry is not None and places.openable(place), getattr(run.world, "opened", None), place)
 
     def _open_first(self, run, place) -> None:
-        """Key ``open_closed``: a declared openable place the belief holds closed is opened (role ``open``) before the look."""
+        """Key ``open_closed``: a declared openable place the belief holds closed is opened (role ``open``) before the look; once open it
+        counts as opened just now for the run (service ``opened_now``), so a later miss inside is not doubted as a stale open belief."""
         open_ = self.svc.role("open")
         if open_ and self._blind(run, place):
             ok = getattr(self.svc.run_step(run, {"action": open_, "object": place}), "ok", False)
+            if ok:
+                getattr(self.svc, "opened_now", lambda r, k: None)(run, place)
             self.svc.lab("cond_goal", part="open", place=place, ok=bool(ok))
 
     def _read(self, run, ans, place):

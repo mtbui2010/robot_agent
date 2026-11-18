@@ -3209,7 +3209,7 @@ class AssistLoop(WhichOne, SearchHooks, StepLadder, ClosedLoop):
         r.queries = self._run_queries = {}            # object -> the description the person chose (which_one)
         r.refinds, r.found_at, r.relooked = {}, {}, set()
         r.completed, r.replans, r.i, r.replan_error = [], 0, 0, None
-        r.code_tries, r.doubted, r.failures, r.goal_checks, r.health = {}, set(), [], [], None
+        r.code_tries, r.doubted, r.failures, r.goal_checks, r.health = {}, set(getattr(r, "pre_doubted", ())), [], [], None   # pre_doubted: opened before the plan (service opened_now)
         r.world_at_start = r.world.copy()
         r.suspended = 0                      # tasks this run put on the task stack (a NEW one went first)
         if (yield from self.options.decide_flow("on_run_goals", r)) is _STOP:     # e.g. bt_goal: the goals its trees run, before the plan's end

@@ -178,6 +178,11 @@ class LoopServices:
         run.__dict__.setdefault("pre_helped", set()).add(("where", obj))      # carried into the run's `helped` when the execution starts
 
 
+    def opened_now(self, run, place) -> None:
+        """An option opened `place` before the plan (a step of its own, ``run_step``): a miss inside it later in the run is no stale open
+        belief, as after the engine's own Open (``_search_effect``); carried into the run's ``doubted`` when the execution starts."""
+        run.__dict__.setdefault("pre_doubted", set()).add(place)
+
     def ask_again_on_miss(self, run, obj) -> None:
         """The person named a place for `obj`: the first look that does not see it asks them again (the search's "where is it?"),
         instead of searching on alone until `search_max` misses."""
