@@ -1,0 +1,106 @@
+site_name: robot_agent framework
+site_description: How a robot-agnostic core, its planners, robot packages, dashboard and simulators fit together.
+site_url: https://mtbui2010.github.io/robot_agent/
+repo_url: https://github.com/mtbui2010/robot_agent
+repo_name: mtbui2010/robot_agent
+edit_uri: edit/main/website/docs/
+copyright: robot_agent framework documentation
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - navigation.indexes
+    - content.code.copy
+    - content.code.annotate
+    - search.suggest
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: teal
+      toggle:
+        icon: material/weather-night
+        name: Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: teal
+      toggle:
+        icon: material/weather-sunny
+        name: Light mode
+  icon:
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - footnotes
+  - def_list
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+extra_css:
+  - assets/extra.css
+extra_javascript:
+  - assets/mathjax.js
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+
+nav:
+  - Home: index.md
+  - Start here:
+      - Key ideas: start/key-ideas.md
+      - Architecture: start/architecture.md
+      - Run the whole system: start/run-the-system.md
+      - Repo map and versions: start/repo-map.md
+      - Glossary: start/glossary.md
+  - Concepts:
+      - concepts/index.md
+      - The closed loop: concepts/closed-loop.md
+      - A robot as data: concepts/robot-as-data.md
+      - Skills, results, failure codes: concepts/skills-and-failures.md
+      - The belief and reconcile: concepts/belief-and-reconcile.md
+      - Checks before motion: concepts/checks-before-motion.md
+      - Planners and loops: concepts/planners.md
+      - Runs and records: concepts/runs-and-records.md
+      - Dialog and intent: concepts/dialog-and-intent.md
+  - Contracts between repos:
+      - contracts/index.md
+      - Dashboard and core: contracts/dashboard-api.md
+      - Robot package and core: contracts/robot-package.md
+      - Robot, hardware and simulators: contracts/robot-and-simulators.md
+      - Planner library and core: contracts/planner-library.md
+  - Guides:
+      - Add a new robot: guides/add-a-robot.md
+      - Add a skill: guides/add-a-skill.md
+      - Add a planner: guides/add-a-planner.md
+      - Debug a failed run: guides/debug-a-failed-run.md
+      - Benchmark a planner: guides/benchmark-a-planner.md
+  - Other repos:
+      - repos/index.md
+      - Robot package (kcare_robot): repos/kcare-robot.md
+      - Dashboard (robotapp): repos/robotapp.md
+      - Planner library (embodiplan): repos/embodiplan.md
+      - Physics simulation (kcare_sim): repos/kcare-sim.md
+      - Symbolic simulator and benchmark (symbolic_robot): repos/symbolic-robot.md
+  - Reference:
+      - Known pitfalls: reference/known-pitfalls.md
