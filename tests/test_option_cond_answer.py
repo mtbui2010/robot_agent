@@ -131,7 +131,7 @@ def test_answer_on_dont_know_or_silence_is_unknown_and_never_a_default(answer):
 
 
 def test_answer_on_a_question_when_is_asked_and_its_yes_keeps_the_if_branch():
-    opt, run, log = stub(DESK, ["Yes, probably."], {"cond_goal.answer": "1"})
+    opt, run, log = stub(DESK, ["Yes, it will."], {"cond_goal.answer": "1"})       # its words beyond the yes are the question's own
     ask = {"present": True, "ask": "Will it snow today?"}
     run.goals = [{**GOAL, "when": ask}, {**OTHER, "when": {**ask, "present": False}}]
     drain(opt.on_goals(run))
