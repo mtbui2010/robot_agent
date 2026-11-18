@@ -337,7 +337,7 @@ Before, `interact.dialog.yes_no` read every answer without a yes / no word as no
 With `answer` a `when` that carries `ask` (a yes / no question, empty `at`; written by `cond_extract` key `kinds` for a condition no look can settle) is decided by asking
 it once; without `answer` such a `when` is incomplete, i.e. no condition (the goal stays). `open_closed`: after the move, a place the ENV declares openable (an `openable`
 field the robot's rule says yes to, as `bt_goal`'s `declared_openable`) that the belief holds closed is opened with role `open` before the look (lab `{part: open, place, ok}`;
-it stays open). `confirm_none`: every goal was dropped on a decision no look made (looks into a place still closed, or, with `answer` off, an answer with no yes / no word):
+it stays open; once opened it counts as opened just now for the run: engine service `opened_now`, carried into the run's `doubted` when the execution starts, as the engine's own Open does in `_search_effect`, so a later miss of another object there counts the place searched instead of doubting the fresh open as a stale belief; a place believed open before the run is still doubted: `tests/test_option_cond_answer_opened.py`). `confirm_none`: every goal was dropped on a decision no look made (looks into a place still closed, or, with `answer` off, an answer with no yes / no word):
 `q_unsure` is asked once more and read as `answer` reads it (holds: the goals are kept; not: success as before; UNKNOWN: failed); a miss the robot could see stays silent
 success. No `q_unsure` text: nothing is asked (as before). Tests: `tests/test_option_cond_answer.py`.
 
@@ -363,7 +363,8 @@ asks once and reads by itself (yes / no / negation; anything else UNKNOWN: faile
 `{min_prefix, min_ratio, source | assumed}`, the shape of `heard_check.match`; unlabelled or missing = nothing checked): pure `unheard` checks the condition's `object` and `at`
 words against the heard tokens (the request as said, its prompt-language reading, the person's answers; `core/planning/word_match`, shared with `heard_check`, which is unchanged:
 `tests/test_word_match.py`); a word in a script no heard token has is not checked. No object word heard: UNKNOWN, the run ends failed (lab state `unknown`, nothing invented is
-looked for or done); no place word heard: unsure (`q_unclear`). Lab fields `kind`, `unheard` only with the keys. No regex moves goals between lists. Tests: `tests/test_option_cond_schema.py`.
+looked for or done); no place word heard: unsure (`q_unclear`). Lab fields `kind`, `unheard` only with the keys; `present` whenever the extraction read one (a flipped polarity shows in the events). No regex moves goals between lists. Tests: `tests/test_option_cond_schema.py`, `tests/test_option_cond_extract_lab.py`.
+Round-1 measure of the two layers (d5dev, HOMELOOP_D1_LAYERS base + `cond_answer,cond_schema`): 3 losses, 0 wins, false successes 18 -> 19. Two general defects, fixed: (1) the place `open_closed` opened was not marked opened just now (it went through `run_step`, not the step path), so the stale-open doubt cleared it and the search (or a `bt_goal` tree) had no way left; (2) the robot pack's kinds prompt (symbolic_robot `COND_PROMPT_KINDS`) shared one polarity clause between presence and question conditions and flipped `present` on Korean 'if X is there ..., if not ...' requests (dropping the if branch); the pack now keeps the base prompt's `present` sentence for presence and gives question kinds their own.
 
 ### `else_ask`
 Removed on 2026-11-15 (retired by the D4 stay gate, D4 L25, no outcome changed on the development set; symbolic_robot `docs/home/bench/d4_layers.md` `## Removed`). Its code and tests are in git history: added in 47eeb14, last version at 2b2ba67.
