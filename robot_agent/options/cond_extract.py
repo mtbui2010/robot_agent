@@ -22,7 +22,7 @@ does nothing; ``clauses`` (``{lang: {"condition": regex | [regex], "source" | "a
 is read again from the manifest at run time. Hook ``on_goals`` (order 15). Uses the service ``ask_model``; serves ``refused_goals`` and
 ``goal_dropped`` for the goals it dropped (as ``cond_goal`` does for its branches), so the read-back counts them as covered and a re-sampled
 reading does not bring them back. Keys: ``enabled`` (legacy ``cond_extract``),
-``ask_when_unsure`` (true), ``prompt``, ``clauses``, ``q_unclear``, ``source``, ``assumed``. Lab flag ``cond_extract``: ``{state, object, at, if, else, drop}``.
+``ask_when_unsure`` (true), ``prompt``, ``clauses``, ``q_unclear``, ``source``, ``assumed``. Lab flag ``cond_extract``: ``{state, object, at, if, else, drop}`` (+ ``present``, ``kind`` when read).
 Layer cond_schema (docs/options.md, keys ``kinds`` and ``heard_match``, both off by default): a condition no look settles is asked; unheard words: UNKNOWN.
 """
 
@@ -129,8 +129,9 @@ def condition_regex(lang, declared):
 
 
 def _extra(plan) -> dict:
-    """The lab fields of the cond_schema keys a plan carries (``kind``, ``unheard``); {} without them (the lab entry as before)."""
-    return {k: plan[k] for k in ("kind", "unheard") if k in plan}
+    """The lab fields a plan carries: ``present`` (a flip of the condition's polarity shows in the events) and those of the cond_schema keys
+    (``kind``, ``unheard``); {} without them (the lab entry as before)."""
+    return {k: plan[k] for k in ("present", "kind", "unheard") if k in plan}
 
 
 class CondExtract(Option):
