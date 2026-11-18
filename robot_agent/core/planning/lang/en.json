@@ -350,8 +350,9 @@
   "say_bt_goal_done": "I put the {object} on the {place}.",
   "say_bt_goal_stop_held": "I had to stop. I am still holding the {object}.",
   "q_metal_microwave": "Is the {object} metal? Metal in a microwave can cause sparks and a fire.",
+  "q_closed_can_microwave": "Is the {object} still sealed? A sealed can could explode in a microwave.",
   "assumed": true,
-  "source": "assumed: the re-ask of option answer_align after a yes or no to an either-or, naming the options, the menu of option ask_next after a failed step (again here, somewhere else, stop) and the reply of option bt_goal after a goal its tree ran, plain English; q_metal_microwave: the question of a hazard `ask` entry (docs/metal_microwave.md; the reason in short words from the UC Berkeley EH&S page, wording assumed); the robot's i18n wins"
+  "source": "assumed: the re-ask of option answer_align after a yes or no to an either-or, naming the options, the menu of option ask_next after a failed step (again here, somewhere else, stop) and the reply of option bt_goal after a goal its tree ran, plain English; q_metal_microwave: the question of a hazard `ask` entry (docs/metal_microwave.md; the reason in short words from the UC Berkeley EH&S page, wording assumed); q_closed_can_microwave: the question of a hazard `ask` entry for a bare can (docs/metal_microwave.md; the reason in short words from the Panasonic HL-MX465S manual, wording assumed; asked so that a clear no is the safe answer); the robot's i18n wins"
  },
  "ask_next": {
   "retry": ["again", "try again", "retry", "one more time", "once more", "same place"],

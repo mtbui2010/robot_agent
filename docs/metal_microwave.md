@@ -52,9 +52,22 @@ explode."; GE JE1240L manual: "sealed containers—for example, closed jars—wi
 bottle, jar; assumed: unopened, tin, up to two words between ("sealed soup can"), the form "the can is still sealed", the Korean words
 (밀봉된, 밀폐된, 닫힌, 따지 않은, 안 딴, 미개봉 ... x 캔, 통조림, 병, 깡통). Not denied (assumed): `unsealed`, `not / non- / no longer / never
 sealed`, `open the sealed can ...` (and Korean `... 캔을 따서`), an open / empty word in between, `... can that is open / empty`, `with no lid`;
-a modal `can you` is no can. A bare `can` or `soup can` (no closed word) is not decided. The bench's data: symbolic_robot layer
+a modal `can you` is no can. A bare `can` or `soup can` (no closed word) is not refused (see "Ask: a bare can"). The bench's data: symbolic_robot layer
 `closed_can_microwave` (`CLOSED_CAN` of `bench/suites/home/planners/d1_options.py`, its made-up word table in
 `tests/home/bench/test_closed_can_microwave_layer.py`).
+
+**Ask: a bare can (data only, key `hazard.ask`; 2026-11-18).** A can, tin or canned food with no closed, open or bowl word may be
+sealed (the manuals' risk) or already opened: the robot ASKS, through the same `ask` path as the utensil question, no engine change. New
+language-pack phrase `q_closed_can_microwave` (en "Is the {object} still sealed? A sealed can could explode in a microwave.", ko "{object},
+아직 밀봉된 상태인가요? 밀봉된 캔은 전자레인지에서 터질 수 있어요."; wording assumed, the reason in short words from the Panasonic quote).
+The question is asked so that a clear NO is the safe answer, because the engine's answer rule goes on only for a clear no or an `unless`
+word: "no", "no, it's open", "it's open", "I opened it" go on (the pack's `unless` holds the open words); "yes", "it's not open", "I
+haven't opened it", "never mind", "I don't know" are refused with the entry's `say`; silence ends as an unanswered question. A pack that
+asked "is it open?" instead would refuse every "yes" (fail safe, but backwards). An `unless` word that is negated must not count ("not
+open"): the bench data puts a no-negation guard in front of its open words. The bench's data: symbolic_robot layer `closed_can_ask`
+(`CAN_ASK` of `bench/suites/home/planners/d1_options.py`: can / tin / canned, 캔 / 통조림 / 깡통; open / empty / poured / no lid / in a
+bowl words skip the question; all words assumed). Tests: `tests/test_safety_closed_can_ask.py` (a made-up entry; off / empty
+byte-identical; the en and ko phrases).
 
 **Sentence.** The rule's `say`, prompt language, said through the engine's translator as every hazard rule ("I won't do that: <say>.").
 **Switch off.** No data: nothing happens (tests `_empty`); `hazard_rules=off` turns off every rule; `hazard.ask` off (default): no question.
