@@ -365,6 +365,23 @@ words against the heard tokens (the request as said, its prompt-language reading
 `tests/test_word_match.py`); a word in a script no heard token has is not checked. No object word heard: UNKNOWN, the run ends failed (lab state `unknown`, nothing invented is
 looked for or done); no place word heard: unsure (`q_unclear`). Lab fields `kind`, `unheard` only with the keys; `present` whenever the extraction read one (a flipped polarity shows in the events). No regex moves goals between lists. Tests: `tests/test_option_cond_schema.py`, `tests/test_option_cond_extract_lab.py`.
 Round-1 measure of the two layers (d5dev, HOMELOOP_D1_LAYERS base + `cond_answer,cond_schema`): 3 losses, 0 wins, false successes 18 -> 19. Two general defects, fixed: (1) the place `open_closed` opened was not marked opened just now (it went through `run_step`, not the step path), so the stale-open doubt cleared it and the search (or a `bt_goal` tree) had no way left; (2) the robot pack's kinds prompt (symbolic_robot `COND_PROMPT_KINDS`) shared one polarity clause between presence and question conditions and flipped `present` on Korean 'if X is there ..., if not ...' requests (dropping the if branch); the pack now keeps the base prompt's `present` sentence for presence and gives question kinds their own.
+Round 2 (new candidate after a failed blind look; same keys, each still default off, golden unchanged). The round-1 design was looked at on a blind set and
+did worse there (more false successes, fewer successes); a read-only analysis of the development runs (cond20, d5dev) found general mechanisms, fixed here:
+(M1) `open_closed` opened whatever place the extraction gave, with no check of its role: mostly the place was the DESTINATION of a goal on the same object (the extractor
+took the goal's destination as the condition's place), once the thing whose state was the condition. Now the place is not opened (lab `{part: open_skip, place, why}`, the
+blind look stays) when a goal of the request puts the condition's object there (pure `core/planning/goals.ends_at`: an `on` / `in` goal, the same name read by
+`names.has` either way, its `to` equal to the place or grounding to it) or the condition's object grounds to the place itself (`why`: `destination` | `object`).
+(M2) after a successful open the look counted as seen, so `confirm_none` never applied; (M3) a run whose every goal was dropped ended "success, nothing to do" with no action
+(also on the base arm, mostly false successes). Now `confirm_none` asks `q_unsure` once (a question `when`: its own question) before that end whenever no sighting decided:
+a miss into a place still closed, a miss inside a place this option opened itself (run state `cond_goal_opened`), or an answer (how `told`); UNKNOWN or no answer: failed, saying the
+question; a sighting of the condition's object, or a miss on a place the robot could see, keeps the silent success. (M5) a yes / no word decided whatever followed it ("yes,
+probably late" read as holds; "no, bring the other one" read as not, the new request ignored). Now, with `answer` (and in `confirm_none`'s reading), a yes / no word decides
+only when the answer is bare (pure `bare`: every other word is inside a language-pack `dialogue` word of yes / no / fillers / polite / near_yes_no, inside a negation span, a
+word of the condition itself (its object or its question), or a 1-2 letter latin fragment) or names a place (the named-place check as before); else UNKNOWN. A negation with no
+yes / no word ("it isn't there") still reads False. (M7) nothing checked that a presence condition only restated a branch goal. Now `cond_extract` key `kinds` reads a ready
+`presence` condition whose EVERY branch goal (if and else) puts the condition's object at the condition's grounded place (pure `restates`) as state `none` (lab `restates: true`):
+the reader's goals stand, and the goal check sees that end anyway; a condition with another branch goal is applied as before. Not measured yet on any set (unit tests only:
+`tests/test_option_cond_round2.py`).
 
 ### `else_ask`
 Removed on 2026-11-15 (retired by the D4 stay gate, D4 L25, no outcome changed on the development set; symbolic_robot `docs/home/bench/d4_layers.md` `## Removed`). Its code and tests are in git history: added in 47eeb14, last version at 2b2ba67.
