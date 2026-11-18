@@ -19,7 +19,7 @@ texts count as none. A text the loop resolved empty is read again from the manif
 schema nor the prompt; an empty question = not asked; an empty sentence = nothing said. Needs the pack's action role ``move`` (none = the
 condition is read as absent). Use it with a reader trained on ``when``.
 
-Keys of layer cond_answer (docs/options.md, with its round 2): ``answer``, ``open_closed``, ``confirm_none``, ``clauses``. Switch off: every key is off by default.
+Keys of layer cond_answer (docs/options.md, with its rounds 2 and 3): ``answer``, ``open_closed``, ``confirm_none``, ``clauses``. Switch off: every key is off by default.
 Hooks: ``on_understand_schema``, ``on_understand_prompt``, ``on_goals``. Keys: ``enabled`` (legacy ``cond_goal``), ``looks`` (2),
 ``ask_when_unsure`` (true), ``prompt``, ``q_where``, ``q_unsure``, ``say_seen``, ``say_not_seen``, ``source``, ``assumed``. Lab flag ``cond_goal``.
 """
@@ -99,6 +99,11 @@ def answer_holds(yes: bool, no: bool, negated: bool, named, place, unsure: bool,
     if yes or no:
         return _UNKNOWN if named is not None and (named == place) != yes else yes
     return _UNKNOWN if named is None else named == place
+
+
+def look_agrees(holds, yes: bool, no: bool, named, unsure: bool, missed: bool) -> bool:
+    """Pure (key ``answer``, round 3): an UNKNOWN 'no, ...' (no yes, doubt or place) agrees with looks that all ``missed`` a visible place."""
+    return holds == _UNKNOWN and missed and no and not (yes or unsure) and named is None
 
 
 def bare(text, skip, neg, keep, langs=None) -> bool:
@@ -236,10 +241,10 @@ class CondGoal(Option):
             return _GUESS
         return _OPENED if place in run.__dict__.get("opt", {}).get("cond_goal_opened", ()) else "seen"
 
-    def _read(self, run, ans, place, said=""):
+    def _read(self, run, ans, place, said="", missed=False):
         """Key ``answer``: the answer read by itself (``answer_holds``): True, False or _UNKNOWN; ``place`` None: a yes / no question.
-        ``said``: the condition's own words (its object, or its question): an answer that says more than them, its yes / no and the
-        packs' fillers names no place: UNKNOWN (``bare``)."""
+        ``said``: the condition's own words: an answer that says more than them, its yes / no and the packs' fillers names no place:
+        UNKNOWN (``bare``), unless it says no after every look ``missed`` (``look_agrees``, lab part ``answer_look_agree``): False."""
         from robot_agent.core.run_control import yes_no
         t = str(ans or "").strip()
         if not t:
@@ -251,15 +256,21 @@ class CondGoal(Option):
         unsure = bool(getattr(self.svc, "is_unsure", lambda r, x: False)(run, t))
         langs = names.langs_of(run)
         more = not bare(t.lower(), reply_rx(langs), neg, names.words(said, langs), langs)
-        return answer_holds(ok is True, ok is False and rest != t, bool(neg and neg.search(t)), named, place, unsure, more)
+        yes, no, negated = ok is True, ok is False and rest != t, bool(neg and neg.search(t))
+        holds = answer_holds(yes, no, negated, named, place, unsure, more)
+        if not look_agrees(holds, yes, no or negated, named, unsure, missed):
+            return holds
+        self.svc.lab("cond_goal", part="answer_look_agree", place=place)
+        return False
 
-    def _asked(self, run, obj, place) -> tuple:
-        """(holds, how): the ``q_unsure`` answer; with ``answer`` read by itself, else as before (a yes or a no decides, silence: unknown;
-        an answer with no yes / no word reads as no, a default: how = _GUESS)."""
+    def _asked(self, run, obj, place, seen=None) -> tuple:
+        """(holds, how): the ``q_unsure`` answer; with ``answer`` read by itself (``missed``: every look in ``seen`` missed at a place neither
+        blind nor opened by this option), else as before (a yes or a no decides, silence: unknown; no yes / no word: no, how = _GUESS)."""
         from robot_agent.core.run_control import yes_no
         ans = self._ask(run, "cond_unsure", self._text("q_unsure"), object=obj, place=place)
         if self.cfg["answer"]:
-            return self._read(run, ans, place, obj), _TOLD
+            missed = bool(seen) and not any(seen) and not self._blind(run, place) and place not in run.__dict__.get("opt", {}).get("cond_goal_opened", ())
+            return self._read(run, ans, place, obj, missed), _TOLD
         said, rest = yes_no(ans)
         return (_UNKNOWN if said is None else said), (_GUESS if said is False and rest == ans.strip() else "told")
 
@@ -278,7 +289,7 @@ class CondGoal(Option):
         holds = _UNKNOWN if not place else bool(seen) and seen[-1]
         how = self._evidence(run, holds, place)
         if place and (seen is None or self._unsure(run, obj, place, seen)):
-            holds, how = self._asked(run, obj, place)
+            holds, how = self._asked(run, obj, place, seen)
         self.svc.lab("cond_goal", object=obj, at=w["at"], place=place or "", seen=seen, holds=holds)
         return holds, how, place
 
