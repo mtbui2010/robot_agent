@@ -382,6 +382,17 @@ yes / no word ("it isn't there") still reads False. (M7) nothing checked that a 
 `presence` condition whose EVERY branch goal (if and else) puts the condition's object at the condition's grounded place (pure `restates`) as state `none` (lab `restates: true`):
 the reader's goals stand, and the goal check sees that end anyway; a condition with another branch goal is applied as before. Not measured yet on any set (unit tests only:
 `tests/test_option_cond_round2.py`).
+Round 3 (the third and LAST round of these two layers; one narrow change of `cond_goal` key `answer`, still default off, golden unchanged). A read-only dev analysis found
+an answer such as "No, the red mug." (condition: the blue mug on the counter; the robot looked twice at a place it could see and saw nothing; the memory put it there, so it
+asked) read UNKNOWN by M5 (its extra words are not the condition's) and the run gave up, although the looks and the person's no agree. Now, only for the `q_unsure` answer
+after such looks, and only when ALL hold: the answer reads UNKNOWN; every look missed (`seen` non-empty, all False); the place is not blind (`_blind`) and was not opened by
+this option (run state `cond_goal_opened`); the answer has a no word (`yes_no` gives False with a word removed) or a negation; it has no yes, no doubt (`is_unsure`) and names no
+place: the condition is False, how `told`, lab `{part: answer_look_agree, place}` (pure `look_agrees`). A yes is never overridden ("Yes, probably late." stays UNKNOWN); a miss
+then a sighting, a blind place, a place this option opened and `confirm_none`'s second question stay as in round 2 (a drop-all decided this way is asked again, UNKNOWN there:
+failed). False-success risk it keeps: the looks missed twice while the memory was right AND the "no, ..." was a new request (the red mug), which is ignored (the else branch runs);
+a condition the extractor misread at a place the robot can see (e.g. a goal's own destination) can now be settled False by such an answer. Known gap, not fixed in this round:
+names are compared by words only (`goals.ends_at`, `bare`'s condition words), so a condition and an answer or goal in different languages never match, silently.
+Tests: `tests/test_option_cond_round3.py`. Not measured on any set.
 
 ### `else_ask`
 Removed on 2026-11-15 (retired by the D4 stay gate, D4 L25, no outcome changed on the development set; symbolic_robot `docs/home/bench/d4_layers.md` `## Removed`). Its code and tests are in git history: added in 47eeb14, last version at 2b2ba67.
