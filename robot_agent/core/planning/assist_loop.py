@@ -1096,7 +1096,7 @@ class AssistLoop(WhichOne, SearchHooks, StepLadder, ClosedLoop):
         if g.get("type") != "on" or not persons.is_person(places, to):
             return None
         mode = self.options.query("person_where", places, g, to, task, asked, latest, default="")   # "": the engine's own order
-        if persons.tracked(places, to) and not mode:
+        if persons.tracked(places, to) and mode in ("", "keep"):
             mode, where = persons.delivery(places, to, task, robot, radius)
             mode = self.options.transform("on_ground", mode, places, to)         # e.g. reach_delivery: no declared surface, a hand-over
             if mode == "hand":

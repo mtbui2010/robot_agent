@@ -128,9 +128,11 @@ asked again after the first misses. No look can be made (no `Find` bound): the e
 
 ### `bring_ask` (default ON)
 A request to bring something to the speaker ("bring me the mug") asks ONE combined question, "Where are you? Or where should I put it?" (pack i18n key
-`q_where_bring`), also when the robot tracks the person (the earlier order handed over or put down by the tracking, without asking). The answer is read as
-the answer to "Where are you?": a place where they are puts the object on the support surface nearest to it, a place to put it puts it there, and no place
-("hand it to me") is a hand-over; asked once, never again for the same request. Not asked when the words ask for a hand-over ("hand me the mug"), when the
+`q_where_bring`), also when the robot tracks the person (the earlier order handed over or put down by the tracking, without asking). For an untracked
+person the answer is read as the answer to "Where are you?": a place where they are puts the object on the support surface nearest to it, a place to put it
+puts it there, and no place ("hand it to me") is a hand-over. For a tracked person the answer is kept (no "You mentioned ...") but the delivery stays the
+engine's own (hand-over, or the surface by the tracked position): a put-down the planner does not follow left the goal unmet in the live check. The place
+the person says they are at is never the object's source (a `from` equal to it is cleared). Asked once, never again for the same request. Not asked when the words ask for a hand-over ("hand me the mug"), when the
 request names a place other than the object's source (taken as the person's place), or when the goal is already a hand-over. Service `person_where`
 (used by the person grounding in `assist_loop._person_destination`). Key `enabled` (legacy `bring_ask`, `$ROBOT_AGENT_BRING_ASK`); off (`0`) is the earlier
 order. Tests: `tests/test_option_bring_ask.py`.

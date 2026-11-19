@@ -30,18 +30,31 @@ def test_asks_one_combined_question_even_for_a_tracked_person():
     assert q is not None and text(q) == "Where are you? Or where should I put it?" and lp._where_asked == ME
 
 
-def test_the_answer_is_a_place_they_are_at_and_the_object_goes_to_a_surface_near_it():
+def untracked():
+    e = copy.deepcopy(ENV)
+    e[ME].pop("loc"), e[ME].pop("spot")
+    return e
+
+
+def test_untracked_a_place_they_are_at_puts_the_object_on_a_surface_near_it():
+    lp = bare(True, False, bring="1")
+    ask(lp, untracked())
+    goals, q = ask(lp, untracked(), latest="I am on the sofa")
+    assert q is None and goals[0].get("user_at") == SO and goals[0]["to"] != ME and goals[0]["near_person"] == ME
+
+
+def test_untracked_an_answer_with_no_place_is_a_handover_and_the_question_is_not_asked_again():
+    lp = bare(True, False, bring="1")
+    ask(lp, untracked())
+    goals, q = ask(lp, untracked(), latest="just hand it to me please")
+    assert q is None and goals[0].get("hand") is True
+
+
+def test_tracked_the_answer_is_kept_and_the_delivery_stays_the_engines_own():
     lp = bare(True, False, bring="1")
     ask(lp, copy.deepcopy(ENV))
     goals, q = ask(lp, copy.deepcopy(ENV), latest="I am on the sofa")
-    assert q is None and goals[0].get("user_at") == SO and goals[0]["to"] != ME
-
-
-def test_an_answer_with_no_place_is_a_handover_and_the_question_is_not_asked_again():
-    lp = bare(True, False, bring="1")
-    ask(lp, copy.deepcopy(ENV))
-    goals, q = ask(lp, copy.deepcopy(ENV), latest="just hand it to me please")
-    assert q is None and goals[0].get("hand") is True
+    assert q is None and goals[0].get("user_at") == SO and goals[0]["to"] == ME and not goals[0].get("hand")
 
 
 def test_off_a_tracked_person_is_not_asked():

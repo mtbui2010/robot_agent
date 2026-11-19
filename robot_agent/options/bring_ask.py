@@ -1,9 +1,11 @@
 """Option ``bring_ask`` (default ON): a request to bring something to the speaker ("bring me the fork", "bring it to me") asks ONE
 combined question, "Where are you? Or where should I put it?" (pack i18n key ``q_where_bring``), also when the robot tracks the person.
 
-The answer is read as the engine reads the answer to "Where are you?" (``persons.place_in_answer``): a place where they are ("I'm on the
-sofa") puts the object on the support surface nearest to it; a place to put it ("on the table") puts it there; no place ("hand it to me",
-"here") is a hand-over. Asked once per request; the answer's place is never the object's source (a ``from`` equal to it is cleared); after it, an answer with no place is a hand-over, never the same question again.
+Untracked person: the answer is read as the engine reads the answer to "Where are you?" (``persons.place_in_answer``): a place where
+they are ("I'm on the sofa") puts the object on the support surface nearest to it; a place to put it ("on the table") puts it there; no place
+("hand it to me", "here") is a hand-over. Tracked person: the question is asked and the answer kept (``user_at``, no "You mentioned ..."), but
+the delivery stays the engine's own (a hand-over, or the surface by the tracked position): a put-down the planner does not follow would
+leave the goal unmet (live check: a book handed over while the goal said "on the side table"). Asked once per request; the answer's place is never the object's source (a ``from`` equal to it is cleared); after it, an answer with no place is a hand-over, never the same question again.
 
 Not asked when the words already ask for a hand-over ("hand me the fork"), when the request names a place other than the object's
 source (taken as the person's place), when the destination is not the speaker, or when the goal is already a hand-over. Generic: no word
@@ -40,6 +42,11 @@ class BringAsk(Option):
             return None
         if asked == to:                                    # asked already: the task now holds the answer too, which is no "named in the request"
             self._not_the_source(places, g, task, latest)
+            if persons.tracked(places, to) and latest:     # a tracked person: asked, the answer kept; the delivery stays the engine's own
+                at = persons.place_in_answer(places, latest)    # (hand-over or the surface by their tracked position)
+                if at:
+                    g["user_at"] = at
+                return "keep"
             return "hand" if latest else "q_where_bring"
         named = persons.place_in_answer(places, task)
         if named and named != g.get("from"):
