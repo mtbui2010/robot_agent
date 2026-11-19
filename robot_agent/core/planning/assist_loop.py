@@ -2598,7 +2598,7 @@ class AssistLoop(WhichOne, SearchHooks, StepLadder, ClosedLoop):
         """Does ``q`` ask where a person is ("Where are you?" / "Where is X?")?"""
         if not isinstance(q, speech.LocalText):
             return False
-        keys = ("q_where_are_you", "q_where_is_person")
+        keys = ("q_where_are_you", "q_where_bring", "q_where_is_person")
         return q.key in keys or any(isinstance(p, speech.LocalText) and p.key in keys for p in q.parts)
 
     @staticmethod
@@ -2607,8 +2607,8 @@ class AssistLoop(WhichOne, SearchHooks, StepLadder, ClosedLoop):
         delivery to them)? It may take one round past ``clarify_rounds``."""
         if not isinstance(q, speech.LocalText):
             return False
-        return q.key == "q_where_are_you" or any(isinstance(p, speech.LocalText) and p.key == "q_where_are_you"
-                                                 for p in q.parts)
+        return q.key in ("q_where_are_you", "q_where_bring") or any(
+            isinstance(p, speech.LocalText) and p.key in ("q_where_are_you", "q_where_bring") for p in q.parts)
 
     @staticmethod
     def _fresh_question(r, q):

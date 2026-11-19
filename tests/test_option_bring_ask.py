@@ -71,3 +71,17 @@ def test_through_the_loop_the_combined_question_is_asked_and_a_no_place_answer_h
     events = run_task(loop, TASK, max_events=3000)
     qs = [str(e.get("question")) for e in events if e.get("event") == "clarify"]
     assert qs and qs[0] == "Where are you? Or where should I put it?" and sum("Where are you" in q for q in qs) == 1
+
+
+def test_through_the_loop_a_place_in_the_answer_is_not_asked_about_again(make_assist, monkeypatch):
+    import robot_agent.skill_configs as sc
+    from fakes import FakeLLM, FakeRobot, ScriptedPlanner, run_task, steps
+    from test_sage_lab_r15_reach_delivery import understood
+    monkeypatch.setattr(sc, "ENV", copy.deepcopy(ENV))
+    robot = FakeRobot(copy.deepcopy(ENV), {"mug": KC}, answers=["I am on the sofa"])
+    plan = steps(f"MoveTo {KC}", "Find mug", "Pick mug", f"MoveTo {ME}", f"Place {ME}")
+    loop = make_assist(robot, FakeLLM(default=understood()), ScriptedPlanner(plan), bring_ask="1")
+    events = run_task(loop, TASK, max_events=3000)
+    qs = [str(e.get("question")) for e in events if e.get("event") == "clarify"]
+    assert qs[0] == "Where are you? Or where should I put it?"
+    assert not any("You mentioned" in q or "Where are you" in q for q in qs[1:]), qs

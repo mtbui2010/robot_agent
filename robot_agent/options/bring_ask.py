@@ -38,10 +38,12 @@ class BringAsk(Option):
             return None
         if persons.wants_hand(task, self.svc.robot):
             return None
+        if asked == to:                                    # asked already: the task now holds the answer too, which is no "named in the request"
+            return "hand" if latest else "q_where_bring"
         named = persons.place_in_answer(places, task)
         if named and named != g.get("from"):
             return None                                    # the words name the person's place
-        return "hand" if asked == to and latest else "q_where_bring"
+        return "q_where_bring"
 
 
 register(SPEC, BringAsk)
