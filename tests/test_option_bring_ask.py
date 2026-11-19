@@ -85,3 +85,22 @@ def test_through_the_loop_a_place_in_the_answer_is_not_asked_about_again(make_as
     qs = [str(e.get("question")) for e in events if e.get("event") == "clarify"]
     assert qs[0] == "Where are you? Or where should I put it?"
     assert not any("You mentioned" in q or "Where are you" in q for q in qs[1:]), qs
+
+
+def test_the_place_the_person_said_is_not_the_objects_source():
+    lp = bare(True, False, bring="1")
+    ask(lp, copy.deepcopy(ENV))
+    g = [{"type": "on", "object": "mug", "from": SO, "to": "me"}]      # the model read "I am on the sofa" as where the mug is
+    from robot_agent.core.planning.assist_loop import Memory, Places
+    out, q = lp._ground_goals(copy.deepcopy(g), Places(copy.deepcopy(ENV)), Memory("/nonexistent/m.json"), TASK + "  I am on the sofa", latest="I am on the sofa")
+    assert q is None and out[0].get("from") != SO
+
+
+def test_a_source_the_request_names_is_kept():
+    lp = bare(True, False, bring="1")
+    task = "Bring me the mug from the sofa."
+    ask(lp, copy.deepcopy(ENV), task=task)
+    g = [{"type": "on", "object": "mug", "from": SO, "to": "me"}]
+    from robot_agent.core.planning.assist_loop import Memory, Places
+    out, _q = lp._ground_goals(copy.deepcopy(g), Places(copy.deepcopy(ENV)), Memory("/nonexistent/m.json"), task + "  I am on the sofa", latest="I am on the sofa")
+    assert out[0].get("from") == SO

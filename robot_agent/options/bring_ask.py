@@ -3,7 +3,7 @@ combined question, "Where are you? Or where should I put it?" (pack i18n key ``q
 
 The answer is read as the engine reads the answer to "Where are you?" (``persons.place_in_answer``): a place where they are ("I'm on the
 sofa") puts the object on the support surface nearest to it; a place to put it ("on the table") puts it there; no place ("hand it to me",
-"here") is a hand-over. Asked once per request: after it, an answer with no place is a hand-over, never the same question again.
+"here") is a hand-over. Asked once per request; the answer's place is never the object's source (a ``from`` equal to it is cleared); after it, an answer with no place is a hand-over, never the same question again.
 
 Not asked when the words already ask for a hand-over ("hand me the fork"), when the request names a place other than the object's
 source (taken as the person's place), when the destination is not the speaker, or when the goal is already a hand-over. Generic: no word
@@ -39,11 +39,22 @@ class BringAsk(Option):
         if persons.wants_hand(task, self.svc.robot):
             return None
         if asked == to:                                    # asked already: the task now holds the answer too, which is no "named in the request"
+            self._not_the_source(places, g, task, latest)
             return "hand" if latest else "q_where_bring"
         named = persons.place_in_answer(places, task)
         if named and named != g.get("from"):
             return None                                    # the words name the person's place
         return "q_where_bring"
+
+
+    @staticmethod
+    def _not_the_source(places, g, task, latest):
+        """The model reads "I'm at the bed" as the object's source (``from`` = the bed): where the person is is not where the object is.
+        The ``from`` that is exactly the answer's place, while the request alone does not name that place, is cleared (the engine's
+        search / memory then find the object); the same guard the engine has for ``to``."""
+        at = persons.place_in_answer(places, latest) if latest else None
+        if at and g.get("from") == at and persons.place_in_answer(places, (task or "").replace(latest, " ")) != at:
+            g["from"] = ""
 
 
 register(SPEC, BringAsk)
