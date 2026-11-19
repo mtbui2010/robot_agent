@@ -220,7 +220,7 @@ def ground(env, lp, goals, task):
     return lp._ground_goals(goals, Places(env), Memory("/nonexistent/m.json"), task, latest="")
 
 
-def bare(robot_has_hand, flag, planner_data=True):
+def bare(robot_has_hand, flag, planner_data=True, bring="0"):
     lp = AssistLoop.__new__(AssistLoop)
     from robot_agent.core.planning.search import SearchConfig
 
@@ -234,7 +234,7 @@ def bare(robot_has_hand, flag, planner_data=True):
             return ["Handover"] if robot_has_hand else []
     lp.cfg = {"person_seat_m": 1.0, "person_surface_m": 1.2, "search": SearchConfig(enabled=False), "reach_delivery": flag}
     lp.robot, lp._where_asked = R(), None
-    lp.options = option_dispatcher(lp, {"reach_delivery": flag})        # a loop built without __init__ resolves its options by hand
+    lp.options = option_dispatcher(lp, {"reach_delivery": flag, "bring_ask": bring})        # a loop built without __init__ resolves its options by hand
     return lp
 
 

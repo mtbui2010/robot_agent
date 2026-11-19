@@ -117,6 +117,24 @@ Removed on 2026-11-15 after the D4 stay gate (symbolic_robot `docs/home/bench/d4
 `safety_profile`, `partial_end`, `question_cap`, `else_ask` (no outcome changed on the development set) and `close_opened` (it lost three tasks and won none),
 with the engine support only they used. Their entries below are one line each; git history keeps the code.
 
+### `look_then_ask` (default ON)
+Look around where the robot stands before asking where an object is. An `on` / `in` goal whose source the request does not name, and whose object the
+memory does not hold as a trusted sighting, gets one `Find` here first (the end-of-run goal check's own look). Seen: that place is the source, no
+question. Not seen: ONE question, "I don't see the mug here. Where is it?" (pack i18n key `q_where_is_here`); a place (or a room) in the answer is the
+source (or looked at first); "I don't know", silence or an answer with no place leaves the goal to the ranked search by belief, and the question is not
+asked again after the first misses. No look can be made (no `Find` bound): the engine's own order. When `ask_source` is also on, this option acts first and
+`ask_source` does not ask about the same object. Hook `on_goals` (order 29). Key `enabled` (legacy `look_then_ask`, `$ROBOT_AGENT_LOOK_THEN_ASK`); off
+(`0`) is the earlier order: the search by belief first, the question after the misses. Tests: `tests/test_option_look_then_ask.py`.
+
+### `bring_ask` (default ON)
+A request to bring something to the speaker ("bring me the mug") asks ONE combined question, "Where are you? Or where should I put it?" (pack i18n key
+`q_where_bring`), also when the robot tracks the person (the earlier order handed over or put down by the tracking, without asking). The answer is read as
+the answer to "Where are you?": a place where they are puts the object on the support surface nearest to it, a place to put it puts it there, and no place
+("hand it to me") is a hand-over; asked once, never again for the same request. Not asked when the words ask for a hand-over ("hand me the mug"), when the
+request names a place other than the object's source (taken as the person's place), or when the goal is already a hand-over. Service `person_where`
+(used by the person grounding in `assist_loop._person_destination`). Key `enabled` (legacy `bring_ask`, `$ROBOT_AGENT_BRING_ASK`); off (`0`) is the earlier
+order. Tests: `tests/test_option_bring_ask.py`.
+
 ### `ask_source`
 Ask where an object is, before looking for it (default off). The default SAGE behaviour is to guess, look, and ask only after misses
 (`search_max`) or when nowhere is left. With the option, an `on` / `in` goal whose source the request does not name, and whose object the

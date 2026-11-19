@@ -1095,7 +1095,8 @@ class AssistLoop(WhichOne, SearchHooks, StepLadder, ClosedLoop):
             to = g["to"] = persons.seat_person(places, to, radius) or asked
         if g.get("type") != "on" or not persons.is_person(places, to):
             return None
-        if persons.tracked(places, to):
+        mode = self.options.query("person_where", places, g, to, task, asked, latest, default="")   # "": the engine's own order
+        if persons.tracked(places, to) and not mode:
             mode, where = persons.delivery(places, to, task, robot, radius)
             mode = self.options.transform("on_ground", mode, places, to)         # e.g. reach_delivery: no declared surface, a hand-over
             if mode == "hand":
@@ -1106,19 +1107,18 @@ class AssistLoop(WhichOne, SearchHooks, StepLadder, ClosedLoop):
         if persons.wants_hand(task, robot):
             g["hand"] = True
             return None
-        # only an answer to "Where are you?" tells where the person is (an answer to another question, the request
-        # said again, names places of the task)
+        # only an answer to "Where are you?" tells where the person is (not an answer to another question, nor the request again)
         at = persons.place_in_answer(places, latest) if latest and asked else None
         known = self.__dict__.setdefault("_person_at", {})
         if at is None:
-            at = known.get(to)             # said earlier (as the answer to the question): a later answer, or a
-            #                                different question in between, does not forget it
+            at = known.get(to)             # said earlier (as the answer): a later answer or question does not forget it
         else:
             known[to] = at                 # only an answer to the asked question gets here
         if at is None:
+            if mode == "hand": g["hand"] = True; return None      # asked once, no place in the answer: a hand-over, not again
             self._where_asked = to
             if (places.env.get(to) or {}).get("speaker") or to == persons.speaker_key(places):
-                return speech.LocalText("q_where_are_you")
+                return speech.LocalText(mode or "q_where_are_you")
             return speech.LocalText("q_where_is_person", {"person": to},
                                     text=f"Where is {self._say_name(places, to)}?")
         spot = persons.surface_near(places, at, float(self.cfg.get("person_surface_m", 1.2)) if hasattr(self, "cfg") else 1.2)
