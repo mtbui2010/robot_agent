@@ -143,6 +143,16 @@ Helper modules: `_pick_helpers.py`, `_place_helpers.py`. `skills/demo_robotworld
 | `configs/tasks.py` | Per-group numbers (lift, head, grip, speech, emergency, teleop, poses and more). A site override replaces a whole group; this module is the fallback. |
 | `configs/products/` | Product data for the look-alike product step. |
 
+### Two robot-data settings added on 2026-11-20 (not on GitHub yet)
+
+!!! warning "Commits not on GitHub yet"
+    The two settings below are in two local commits of `kcare_robot` (`9136094` and `b584f44`). Those commits are **not on GitHub yet**, so this page links nothing in them, and the tables above (pinned at `d4f5577b342e`) do not show them. They are read from the commit messages and diffs, not run on the robot here.
+
+The real kcare robot now declares two numbers in its own repo, as data. The core did not change for either.
+
+- **Arrival tolerance 0.5 m.** `geometry.arrive_tol_m` in `configs/manifest.yaml` went from 0.3 m to 0.5 m. The robot's base navigation stops about 0.35 m from a target by design, so 0.3 m reported good arrivals as "stopped 0.35 m from ...". The arrival check in the hub reads this value from the manifest. Places closer than 0.5 m to each other are not checked, and it is not measured over many runs.
+- **A Find that sees nothing is tried 2 times, not 3.** The file `configs/grace_namemap.py` (its name is the old one; the hub still reads it) has a `RECOVERY_OVERRIDES` entry for the failure code `absent`: continue the search from the belief, 2 looks, then ask the person where the object is. The core default is 3 looks ([Skills and failures](../concepts/skills-and-failures.md)); the other fields of the rule are the core's own. The owner decided this on the real robot on 2026-11-20: the third look found nothing the first two had not. It is not measured over many runs, and the kcare_robot app must be restarted for it to apply (the module is imported once).
+
 ## Teleoperation
 
 Teleoperation with a SpaceMouse is **not part of this package**. It lives in a separate repo (`robot_teleop`), which holds the robot's profile. What `kcare_robot` provides is the `TELEOP` group in `configs/tasks.py` (one function, `arm`); the hub lists it at `GET /teleop` and the dashboard shows a strip for it. While teleoperation is on, no skill may move the arm. Details: [`docs/teleop.md`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/docs/teleop.md). Not run.

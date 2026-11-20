@@ -130,9 +130,41 @@ After the goals are understood, options can add one question of their own. Two a
 - Seen: that place is the source. No question.
 - Not seen: one question, "I don't see the mug here. Where is it?" (a `clarify` event of kind `where_source`). A place in the answer becomes the source. A room is looked at first.
 - "I don't know", silence, or an answer with no place: the goal goes to the ranked [search by belief](closed-loop.md#options-that-change-the-flow), and the question is not asked again.
+- An answer that names something the map does not match (a typo such as "on the dinning table", a name the robot does not have, a bare word that matches several places): ONE follow-up, see below.
 - No `Find` the robot can use: nothing changes, the engine's own order stands.
 
+**The follow-up (`offer_near`, on by default).** When the answer names no place or room and is not an "I don't know", the robot offers up to 3 places it nearly names, closest first. A person and a place that is not searched are never offered, and neither is the goal's destination. The text is the core's `q_place_unknown` ([`_follow_up`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/options/look_then_ask.py#L107-L127), text in [`speech.py` L40](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/speech.py#L40-L40)):
+
+```text
+I could not find 'on the benhc' on my map. Do you mean: bench in the den? Or tell me another place.
+```
+
+That sentence is the example in the option document, not output of a run. The follow-up is a `clarify` event of kind `where_source_near`. Its answer is read like the first one (a place is the source; "yes" takes the one place offered). If that still names no place, there is no third question and the ranked search takes over; if no place is near enough, no follow-up is made. The text exists in **English only**; Korean and Vietnamese are not provided (other languages go through the translator). The lab entry of `look_then_ask` gets two fields, `answered_unmatched` and `second_answer`. Switch off: `look_then_ask.offer_near=0` (the unmatched answer is then dropped as before). It is **not measured** on any benchmark and **not run with a real LLM**. The real-robot evidence is two run records of 2026-11-20: with the answer "on the dining table" the place was grounded and the run succeeded; with "on the dinning table" it was not grounded, the plan looked for the banana at its destination, and there were 5 failed Finds and 4 identical replans. The second run is why the follow-up and the option [`fetch_guard`](planners.md) exist.
+
 It asks once per object and run. When `ask_source` is also on, `look_then_ask` goes first and `ask_source` does not ask about the same object. Switch off: run option `look_then_ask=0` (or `ROBOT_AGENT_LOOK_THEN_ASK=0`); the search by belief then runs first and the question comes after the misses.
+
+**The path of the source, in one picture.** From a request like "bring me the mug" to a plan that never looks for the object at its own destination. The names in brackets are the options and the parts of the code that act at each step. This is a drawing of the logic in the option documents (`docs/options.md`, sections `look_then_ask` and `fetch_guard`); it was not drawn from a recorded run, and its effect on a benchmark is not measured.
+
+```mermaid
+flowchart TD
+  A["Request: put X at a destination<br/>the goal has a destination but no source"] --> M{"Does the object memory<br/>hold a trusted sighting of X?"}
+  M -- yes --> K["The remembered place is the source"]
+  M -- no --> LK["Look where the robot stands<br/>(one Find, look_then_ask)"]
+  LK -- seen --> K
+  LK -- not seen --> Q["Ask: I don't see X here. Where is it?"]
+  Q --> GR{"Does the answer name<br/>a place on the map?"}
+  GR -- yes --> K
+  GR -- "no: a typo, an unknown name,<br/>a word that fits several places" --> Q2["Ask ONE follow-up that offers up to 3 near places,<br/>never the destination (offer_near)"]
+  Q2 -- "a place is chosen" --> K
+  Q2 -- "no place, or I don't know" --> RK["Ranked search picks a first place to look<br/>that is not the destination (fetch_guard, rank_unknown)"]
+  RK --> K
+  K --> PL["The planner builds the plan:<br/>MoveTo source, Find, Pick, MoveTo destination, Place"]
+  PL --> CHK{"Does the plan Find or Pick X at the destination<br/>while the source is unknown?<br/>(fetch_guard, plan_finding)"}
+  CHK -- yes --> BAD["A finding at the plan gate:<br/>the planner must make another plan"]
+  CHK -- no --> RUN["Run the plan"]
+  RUN --> MISS{"A Find sees nothing<br/>and gives no reason?"}
+  MISS -- yes --> AB["Treat it as ABSENT (fetch_guard, absent_find):<br/>search other places, then ask where X is"]
+```
 
 **`bring_ask`: one question for "bring me X".** A request to bring something to the speaker asks one combined question, "Where are you? Or where should I put it?", also when the robot already tracks the person.
 

@@ -92,6 +92,8 @@ flowchart TB
 | Object memory, search | No | Yes: remembers where objects were seen; does not search a place twice. By default (options `look_then_ask`, `bring_ask`) it first looks where it stands for an object whose place is unknown and asks once, "I don't see the mug here. Where is it?"; a bring-me request gets one combined question, "Where are you? Or where should I put it?" |
 | Goals run without a plan | No | Option `bt_goal` (on, but it does nothing for a robot with no declared behaviour trees): see below |
 
+The goals the AssistLoop hands to the planner follow one rule: the place an object must end up is never taken for the place where it is now. An `on` / `in` goal with no source and no trusted sighting gets a first place from the ranked search (never its destination) before planning, and a plan that looks for the object at its destination fails the gate's check. This is the option `fetch_guard` (on by default; [`docs/options.md`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/docs/options.md#L138-L149)). It is not measured on any benchmark and was not run with a real LLM; see [Dialog and intent](dialog-and-intent.md) for the real-robot runs that led to it. At the start of a run an old `found` sighting is also dropped when the base has moved more than 0.25 m since, so the plan does not skip the Find ([`drop_stale_found`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/reconcile.py#L151-L162)).
+
 Both loops share the same event stream, the same record of the run, and the same recovery policy for failure codes. Both reconcile the belief with the robot at the start and after a pause (see [Belief and reconcile](belief-and-reconcile.md)).
 
 ### Goals run by trees (`bt_goal`)
