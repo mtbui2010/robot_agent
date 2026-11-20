@@ -5,7 +5,7 @@ frontend already consumes from ``UnifiedAgent.run``, plus ``action/object/
 verifies/say``). It is selected from ``UnifiedAgent.run`` behind a config gate;
 the legacy open-loop path remains the default fallback.
 
-Per-step it: binds a GRACE step to a skill of the robot (``RobotView.bind``, the
+Per-step it: binds a SAGE step to a skill of the robot (``RobotView.bind``, the
 robot's ``RobotAdapter`` from ``robot_agent.contract.load_adapter``), executes it
 (``SkillRegistry.execute``, normalised by ``run_skill``), verifies the result in
 layers (``StepVerifier``: isdone -> symbolic effects -> VLM -> the skill's sensor
@@ -39,6 +39,7 @@ from .announcer import Announcer
 from .base import WorldState
 from .mapper import ActionMapper, Unmappable
 from .records import RunLogger, StepRecord, VerifyResult, new_task_record
+from .planner_names import BACKEND as _SAGE, loop_backend, record_name
 from .registry import get_planner
 from .robot import RobotView, current_robot, run_skill
 from .verify import StepVerifier, verdict
@@ -50,7 +51,7 @@ def _vr_list(results: list[VerifyResult]) -> list[dict]:
 
 
 def _robot_namemap():
-    """Best-effort import of the active robot's ``configs.grace_namemap`` module
+    """Best-effort import of the active robot's ``configs.sage_namemap`` module
     (the duck-typed config that already owns robot-specific knowledge, e.g.
     ``observe``/name maps). Returns ``None`` if unavailable so callers can fall
     back to the generic path. Resolved via ``current().robot_pkg`` so this works
@@ -58,8 +59,9 @@ def _robot_namemap():
     """
     try:
         import importlib
+        from robot_agent.contract.legacy_adapter import namemap_module_name
         from robot_agent.state import current
-        return importlib.import_module(f"{current().robot_pkg}.configs.grace_namemap")
+        return importlib.import_module(namemap_module_name(current().robot_pkg))
     except Exception:
         return None
 
@@ -108,11 +110,11 @@ def reconcile_world(node, world, threshold=0.8):
     """Sync the persisted WorldState against ground truth before planning.
 
     **Hybrid (robot-overridable) strategy** — keeps robot-specific knowledge in
-    the robot's ``grace_namemap`` config per the project's namemap-hook design
+    the robot's ``sage_namemap`` config per the project's namemap-hook design
     (``mapper.py`` docstring), while still working out-of-the-box for any robot
     that has a base-pose agent (its manifest's MoveTo sensor) + ENV ``loc``:
 
-      1. If ``grace_namemap`` defines ``reconcile_world(node, world)`` → it owns
+      1. If ``sage_namemap`` defines ``reconcile_world(node, world)`` → it owns
          reconciliation entirely (e.g. can also read a real gripper sensor for
          ``holding``). Core does nothing else.
       2. Else if it defines ``robot_xy(node) -> (x, y) | None`` → core uses that
@@ -257,7 +259,7 @@ class ClosedLoop:
     """
 
     # the post-step verify applies a step with the robot's body (its release actions empty the hand); off for the
-    # ClosedLoop / grace path (its behaviour stays as it is), on for AssistLoop (SAGE-v2 F6.1)
+    # ClosedLoop / sage_plain path (its behaviour stays as it is), on for AssistLoop (SAGE-v2 F6.1)
     _verify_with_body = False
 
     def __init__(self, agent, emit=None, **overrides) -> None:
@@ -309,7 +311,7 @@ class ClosedLoop:
         env = os.environ.get
         common = Path(getattr(st, "common_dir", "."))
         return {
-            "planner": o.get("planner") or env("ROBOT_AGENT_PLANNER", "grace"),
+            "planner": loop_backend(o.get("planner") or env("ROBOT_AGENT_PLANNER", _SAGE)),
             "vlm_enabled": o.get(
                 "vlm_enabled", env("ROBOT_AGENT_VERIFY_VLM", "0") == "1"
             ),
@@ -331,17 +333,17 @@ class ClosedLoop:
             # Per machine (common/ is shared by every robot using this folder).
             # observe.paths: ROBOT_AGENT_DATA_DIR moves them; unset = common/ as before
             "log_dir": Path(o.get("log_dir") or data_dir("task_runs", common, host_id())),
-            "live_path": str(o.get("live_path") or data_dir("grace_memory", common, host_id())),
+            "live_path": str(o.get("live_path") or data_dir("sage_memory", common, host_id())),
             # which successes the planner's memory learns (ROBOT_AGENT_MEMORY_RECORD): observed | belief | off
             "memory_record": episode_memory.record_mode(o.get("memory_record")),
         }
 
     def _make_planner(self):
         name = self.cfg["planner"]
-        if name == "grace":
+        if loop_backend(name) == _SAGE:
             opts = getattr(self, "options", None)         # options may add constructor keys (hook on_planner_kwargs)
             return get_planner(
-                "grace",
+                _SAGE,
                 host=self.cfg.get("host"),
                 model=self.cfg.get("model"),
                 live_path=self.cfg.get("live_path"),
@@ -412,8 +414,8 @@ class ClosedLoop:
 
     def _plan_text(self, steps, meta, mapper, world) -> str:
         """Render the plan in the ``skill::inputs`` format the robot
-        actually runs (e.g. ``move::living room``), not GRACE CamelCase. The
-        direct planner already produced that string (``meta['raw']``); for GRACE
+        actually runs (e.g. ``move::living room``), not SAGE CamelCase. The
+        direct planner already produced that string (``meta['raw']``); for SAGE
         we map each step through the ActionMapper, threading a world copy so
         ``Pick`` etc. resolve. Best-effort — never raises."""
         raw = meta.get("raw") if isinstance(meta, dict) else None
@@ -537,7 +539,7 @@ class ClosedLoop:
 
     def _hook_progress(self, planner) -> None:
         """Stream live multi-step progress (decompose/expand/refine) for planners with the optional
-        ``progress`` hook (base.ProgressReporting; GRACE / SAGE has it). Best-effort."""
+        ``progress`` hook (base.ProgressReporting; SAGE has it). Best-effort."""
         try:
             if self._emit is not None and hasattr(planner, "progress"):
                 _emit = self._pushed()
@@ -571,7 +573,7 @@ class ClosedLoop:
     # ── main loop ────────────────────────────────────────────────────────
     def run_blocking(self, task: str, lang: str = "en",
                      plan_only: bool = False) -> Iterator[dict]:
-        r = self._open_run(task, lang, plan_only, self.cfg["planner"])
+        r = self._open_run(task, lang, plan_only, record_name(self.cfg["planner"]))
         r.mapper = ActionMapper(r.robot)
         r.verifier = self._verifier(r.node)
         fixed = self._reconcile(r, "start")

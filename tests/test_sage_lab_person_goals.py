@@ -175,13 +175,13 @@ def test_fixed_block_gets_no_llm_edit_and_is_not_emptied():
     assert fixed.steps == [{"action": "Say", "object": "x"}] and len(calls) == 1
 
 
-# ── through the REAL construction path: AssistLoop -> GraceBackend -> SAGEPlanner (no stub with the attribute) ──
-# Round 1b: the loop asks ``r.planner`` for ``fixed_subgoals``; in a run that is the GraceBackend wrapper, which did not
+# ── through the REAL construction path: AssistLoop -> SageBackend -> SAGEPlanner (no stub with the attribute) ──
+# Round 1b: the loop asks ``r.planner`` for ``fixed_subgoals``; in a run that is the SageBackend wrapper, which did not
 # pass the SAGEPlanner's attribute on, so the flag never built a fixed block while the stub-based tests above passed.
 def real_sage(expand_log):
     import json
     from embodiplan.sage import SAGEPlanner
-    from robot_agent.core.planning.backends.pyplanner_grace import GraceBackend
+    from robot_agent.core.planning.backends.pyplanner_sage import SageBackend
 
     class Backend:
         def chat(self, messages, temperature=None):
@@ -193,15 +193,15 @@ def real_sage(expand_log):
     p = SAGEPlanner(host="http://127.0.0.1:1", model="scripted", enable_memory=False,
                     capabilities={"hands": 1, "find_reaches": False})
     p._backend = Backend()
-    return GraceBackend.wrap(p)
+    return SageBackend.wrap(p)
 
 
-def test_grace_backend_passes_the_fixed_subgoals_capability_on():
-    from robot_agent.core.planning.backends.pyplanner_grace import GraceBackend
+def test_sage_backend_passes_the_fixed_subgoals_capability_on():
+    from robot_agent.core.planning.backends.pyplanner_sage import SageBackend
     from robot_agent.observe.record import RecordingPlanner
     assert real_sage([]).fixed_subgoals is True
     assert RecordingPlanner(real_sage([])).fixed_subgoals is True                # the proxy the bench adapter adds
-    assert GraceBackend.wrap(OldPlanner()).fixed_subgoals is False               # a planner without it: off, no error
+    assert SageBackend.wrap(OldPlanner()).fixed_subgoals is False               # a planner without it: off, no error
 
 
 def test_real_path_mixed_request_gets_fixed_blocks_with_the_exact_sentence(make_assist, env, monkeypatch):

@@ -2,7 +2,7 @@
 
 One generator for every planner (docs/direct_prompt.md):
 
-* SAGE (``backends/pyplanner_grace.py``) gets :func:`action_lines` (``style="action"``:
+* SAGE (``backends/pyplanner_sage.py``) gets :func:`action_lines` (``style="action"``:
   ``"MoveTo <place>: move to a place"``) and :func:`describe_robot` as embodiplan's
   ``SAGEPlanner(actions=..., robot_description=...)``;
 * the direct planner's prompt (``core/planning/direct_prompt.py``) holds :func:`describe_robot`

@@ -1,6 +1,6 @@
 """Lab round 8 (all options default OFF / empty; off = the earlier behaviour): a model per role. ``repair_model`` (the plan gate's
 repair prompts, through the planner's ``chat_override``), ``dialog_model`` / ``dialog_model_lang`` (the robot's words in the user's
-language), the ``*_think`` switches and ``request_coverage``. Through the real AssistLoop / LanguageAdapter / GraceBackend with
+language), the ``*_think`` switches and ``request_coverage``. Through the real AssistLoop / LanguageAdapter / SageBackend with
 scripted clients. Languages are DATA (a made-up code ``zz`` takes a map entry or none). Synthetic ENV and requests."""
 import contextlib
 import json
@@ -13,7 +13,7 @@ from robot_agent.contract import Manifest, ManifestError
 from robot_agent.contract.manifest import PLANNER_KEYS
 from robot_agent.core.planning import request_coverage, role_models
 from robot_agent.core.planning.assist_loop import ASSIST_OPTIONS, AssistLoop, Places
-from robot_agent.core.planning.backends.pyplanner_grace import GraceBackend
+from robot_agent.core.planning.backends.pyplanner_sage import SageBackend
 from robot_agent.core.planning.understand import LLMBudget
 from test_sage_lab_r2_grounding import ENV, HOUSE, G, U
 from test_sage_v2_step3_gate import Block, BlockPlanner
@@ -131,7 +131,7 @@ def test_llama_client_sends_think_only_when_set():
     assert sent[-1]["think"] is False
 
 
-# ── the repair model: GraceBackend.chat_override ──
+# ── the repair model: SageBackend.chat_override ──
 class Seam:
     """A planner object with embodiplan's ``_chat`` seam."""
 
@@ -145,7 +145,7 @@ class Seam:
 
 def test_chat_override_routes_inside_the_with_and_restores():
     p = Seam()
-    b = GraceBackend.wrap(p)
+    b = SageBackend.wrap(p)
     fn = lambda own, m, t: (f"routed {t}", 0, 0) if m == "go" else own(m, t)         # noqa: E731
     with b.chat_override(fn):
         assert p._chat("go", 0.5) == ("routed 0.5", 0, 0)
@@ -154,7 +154,7 @@ def test_chat_override_routes_inside_the_with_and_restores():
     with pytest.raises(RuntimeError), b.chat_override(fn):
         raise RuntimeError("boom")
     assert "_chat" not in p.__dict__
-    with GraceBackend.wrap(object()).chat_override(fn):                               # no seam: nothing changes, no error
+    with SageBackend.wrap(object()).chat_override(fn):                               # no seam: nothing changes, no error
         pass
 
 

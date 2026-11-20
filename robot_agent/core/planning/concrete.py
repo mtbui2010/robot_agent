@@ -1,6 +1,6 @@
 """Plan steps that carry the robot's own skill call (the direct planner's ``skill::inputs``).
 
-A grace / SAGE step is abstract (``{"action": "MoveTo", "object": "kitchen"}``) and is bound to a
+A SAGE step is abstract (``{"action": "MoveTo", "object": "kitchen"}``) and is bound to a
 skill by the robot's adapter. A direct-planner step (``backends/llm_direct.py``) also names the call
 the robot runs::
 

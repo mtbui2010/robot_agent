@@ -9,7 +9,7 @@ from fakes import FakeLLM, FakeRobot, done, run_task, steps
 from robot_agent.core import run_control
 from robot_agent.core.options.config import resolve
 from robot_agent.core.planning.assist_loop import ASSIST_OPTIONS, Places
-from robot_agent.core.planning.backends.pyplanner_grace import _GRACE_KWARGS, GraceBackend
+from robot_agent.core.planning.backends.pyplanner_sage import _SAGE_KWARGS, SageBackend
 from robot_agent.interact.run_manager import reset_manager
 from robot_agent.options.replan_guard import SPEC, ReplanGuard, codes_of
 
@@ -68,7 +68,7 @@ def test_planner_key_is_added_and_passes_the_backend_whitelist():
     opt, _run, _ = make()
     assert opt.on_planner_kwargs({"safe_refine": True}) == {"safe_refine": True, "replan_block_fix": True}
     assert make({"replan_guard.block_fix": "0"})[0].on_planner_kwargs({}) is None
-    assert "replan_block_fix" in _GRACE_KWARGS
+    assert "replan_block_fix" in _SAGE_KWARGS
 
 
 def test_the_planner_is_built_with_the_key_when_the_option_is_on(make_assist, env, monkeypatch):
@@ -77,23 +77,23 @@ def test_the_planner_is_built_with_the_key_when_the_option_is_on(make_assist, en
     monkeypatch.setattr(LP, "get_planner", lambda name, **kw: got.append(kw) or NS())
     for on in (False, True):
         loop = make_assist(FakeRobot(env, {}), FakeLLM(default={}), NS(), **({"replan_guard": "1"} if on else {}))
-        loop.cfg["planner"] = "grace"
+        loop.cfg["planner"] = "sage"
         loop._make_planner = type(loop)._make_planner.__get__(loop)
         loop._make_planner()
     assert "replan_block_fix" not in got[0] and got[1]["replan_block_fix"] is True
 
 
 def test_the_backend_hands_the_key_to_the_planner_and_forwards_sub_goals():
-    b = GraceBackend(host="http://127.0.0.1:1", model="x", replan_block_fix=True)
+    b = SageBackend(host="http://127.0.0.1:1", model="x", replan_block_fix=True)
     assert b._p.replan_block_fix is True
-    assert GraceBackend(host="http://127.0.0.1:1", model="x")._p.replan_block_fix is False
+    assert SageBackend(host="http://127.0.0.1:1", model="x")._p.replan_block_fix is False
     seen = {}
 
     class P:
         def replan(self, task, completed, failed, reason, obs, visible, budget=None, subgoals=None):
             seen["sg"] = subgoals
             return [], NS(llm_calls=1)
-    GraceBackend.wrap(P()).replan("t", [], {}, "r", "", [], subgoals=["a b"])
+    SageBackend.wrap(P()).replan("t", [], {}, "r", "", [], subgoals=["a b"])
     assert seen["sg"] == ["a b"]
 
 

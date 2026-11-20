@@ -9,7 +9,7 @@ Two modes, decided automatically:
     usual case (``find_arm`` → ``find_grasp``). Then ``old`` is treated as an
     identifier and renamed **package-wide** (word-boundary): the ``def``, every
     ``import``/call in sibling files, the SKILL_CONFIGS key + function literal,
-    and any skill-name string match in config (e.g. grace_namemap). The module
+    and any skill-name string match in config (e.g. sage_namemap). The module
     file is also renamed (``<old>.py`` → ``<new>.py``) when the skill owns a
     dedicated single-skill file. This keeps imports across the package working.
 

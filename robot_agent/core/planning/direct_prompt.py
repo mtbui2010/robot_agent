@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from . import robot_prompt
+from .planner_names import ASSIST, BACKEND, PLAIN, loop_backend, request_name
 
 log = logging.getLogger(__name__)
 
@@ -64,7 +65,7 @@ def live_memory_path() -> Optional[str]:
     try:
         from ...observe.paths import data_dir
         from ...state import current, host_id
-        return str(data_dir("grace_memory", Path(getattr(current(), "common_dir", ".")), host_id()))
+        return str(data_dir("sage_memory", Path(getattr(current(), "common_dir", ".")), host_id()))
     except Exception:
         return None
 
@@ -176,27 +177,32 @@ DIRECT_PLANNERS = ("direct", "llm_direct")
 
 def default_planner() -> str:
     """The planner a request that names none runs: the direct path, unless
-    ``ROBOT_AGENT_CLOSED_LOOP=1`` (then ``ROBOT_AGENT_PLANNER``, default grace)."""
+    ``ROBOT_AGENT_CLOSED_LOOP=1`` (then ``ROBOT_AGENT_PLANNER``, default sage_plain)."""
     if os.environ.get("ROBOT_AGENT_CLOSED_LOOP") == "1":
-        return os.environ.get("ROBOT_AGENT_PLANNER") or "grace"
+        return os.environ.get("ROBOT_AGENT_PLANNER") or PLAIN
     return "direct"
 
 
 def uses_direct_prompt(planner: Optional[str] = None) -> bool:
     """Does ``planner`` (a /ws/agent choice; None = :func:`default_planner`) plan with this prompt?
-    direct / llm_direct do; grace does not; sage only when its generator
-    (``ROBOT_AGENT_SAGE_GENERATOR``) is llm_direct; a plug-in when its class says
+    direct / llm_direct do; sage_plain does not; sage only when its generator
+    (``ROBOT_AGENT_SAGE_GENERATOR``, a backend name) is llm_direct; a plug-in when its class says
     ``uses_direct_prompt = True``."""
-    p = (planner or default_planner()).strip()
-    if p in DIRECT_PLANNERS:
+    p = request_name((planner or default_planner()).strip())
+    if p == ASSIST:                       # the loop 'sage': ask its generator, read as a backend name
+        p = os.environ.get("ROBOT_AGENT_SAGE_GENERATOR") or BACKEND
+    return backend_uses_direct_prompt(loop_backend(p))
+
+
+def backend_uses_direct_prompt(backend: str) -> bool:
+    """Does the planner backend ``backend`` (a registry name) plan with this prompt?"""
+    if backend in DIRECT_PLANNERS:
         return True
-    if p == "sage":
-        return uses_direct_prompt(os.environ.get("ROBOT_AGENT_SAGE_GENERATOR") or "grace")
-    if p == "grace":
+    if backend == BACKEND:
         return False
     try:
         from .registry import resolve_planner
-        factory, _builtin = resolve_planner(p)
+        factory, _builtin = resolve_planner(backend)
         return bool(getattr(factory, "uses_direct_prompt", False))
     except Exception:
         return False

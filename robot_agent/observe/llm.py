@@ -7,7 +7,7 @@ recorded calls and raises :class:`ReplayMismatch` when no recorded call has the
 same request ("the prompt differs").
 
 Callers: ``LLMobj.chat`` / ``chat_guide`` (``connect/llm/llm_object.py``),
-``embodiplan.LLMBackend.chat`` (hooked in ``core/planning/backends/pyplanner_grace.py``)
+``embodiplan.LLMBackend.chat`` (hooked in ``core/planning/backends/pyplanner_sage.py``)
 and :class:`RecordingLLM`, which wraps a client that is neither (a test double).
 A call made inside another one (``chat_guide`` -> ``chat``) is not recorded twice.
 """

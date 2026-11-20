@@ -12,7 +12,7 @@ kind               today (``common_dir`` = C, host = H)    with ``ROBOT_AGENT_DA
 ``task_runs``      ``C/task_runs/H/`` (dir)                ``R/task_runs/H/``
 ``run_records``    ``C/run_records/H/`` (dir)              ``R/run_records/H/``
 ``metrics``        ``C/run_records/H/metrics.jsonl``       ``R/run_records/H/metrics.jsonl``
-``grace_memory``   ``C/grace_memory.H.jsonl``              ``R/grace_memory.H.jsonl``
+``sage_memory``    ``C/sage_memory.H.jsonl``               ``R/sage_memory.H.jsonl``
 ``object_memory``  ``C/object_memory.H.json``              ``R/object_memory.H.json``
 ``world_state``    ``C/world_state.H.json``                ``R/world_state.H.json``
 =================  ======================================  =========================================
@@ -21,7 +21,9 @@ Reading falls back to the old location: a file kind that is read and written in
 place (the memories, the world belief) is copied from its old path the first
 time the new one is asked for and does not exist yet, so a robot that starts
 setting the variable keeps what it had learned. :func:`read_path` is the
-explicit fallback for lookups (a run log by id).
+explicit fallback for lookups (a run log by id). A kind that was renamed (``_OLD_NAMES``) is
+seeded the same way from its old file name, in the new root and in ``common_dir``, with or without
+the variable.
 """
 
 from __future__ import annotations
@@ -38,12 +40,14 @@ _KINDS = {
     'task_runs':     (True,  'task_runs/{host}'),
     'run_records':   (True,  'run_records/{host}'),
     'metrics':       (False, 'run_records/{host}/metrics.jsonl'),
-    'grace_memory':  (False, 'grace_memory.{host}.jsonl'),
+    'sage_memory':   (False, 'sage_memory.{host}.jsonl'),
     'object_memory': (False, 'object_memory.{host}.json'),
     'world_state':   (False, 'world_state.{host}.json'),
 }
 # files a consumer reads and rewrites in place: seeded from the old location
-_IN_PLACE = {'grace_memory', 'object_memory', 'world_state'}
+_IN_PLACE = {'sage_memory', 'object_memory', 'world_state'}
+# kind -> its old file names (bridge B3: the planner's memory was 'grace_memory' before the planner was renamed SAGE)
+_OLD_NAMES = {'sage_memory': ('grace_memory.{host}.jsonl',)}
 
 PathLike = Union[str, os.PathLike]
 
@@ -95,21 +99,34 @@ def data_dir(kind: str, common_dir: Optional[PathLike] = None, host: Optional[st
     """
     host = _host(host)
     r = root()
-    if r is None:
-        return _common(common_dir) / _rel(kind, host)
-    p = r / _rel(kind, host)
+    p = (_common(common_dir) if r is None else r) / _rel(kind, host)
     if kind in _IN_PLACE and not p.exists():
-        try:
-            old = _common(common_dir) / _rel(kind, host)
-        except Exception:
-            old = None
-        if old is not None and old.is_file() and old.resolve() != p.resolve():
+        _seed(p, _old_files(kind, r, common_dir, host))
+    return p
+
+
+def _old_files(kind: str, r: Optional[Path], common_dir, host: str) -> list:
+    """Where an in-place kind may already be: its old location (``common_dir``, when a root is set), then its
+    old file names (``_OLD_NAMES``) in the root and in ``common_dir``."""
+    try:
+        common = _common(common_dir)
+    except Exception:
+        common = None
+    bases = [b for b in (r, common) if b is not None]
+    out = [common / _rel(kind, host)] if r is not None and common is not None else []
+    return out + [b / old.format(host=host) for b in bases for old in _OLD_NAMES.get(kind, ())]
+
+
+def _seed(p: Path, sources: list) -> None:
+    """Copy the first existing file of ``sources`` to ``p`` (best-effort)."""
+    for old in sources:
+        if old.is_file() and old.resolve() != p.resolve():
             try:
                 p.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(old, p)
             except OSError:
                 pass
-    return p
+            return
 
 
 def read_path(kind: str, common_dir: Optional[PathLike] = None, host: Optional[str] = None) -> Path:

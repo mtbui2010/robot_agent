@@ -13,8 +13,8 @@ from robot_agent.core.planning.records import (RunLogger, StepRecord, VerifyResu
 
 @pytest.fixture
 def mapper():
-    from fakebot.configs import grace_namemap
-    return ActionMapper(grace_namemap)
+    from fakebot.configs import sage_namemap
+    return ActionMapper(sage_namemap)
 
 
 # ── ActionMapper ──

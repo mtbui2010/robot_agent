@@ -1,10 +1,10 @@
 """AssistLoop — the assistive layer around a planner: understanding, clarification, a guard per step.
 
 Planning is the planner's (``ROBOT_AGENT_SAGE_GENERATOR`` / ``generator``, default SAGE — paper: "SAGE: Symbolic
-Action-Gating and Editing for LLM Task Planners"; code identifier GRACE — or any plug-in, ``docs/planners.md``):
+Action-Gating and Editing for LLM Task Planners"; registry name ``sage`` — or any plug-in, ``docs/planners.md``):
 every plan and every change of plan comes from it. This loop never adds,
 drops or reorders steps itself. Selected with planner ``'sage'`` on ``/ws/agent`` (dashboard: "SAGE + assist")
-or ``ROBOT_AGENT_PLANNER=sage``; ``'grace'`` is the plain ``ClosedLoop`` around the same planner.
+or ``ROBOT_AGENT_PLANNER=sage``; ``'sage_plain'`` is the plain ``ClosedLoop`` around the same planner.
 
 1. **Understand** (one LLM call, JSON): the task becomes goals ``{type: on|in|open|close, object, from, to}`` or
    a refusal (``unsafe`` / ``infeasible``). Places are grounded on the live ENV without the LLM; a place word
@@ -369,7 +369,7 @@ class AssistLoop(WhichOne, SearchHooks, StepLadder, ClosedLoop):
     def __init__(self, agent, emit=None, **overrides) -> None:
         overrides = dict(overrides)
         self.original = overrides.pop("original", None)
-        overrides["planner"] = overrides.get("generator") or os.environ.get("ROBOT_AGENT_SAGE_GENERATOR", "grace")
+        overrides["planner"] = overrides.get("generator") or os.environ.get("ROBOT_AGENT_SAGE_GENERATOR", "sage")
         super().__init__(agent, emit=emit, **overrides)
         env = os.environ.get
         common = Path(getattr(current(), "common_dir", "."))

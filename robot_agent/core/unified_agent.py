@@ -52,7 +52,7 @@ def _emit_world(emit, node, skill=None, params=None, result=None) -> None:
     too (these run raw skills, so there is no symbolic ``apply_effect``).
 
     Two sources, both best-effort:
-      * symbolic — if a ``skill`` just ran and the robot's ``grace_namemap``
+      * symbolic — if a ``skill`` just ran and the robot's ``sage_namemap``
         defines ``apply_skill_effect(world, skill, params, result)``, apply it
         (sets ``found``/``holding``/``opened`` from the executed skill);
       * sensor — ``reconcile_world`` refreshes ``arrived`` from localization.
@@ -153,7 +153,7 @@ def _end_dataset(keep: bool = True, path: str | None = None) -> None:
 def _is_failure_event(ev: dict) -> bool:
     """True when an event marks this run as a failed case — used by the
     "log failed only" filter. Covers execution failures (a step returning
-    ``isdone: False`` / ``status: failed``), run-level errors, and GRACE
+    ``isdone: False`` / ``status: failed``), run-level errors, and SAGE
     planning-time symbolic violations."""
     try:
         name = ev.get('event')
@@ -170,7 +170,7 @@ def _is_failure_event(ev: dict) -> bool:
             if st is not None:
                 return st not in ('success', 'planned')
             return ev.get('success') is False
-        # GRACE: symbolic precondition violations found while planning.
+        # SAGE: symbolic precondition violations found while planning.
         if name == 'plan_step' and ev.get('phase') == 'verified' and ev.get('ok') is False:
             return True
         if name == 'plan_step' and ev.get('violations'):
@@ -298,7 +298,8 @@ def _loop_translates(planner, options) -> bool:
     """Does the SAGE loop's own language layer (``input_pivot`` translate | both: ENV names given to the translator, the original kept for
     ``said``) read the request, so that the plain translation here must not run first? Then the task reaches the loop in the user's language."""
     import os
-    sage = planner == 'sage' or (not planner and os.environ.get('ROBOT_AGENT_PLANNER') == 'sage')
+    from .planning.planner_names import is_assist
+    sage = is_assist(planner, os.environ.get('ROBOT_AGENT_PLANNER'))
     pivot = str((options or {}).get('input_pivot') or os.environ.get('ROBOT_AGENT_INPUT_PIVOT') or 'none').lower()
     return bool(sage and pivot in ('translate', 'both'))
 
@@ -336,7 +337,7 @@ class UnifiedAgent:
         q: asyncio.Queue = asyncio.Queue()
         loop = asyncio.get_event_loop()
         # Failure tracking for the "log failed cases only" filter: a step that
-        # returns isdone False, a run-level error, or GRACE symbolic violations.
+        # returns isdone False, a run-level error, or SAGE symbolic violations.
         failed = {'v': False}
 
         def emit(event: dict):
@@ -362,26 +363,24 @@ class UnifiedAgent:
                     emit({'event': 'translated', 'text': prompt_en})
 
                 # Closed-loop path. Activated either by an explicit UI planner
-                # choice ('grace' | 'direct' | 'sage' | a plug-in planner) or the ROBOT_AGENT_CLOSED_LOOP=1 env
-                # gate. The legacy open-loop flow below remains the default fallback.
+                # choice ('sage' | 'sage_plain' | 'direct' | a plug-in planner; planning/planner_names.py) or the
+                # ROBOT_AGENT_CLOSED_LOOP=1 env gate. The legacy open-loop flow below remains the default fallback.
                 import os as _os
-                _planner = {'grace': 'grace', 'direct': 'llm_direct', 'sage': 'sage'}.get(planner) if planner else None
-                if _planner is None and planner:
-                    # any other registry name: 'package.module:Class' or a robot_agent.planners entry point
-                    from .planning.registry import is_planner_name
-                    _planner = planner if is_planner_name(planner) else None
+                from .planning.planner_names import loop_choice
+                # the ClosedLoop backend ('package.module:Class' / an entry point too) and AssistLoop or not
+                _planner, _assist = loop_choice(planner, _os.environ.get('ROBOT_AGENT_PLANNER'))
                 if (_planner is not None or plan_only
                         or _os.environ.get('ROBOT_AGENT_CLOSED_LOOP') == '1'):
                     from .planning.loop import ClosedLoop
                     _kw = {'planner': _planner} if _planner else {}
                     # 'sage': SAGE plans; AssistLoop adds understanding / clarification and a guard per step
-                    # (planning/assist_loop.py). 'grace' = the plain ClosedLoop around the same planner.
+                    # (planning/assist_loop.py). 'sage_plain' = the plain ClosedLoop around the same planner.
                     _Loop = ClosedLoop
-                    if _planner == 'sage' or (_planner is None and _os.environ.get('ROBOT_AGENT_PLANNER') == 'sage'):
+                    if _assist:
                         from .planning.assist_loop import AssistLoop as _Loop, ASSIST_OPTIONS
                         _kw = {'original': prompt, **{k: v for k, v in (options or {}).items() if k in ASSIST_OPTIONS}}
                         if (options or {}).get('generator'):
-                            # the planner behind 'sage' (default ROBOT_AGENT_SAGE_GENERATOR / grace)
+                            # the planner behind 'sage' (default ROBOT_AGENT_SAGE_GENERATOR / the sage backend)
                             _kw['generator'] = options['generator']
                     _lp = _Loop(self, emit=emit, **_kw)
                     from ..observe.record import note_loop

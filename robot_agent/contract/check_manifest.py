@@ -36,6 +36,7 @@ from importlib.util import find_spec
 from pathlib import Path
 from typing import Optional
 
+from .legacy_adapter import NAMEMAP_MODULES
 from .manifest import ALIAS_ACTIONS_KEY, PLANNER_KEYS, Manifest, ManifestError
 
 
@@ -175,8 +176,8 @@ def read_registry(pkg_dir: Path) -> tuple:
 
 def read_skill_map(pkg_dir: Path) -> Optional[dict]:
     """The namemap's literal ``SKILL_MAP`` (None when there is none)."""
-    f = pkg_dir / "configs" / "grace_namemap.py"
-    if not f.is_file():
+    f = next((p for p in (pkg_dir / "configs" / f"{m}.py" for m in NAMEMAP_MODULES) if p.is_file()), None)
+    if f is None:
         return None
     try:
         tree = ast.parse(f.read_text(encoding="utf-8"))
@@ -302,10 +303,10 @@ def check(target, manifest_path=None) -> Report:
         for action, skill in sm.items():
             spec = m.skill_for(action)
             if spec is not None and spec.name != skill:
-                rep.warnings.append(f"action {action}: grace_namemap.SKILL_MAP binds {skill!r}, "
+                rep.warnings.append(f"action {action}: the namemap's SKILL_MAP binds {skill!r}, "
                                     f"the manifest {spec.name!r} (the manifest wins in NamemapAdapter)")
             elif spec is None and m.skill(skill) is None:
-                rep.warnings.append(f"action {action}: grace_namemap.SKILL_MAP binds {skill!r}, "
+                rep.warnings.append(f"action {action}: the namemap's SKILL_MAP binds {skill!r}, "
                                     f"which the manifest does not declare")
     return rep
 

@@ -3,7 +3,7 @@
 Everything robot-specific the loops need -- which skill realises an action, its params, the
 sensors that verify it, how far "arrived" may be, what opens, what the robot says -- comes from
 the adapter that ``robot_agent.contract.load_adapter(robot_pkg)`` returns (the robot's
-``configs/adapter.py``, or its manifest.yaml + grace_namemap shim). :class:`RobotView` adds the
+``configs/adapter.py``, or its manifest.yaml + sage_namemap shim). :class:`RobotView` adds the
 lookups the loops share on top of it; :func:`run_skill` is the one place a skill's return value
 becomes a :class:`~robot_agent.contract.SkillResult`.
 """

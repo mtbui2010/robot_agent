@@ -20,7 +20,7 @@ import threading
 _GTTS_CODE = {'en': 'en'}
 
 # Per-action localized verbs (resolved into {verb} when ctx carries 'action').
-# Keys cover both GRACE actions (CamelCase) and the skill names used by the
+# Keys cover both SAGE actions (CamelCase) and the skill names used by the
 # direct/structured path (lowercase, e.g. ``find::apple``).
 VERBS: dict[str, dict[str, str]] = {
     'en': {

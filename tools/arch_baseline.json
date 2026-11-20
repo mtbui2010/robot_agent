@@ -46,8 +46,8 @@
   "fn: robot_agent/contract/manifest.py::_planner#0": 89,
   "fn: robot_agent/core/device_manager.py::DeviceManager.add_connect#0": 240,
   "fn: robot_agent/core/plan_skill.py::run_plan_skill#0": 91,
-  "fn: robot_agent/core/unified_agent.py::UnifiedAgent.run#0": 140,
-  "fn: robot_agent/core/unified_agent.py::UnifiedAgent.run._blocking#0": 116,
+  "fn: robot_agent/core/unified_agent.py::UnifiedAgent.run#0": 138,
+  "fn: robot_agent/core/unified_agent.py::UnifiedAgent.run._blocking#0": 114,
   "fn: robot_agent/core/unified_agent.py::UnifiedAgent.run_direct#0": 178,
   "fn: robot_agent/core/unified_agent.py::UnifiedAgent.run_direct._blocking#0": 81
  },

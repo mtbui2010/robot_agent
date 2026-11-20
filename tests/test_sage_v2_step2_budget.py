@@ -13,7 +13,7 @@ import pytest
 
 from fakes import FakeLLM, FakeRobot, done, run_task, steps
 from robot_agent.contract import Manifest
-from robot_agent.core.planning.backends.pyplanner_grace import GraceBackend
+from robot_agent.core.planning.backends.pyplanner_sage import SageBackend
 from robot_agent.core.planning.budget import DEFAULT_LLM_BUDGET
 
 DS, DT = "desk@study room", "dining table@kitchen"
@@ -49,7 +49,7 @@ def test_budget_counts_planner_calls(make_assist, env):
     assert loop._last_budget_used == 1 + 7
 
 
-# ── SAGE itself behind GraceBackend, with a fake LLM backend ──
+# ── SAGE itself behind SageBackend, with a fake LLM backend ──
 class Backend:
     def __init__(self, expand, decompose=None, every_call=None):
         self.expand, self.decompose, self.prompts, self.every = dict(expand), decompose, [], every_call
@@ -68,7 +68,7 @@ def sage(backend):
     p = SAGEPlanner(host="http://127.0.0.1:1", model="scripted", enable_memory=False,
                     capabilities={"hands": 1, "find_reaches": False})
     p._backend = backend
-    return GraceBackend.wrap(p)
+    return SageBackend.wrap(p)
 
 
 def test_assist_subgoals_from_goals(make_assist, env):

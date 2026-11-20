@@ -18,7 +18,7 @@ router = APIRouter()
 @router.get('/planner/prompt')
 def planner_prompt(command: str = Query('', description='the command to build the prompt for'),
                    planner: Optional[str] = Query(None, description="the dashboard's planner choice "
-                                                  "(direct | sage | grace | a plug-in); default: the server's"),
+                                                  "(direct | sage | sage_plain | a plug-in); default: the server's"),
                    k: Optional[int] = Query(None, ge=0, le=20, description='examples (default: the env knob)'),
                    leave_one_out: Optional[bool] = Query(None, description='never the command itself')):
     from ..core.planning import direct_prompt as dp

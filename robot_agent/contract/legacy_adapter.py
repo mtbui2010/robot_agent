@@ -1,4 +1,4 @@
-"""RobotAdapter on top of an existing ``<pkg>.configs.grace_namemap`` module.
+"""RobotAdapter on top of an existing ``<pkg>.configs.sage_namemap`` module.
 
 The shim for step 4 of the roadmap: robots keep their namemap (``SKILL_MAP``,
 ``to_loc`` / ``to_obj``, ``build_params``, ``observe``, ``vlm_hook`` ...), the
@@ -21,6 +21,10 @@ from typing import Any, Optional
 from .adapter import RobotAdapter, Unbindable
 from .manifest import Manifest
 from .types import Geometry, Messages, Observation, SkillSpec
+
+# the robot's namemap module under configs/, new name first; "grace_namemap" is bridge B2 (the name a robot
+# package used before the planner was renamed SAGE: such a package still loads)
+NAMEMAP_MODULES = ("sage_namemap", "grace_namemap")
 
 # same split as ActionMapper: these name a place, the rest an object
 _LOCATION_ACTIONS = {"MoveTo", "Place", "PutIn"}
@@ -198,6 +202,14 @@ def _has_module(name: str) -> bool:
         return False
 
 
+def namemap_module_name(robot_pkg: str) -> Optional[str]:
+    """``<pkg>.configs.<namemap>`` for the first of :data:`NAMEMAP_MODULES` the package has, else None."""
+    for m in NAMEMAP_MODULES:
+        if _has_module(f"{robot_pkg}.configs.{m}"):
+            return f"{robot_pkg}.configs.{m}"
+    return None
+
+
 def _from_adapter_module(mod) -> RobotAdapter:
     """``<pkg>.configs.adapter`` may expose ``ADAPTER`` (an instance),
     ``make_adapter()`` / ``get_adapter()`` (a factory) or a class ``Adapter``."""
@@ -215,13 +227,14 @@ def _from_adapter_module(mod) -> RobotAdapter:
 def load_adapter(robot_pkg: str) -> RobotAdapter:
     """The robot's adapter: ``<pkg>.configs.adapter`` if present, else
     ``configs/manifest.yaml`` (when there is one) wrapped around
-    ``<pkg>.configs.grace_namemap``."""
+    ``<pkg>.configs.sage_namemap`` (:func:`namemap_module_name`)."""
     if _has_module(f"{robot_pkg}.configs.adapter"):
         return _from_adapter_module(importlib.import_module(f"{robot_pkg}.configs.adapter"))
     manifest = None
     d = _pkg_dir(robot_pkg)
     if d is not None and (d / "configs" / "manifest.yaml").is_file():
         manifest = Manifest.from_yaml(d / "configs" / "manifest.yaml")
-    if not _has_module(f"{robot_pkg}.configs.grace_namemap"):
-        raise ImportError(f"{robot_pkg}: no configs/adapter.py and no configs/grace_namemap.py")
-    return NamemapAdapter(importlib.import_module(f"{robot_pkg}.configs.grace_namemap"), manifest)
+    name = namemap_module_name(robot_pkg)
+    if name is None:
+        raise ImportError(f"{robot_pkg}: no configs/adapter.py and no configs/{NAMEMAP_MODULES[0]}.py")
+    return NamemapAdapter(importlib.import_module(name), manifest)

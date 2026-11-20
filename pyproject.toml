@@ -53,15 +53,18 @@ voice = [
     "pydub",
     "sounddevice",
 ]
-# The GRACE closed-loop planner. Kept out of the core deps so the generic
+# The SAGE closed-loop planner. Kept out of the core deps so the generic
 # runtime never hard-depends on a planner.
-#   pip install -e ../embodiplan && pip install -e ".[grace]"
+#   pip install -e ../embodiplan && pip install -e ".[sage]"
+sage = ["embodiplan>=0.2.1,<0.3"]
+# Bridge B5: the old name of the `sage` extra (the planner was GRACE), kept so
+# existing install commands work; same dependencies as `sage`.
 grace = ["embodiplan>=0.2.1,<0.3"]
 
 # `make test` (pytest from the source tree; no ROS, no LLM server).
 test = ["pytest>=7"]
 
-# Everything except `grace` (embodiplan is a local path package, not on PyPI).
+# Everything except `sage` (embodiplan is a local path package, not on PyPI).
 all = [
     "pyzmq",
     "websockets>=13",

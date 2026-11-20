@@ -6,7 +6,7 @@
   planner's sub-goal edit and the one refinement with the checker's findings), never the first plan, the execution replans
   or the understand step. A client of that model (role ``repair``); the planner is called ONCE with the same messages when
   the answer is a runaway (empty, a repeating line, longer than the token cap allows, an error). A planner that offers no
-  ``chat_override`` (``backends/pyplanner_grace.GraceBackend`` does) is repaired by its own model, as before.
+  ``chat_override`` (``backends/pyplanner_sage.SageBackend`` does) is repaired by its own model, as before.
 * ``dialog_model`` / ``dialog_model_lang`` ({language code: model}) / ``dialog_url`` / ``dialog_max_tokens``: the model that
   WRITES what the robot says in the user's language (the translator's output: questions, read-backs, statements, and the
   object names it writes in that language). Reading the user's words (the input pivot) stays with the translator. A

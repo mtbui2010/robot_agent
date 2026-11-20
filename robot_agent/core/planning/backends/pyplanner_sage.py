@@ -1,17 +1,17 @@
-# robot_agent/robot_agent/core/planning/backends/pyplanner_grace.py
-"""GRACE planner backend — adapts embodiplan's GRACEPlanner to the Planner
+# robot_agent/robot_agent/core/planning/backends/pyplanner_sage.py
+"""SAGE planner backend — adapts embodiplan's SAGEPlanner to the Planner
 interface.
 
 ``embodiplan`` is an OPTIONAL dependency: it is imported lazily so this module
-imports cleanly even when embodiplan is absent. The first time a GraceBackend is
+imports cleanly even when embodiplan is absent. The first time a SageBackend is
 constructed without embodiplan installed, a clear RuntimeError is raised.
 
-GRACE already returns steps in the canonical PlanStep shape
+SAGE already returns steps in the canonical PlanStep shape
 (``{"action", "object", "target"?, "reason"?}``), so generate_plan / replan
 delegate directly and only coerce the returned PlanMetrics dataclass to a plain
 dict for transport across the Planner boundary.
 
-GraceBackend also offers the optional planner capabilities of ``base.py``
+SageBackend also offers the optional planner capabilities of ``base.py``
 (``docs/planners.md``) on top of embodiplan's public SAGE API: ``SubgoalRepair``
 (``blocks`` / ``join_blocks`` / ``repair_block`` = SAGE's ``last_blocks`` /
 ``flatten`` / ``edit_block`` with its memory examples), ``ProgressReporting``
@@ -31,9 +31,9 @@ from typing import Any
 log = logging.getLogger(__name__)
 
 
-# Kwargs that embodiplan's SAGEPlanner (alias GRACEPlanner, registry name "GRACE")
+# Kwargs that embodiplan's SAGEPlanner (registry name "SAGE")
 # accepts; see embodiplan/sage.py::SAGEPlanner.__init__.
-_GRACE_KWARGS = (
+_SAGE_KWARGS = (
     "host",
     "model",
     "provider",
@@ -139,7 +139,7 @@ def _observe_llm(embodiplan) -> None:
 
 
 def available() -> bool:
-    """True when embodiplan (the GRACE / SAGE planner) can be imported here."""
+    """True when embodiplan (the SAGE planner) can be imported here."""
     try:
         import embodiplan  # noqa: F401  optional dependency
     except Exception:
@@ -166,14 +166,14 @@ def _seed_gt_path(seed_memory) -> str:
     return path
 
 
-class GraceBackend:
-    """Planner backend backed by embodiplan's GRACEPlanner."""
+class SageBackend:
+    """Planner backend backed by embodiplan's SAGEPlanner."""
 
     _examples: tuple | None = None   # (task, SAGE memory examples block) for repair_block
 
     @classmethod
-    def wrap(cls, planner) -> "GraceBackend":
-        """A GraceBackend around an already built SAGE / GRACE planner (any object
+    def wrap(cls, planner) -> "SageBackend":
+        """A SageBackend around an already built SAGE planner (any object
         with embodiplan's public planner API, e.g. a scripted SAGEPlanner in tests)."""
         b = cls.__new__(cls)
         b._p = planner
@@ -195,7 +195,7 @@ class GraceBackend:
             import embodiplan  # optional dependency — imported lazily
         except ImportError as e:  # pragma: no cover - depends on install
             raise RuntimeError(
-                "pip install -e embodiplan to use the GRACE planner"
+                "pip install -e embodiplan to use the SAGE planner"
             ) from e
         _observe_llm(embodiplan)
         # the robot's curated seed pool (manifest planner.seed_memory) is SAGE's seed pool
@@ -216,11 +216,11 @@ class GraceBackend:
         selected = {
             k: v
             for k, v in candidate.items()
-            if k in _GRACE_KWARGS and v is not None
+            if k in _SAGE_KWARGS and v is not None
         }
 
-        # embodiplan.get("GRACE", ...) routes through the registry to GRACEPlanner.
-        self._p = embodiplan.get("GRACE", **selected)
+        # embodiplan.get("SAGE", ...) routes through the registry to SAGEPlanner.
+        self._p = embodiplan.get("SAGE", **selected)
 
     # ── Planner interface ────────────────────────────────────────────
     def _optional(self, method: str, subgoals=None, budget=None) -> tuple[dict, Any]:

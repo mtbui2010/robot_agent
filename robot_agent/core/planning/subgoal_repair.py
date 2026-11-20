@@ -1,6 +1,6 @@
 """The certified gate's sub-goal repair: the checker's critical findings go back to the planner's own
 sub-goal-local repair (the optional ``SubgoalRepair`` capability of ``base.py``; SAGE's Editing through
-``backends/pyplanner_grace.py`` is one). Planner-neutral: only the capability's methods are called.
+``backends/pyplanner_sage.py`` is one). Planner-neutral: only the capability's methods are called.
 
 Each round, every sub-goal block that owns a step with a critical finding is re-done by
 ``planner.repair_block`` with that finding as feedback; a block whose sub-goal the earlier blocks already

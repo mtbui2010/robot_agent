@@ -16,7 +16,7 @@ format / guide, or embodiplan's messages); a request the record does not have
 raises :class:`ReplayMismatch` ("the prompt differs"), with a diff against the
 closest recorded one. The planner is either served at the robot_agent boundary
 (``recorded``: the recorded generate_plan / replan outputs for the same task) or
-run for real with its LLM calls served (``live``: SAGE / GRACE's own logic,
+run for real with its LLM calls served (``live``: SAGE's own logic,
 embodiplan required). ``auto`` = ``live`` when the record has embodiplan calls
 and embodiplan imports, else ``recorded``.
 
@@ -346,11 +346,11 @@ def _loop_overrides(ctx: dict, kind: str, work: Path) -> dict:
             'speak_backend', 'mute_skill_tts'}
     ov = {k: v for k, v in cfg.items() if k not in skip and not isinstance(v, dict)}
     if kind == 'assist':
-        ov['generator'] = cfg.get('generator') or 'grace'
+        ov['generator'] = cfg.get('generator') or 'sage'
         if ctx.get('original') is not None:
             ov['original'] = ctx['original']
     else:
-        ov['planner'] = cfg.get('planner') or 'grace'
+        ov['planner'] = cfg.get('planner') or 'sage'
     live = work / 'live.jsonl'
     src = cfg.get('live_path')
     if isinstance(src, str) and Path(src).is_file():
@@ -415,7 +415,7 @@ def replay(target, mode: str = 'plan', planner: str = 'auto', robot_pkg: Optiona
             if use == 'auto':
                 has_ep = any(r.get('source') == 'embodiplan' for r in store.rows)
                 from ..core.planning.registry import planner_available
-                ep_ok = planner_available('grace')          # embodiplan importable here
+                ep_ok = planner_available('sage')          # embodiplan importable here
                 use = 'live' if (has_ep and ep_ok) else 'recorded'
             if use == 'recorded':
                 rp = ReplayPlanner(rec.rows, res.warnings, mismatches)

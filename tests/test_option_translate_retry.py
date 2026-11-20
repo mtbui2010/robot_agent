@@ -69,6 +69,6 @@ def test_the_loops_own_language_layer_replaces_the_plain_translation_only_for_sa
     monkeypatch.delenv("ROBOT_AGENT_PLANNER", raising=False)
     assert _loop_translates("sage", {}) is False                       # no pivot: the plain translation, as before
     assert _loop_translates("sage", {"input_pivot": "both"}) is True
-    assert _loop_translates("grace", {"input_pivot": "both"}) is False  # only SAGE's loop has the language layer
+    assert _loop_translates("sage_plain", {"input_pivot": "both"}) is False  # only SAGE's loop has the language layer
     monkeypatch.setenv("ROBOT_AGENT_INPUT_PIVOT", "translate")
     assert _loop_translates("sage", {}) is True

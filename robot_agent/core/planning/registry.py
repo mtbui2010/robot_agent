@@ -9,8 +9,9 @@ side import-clean per the SHARED CONTRACT.
 A planner name is one of (``docs/planners.md``):
 
 * a built-in name:
-  ``"grace"``      -> ``.backends.pyplanner_grace.GraceBackend``
-                      (wraps embodiplan's GRACE / SAGE planner);
+  ``"sage"``       -> ``.backends.pyplanner_sage.SageBackend``
+                      (wraps embodiplan's SAGE planner; its old name still selects
+                      it, with a DeprecationWarning: planner_names.py);
   ``"llm_direct"`` -> ``.backends.llm_direct.LlmDirectBackend``
                       (single-shot LLM planner, no embodiplan);
 * ``"package.module:Class"`` -- any importable class (or factory) that returns
@@ -25,10 +26,11 @@ import importlib
 import inspect
 
 from .base import Planner
+from .planner_names import backend_name
 
 # Built-in names -> "module:attr" (module relative to this package).
 _BUILTIN = {
-    "grace": ".backends.pyplanner_grace:GraceBackend",
+    "sage": ".backends.pyplanner_sage:SageBackend",
     "llm_direct": ".backends.llm_direct:LlmDirectBackend",
 }
 # Names advertised to users on an unknown-backend error.
@@ -73,7 +75,7 @@ def resolve_planner(name: str):
     """``(factory, builtin)``: the planner class (or factory) behind ``name``.
 
     Raises ValueError for an unknown name (the message lists the choices)."""
-    key = (name or "").strip()
+    key = backend_name((name or "").strip())
     low = key.lower()
     if low in _BUILTIN:
         return _load_ref(_BUILTIN[low], __package__), True
@@ -98,7 +100,7 @@ def is_planner_name(name) -> bool:
     ``module:Class`` or an installed entry point); nothing is imported."""
     if not isinstance(name, str) or not name.strip():
         return False
-    key = name.strip()
+    key = backend_name(name.strip())
     return key.lower() in _BUILTIN or ":" in key or key.lower() in _entry_points()
 
 
@@ -118,7 +120,7 @@ def accepted_kwargs(factory, cfg: dict) -> dict:
 
 def planner_available(name: str) -> bool:
     """Can ``name`` be built here (its module and dependencies import)? A
-    built-in backend module may define ``available()`` (``grace``: is
+    built-in backend module may define ``available()`` (``sage``: is
     embodiplan installed)."""
     try:
         factory, builtin = resolve_planner(name)
@@ -137,7 +139,7 @@ def get_planner(name: str, **cfg) -> Planner:
     Parameters
     ----------
     name:
-        A built-in name (case-insensitive: ``"grace"``, ``"llm_direct"``),
+        A built-in name (case-insensitive: ``"sage"``, ``"llm_direct"``),
         ``"package.module:Class"``, or a ``robot_agent.planners`` entry point.
     **cfg:
         Backend config (host, model, live_path, capabilities, ...). A built-in

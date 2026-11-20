@@ -8,7 +8,7 @@ driver, the action mapper, and every planner backend:
   lock-step with the executed plan (mirrors ``pyplanner.verifier``'s
   ``SymbolicState`` / ``_apply``; see ``ACTION_MAPPER_SPEC.md`` section 3).
 * :class:`Planner` -- a structural ``typing.Protocol`` describing the
-  ``generate_plan`` / ``replan`` surface that GRACE and any other backend
+  ``generate_plan`` / ``replan`` surface that SAGE and any other backend
   expose (see ``ACTION_MAPPER_SPEC.md`` section 1).
 * Optional planner capabilities (:class:`SubgoalRepair`,
   :class:`ProgressReporting`, :class:`EpisodeMemory`): extra surfaces a planner
@@ -20,13 +20,13 @@ PlanStep
 A plan is ``list[dict]``; each step is a plain dict (NOT a class), shaped::
 
     {
-        "action": str,            # one GRACE action, CamelCase
+        "action": str,            # one SAGE action, CamelCase
         "object": str,            # target, CamelCase (Apple, CoffeeMachine)
         "target": str,            # optional, rarely used
         "reason": str,            # optional, ignored by the verifier
     }
 
-GRACE action vocabulary (14 actions, see ``pyplanner/base.py`` ROBOT_ACTIONS):
+SAGE action vocabulary (14 actions, see ``pyplanner/base.py`` ROBOT_ACTIONS):
     MoveTo, Find, Pick, Place, PutIn, Open, Close,
     TurnOn, TurnOff, Wash, Sit, LieOn, Serve, Wait
 
@@ -50,7 +50,7 @@ class WorldState:
     """Symbolic world state, updated only from skills that actually succeeded.
 
     Mirrors ``pyplanner.verifier.SymbolicState`` so that, on a skill failure,
-    the mapper can hand GRACE the exact recovered state for suffix repair
+    the mapper can hand SAGE the exact recovered state for suffix repair
     (``ACTION_MAPPER_SPEC.md`` section 3). It is intentionally a self-contained
     dataclass -- no ``pyplanner`` import.
 

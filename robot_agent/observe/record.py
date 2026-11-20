@@ -28,8 +28,8 @@ end         outcome, then a ``snapshot`` row with the header and the metrics
 
 The capture points are the single paths every run goes through:
 ``LLMobj.chat`` / ``chat_guide`` (every robot_agent LLM client),
-``embodiplan.LLMBackend.chat`` (SAGE / GRACE, hooked in
-``core/planning/backends/pyplanner_grace.py``), ``get_planner`` (planner
+``embodiplan.LLMBackend.chat`` (SAGE, hooked in
+``core/planning/backends/pyplanner_sage.py``), ``get_planner`` (planner
 boundary), ``SkillRegistry.execute`` and ``Run.publish``. Test doubles that do
 not go through them are wrapped with :func:`instrument`.
 

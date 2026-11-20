@@ -1,6 +1,6 @@
-"""A frozen, KAAIR-like ``grace_namemap`` for the tests (robot package ``fakehome``).
+"""A frozen, KAAIR-like ``sage_namemap`` for the tests (robot package ``fakebot``).
 
-Copied from kcare_robot's configs/grace_namemap.py (tables + param adapters
+Copied from kcare_robot's namemap config (tables + param adapters
 only, no ROS / perception hooks) so the core can be tested without the robot
 package. Change it only when the contract changes, not to follow kcare.
 """
@@ -98,7 +98,6 @@ SKILL_MAP: dict[str, str] = {
     "PutIn":  "place",
     "Open":   "open_drawer",
     "Close":  "close_drawer",
-    "Handover": "handover",
 }
 
 NOOP_ACTIONS: set[str] = {"Sit", "LieOn", "Serve", "Wait"}
@@ -118,6 +117,4 @@ def build_params(action: str, obj_camel: str, world) -> dict:
         return {"inputs": _to_obj_or_loc(obj_camel)}
     if action in ("Open", "Close"):
         return {"inputs": to_loc(obj_camel)}
-    if action == "Handover":
-        return {"inputs": obj_camel}
     return {}

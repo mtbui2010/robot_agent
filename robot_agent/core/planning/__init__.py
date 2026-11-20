@@ -1,7 +1,7 @@
 # robot_agent/robot_agent/core/planning/__init__.py
-"""Robot-agnostic planning layer for the closed-loop GRACE driver.
+"""Robot-agnostic planning layer for the closed-loop SAGE driver.
 
-This package bridges abstract GRACE/SAGE (embodiplan) symbolic plans to concrete
+This package bridges abstract SAGE (embodiplan) symbolic plans to concrete
 skill calls of the robot, which it reaches only through its ``RobotAdapter``
 (``robot_agent.contract``, wrapped by :class:`.robot.RobotView`). See the specs:
 
@@ -10,9 +10,9 @@ skill calls of the robot, which it reaches only through its ``RobotAdapter``
 
 Public surface (the only names downstream code should import):
 
-* :class:`WorldState`  -- mapper-owned symbolic state (mirrors GRACE).
+* :class:`WorldState`  -- mapper-owned symbolic state (mirrors SAGE).
 * :class:`Planner`     -- structural Protocol every backend satisfies.
-* :class:`ActionMapper`-- GRACE step -> (skill, params) + state effects.
+* :class:`ActionMapper`-- SAGE step -> (skill, params) + state effects.
 * :class:`Unmappable`  -- raised for actions this robot cannot execute.
 * :func:`get_planner`  -- registry; lazily constructs a backend by name, by
   ``"package.module:Class"`` or by a ``robot_agent.planners`` entry point.

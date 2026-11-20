@@ -70,10 +70,10 @@ def test_loops_use_the_adapter(make_assist, env):
 
 
 def test_namemap_only_robot_still_works():
-    """A robot package with only grace_namemap (no manifest / adapter) gets the shim: no sensors,
+    """A robot package with only sage_namemap (no manifest / adapter) gets the shim: no sensors,
     so its post-step physical check is UNKNOWN, never a silent pass."""
-    from fakebot.configs import grace_namemap
-    r = RobotView(NamemapAdapter(grace_namemap))
+    from fakebot.configs import sage_namemap
+    r = RobotView(NamemapAdapter(sage_namemap))
     assert r.holding_sensor() is None and r.pose_sensor() is None and r.ask_spec() is None
     v = StepVerifier(False, set(), robot=r)
     out = v.verify({"action": "Pick", "object": "cup"}, {"isdone": True}, W(found="cup"), None)
@@ -221,14 +221,14 @@ def test_capabilities_reach_the_planner(make_assist, env, monkeypatch):
     loop = make_assist(FakeRobot(env, HOUSE), FakeLLM(APPLE), ScriptedPlanner([]))
     del loop._make_planner                                  # the real one
     loop._make_planner()
-    assert seen["name"] == "grace" and seen["capabilities"]["find_reaches"] is False
+    assert seen["name"] == "sage" and seen["capabilities"]["find_reaches"] is False
     assert seen["capabilities"]["hands"] == ["right"]
 
 
 def test_sage_planner_gets_the_robot_body():
     pytest.importorskip("embodiplan")
-    from robot_agent.core.planning.backends.pyplanner_grace import GraceBackend
-    b = GraceBackend(host="http://127.0.0.1:9", model="x", capabilities={"hands": ["right"], "find_reaches": False},
+    from robot_agent.core.planning.backends.pyplanner_sage import SageBackend
+    b = SageBackend(host="http://127.0.0.1:9", model="x", capabilities={"hands": ["right"], "find_reaches": False},
                      live_path="")
     assert b._p.capabilities.hands == 1 and b._p.capabilities.find_reaches is False
     # with Find only looking, a found drawer is not open-able from afar: the gate wants the MoveTo
