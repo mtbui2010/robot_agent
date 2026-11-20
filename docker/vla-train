@@ -1,0 +1,22 @@
+#!/bin/bash
+# vla-train from the host: runs the command inside the training container (made by `make up-openpi-train` / `make up-lerobot-train`).
+#   docker/vla-train openpi init
+#   docker/vla-train openpi run /runs/sd_v1.run.yaml      # paths are the ones INSIDE the container (/runs, /data, /code)
+#   docker/vla-train openpi status [NAME]   |   resume NAME   |   stop NAME
+# `run` and `resume` start in the background (docker exec -d: they outlive this terminal) and show the first lines of what they print.
+set -u
+fam=${1:-}; cmd=${2:-}
+case "$fam" in openpi|lerobot) ;; *) echo "usage: $0 <openpi|lerobot> <init|run|resume|status|stop> [args]" >&2; exit 2;; esac
+[ $# -ge 2 ] || { echo "usage: $0 $fam <init|run|resume|status|stop> [args]" >&2; exit 2; }
+shift 2
+c=${VLA_TRAIN_CONTAINER:-$fam-train}
+docker inspect -f '{{.State.Running}}' "$c" 2>/dev/null | grep -q true || { echo "the container $c is not running: make up-$fam-train DATA=... RUNS=..." >&2; exit 3; }
+case "$cmd" in
+  run|resume)
+    docker exec "$c" sh -c ': > /runs/.last_run.out'
+    docker exec -d "$c" sh -c "vla-train $cmd $* > /runs/.last_run.out 2>&1"
+    sleep 10
+    docker exec "$c" sh -c 'tail -n 8 /runs/.last_run.out'
+    echo "(running in the background; follow it with: $0 $fam status)";;
+  *) docker exec "$c" vla-train "$cmd" "$@";;
+esac

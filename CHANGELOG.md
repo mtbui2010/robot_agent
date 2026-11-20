@@ -3,6 +3,10 @@
 robot_agent follows SemVer for its contract (`robot_agent.contract`, the
 manifest format, the event schema). See `docs/contract.md`.
 
+## 2026-11-19 (training images)
+- `docker/openpi-train.Dockerfile` and `docker/lerobot-train.Dockerfile`: robot-agnostic training images (no robot name, data or weights; mounted at run time), pinned to the vlaserve backend recipes. `make build-openpi-train` / `make build-lerobot-train` (`TRAIN_IMAGE`, `OPENPI_REV`, `LEROBOT_VERSION`, `TORCH_CUDA`, `DOCKER_BUILD_ARGS`). [docs/training_images.md](docs/training_images.md), `tests/test_train_images.py`.
+- `vla-train` (init / run / resume / status / stop), copied into both training images (`docker/vla_train`, stdlib + PyYAML): preflight, norm stats, smoke test, training, automatic validation, one run at a time, state on disk. `make up-openpi-train` / `up-lerobot-train` (+ `down-...`) create a long-lived RAM-capped container; `docker/vla-train <family> <command>` runs it. The LeRobot image now has the `training` extra. `tests/test_vla_train.py`.
+
 ## Unreleased
 
 ### Editable "Go to" poses (`/poses`)

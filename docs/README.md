@@ -22,6 +22,8 @@ Core design:
 - [observe.md](observe.md): RunRecord, metrics line, replay CLI, `ROBOT_AGENT_DATA_DIR`, `/ws/agent` event schema
 - [action_model_divergence.md](action_model_divergence.md): the one action model and where the old copies differed
 
+- [training_images.md](training_images.md): the two docker images for training policies (openpi, LeRobot) and the `vla-train` command (init / run / resume / status / stop): build, containers, run file
+
 Planning layer (moved here from kcare_robot/docs):
 
 - [CLOSED_LOOP_ARCHITECTURE.md](CLOSED_LOOP_ARCHITECTURE.md): closed-loop planning (GRACE / SAGE via embodiplan)
