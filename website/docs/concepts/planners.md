@@ -97,6 +97,63 @@ Both loops share the same event stream, the same record of the run, and the same
 
 In the AssistLoop a robot can declare a behaviour tree per goal kind, as data. The option `bt_goal` has the key `mixed`, on by default. Goals whose kind has a tree run as trees and the planner is not asked for them. Neighbouring goals without a tree are planned by SAGE once, when the run reaches them, from the world as it is then, and their steps run one by one through the engine's own step path with its recovery ladder. If a step has no way left, the goals that are left (this part and every goal after it, trees included) go to the SAGE replan once. A robot that declares no trees gets no change, and with no goal that has a tree SAGE plans the whole run as before. Not covered: the whole-plan gate (see [Checks before motion](checks-before-motion.md)) is skipped for the parts SAGE plans this way, and the effect on the benchmark was not measured. Rules: the hub's [`docs/bt_goal.md`](https://github.com/mtbui2010/robot_agent/blob/3269923/docs/bt_goal.md).
 
+#### How a mixed run goes
+
+Goals run in the order the reader gave them. A goal with a tree is ticked; a run of neighbouring goals without a tree is planned by SAGE once, when the run reaches it. If no goal has a tree, SAGE plans the whole run as when the option is off.
+
+```mermaid
+flowchart TD
+  U["Understand: goals in the reader's order<br/>g1, g2, g3, ..."] --> Q{"Does the next goal<br/>have a usable tree?"}
+  Q -- yes --> T["Tick its tree<br/>each act = one engine step with the recovery ladder<br/>(the planner rung is held back)"]
+  Q -- "no: take the neighbouring goals without a tree" --> S["SAGE plans them ONCE<br/>from the world as it is now<br/>(service plan_goals)"]
+  S --> X["Run the steps one by one<br/>(try_step, with the ladder)"]
+  T --> OK{"Done?"}
+  X --> OK
+  OK -- yes --> N{"More goals?"}
+  N -- yes --> Q
+  N -- no --> E["Plan end: the engine's goal check"]
+  OK -- "no way left in a tree" --> M["Ask once (menu) or stop;<br/>policy sage_once: the goals left go to the SAGE replan"]
+  OK -- "no way left in a SAGE part" --> R["The goals left (this part and every goal after it,<br/>trees included) go to the SAGE replan once"]
+```
+
+#### Which goals the trees cover (an example)
+
+Which goals a tree covers is **data of the robot**: the manifest's `planner.options.bt_goal.trees`, one entry (or a list of entries, the first usable one wins) per goal kind. A robot that declares none is covered for no goal, and every goal goes to SAGE. Of the repos checked (`kcare_robot`, `homeloop_robot`, `robotapp`, `symbolic_robot`), only the mock robot of the symbolic benchmark declares trees, and only when the benchmark layer `bt_goal` is selected. Its table, from `bench/suites/home/planners/d1_options.py` in `symbolic_robot` (not linked: that repo's newest commit is not on GitHub yet; the tree shapes are labelled `assumed`, a design choice not tuned on any task):
+
+| Goal kind | Tree (in words) | When it is not used |
+|---|---|---|
+| `on` | skip if already placed; else go to the source, Find, Pick, go to the destination, Place, check placed and hand free | the goal has a `hand` field (a hand-over): SAGE plans it |
+| `in` | open the container (empty hand first), fetch as `on`, PutIn, check placed and hand free | |
+| `open` | skip if already open; go to the object, Open, check opened | |
+| `close` | skip if already closed; go to the object, Close, check closed | |
+| `go` | MoveTo, unless the robot is already there | |
+| `say` | go to the place, Say the sentence; a second entry says it here when the goal has no place | |
+| any other kind (for example `deliver`, `give`) | none declared in this example | SAGE plans it |
+
+The last row is where `mixed` matters: in a request of three goals where the first and the last are of a kind with a tree (say two `go` goals) and the middle one is of a kind with none, the trees run the first and the last, and SAGE plans only the middle one, from where the first tree left the robot.
+
+#### One tree: the `on` goal
+
+The same example, drawn. A **fallback** tries its children from left to right until one succeeds; a **sequence** runs its children until one fails; `cond` reads the belief, `act` is one robot step. Every `go` is a MoveTo that is skipped when the robot is already at the place.
+
+```mermaid
+flowchart TD
+  R["fallback"] --> C0["cond: object placed at the destination<br/>(already done: nothing to do)"]
+  R --> S["sequence"]
+  S --> F["fallback"]
+  F --> C1["cond: holding the object"]
+  F --> S2["sequence"]
+  S2 --> H["cond: hand free"]
+  S2 --> G1["go to the source"]
+  S2 --> A1["act Find object"]
+  S2 --> A2["act Pick object"]
+  S2 --> C2["cond: holding the object"]
+  S --> G2["go to the destination"]
+  S --> A3["act Place"]
+  S --> C3["cond: object placed at the destination"]
+  S --> C4["cond: hand free"]
+```
+
 ## What the core adds around any planner
 
 Whichever planner you plug in, the core provides:
