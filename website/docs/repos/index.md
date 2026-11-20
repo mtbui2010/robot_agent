@@ -1,6 +1,6 @@
 ---
-sources: [robot_agent:pyproject.toml, kcare_robot:pyproject.toml, embodiplan:pyproject.toml, embodiplan:website/mkdocs.yml, robotapp:docs/astro.config.mjs, robotapp:scripts/gen_types.sh, kcare_sim:website/mkdocs.yml, kcare_sim:README.md, symbolic_robot:symbolic_robot/server.py]
-verified_at: {robot_agent: ad501cf15ece, kcare_robot: d4f5577b342e, embodiplan: 8293351291c7, robotapp: f30f0b52d969, kcare_sim: a288298acede, symbolic_robot: f55ace24c3b4}
+sources: [robot_agent:pyproject.toml, kcare_robot:pyproject.toml, embodiplan:pyproject.toml, embodiplan:website/mkdocs.yml, robotapp:docs/astro.config.mjs, robotapp:scripts/gen_types.sh, kcare_sim:website/mkdocs.yml, kcare_sim:README.md, symbolic_robot:symbolic_robot/server.py, symbolic_robot:website/mkdocs.yml, symbolic_robot:.github/workflows/docs.yml]
+verified_at: {robot_agent: 3269923, kcare_robot: f4a8384c59d2, embodiplan: 76da520, robotapp: 4a810a3717ab, kcare_sim: c6e32368f1cf, symbolic_robot: 587664465e76}
 ---
 
 # Other repos
@@ -9,7 +9,7 @@ This page lists the six repos of the framework, what each is for and how they de
 
 !!! abstract "In this page"
     - Six repos, one hub. The robot package, the dashboard and the simulators connect to `robot_agent`; the planner library sits under it.
-    - Three repos have their own live documentation site: `embodiplan`, `kcare_sim` and `robotapp`. This site links to them and does not copy them.
+    - Three repos have their own live documentation site: `embodiplan`, `kcare_sim` and `robotapp`. This site links to them and does not copy them. `symbolic_robot` has the source of a site in `website/` too; that it is published is not verified.
     - The pages here are overviews: role, how the repo plugs into the hub, its parts and what it needs. Detail stays in each repo.
 
 ## The six repos
@@ -21,7 +21,7 @@ This page lists the six repos of the framework, what each is for and how they de
 | `kcare_robot` | Robot package for one real mobile manipulator: skills, manifest, site configuration. | Python | robot_agent, visionserve, embodiplan (optional extra) | None; `docs/` in the repo | [Robot package (kcare_robot)](kcare-robot.md) |
 | `robotapp` | Web dashboard for any `robot_agent` backend. | TypeScript (Next.js) | the HTTP and WebSocket API of robot_agent | [mtbui2010.github.io/robotapp](https://mtbui2010.github.io/robotapp/) | [Dashboard (robotapp)](robotapp.md) |
 | `kcare_sim` | Physics (MuJoCo) simulation of a house with the robot's ROS names; VLA drawer-policy data, training and tests. Its `symbolic/` folder is the older symbolic simulator. It also has an Isaac Lab mode that its README calls unverified. | Python | kcare_robot (ROS names), robot_agent (symbolic mode) | [mtbui2010.github.io/kcare_sim](https://mtbui2010.github.io/kcare_sim/) | [kcare_sim](kcare-sim.md) |
-| `symbolic_robot` | The official symbolic simulator and planner benchmark (home and factory domains). | Python | robot_agent, embodiplan | None; `docs/` in the repo | [symbolic_robot](symbolic-robot.md) |
+| `symbolic_robot` | The official symbolic simulator and planner benchmark (home and factory domains). | Python | robot_agent, embodiplan | Source in `website/` (MkDocs, with a GitHub Pages workflow); publication not verified. Notes also in `docs/` | [symbolic_robot](symbolic-robot.md) |
 
 These roles and dependencies match [Repo map and versions](../start/repo-map.md), which also lists the version pins and the commit each page was checked against.
 
@@ -54,7 +54,7 @@ An arrow points from a repo to the one it depends on. A dotted arrow is an optio
 | `kcare_sim` | <https://mtbui2010.github.io/kcare_sim/> | The MuJoCo house, the data and training steps, and the symbolic mode. |
 | `robotapp` | <https://mtbui2010.github.io/robotapp/> | The dashboard's architecture, commands, one page per feature and a changelog. |
 
-`kcare_robot` and `symbolic_robot` have no site. Their notes are in the repo `docs/` folders, which each overview page links to.
+`kcare_robot` has no site; its notes are in the repo `docs/` folder, which its overview page links to. `symbolic_robot` has the source of a site (`website/mkdocs.yml`, `site_url` `https://mtbui2010.github.io/symbolic_robot/`, and the workflow `.github/workflows/docs.yml`). Whether that site is live was not checked, so it is not listed in the table above.
 
 !!! note "Commits that are not pushed yet"
-    Four repos (`robot_agent`, `kcare_robot`, `robotapp`, `kcare_sim`) have the checked commits only on the owner's machine so far, so code links to them resolve after the owner pushes. For `kcare_sim` that is 41 commits that are not on its remote branch; the checked commit is the newest of them.
+    The `robot_agent` pin `3269923` is on a local branch (`main` plus the merge of `live/no-ros`) and is not on GitHub yet, so code links into `robot_agent` resolve after the owner pushes it. `kcare_robot` `f4a8384c59d2`, `robotapp` `4a810a3717ab` and `symbolic_robot` `587664465e76` are the newest commits of their local remote-tracking branches. `kcare_sim` `c6e32368f1cf` is 7 commits ahead of its remote-tracking branch, so its code links resolve after a push. The remote-tracking branches may be out of date: nothing was fetched.

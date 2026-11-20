@@ -18,7 +18,7 @@ These eight pages explain the ideas behind `robot_agent`. Read them to understan
 | 5 | [Checks before motion](checks-before-motion.md) | A plan is checked three times before the robot acts: the whole plan, each step, and inside the skill. A step's result is checked in layers. |
 | 6 | [Planners and loops](planners.md) | A planner makes a list of steps. A loop (ClosedLoop or AssistLoop) wraps it with understanding, checks, recovery and recording. |
 | 7 | [Runs and records](runs-and-records.md) | Every task is a run with an id. One JSONL record per run is enough to replay it offline. |
-| 8 | [Dialog and intent](dialog-and-intent.md) | How the robot understands a request, asks questions, and sorts what people say during a run. |
+| 8 | [Dialog and intent](dialog-and-intent.md) | How the robot understands a request, asks questions (for example where an object is, after it has looked), and sorts what people say during a run. |
 
 ## How they depend on each other
 

@@ -1,6 +1,6 @@
 ---
 sources: [robotapp:CLAUDE.md, robotapp:Makefile, robotapp:README.md, robotapp:frontend/package.json, robotapp:frontend/next.config.js, robotapp:frontend/app/page.tsx, robotapp:frontend/components/, robotapp:frontend/lib/api.ts, robotapp:scripts/, robotapp:docs/astro.config.mjs, robotapp:docs/features/]
-verified_at: {robotapp: f30f0b52d969}
+verified_at: {robotapp: 4a810a3717ab, robot_agent: 3269923}
 ---
 
 # Dashboard (robotapp)
@@ -13,12 +13,12 @@ This page gives you a short tour of `robotapp`: what the dashboard is for, which
     - To build and check it you need Node, not a robot. To use it you need a running hub.
 
 !!! code "Where in the code"
-    - Page: [`frontend/app/page.tsx`](https://github.com/mtbui2010/robotapp/blob/f30f0b52d969/frontend/app/page.tsx). Panels: [`frontend/components/`](https://github.com/mtbui2010/robotapp/tree/f30f0b52d969/frontend/components). The one HTTP client: [`frontend/lib/api.ts`](https://github.com/mtbui2010/robotapp/blob/f30f0b52d969/frontend/lib/api.ts).
-    - Build and checks: [`Makefile`](https://github.com/mtbui2010/robotapp/blob/f30f0b52d969/Makefile), [`scripts/`](https://github.com/mtbui2010/robotapp/tree/f30f0b52d969/scripts)
-    - Repo rules: [`CLAUDE.md`](https://github.com/mtbui2010/robotapp/blob/f30f0b52d969/CLAUDE.md)
+    - Page: [`frontend/app/page.tsx`](https://github.com/mtbui2010/robotapp/blob/4a810a3717ab/frontend/app/page.tsx). Panels: [`frontend/components/`](https://github.com/mtbui2010/robotapp/tree/4a810a3717ab/frontend/components). The one HTTP client: [`frontend/lib/api.ts`](https://github.com/mtbui2010/robotapp/blob/4a810a3717ab/frontend/lib/api.ts).
+    - Build and checks: [`Makefile`](https://github.com/mtbui2010/robotapp/blob/4a810a3717ab/Makefile), [`scripts/`](https://github.com/mtbui2010/robotapp/tree/4a810a3717ab/scripts)
+    - Repo rules: [`CLAUDE.md`](https://github.com/mtbui2010/robotapp/blob/4a810a3717ab/CLAUDE.md)
 
 !!! note "Which version this page describes"
-    This page describes the commit `f30f0b52d969`. The owner's working copy has about 22 uncommitted changes; they are not described.
+    This page describes the commit `4a810a3717ab`, which is the newest commit of its local remote-tracking branch `origin/main`. It contains the changes that an earlier version of this page listed as uncommitted. The working copy has a few newer uncommitted changes (`docs/`, `frontend/lib/skill_configs.json`); they are not described. A branch `docs/website-site` replaces the Astro site by a MkDocs site in `website/`; it is not on `main`, so the site text below is about `main`.
 
 ## Role
 
@@ -59,7 +59,7 @@ flowchart LR
 
 ## Make targets
 
-From the [`Makefile`](https://github.com/mtbui2010/robotapp/blob/f30f0b52d969/Makefile). None was run here.
+From the [`Makefile`](https://github.com/mtbui2010/robotapp/blob/4a810a3717ab/Makefile). None was run here.
 
 | Target | What it does |
 |---|---|

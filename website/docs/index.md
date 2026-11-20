@@ -42,16 +42,16 @@ An arrow points from a repo to the one it depends on. The full picture, with the
 
 What was run for these pages was offline, on the machine used to write them:
 
-- The hub's planning loop on its **fake robot**, with a scripted language model and a scripted planner. A failed `Find` led to a search, a replan and a successful end. See [The closed loop](concepts/closed-loop.md) and [Run the whole system](start/run-the-system.md).
+- The hub's planning loop on its **fake robot**, with a scripted language model and a scripted planner. A failed `Find` led to a search, a replan and a successful end. See [The closed loop](concepts/closed-loop.md) and [Run the whole system](start/run-the-system.md). The run was repeated on the current engine (`robot_agent` `3269923`, `embodiplan` `76da520`) and printed the same events.
 - Failure, check and record behaviour on the same fake robot: [Skills, results, failure codes](concepts/skills-and-failures.md), [Checks before motion](concepts/checks-before-motion.md), [Runs and records](concepts/runs-and-records.md) (including an offline replay) and [Debug a failed run](guides/debug-a-failed-run.md).
 - A small robot package and a manifest check, without ROS: [Add a robot](guides/add-a-robot.md) and [A robot as data](concepts/robot-as-data.md).
-- The **symbolic simulator** (`symbolic_robot`): listing its domains and planners, and small smoke runs of the household benchmark with the two reference planners that need no language model. They show the output format only, not results. See [symbolic_robot](repos/symbolic-robot.md) and [Benchmark a planner](guides/benchmark-a-planner.md).
+- The **symbolic simulator** (`symbolic_robot`): listing its domains and planners, and small smoke runs of the household benchmark with the two reference planners that need no language model. They show the output format only, not results. They were run at an older `symbolic_robot` commit and were not repeated. See [symbolic_robot](repos/symbolic-robot.md) and [Benchmark a planner](guides/benchmark-a-planner.md).
 
 ## Not yet
 
 - **No real robot, no ROS, no MuJoCo and no real language model** were used. Pages that describe those parts are read from code and are marked "not run".
 - **No test suite was run.** `pytest` was not installed on the machine used to write these pages. Where a test is mentioned, the page says only what the test checks, from reading it.
-- The pages describe the **committed code at the pinned commits**. Four of those commits (`robot_agent`, `kcare_robot`, `robotapp`, `kcare_sim`) are not pushed to GitHub yet, so code links into those four resolve after the owner pushes.
+- The pages describe the **committed code at the pinned commits**. The `robot_agent` pin `3269923` is on a local branch (`main` plus the merge of `live/no-ros`) and is not on GitHub yet, so code links into `robot_agent` resolve after the owner pushes it. The other pins were on the remote-tracking branches known locally when the pages were checked.
 - Known defects are written as current behaviour in [Known pitfalls](reference/known-pitfalls.md).
 
 ## The six repos

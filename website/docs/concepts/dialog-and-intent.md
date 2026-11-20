@@ -1,6 +1,6 @@
 ---
-sources: [robot_agent:robot_agent/interact/, robot_agent:robot_agent/core/planning/understand.py, robot_agent:robot_agent/core/planning/goals.py, robot_agent:robot_agent/core/planning/assist_loop.py, robot_agent:robot_agent/core/languages.py, robot_agent:robot_agent/api/agent.py, robot_agent:tests/fakes.py]
-verified_at: {robot_agent: ad501cf15ece}
+sources: [robot_agent:robot_agent/interact/, robot_agent:robot_agent/core/planning/understand.py, robot_agent:robot_agent/core/planning/goals.py, robot_agent:robot_agent/core/planning/assist_loop.py, robot_agent:robot_agent/core/languages.py, robot_agent:robot_agent/core/planning/langdata.py, robot_agent:robot_agent/options/look_then_ask.py, robot_agent:robot_agent/options/bring_ask.py, robot_agent:robot_agent/api/agent.py, robot_agent:tests/fakes.py]
+verified_at: {robot_agent: 3269923, embodiplan: 76da520}
 ---
 
 # Dialog and intent
@@ -10,16 +10,19 @@ A person talks to the robot in two situations. Before the task starts, the robot
 !!! abstract "In this page"
     - **Understand**: the person's words become **typed goals** (`on`, `in`, `open`, `close`, `go`, `say`, `deliver`). If something is unclear, the robot asks. If the robot cannot do it, it refuses with a typed reason.
     - **Ask**: while the robot waits for an answer, the run is marked as waiting. An answer can come from the robot's own microphone or be typed from any client. Yes/no answers are read by a small word-list reader.
+    - **Questions the robot adds itself**: `look_then_ask` (looks where it stands, then asks once "I don't see the X here. Where is it?") and `bring_ask` (one question, "Where are you? Or where should I put it?"). Both are on by default.
     - **Intent router**: a message that arrives during a run is sorted into one of nine kinds. Stop, pause and resume are matched by keywords, never by an LLM, so they work when the LLM server is down.
     - Examples here run offline. Where an LLM reply is needed, it is **a scripted LLM reply** and is labelled so.
 
 !!! code "Where in the code"
-    - [`intent_router.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/interact/intent_router.py#L28-L239): `Intent`, `IntentRouter`, the keyword lists
-    - [`dialog.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/interact/dialog.py#L54-L189): `ask`, `ask_heard`, `yes_no`, `read_yes_no`, `ask_yes_no`
-    - [`RunManager.inject`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/interact/run_manager.py#L611-L651) and [`Refusal`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/interact/run_manager.py#L88-L92)
-    - [`goals.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/goals.py#L25-L81): the goal kinds. [`typed_refusal`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/understand.py#L364-L411) in `understand.py`.
-    - The understand and clarify rounds: [`assist_loop.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/assist_loop.py#L1030-L1220)
-    - [`languages.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/languages.py#L19-L130)
+    - [`intent_router.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/interact/intent_router.py#L30-L222): `Intent`, `IntentRouter`, the keyword lists
+    - [`dialog.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/interact/dialog.py#L64-L213): `ask`, `ask_heard`, `yes_no`, `read_yes_no`, `ask_yes_no`
+    - [`RunManager.inject`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/interact/run_manager.py#L611-L651) and [`Refusal`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/interact/run_manager.py#L88-L92)
+    - [`goals.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/goals.py#L25-L55): the goal kinds. [`typed_refusal`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/understand.py#L673-L712) in `understand.py`.
+    - The understand and clarify rounds: [`assist_loop.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/assist_loop.py#L1787-L1893), [`_ask_clarify`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/assist_loop.py#L2563-L2594), [`_read_back`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/assist_loop.py#L2438-L2508)
+    - The words of the keyword lists: language packs, [`langdata.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/langdata.py) and `core/planning/lang/<code>.json` (the `dialogue` block)
+    - [`look_then_ask.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/options/look_then_ask.py) and [`bring_ask.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/options/bring_ask.py): the two questions the robot adds before it plans
+    - [`languages.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/languages.py#L19-L130)
 
 ## The idea in plain words
 
@@ -58,6 +61,8 @@ The goal `type` must be one of seven kinds. Each kind needs certain abstract act
 
 `go`, `say` and `deliver` are the *template kinds*: they have a fixed sequence of steps compiled in code, with no planner LLM call. The four manipulation kinds go to the planner. The understand prompt only offers the template kinds that the robot has the actions for (`kinds_for`). The manipulation kinds are always offered, so a request the robot cannot do is first understood and then refused with a reason.
 
+A robot or run may also switch on an optional eighth kind, `give` (run option `understand_give_kind`, default off). It means "hand an object to a person" and is turned into an `on` goal whose destination is the person (`goals.canonical`). With the option off, the seven kinds above are all the model is offered.
+
 The code that checks a goal against the robot (`missing_actions`) knows no robot by name. The actions a robot has come from its manifest. See [A robot as data](robot-as-data.md).
 
 ### A question from the grounding step
@@ -81,7 +86,7 @@ The loop is bounded:
 | `confirm_answers` (`ROBOT_AGENT_CONFIRM_ANSWERS`, on) | Read the goals back after an answer that was *heard*. |
 | `confirm_task` (`ROBOT_AGENT_CONFIRM_TASK`, off) | Always read the goals back, even for a first request. |
 
-All five are also accepted as per-run `options` on `/ws/agent`. After two read-backs without a "yes", the run fails with "the user did not confirm the task". A bare "no" makes the robot ask "Sorry. What should I do?". A "no" with words ("no, the shelf in the restroom") is used as the correction.
+All five are also accepted as per-run `options` on `/ws/agent`. A question that the code calls essential (where the person is) may be asked one round past `clarify_rounds`. After two read-backs without a "yes", the run fails with "the user did not confirm the task". A bare "no" makes the robot ask "Sorry. What should I do?". A "no" with words ("no, the shelf in the restroom") is used as the correction.
 
 ### Typed refusals
 
@@ -93,7 +98,7 @@ The robot refuses only for a **typed reason**, never because the model wrote som
 | `safety` | The model's status is `unsafe`. |
 | `declined` | The constant exists, and its docstring says "the person said no". No code path in `robot_agent` returns it at this commit (found by searching for `DECLINED` and `declined`). |
 
-One more rule protects against a misheard answer. If the model refuses right after an answer that came through the microphone, and the person's words contain no word from the safety or capability lists, the refusal is **not** applied. The loop removes that answer and asks the question again: "Sorry, I may have misheard you." A typed answer cannot be misheard, so this rule does not apply to it.
+One more rule protects against a misheard answer. If the model refuses right after an answer that came through the microphone, and the person's words contain no word from the robot's safety profile (`refusal_marks`, passed to `typed_refusal` as `marks`), the refusal is **not** applied. A profile with no such words lets the refusal stand. The loop removes that answer and asks the question again: "Sorry, I may have misheard you." A typed answer cannot be misheard, so this rule does not apply to it.
 
 These are real outputs of `typed_refusal(status, reason, missing, words, answer_heard)`:
 
@@ -110,9 +115,33 @@ None
 
 (The call lines above are copied from the script below; the outputs are its real outputs.) When a refusal is applied, the loop ends the run with status `refused` and the `refusal` kind in the final `done` event. Nothing is planned.
 
+Two more rules sit before a refusal is final (`_capability_check`). A model `infeasible` with no goals, and nothing heard that could be refused, makes the robot ask the person to say it again (`q_repeat`) instead of refusing. A model `infeasible` for goals that the robot's manifest can do, with a reason that is only a missing skill or "other", is read back to the person instead of refused. A goal whose object is over the manifest's declared limits is refused as `capability`.
+
 ### Language
 
-The robot talks in the languages its manifest declares: `language` (the default) and optionally `languages`. A manifest that names none gives English only. The dashboard builds its picker from `GET /robot/languages`, and a site can switch some of the manifest's languages off in a `languages.json` file. The loop writes its questions in English and, for `ko`, `vi`, `ja` and `zh`, asks the LLM to translate them. If the LLM is not reachable it keeps the English text.
+The robot talks in the languages its manifest declares: `language` (the default) and optionally `languages`. A manifest that names none gives English only. The dashboard builds its picker from `GET /robot/languages`, and a site can switch some of the manifest's languages off in a `languages.json` file. The loop writes its questions in English and, for `ko`, `vi`, `ja` and `zh`, asks the LLM to translate them. If the LLM is not reachable it keeps the English text. The word lists for yes/no, stop/pause/resume, negation and the status/drop/modify/add keywords are not in the code any more: they are language-pack data, the `dialogue` block of `core/planning/lang/<code>.json`. At this commit `en`, `ko` and `vi` have words; `ja` and `zh` have none, so a reply in them is read as a correction and has no keyword command.
+
+## Two questions the robot adds before it plans
+
+After the goals are understood, options can add one question of their own. Two are on by default. They act on the goal list before the read-back (hook `on_goals` for the first, grounding for the second). Both were checked with **English phrases only**: the texts are the core's `q_where_is_here` and `q_where_bring`. Korean and Vietnamese are **not verified**.
+
+**`look_then_ask`: look first, then ask.** It acts on an `on` or `in` goal when the request does not name where the object is and the object memory does not hold a trusted sighting. The robot makes one `Find` where it stands.
+
+- Seen: that place is the source. No question.
+- Not seen: one question, "I don't see the mug here. Where is it?" (a `clarify` event of kind `where_source`). A place in the answer becomes the source. A room is looked at first.
+- "I don't know", silence, or an answer with no place: the goal goes to the ranked [search by belief](closed-loop.md#options-that-change-the-flow), and the question is not asked again.
+- No `Find` the robot can use: nothing changes, the engine's own order stands.
+
+It asks once per object and run. When `ask_source` is also on, `look_then_ask` goes first and `ask_source` does not ask about the same object. Switch off: run option `look_then_ask=0` (or `ROBOT_AGENT_LOOK_THEN_ASK=0`); the search by belief then runs first and the question comes after the misses.
+
+**`bring_ask`: one question for "bring me X".** A request to bring something to the speaker asks one combined question, "Where are you? Or where should I put it?", also when the robot already tracks the person.
+
+- Person not tracked: a place where they are puts the object on the support surface nearest to it. A place to put it puts it there. No place ("hand it to me") is a hand-over.
+- Person tracked: the answer is kept, but the delivery stays the engine's own (hand-over, or the surface by the tracked position).
+- Asked once per request. The place the person says they are at is never the object's source.
+- Not asked when the words already ask for a hand-over ("hand me the mug").
+
+Switch off: run option `bring_ask=0` (or `ROBOT_AGENT_BRING_ASK=0`). Details: [`docs/options.md`](https://github.com/mtbui2010/robot_agent/blob/3269923/docs/options.md) and [`docs/dialog.md`](https://github.com/mtbui2010/robot_agent/blob/3269923/docs/dialog.md). The offline scripts on this page do not run these two options, so their behaviour here comes from reading the code and the option documents, not from a run.
 
 ## Asking a question and taking the answer
 
@@ -141,7 +170,7 @@ answer: Answer(text='the dining table', source='typed') | awaiting now: None
 
 ### Yes or no
 
-`read_yes_no(text)` reads an answer with word lists in English, Korean and Vietnamese. The `NO` list is checked first, so "no, ok" is a no.
+`read_yes_no(text)` reads an answer with the `dialogue` word lists of the language packs (English, Korean and Vietnamese have words). The `NO` list is checked first, so "no, ok" is a no.
 
 | Kind | Meaning | Real examples |
 |---|---|---|
@@ -172,7 +201,7 @@ A `new` task that comes from a person with a **higher role** than the one who st
 
 The order is fixed. The cheapest and safest check comes first:
 
-1. **Control words.** `stop`, `pause`, `resume` are matched by whole phrases (English, Korean and Vietnamese word lists), never by an LLM. The message must be at most 4 words long, must **be** the phrase (after polite fillers like "please" or "robot" and a small set of tail words like "now"), and must not contain a negation. Result: source `keyword`, confidence 1.0.
+1. **Control words.** `stop`, `pause`, `resume` are matched by whole phrases (the `dialogue` word lists of the language packs: English, Korean and Vietnamese), never by an LLM. The message must be at most 4 words long, must **be** the phrase (after polite fillers like "please" or "robot" and a small set of tail words like "now"), and must not contain a negation. Result: source `keyword`, confidence 1.0.
 2. **Answer.** If the run is waiting on a question, the message is an `answer` (source `awaiting`, 0.9).
 3. **LLM classifier**, if one is given (a function `llm(text, context)`). It can only return `modify`, `add`, `drop`, `new` or `status`. It never decides stop, pause or answer. If it is missing, raises, or returns something else, step 4 runs.
 4. **Keyword fallback** for the rest (source `fallback`): word lists for `status`, `drop`, `modify`, `add`, in that order. A question mark with no other match gives `status` (0.3). Everything else is `new` (0.3).
@@ -248,7 +277,7 @@ Real outputs (the run manager only; one guest-started run, one owner-started run
 
 ## Run it yourself
 
-The two scripts below use only pure Python and the run manager. The router and dialog results do not need an LLM. They ran with `/usr/bin/python3 -B`, in a checkout of `robot_agent` at `ad501cf15ece`, with `REPOS` set to the folder that holds the repos.
+The two scripts below use only pure Python and the run manager. The router and dialog results do not need an LLM. They ran with `/usr/bin/python3 -B`, in a checkout of `robot_agent` at `3269923` (rerun on 2026-11-20; the printed outputs are unchanged), with `REPOS` set to the folder that holds the repos.
 
 ```python
 import os; import sys, threading, time

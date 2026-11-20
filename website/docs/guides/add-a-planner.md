@@ -1,6 +1,6 @@
 ---
 sources: [robot_agent:robot_agent/core/planning/base.py, robot_agent:robot_agent/core/planning/registry.py, robot_agent:robot_agent/core/planning/loop.py, robot_agent:robot_agent/core/planning/assist_loop.py, robot_agent:robot_agent/core/unified_agent.py, robot_agent:robot_agent/observe/record.py, robot_agent:tests/fakes.py, robot_agent:tests/test_v2_planner_plugin.py]
-verified_at: {robot_agent: ad501cf15ece}
+verified_at: {robot_agent: 3269923}
 ---
 
 # Add a planner
@@ -14,13 +14,13 @@ A [planner](../concepts/planners.md) is the part that writes the plan. This guid
     - Every command and output below was run offline on the fake robot with a scripted LLM answer. Nothing here comes from a real robot.
 
 !!! code "Where in the code"
-    - Planner protocol: [`base.py` L246-L279](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/base.py#L246-L279); optional capabilities: [`base.py` L289-L364](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/base.py#L289-L364)
-    - Name lookup: [`resolve_planner`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/registry.py#L72-L93), [`accepted_kwargs`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/registry.py#L105-L116), [`get_planner`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/registry.py#L134-L160)
-    - What the core offers a plug-in: [`loop.py` L333-L367](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/loop.py#L333-L367)
-    - The generator setting of the AssistLoop: [`assist_loop.py` L303-L307](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/assist_loop.py#L303-L307)
-    - Choosing a loop and a planner: [`unified_agent.py` L355-L382](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/unified_agent.py#L355-L382)
-    - The recording proxy: [`record.py` `RecordingPlanner`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/observe/record.py#L601)
-    - Fake robot and scripted planner used below: [`tests/fakes.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/tests/fakes.py#L63-L91); a test of the plug-in route: [`tests/test_v2_planner_plugin.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/tests/test_v2_planner_plugin.py)
+    - Planner protocol: [`base.py` L246-L279](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/base.py#L246-L279); optional capabilities: [`base.py` L289-L364](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/base.py#L289-L401)
+    - Name lookup: [`resolve_planner`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/registry.py#L72-L93), [`accepted_kwargs`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/registry.py#L105-L116), [`get_planner`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/registry.py#L134-L160)
+    - What the core offers a plug-in: [`loop.py` L362-L375](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/loop.py#L362-L375)
+    - The generator setting of the AssistLoop: [`assist_loop.py` L372](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/assist_loop.py#L372)
+    - Choosing a loop and a planner: [`unified_agent.py` L364-L391](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/unified_agent.py#L364-L391)
+    - The recording proxy: [`record.py` `RecordingPlanner`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/observe/record.py#L601)
+    - Fake robot and scripted planner used below: [`tests/fakes.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/tests/fakes.py#L63-L91); a test of the plug-in route: [`tests/test_v2_planner_plugin.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/tests/test_v2_planner_plugin.py)
 
 ## Before you start
 
@@ -119,7 +119,7 @@ To select it for a real run, use one of these (the first two are read in the cod
 
 | Where | Setting |
 |---|---|
-| ClosedLoop, from the dashboard | Send the name as the `planner` choice on `/ws/agent`. Any name that `is_planner_name` accepts is used as given (`unified_agent.py` L359-L363). |
+| ClosedLoop, from the dashboard | Send the name as the `planner` choice on `/ws/agent`. Any name that `is_planner_name` accepts is used as given (`unified_agent.py` L368-L372). |
 | ClosedLoop, by default | The environment variable `ROBOT_AGENT_PLANNER` (default `grace`). |
 | AssistLoop (`sage`) | The `generator` option on `/ws/agent`, or the environment variable `ROBOT_AGENT_SAGE_GENERATOR` (default `grace`). The AssistLoop's planner is called the generator. |
 
@@ -162,7 +162,12 @@ A planner can offer more by having the methods or the attribute. The core checks
 | `ProgressReporting` | a `progress` attribute | Sets it to a callable that takes a dict; each call is streamed as a `plan_step` event. |
 | `EpisodeMemory` | `record_episode(task, steps)` | Calls it once with the executed steps of every run that ended in success. |
 
-`SearchPlanner` has none of them. `planner_capabilities` returns the empty set for it. Skip this step until you need one.
+Two more optional hooks were added since the earlier pin of this site. They are read the same way and are not needed for a simple planner:
+
+- `chat_override(fn)` (a context manager): lets the core run your planner's LLM calls with a model of its own for a role. The core finds it with `base.chat_override`, looking through proxies such as `RecordingPlanner`.
+- Optional keywords of the plan calls (the code names `subgoals=` and `budget=`; which method gets which was not checked): the core passes them only when your method has a parameter of that exact name (`base.accepts`). A method that takes `**kwargs` and no named parameter is not given them. `RecordingPlanner` now forwards such keywords.
+
+`SearchPlanner` has none of the capabilities. `planner_capabilities` returns the empty set for it. Skip this step until you need one.
 
 ## Step 5. Run it on the fake robot
 

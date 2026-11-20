@@ -1,6 +1,6 @@
 ---
 sources: [robot_agent:robot_agent/skill_configs.py, robot_agent:robot_agent/new_robot.py, robot_agent:robot_agent/contract/types.py, robot_agent:robot_agent/runtime.py, robot_agent:robot_agent/core/skill_registry.py, robot_agent:robot_agent/api/skills.py, robot_agent:robot_agent/api/events.py, robot_agent:robot_agent/app_factory.py, robot_agent:robot_agent/connect/codecs.py, robot_agent:robot_agent/contract/manifest.py, robot_agent:Makefile, robot_agent:pyproject.toml, robot_agent:README.md, robot_agent:docs/contract.md, kcare_robot:kcare_robot/skills/_recognition_helpers.py, kcare_robot:kcare_robot/configs/skills_config.py, kcare_robot:kcare_robot/configs/common/skills.json, kcare_robot:kcare_robot/configs/locations/, kcare_robot:CLAUDE.md, robotapp:scripts/dump_openapi.py, robotapp:frontend/lib/generated/openapi.json, robotapp:frontend/lib/planView.ts, symbolic_robot:bench/suites/home/planners/robot_agent_adapter.py, symbolic_robot:symbolic_robot/domains/home/configs/manifest.yaml, kcare_sim:README.md]
-verified_at: {robot_agent: ad501cf15ece, kcare_robot: d4f5577b342e, robotapp: f30f0b52d969, symbolic_robot: f55ace24c3b4, kcare_sim: a288298acede}
+verified_at: {robot_agent: 3269923, kcare_robot: d4f5577b342e, robotapp: f30f0b52d969, symbolic_robot: f55ace24c3b4, kcare_sim: a288298acede}
 ---
 
 # Known pitfalls
@@ -15,7 +15,7 @@ verified_at: {robot_agent: ad501cf15ece, kcare_robot: d4f5577b342e, robotapp: f3
 
 Entries are grouped: core and contract, API and dashboard, simulators and benchmark, docs and setup. "Not run" means I read the code but did not start the system (no robot, ROS, simulator or LLM is available here).
 
-Link base for the code links below: `https://github.com/mtbui2010/<repo>/blob/<sha>/<path>`. The shas are `robot_agent` `ad501cf15ece`, `kcare_robot` `d4f5577b342e`, `robotapp` `f30f0b52d969`, `symbolic_robot` `f55ace24c3b4`, `kcare_sim` `a288298acede`.
+Link base for the code links below: `https://github.com/mtbui2010/<repo>/blob/<sha>/<path>`. The shas are `robot_agent` `3269923`, `kcare_robot` `d4f5577b342e`, `robotapp` `f30f0b52d969`, `symbolic_robot` `f55ace24c3b4`, `kcare_sim` `a288298acede`.
 
 ## Core and contract
 
@@ -25,9 +25,9 @@ Link base for the code links below: `https://github.com/mtbui2010/<repo>/blob/<s
 
 **Cause.**
 
-- [`robot_agent/skill_configs.py:105-109`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/skill_configs.py#L105-L109) sets `MOBILE_HEIGHT = 435`, `ME = 'living room'`, `STANDING_OBJ_NAMES` and `LYING_OBJ_NAMES`. These are the same values the kcare robot declares in its [manifest](../start/glossary.md#manifest). The robot package then imports them back from the hub ([`kcare_robot/skills/_recognition_helpers.py:20`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/skills/_recognition_helpers.py#L20-L23)).
-- [`robot_agent/new_robot.py:203`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/new_robot.py#L203-L204) sets `--from` to `kcare_robot` by default. This is a developer command and is outside the lint scope.
-- A search for the text `kcare_robot` in the hub at this commit finds 31 files (re-counted with `git grep -il`). Most are docs, tests, help text and comments; the two entries above are the real coupling.
+- [`robot_agent/skill_configs.py:105-109`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/skill_configs.py#L105-L109) sets `MOBILE_HEIGHT = 435`, `ME = 'living room'`, `STANDING_OBJ_NAMES` and `LYING_OBJ_NAMES`. These are the same values the kcare robot declares in its [manifest](../start/glossary.md#manifest). The robot package then imports them back from the hub ([`kcare_robot/skills/_recognition_helpers.py:20`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/skills/_recognition_helpers.py#L20-L23)).
+- [`robot_agent/new_robot.py:203`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/new_robot.py#L203-L204) sets `--from` to `kcare_robot` by default. This is a developer command and is outside the lint scope.
+- A search for the text `kcare_robot` in the hub at this commit finds 55 files (re-counted with `git grep -il` at `3269923`; it was 31 at the earlier pin). Most are docs, tests, help text and comments; the two entries above are the real coupling.
 
 **Avoid.** A second robot must not rely on these constants. Put the values in your own manifest and `skill_configs_override.json`, and pass `--from <your_package>` to `new_robot`. Check that no skill of yours imports the object-name lists from the hub.
 
@@ -37,7 +37,7 @@ Link base for the code links below: `https://github.com/mtbui2010/<repo>/blob/<s
 
 **Symptom.** The lint passes while the hub still holds a robot's data (P1).
 
-**Cause.** The lint searches only `*.py` files under `core/`, `interact/` and `contract/`, for the patterns `grasp_succeed mobile_pose kcare <maker> MOBILE_HEIGHT` (`<maker>` stands for the robot maker's product name) ([`Makefile:213-226`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/Makefile#L213-L226)). `skill_configs.py`, `new_robot.py`, `api/`, tests and docs are outside it. I ran the same search by hand on those three folders at the commit: 0 files for each pattern. The lint also looks for names, not for values, so a robot's data without the name passes.
+**Cause.** The lint searches only `*.py` files under `core/`, `interact/` and `contract/`, for the patterns `grasp_succeed mobile_pose kcare <maker> MOBILE_HEIGHT` (`<maker>` stands for the robot maker's product name) ([`Makefile:213-227`](https://github.com/mtbui2010/robot_agent/blob/3269923/Makefile#L213-L227)). `skill_configs.py`, `new_robot.py`, `api/`, tests and docs are outside it. I ran the same search (`make lint-core`) on those three folders at `3269923`: 0 hits for each pattern. The target now also runs `tools/lint_arch.py` first (layers, sizes, option wiring; it reported 0 new findings), which is not about robot names. The lint also looks for names, not for values, so a robot's data without the name passes.
 
 **Avoid.** Do not read "lint passed" as "the hub has no robot facts". Review `skill_configs.py` by hand when you change it.
 
@@ -47,7 +47,7 @@ Link base for the code links below: `https://github.com/mtbui2010/<repo>/blob/<s
 
 **Symptom.** `docs/contract.md` lists 12 [failure codes](../start/glossary.md#failurecode). The code has 13.
 
-**Cause.** `FailureCode` has `BUDGET_EXCEEDED = "budget_exceeded"` ([`contract/types.py:31`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/contract/types.py#L18-L31)). The table in [`docs/contract.md:8`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/docs/contract.md#L8) stops at `unknown`. I ran `len(FailureCode)` on the committed file: it printed `13`.
+**Cause.** `FailureCode` has `BUDGET_EXCEEDED = "budget_exceeded"` ([`contract/types.py:31`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/types.py#L18-L31)). The table in [`docs/contract.md:8`](https://github.com/mtbui2010/robot_agent/blob/3269923/docs/contract.md#L8) stops at `unknown`. I ran `len(FailureCode)` on the committed file: it printed `13`.
 
 **Avoid.** Trust the code. A robot's skills do not return `budget_exceeded`; the run uses it when its LLM-call budget is spent, and it is not retried.
 
@@ -57,7 +57,7 @@ Link base for the code links below: `https://github.com/mtbui2010/<repo>/blob/<s
 
 **Symptom.** You add a skill to `skills_config.py`, restart the agent, and the skill is not there.
 
-**Cause.** At start, `_load_skills` first calls `sr.load_saved()` and returns if it found a saved `skills.json` ([`runtime.py:192-195`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/runtime.py#L192-L200)). Only when there is no such file is `skills_config.SKILL_CONFIGS` read. The reload endpoint `POST /skills/reload` does re-read `skills_config.py` ([`api/skills.py:44-70`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/api/skills.py#L44-L70)). The kcare repo tracks `configs/common/skills.json`, so its rule "register a new skill in `configs/skills_config.py`" ([`CLAUDE.md:19`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/CLAUDE.md#L19)) is not enough on its own. Reasoned from the code; not run.
+**Cause.** At start, `_load_skills` first calls `sr.load_saved()` and returns if it found a saved `skills.json` ([`runtime.py:195-201`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/runtime.py#L195-L201)). Only when there is no such file is `skills_config.SKILL_CONFIGS` read. The reload endpoint `POST /skills/reload` does re-read `skills_config.py` ([`api/skills.py:44-70`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/api/skills.py#L44-L70)). The kcare repo tracks `configs/common/skills.json`, so its rule "register a new skill in `configs/skills_config.py`" ([`CLAUDE.md:19`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/CLAUDE.md#L19)) is not enough on its own. Reasoned from the code; not run.
 
 **Avoid.** After you change `skills_config.py`, call `POST /skills/reload`, or update `skills.json` too.
 
@@ -67,7 +67,7 @@ Link base for the code links below: `https://github.com/mtbui2010/<repo>/blob/<s
 
 **Symptom.** A `DeprecationWarning` appears once per device and key. The hub README still presents `exec()` of code strings as a design choice (see P12).
 
-**Cause.** A [codec](../start/glossary.md#codec) in `connections.json` may be a source string (`"def encode_func(data, req): ..."`). It is compiled with `exec` in [`connect/codecs.py:100-118`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/connect/codecs.py#L100-L118), the only `exec` in the hub. It works by default. I ran `python -m robot_agent.connect.codecs --scan` on the five committed `connections.json` files of `kcare_robot` (one per site) at `d4f5577b342e`: they print 37, 38, 38, 41 and 42 inline entries. (The plan counted 39 in one working-tree file; the committed files give the range above.)
+**Cause.** A [codec](../start/glossary.md#codec) in `connections.json` may be a source string (`"def encode_func(data, req): ..."`). It is compiled with `exec` in [`connect/codecs.py:100-118`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/connect/codecs.py#L100-L118), the only `exec` in the hub. It works by default. I ran `python -m robot_agent.connect.codecs --scan` on the five committed `connections.json` files of `kcare_robot` (one per site) at `d4f5577b342e`: they print 37, 38, 38, 41 and 42 inline entries. (The plan counted 39 in one working-tree file; the committed files give the range above.)
 
 **Avoid.** For a new robot, write codecs as modules and register them with `register_codec`. Setting `ROBOT_AGENT_NO_INLINE_CODE=1` turns inline code off and gives a clear error instead; this breaks a robot that still has inline entries.
 
@@ -79,7 +79,7 @@ Link base for the code links below: `https://github.com/mtbui2010/<repo>/blob/<s
 
 **Symptom.** The dashboard's generated API file does not contain `GET /schema/events`, and a new hub router is not covered by its lint.
 
-**Cause.** `robotapp`'s [`scripts/dump_openapi.py:16-17`](https://github.com/mtbui2010/robotapp/blob/f30f0b52d969/scripts/dump_openapi.py#L16-L17) keeps its own list of 16 routers. The hub mounts 17 ([`app_factory.py:73-89`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/app_factory.py#L73-L89)); the missing one is `events`. I read the committed `frontend/lib/generated/openapi.json`: 66 paths, and `/schema/events` is not among them.
+**Cause.** `robotapp`'s [`scripts/dump_openapi.py:16-17`](https://github.com/mtbui2010/robotapp/blob/f30f0b52d969/scripts/dump_openapi.py#L16-L17) keeps its own list of 16 routers. The hub mounts 17 ([`app_factory.py:73-89`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/app_factory.py#L73-L89)); the missing one is `events`. I read the committed `frontend/lib/generated/openapi.json`: 66 paths, and `/schema/events` is not among them.
 
 **Avoid.** When you add a hub router, add its name to that list in `robotapp` as well, then regenerate the snapshot.
 
@@ -89,7 +89,7 @@ Link base for the code links below: `https://github.com/mtbui2010/<repo>/blob/<s
 
 **Symptom.** `GET /schema/events` (version `1.0.0`) describes 27 events. The dashboard receives more.
 
-**Cause.** `api/events.py` defines 27 models ([`api/events.py:26-44`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/api/events.py#L26-L44) for the version and the builder). The loops also send `goal_change`, `understand_check`, `reconcile`, `task_resumed`, `search`, `health` and `goal_check`; I compared the names passed to `r.ev(...)` in `robot_agent/` with the 27 names and exactly these seven were not in the schema. The models are descriptive and the agent does not check what it sends against them. `robotapp` has no use of `/schema/events` (search at the pinned commit: no hit) but handles `goal_check` by hand ([`planView.ts:178`](https://github.com/mtbui2010/robotapp/blob/f30f0b52d969/frontend/lib/planView.ts#L178)).
+**Cause.** `api/events.py` defines 27 models ([`api/events.py:26-44`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/api/events.py#L26-L44) for the version and the builder). The loops also send `goal_change`, `understand_check`, `understand_fallback`, `reconcile`, `task_resumed`, `search`, `health` and `goal_check`; I compared the names passed to `r.ev(...)` in `robot_agent/` at `3269923` with the 27 names and exactly these eight were not in the schema (`understand_fallback` is new since the earlier pin, which had seven). Lab flags such as `bt_goal` are not events at all (see [Debug a failed run](../guides/debug-a-failed-run.md)). The models are descriptive and the agent does not check what it sends against them. `robotapp` has no use of `/schema/events` (search at the pinned commit: no hit) but handles `goal_check` by hand ([`planView.ts:178`](https://github.com/mtbui2010/robotapp/blob/f30f0b52d969/frontend/lib/planView.ts#L178)).
 
 **Avoid.** Do not treat the schema as the full list of events. Handle unknown event names in a client by ignoring them, or read the loops' `r.ev(...)` calls.
 
@@ -97,24 +97,24 @@ Link base for the code links below: `https://github.com/mtbui2010/<repo>/blob/<s
 
 ## Simulators and benchmark
 
-### P8. The "no ROS" switch is not on main
+### P8. The "no ROS" switch exists now, but a simulated start was not run
 
-**Symptom.** `symbolic_robot` and the symbolic mode of `kcare_sim` set `ROBOT_AGENT_ROS=off`. With the hub at `main`, the hub still needs ROS.
+**Symptom.** `symbolic_robot` and the symbolic mode of `kcare_sim` set `ROBOT_AGENT_ROS=off`. At the earlier pin of this site the hub at `main` did not read it and needed ROS.
 
-**Cause.** `main` has no such switch: a search of the hub finds no use of `ROBOT_AGENT_ROS`, and [`runtime.py:141-148`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/runtime.py#L141-L148) imports `rclpy` unconditionally and re-raises on `ImportError`. The simulators in this workspace run against a synced copy of the hub that has the switch (about 75 files differ from `main`). Reasoned from the code; not run.
+**Cause.** The hub at `3269923` reads the variable: [`runtime.py:141-152`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/runtime.py#L141-L152) skips the `rclpy` import and init when it is `0`, `off`, `false` or `no`. The default is on, so a real robot behaves as before. This was read from the code; a start of a symbolic server with it was **not run**. The module `connect/ros/node.py` still imports `rclpy` at its top, and the ROS node is built only on first use.
 
-**Avoid.** To run a symbolic simulator, point it at a hub that has the switch (its `ROBOT_AGENT_DIR` setting). Do not expect `main` to boot without ROS.
+**Avoid.** Set `ROBOT_AGENT_ROS=off` for a simulated robot, and leave it unset on a real one (a missing ROS 2 then stops start-up with a message that names the switch). Check that the hub you run has the switch.
 
-**Read more.** [Robot, hardware and simulators, "The switch for no ROS is not on main"](../contracts/robot-and-simulators.md#the-switch-for-no-ros-is-not-on-main); [Repo map](../start/repo-map.md).
+**Read more.** [Robot, hardware and simulators, "The switch for no ROS"](../contracts/robot-and-simulators.md#the-switch-for-no-ros-robot_agent_rosoff); [Repo map](../start/repo-map.md).
 
-### P9. The benchmark patches hub module globals, and five planner keys are ignored at main
+### P9. The benchmark patches hub module globals, and its hub revision is not pinned here
 
 **Symptom.** The household benchmark works against a hub revision other than the one documented here.
 
 **Cause.**
 
 - The adapter does not use the hub's public API. It replaces module-level names such as `current`, `host_id`, `skill_configs.ENV` and `connect.llm.init_llm_client`, then restores them after each episode ([`robot_agent_adapter.py:1-17`](https://github.com/mtbui2010/symbolic_robot/blob/f55ace24c3b4/bench/suites/home/planners/robot_agent_adapter.py#L1-L17), `_patched` at `:318-333`, the pairs at `:770-776`). A rename in the hub breaks it silently.
-- The home pack's manifest sets `llm_budget`, `translate_budget`, `input_pivot`, `translate_model` and `search_legs` under `planner:` ([`manifest.yaml:16-25`](https://github.com/mtbui2010/symbolic_robot/blob/f55ace24c3b4/symbolic_robot/domains/home/configs/manifest.yaml#L16-L25)). At `main` the manifest keeps unknown keys but the hub reads only `seed_memory` and `notes` ([`contract/manifest.py:42`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/contract/manifest.py#L42)), so the five keys have no effect. They are named in files of the remote branch `origin/sage-v2/r14` (search result; I did not run that branch). `main` and that branch have diverged (18 commits only on `main`, 66 only on the branch).
+- The home pack's manifest sets `llm_budget`, `translate_budget`, `input_pivot`, `translate_model` and `search_legs` under `planner:` ([`manifest.yaml:16-25`](https://github.com/mtbui2010/symbolic_robot/blob/f55ace24c3b4/symbolic_robot/domains/home/configs/manifest.yaml#L16-L25)). At the earlier pin the hub read only `seed_memory` and `notes` and ignored these five. At `3269923` the hub's manifest loader lists them in `PLANNER_KEYS` ([`contract/manifest.py:86`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/manifest.py#L86)), so `check_manifest` no longer warns about them. That they have an effect on a run, and which hub revision the benchmark's recorded results used, is **unverified**.
 
 **Avoid.** Run the benchmark with the hub revision its docs name, not `main`. Do not read a benchmark result as a result of the code in this site.
 
@@ -136,7 +136,7 @@ Link base for the code links below: `https://github.com/mtbui2010/<repo>/blob/<s
 
 **Symptom.** The README does not match the code tree.
 
-**Cause.** It lists `api/connects.py`, `api/ros.py`, `api/skill_configs.py` and `api/llm_config.py` ([`README.md:29-33`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/README.md#L29-L33)); none of the four is in the tree at the commit (I checked each with `git ls-tree`). It says "~4.2 K LOC, 26 files" ([`:18`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/README.md#L18)); the package at the commit has 138 Python files and 28,960 lines. It describes `exec()` of code strings as a design choice ([`:96`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/README.md#L96), [`:239`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/README.md#L239)), which is now deprecated (P5).
+**Cause.** It lists `api/connects.py`, `api/ros.py`, `api/skill_configs.py` and `api/llm_config.py` ([`README.md:29-33`](https://github.com/mtbui2010/robot_agent/blob/3269923/README.md#L29-L33)); none of the four is in the tree at the commit (I checked each with `git ls-tree`). It says "~4.2 K LOC, 26 files" ([`:18`](https://github.com/mtbui2010/robot_agent/blob/3269923/README.md#L18)); the package at `3269923` has 218 Python files and 43,816 lines (138 and 28,960 at the earlier pin). It describes `exec()` of code strings as a design choice ([`:96`](https://github.com/mtbui2010/robot_agent/blob/3269923/README.md#L96), [`:239`](https://github.com/mtbui2010/robot_agent/blob/3269923/README.md#L239)), which is now deprecated (P5).
 
 **Avoid.** Use this site and the code. Treat the README as history.
 
@@ -146,7 +146,7 @@ Link base for the code links below: `https://github.com/mtbui2010/<repo>/blob/<s
 
 **Symptom.** `pip install robot_agent` pulls in `embodiplan`, although the `[grace]` extra suggests it is optional.
 
-**Cause.** [`pyproject.toml:24`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/pyproject.toml#L24) lists `embodiplan>=0.2.1,<0.3` in the dependencies. [`:55-59`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/pyproject.toml#L55-L59) declares it again as the extra `grace`, with a comment that it is "kept out of the core deps". The comment and the dependency list disagree. The planning loops need the package, so it is required in practice. The package is a local path package, not on PyPI (the comment in the file says `pip install -e ../embodiplan`).
+**Cause.** [`pyproject.toml:24`](https://github.com/mtbui2010/robot_agent/blob/3269923/pyproject.toml#L24) lists `embodiplan>=0.2.1,<0.3` in the dependencies. [`:55-59`](https://github.com/mtbui2010/robot_agent/blob/3269923/pyproject.toml#L55-L59) declares it again as the extra `grace`, with a comment that it is "kept out of the core deps". The comment and the dependency list disagree. The planning loops need the package, so it is required in practice. The package is a local path package, not on PyPI (the comment in the file says `pip install -e ../embodiplan`).
 
 **Avoid.** Install `embodiplan` first from its checkout, then the hub.
 
@@ -167,14 +167,14 @@ Link base for the code links below: `https://github.com/mtbui2010/<repo>/blob/<s
 | # | Where | Symptom | Cause | Avoid |
 |---|---|---|---|---|
 | P1 | core | Robot values and default `--from kcare_robot` in the hub | `skill_configs.py:105-109`, `new_robot.py:203` | Own manifest; pass `--from` |
-| P2 | core | Lint passes, coupling remains | `Makefile:213-226` scans 3 folders, by name | Review by hand |
+| P2 | core | Lint passes, coupling remains | `Makefile:213-227` scans 3 folders, by name | Review by hand |
 | P3 | contract | 13 codes, doc lists 12 | `contract/types.py:31` | Trust the code |
-| P4 | core | New skill missing at start | `runtime.py:194-195` reads `skills.json` first | `POST /skills/reload` |
+| P4 | core | New skill missing at start | `runtime.py:195-201` reads `skills.json` first | `POST /skills/reload` |
 | P5 | core | Inline device code, warning | `connect/codecs.py:118` | Register codec modules |
 | P6 | API | No `/schema/events` in dashboard snapshot | `dump_openapi.py:16-17`: 16 of 17 routers | Edit the list |
-| P7 | API | 7 events not in schema | `api/events.py`; loops' `r.ev(...)` | Ignore unknown events |
-| P8 | simulators | Hub needs ROS at `main` | `runtime.py:141-148` | Use a hub with the switch |
-| P9 | benchmark | Globals patched; 5 keys ignored at `main` | `robot_agent_adapter.py`, `manifest.py:42` | Use the named revision |
+| P7 | API | 8 events not in schema | `api/events.py`; loops' `r.ev(...)` | Ignore unknown events |
+| P8 | simulators | No-ROS switch in the code, start not run | `runtime.py:141-152` | Set `ROBOT_AGENT_ROS=off` for a simulated robot |
+| P9 | benchmark | Globals patched; hub revision of results unknown | `robot_agent_adapter.py`, `manifest.py:86` | Use the named revision |
 | P10 | kcare | `vla_drawer_open` removed in working tree | `skills_config.py:53` (committed) | Check your revision |
 | P11 | docs | README out of date | `README.md:18, 29-33, 96` | Use this site |
 | P12 | setup | `embodiplan` required and optional | `pyproject.toml:24, 55-59` | Install it first |

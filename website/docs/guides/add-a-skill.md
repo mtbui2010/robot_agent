@@ -1,6 +1,6 @@
 ---
 sources: [robot_agent:robot_agent/new_skill.py, robot_agent:robot_agent/core/skill_registry.py, robot_agent:robot_agent/api/skills.py, robot_agent:robot_agent/runtime.py, robot_agent:robot_agent/skills/__init__.py, robot_agent:robot_agent/contract/types.py, robot_agent:robot_agent/contract/manifest.py, robot_agent:robot_agent/contract/check_manifest.py, robot_agent:robot_agent/core/planning/robot.py, robot_agent:robot_agent/core/planning/robot_prompt.py, robot_agent:tests/fakes.py, kcare_robot:CLAUDE.md, kcare_robot:kcare_robot/configs/manifest.yaml, kcare_robot:kcare_robot/configs/skills_config.py]
-verified_at: {robot_agent: ad501cf15ece, kcare_robot: d4f5577b342e}
+verified_at: {robot_agent: 3269923, kcare_robot: d4f5577b342e}
 ---
 
 # Add a skill
@@ -14,11 +14,11 @@ This guide adds one skill to a robot package: the function, the entry in the man
     - `check_manifest` and a scripted run through the hub test a skill offline. Neither proves it works on hardware. Not run: a server, a real robot.
 
 !!! code "Where in the code"
-    - Scaffolding: [`new_skill.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/new_skill.py#L1-L24), [`_register_in_skills_config`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/new_skill.py#L404-L416)
-    - Registry and call: [`skill_registry.py:227`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/skill_registry.py#L227) (`func(node=node, **params)`), [`load_from_skill_configs`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/skill_registry.py#L334-L345)
-    - Result and spec types: [`contract/types.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/contract/types.py#L62-L219), check: [`contract/check_manifest.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/contract/check_manifest.py#L1-L26)
-    - What the planner is told: [`robot_prompt.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/robot_prompt.py#L80-L133)
-    - Server side: [`api/skills.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/api/skills.py#L39-L71), [`runtime.py:192-201`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/runtime.py#L192-L201)
+    - Scaffolding: [`new_skill.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/new_skill.py#L1-L24), [`_register_in_skills_config`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/new_skill.py#L404-L416)
+    - Registry and call: [`skill_registry.py:227`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/skill_registry.py#L227) (`func(node=node, **params)`), [`load_from_skill_configs`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/skill_registry.py#L334-L345)
+    - Result and spec types: [`contract/types.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/types.py#L62-L219), check: [`contract/check_manifest.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/check_manifest.py#L1-L26)
+    - What the planner is told: [`robot_prompt.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/robot_prompt.py#L80-L133)
+    - Server side: [`api/skills.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/api/skills.py#L39-L71), [`runtime.py:195-204`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/runtime.py#L195-L204)
     - A real robot's rules: [`kcare_robot/CLAUDE.md`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/CLAUDE.md), [`configs/skills_config.py`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/configs/skills_config.py#L1-L12)
 
 ## 1. Decide what the skill is
@@ -52,7 +52,7 @@ $ python -m robot_agent.new_skill tinybot place basic
 ────────────────────────────────────────────────────────────────
 ```
 
-The third word, `basic`, is the file to append to (`skills/basic.py`). Without it the tool creates `skills/place.py`. It refuses if the name is already in `SKILL_CONFIGS`, or if the function already exists ([`new_skill.py:18-20`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/new_skill.py#L18-L20)). `--template detect` makes a detector-style skill instead.
+The third word, `basic`, is the file to append to (`skills/basic.py`). Without it the tool creates `skills/place.py`. It refuses if the name is already in `SKILL_CONFIGS`, or if the function already exists ([`new_skill.py:18-20`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/new_skill.py#L18-L20)). `--template detect` makes a detector-style skill instead.
 
 What it wrote, real:
 
@@ -144,7 +144,7 @@ Each field is explained on [Robot package and core](../contracts/robot-package.m
 | `sensor` | Calls another skill of the robot that reads the outcome. It passes when that skill's `isdone` equals `expect` (default `true`). | `{kind: sensor, skill: grasp_succeed, expect: false}` (kcare's `place`: the gripper must read empty) |
 | `vlm` | Asks a yes/no question about a camera image. | `{kind: vlm, prompt: "Is the drawer open?"}` |
 
-The meanings are from [`VerifySpec`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/contract/types.py#L159-L187); the layers are on [Checks before motion](../concepts/checks-before-motion.md) and in the [glossary](../start/glossary.md#verify-layers). `tinybot` has no sensor, so `place` uses `symbolic` only. A `sensor` verify names a second skill, which must also be in the manifest and in `SKILL_CONFIGS`; step 5 shows the error if it is not.
+The meanings are from [`VerifySpec`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/types.py#L159-L187); the layers are on [Checks before motion](../concepts/checks-before-motion.md) and in the [glossary](../start/glossary.md#verify-layers). `tinybot` has no sensor, so `place` uses `symbolic` only. A `sensor` verify names a second skill, which must also be in the manifest and in `SKILL_CONFIGS`; step 5 shows the error if it is not.
 
 ## 5. Check it offline
 
@@ -165,7 +165,7 @@ Real errors for the usual mistakes. Each was made on a copy of `tinybot` with `p
 | The function needs `mode` (no default), the manifest does not declare it | `ERROR   skill 'place' (Place): place() requires 'mode', which the manifest params do not declare` |
 | `verify` names a sensor skill the robot does not have | `ERROR   skill 'place' (Place): verify skill 'gripper_full' is not a registered skill` |
 
-Each of these ended with `1 error(s)` and exit code 1. A function parameter **with** a default that the manifest does not declare is accepted (checked: `speed=1.0`, no error). The rules are in [`check_manifest.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/contract/check_manifest.py#L1-L26).
+Each of these ended with `1 error(s)` and exit code 1. A function parameter **with** a default that the manifest does not declare is accepted (checked: `speed=1.0`, no error). The rules are in [`check_manifest.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/check_manifest.py#L1-L26).
 
 Run the skill alone through the real registry, with a temporary data folder:
 
@@ -241,7 +241,7 @@ The message `apple not seen at kitchen` is the text `find` returned, and the cod
 
 ## 7. How the planner learns about the skill
 
-There is **no separate list** to update for the planner. The hub builds the planner's view of the robot from the manifest: the description from `capabilities`, and one line per plan action from the `skills`. The functions are in [`robot_prompt.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/robot_prompt.py#L80-L133); a skill is a plan action when it has a manifest entry whose `action` is not `Observe`, `Verify`, `Ask` or `Query` ([`robot.py:38, 85-89`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/robot.py#L85-L89)). Real output of `describe_robot` and `action_lines` on `tinybot`, before and after the `place` entry:
+There is **no separate list** to update for the planner. The hub builds the planner's view of the robot from the manifest: the description from `capabilities`, and one line per plan action from the `skills`. The functions are in [`robot_prompt.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/robot_prompt.py#L80-L133); a skill is a plan action when it has a manifest entry whose `action` is not `Observe`, `Verify`, `Ask` or `Query` ([`robot.py:38, 85-89`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/robot.py#L85-L89)). Real output of `describe_robot` and `action_lines` on `tinybot`, before and after the `place` entry:
 
 ```text
 before (3 skills)
@@ -269,8 +269,8 @@ This prompt text is the one that [SAGE and the direct planner](../concepts/plann
 Not run here: a server needs ROS (see [Add a new robot](add-a-robot.md#8-what-the-offline-checks-cannot-tell-you)). Read from the code:
 
 1. Restart the agent, as the scaffold says.
-2. **If `configs/common/skills.json` exists, also call `POST /skills/reload`.** At boot the hub loads that saved file and skips `skills_config.py` ([`runtime.py:192-201`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/runtime.py#L192-L201)). kcare keeps a `skills.json` in git. The reload re-imports `skills_config`, rebuilds the registry from `SKILL_CONFIGS`, and keeps the plan skills and the aliases of code skills ([`api/skills.py:44-71`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/api/skills.py#L44-L71)). I did not check what happens to a skill added only through `POST /skills`; the code clears the registry before it reloads, so do not rely on it. Then check `GET /skills`.
-3. Call the skill alone: `POST /skill/place` with the JSON body `{"inputs": "table"}` ([`api/skills.py:199-205`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/api/skills.py#L199-L205)). This calls the skill through the registry with the robot's ROS node.
+2. **If `configs/common/skills.json` exists, also call `POST /skills/reload`.** At boot the hub loads that saved file and skips `skills_config.py` ([`runtime.py:195-204`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/runtime.py#L195-L204)). kcare keeps a `skills.json` in git. The reload re-imports `skills_config`, rebuilds the registry from `SKILL_CONFIGS`, and keeps the plan skills and the aliases of code skills ([`api/skills.py:44-71`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/api/skills.py#L44-L71)). I did not check what happens to a skill added only through `POST /skills`; the code clears the registry before it reloads, so do not rely on it. Then check `GET /skills`.
+3. Call the skill alone: `POST /skill/place` with the JSON body `{"inputs": "table"}` ([`api/skills.py:199-205`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/api/skills.py#L199-L205)). This calls the skill through the registry with the robot's ROS node.
 4. On the robot, test the skill with the real hardware before a planner uses it. The offline runs above cannot show that your failure codes match what the device does.
 
 Known pitfall: after adding a line to `SKILL_CONFIGS` and restarting, the skill may still be missing. The cause is the saved `skills.json`. See [Robot package and core](../contracts/robot-package.md#current-behaviour-to-know).

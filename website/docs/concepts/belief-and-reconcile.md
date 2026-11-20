@@ -1,6 +1,6 @@
 ---
 sources: [robot_agent:robot_agent/core/planning/base.py, robot_agent:robot_agent/core/planning/reconcile.py, robot_agent:robot_agent/core/planning/robot.py, robot_agent:robot_agent/core/planning/assist_loop.py, robot_agent:robot_agent/state.py, robot_agent:robot_agent/api/agent.py, robot_agent:tests/test_v2_reconcile_sensors.py, kcare_robot:kcare_robot/configs/adapter.py]
-verified_at: {robot_agent: ad501cf15ece, kcare_robot: d4f5577b342e}
+verified_at: {robot_agent: 3269923, embodiplan: 76da520, kcare_robot: d4f5577b342e}
 ---
 
 # The belief and reconcile
@@ -14,10 +14,10 @@ The robot cannot see its whole world at every moment, so it keeps a short note o
     - Every field carries a [provenance](../start/glossary.md#provenance) label: `sensor`, `operator`, `belief` or `unknown`. The label says who vouches for the value.
 
 !!! code "Where in the code"
-    - [`WorldState`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/base.py#L49-L243) (fields, `mark`, `provenance_view`, `as_text`)
-    - [`reconcile.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/reconcile.py#L120-L177): `reconcile_arrived`, `reconcile_containers`, `reconcile_sensors`, `guard_arrived`
-    - [`RobotView.reconcile`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/robot.py#L198-L241) (the whole procedure) and the loop's [`_reconcile`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/assist_loop.py#L1766-L1780)
-    - Persistence: [`save_world` / `load_world`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/state.py#L162-L188). Endpoints: [`GET` and `PUT /agent/world`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/api/agent.py#L72-L87)
+    - [`WorldState`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/base.py#L49-L243) (fields, `mark`, `provenance_view`, `as_text`)
+    - [`reconcile.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/reconcile.py#L120-L177): `reconcile_arrived`, `reconcile_containers`, `reconcile_sensors`, `guard_arrived`
+    - [`RobotView.reconcile`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/robot.py#L210-L253) (the whole procedure) and the loop's [`_reconcile`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/assist_loop.py#L3480-L3494)
+    - Persistence: [`save_world` / `load_world`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/state.py#L162-L188). Endpoints: [`GET` and `PUT /agent/world`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/api/agent.py#L72-L87)
     - A robot's own part: [`KaairAdapter.reconcile` and `pose`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/configs/adapter.py#L98-L137) (the robot maker's package; the class name is a code identifier)
 
 ## The idea in plain words
@@ -28,7 +28,7 @@ The robot's belief is the "keys are on the table" note. It is what the robot thi
 
 ## What the belief holds
 
-`WorldState` is a plain dataclass in [`base.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/base.py#L49-L243). It has five main fields, the same five that the planner's action model uses (see [Symbolic state](https://mtbui2010.github.io/embodiplan/concepts/symbolic-state/) in the embodiplan docs).
+`WorldState` is a plain dataclass in [`base.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/base.py#L49-L243). It has five main fields, the same five that the planner's action model uses (see [Symbolic state](https://mtbui2010.github.io/embodiplan/concepts/symbolic-state/) in the embodiplan docs).
 
 | field | meaning | type |
 |---|---|---|
@@ -50,7 +50,7 @@ There is one belief per robot process. A run does not make its own copy: the loo
 
 ### Saved and reloaded
 
-The belief is written to a file for this machine after a step's effect, after a reconcile that changed it, and when the dashboard edits it ([`save_world`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/state.py#L162-L188)). On start, `load_world` reads it back, **but drops `arrived`**: the saved place is not trusted, and reconcile re-reads it from the sensors.
+The belief is written to a file for this machine after a step's effect, after a reconcile that changed it, and when the dashboard edits it ([`save_world`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/state.py#L162-L188)). On start, `load_world` reads it back, **but drops `arrived`**: the saved place is not trusted, and reconcile re-reads it from the sensors.
 
 ## Why the belief can be wrong
 
@@ -66,17 +66,23 @@ Which of these a robot can check depends on what it declares. The core does not 
 
 ## What reconcile does
 
-[`RobotView.reconcile`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/robot.py#L198-L241) takes the belief and, in this order:
+[`RobotView.reconcile`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/robot.py#L210-L253) takes the belief and, in this order:
 
 1. **Calls the robot's own `reconcile`** if its adapter has one (otherwise the core's generic pose-and-place match). The robot knows its own sensors. Errors here are swallowed: a failing reconcile changes nothing.
 2. **Checks the hand.** If the belief says `holding` something and the manifest declares a holding sensor (the skill that verifies a Pick), the core runs it. If the sensor says the hand is empty, `holding` is cleared (with `holding_since` and `holding_pose`) and its label becomes `sensor`. If the sensor cannot be read, nothing changes.
-3. **Reads the pose and the containers** ([`reconcile_sensors`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/reconcile.py#L151-L159)), when the loop passes the list of places:
+3. **Reads the pose and the containers** ([`reconcile_sensors`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/reconcile.py#L151-L159)), when the loop passes the list of places:
     - `arrived` comes from a fresh base pose. The nearest known place within the manifest's `arrive_tol_m` is where the robot is. Farther from every place, `arrived` is `None` (between places, label `sensor`). A pose that is missing or older than `pose_max_age_s` makes `arrived` `None` with label `unknown`. A place is never invented and an old one is never kept.
     - `opened` comes from the adapter's optional `container_states`. A container it reports is set to open or closed, label `sensor`. A container it cannot read stays as the belief says and is listed under `unconfirmed`.
 
 It returns what changed as `{field: [before, after]}`. Only `arrived`, `holding`, `found` and `opened` are compared. When the dict is not empty, the loop saves the belief and emits a `reconcile` event.
 
-**When it runs.** At the start of a run, after a pause that ended (`resume`), and when a suspended task is taken back. In the `AssistLoop` there is a second, smaller fix before each step that acts at a place (`Find`, `Pick`, `Place`, `PutIn`, `Open`, `Close`): if `arrived` is not backed by a sensor, it is compared with a fresh pose and corrected if wrong ([`guard_arrived`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/reconcile.py#L161-L177)). This is part of [Checks before motion](checks-before-motion.md), which also explains how the belief feeds the other checks. The switch `ROBOT_AGENT_RECONCILE=0` turns the pose-and-container stage off; the loop then uses the plain reconcile (the adapter's, then the holding check).
+**When it runs.** At the start of a run, after a pause that ended (`resume`), and when a suspended task is taken back. In the `AssistLoop` there is a second, smaller fix before each step that acts at a place (`Find`, `Pick`, `Place`, `PutIn`, `Open`, `Close`): if `arrived` is not backed by a sensor, it is compared with a fresh pose and corrected if wrong ([`guard_arrived`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/reconcile.py#L161-L177)). This is part of [Checks before motion](checks-before-motion.md), which also explains how the belief feeds the other checks. The switch `ROBOT_AGENT_RECONCILE=0` turns the pose-and-container stage off; the loop then uses the plain reconcile (the adapter's, then the holding check).
+
+### Who reads the belief
+
+The goal check and the guard read the belief, and so does the `bt_goal` option. A behaviour tree of that option has leaf conditions `holding`, `hand_free`, `at`, `placed`, `opened` and `closed` that read the belief, and each tree starts with "already achieved?". So a wrong `opened` or `holding` changes whether a tree does anything. The belief itself and reconcile are unchanged by `bt_goal`. It only reads them. It is on by default, and does nothing for a robot that declares no `trees` ([`docs/bt_goal.md`](https://github.com/mtbui2010/robot_agent/blob/3269923/docs/bt_goal.md)). It was not run on the offline examples of this page.
+
+The robot's "look first" before it asks where an object is (`look_then_ask`) first checks the object memory for a trusted sighting, and only then makes one `Find`. See [Dialog and intent](dialog-and-intent.md#two-questions-the-robot-adds-before-it-plans). It was checked with English phrases only.
 
 ## Provenance: who vouches for each value
 
@@ -89,7 +95,7 @@ Each field has a source label.
 | `belief` | the robot's own bookkeeping: a skill's effect, or a value loaded from disk | the default |
 | `unknown` | a sensor was needed and could not tell | reconcile, with the reason in `why` |
 
-One rule matters: a label counts **only while the field still has the value it was recorded for**. If a skill changes `arrived` after reconcile marked it `sensor`, the label falls back to `belief`. A `sensor` label is therefore never a stale claim about a value that has since changed ([`provenance_of`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/base.py#L128-L133) compares the value). The tests in [`test_v2_reconcile_sensors.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/tests/test_v2_reconcile_sensors.py) check this behaviour.
+One rule matters: a label counts **only while the field still has the value it was recorded for**. If a skill changes `arrived` after reconcile marked it `sensor`, the label falls back to `belief`. A `sensor` label is therefore never a stale claim about a value that has since changed ([`provenance_of`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/base.py#L128-L133) compares the value). The tests in [`test_v2_reconcile_sensors.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/tests/test_v2_reconcile_sensors.py) check this behaviour.
 
 For `opened`, the label is kept per container, and the view lists the open containers that no sensor confirmed (`unconfirmed`).
 

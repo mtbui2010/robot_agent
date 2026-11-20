@@ -1,6 +1,6 @@
 ---
 sources: [robot_agent:robot_agent/interact/run_manager.py, robot_agent:robot_agent/observe/, robot_agent:robot_agent/core/planning/records.py, robot_agent:robot_agent/core/run_control.py, robot_agent:robot_agent/api/agent.py, robot_agent:robot_agent/api/events.py, robot_agent:tests/test_observe_record_replay.py, robot_agent:tests/fakes.py]
-verified_at: {robot_agent: ad501cf15ece}
+verified_at: {robot_agent: 3269923, embodiplan: 76da520}
 ---
 
 # Runs and records
@@ -14,11 +14,11 @@ Every time the robot is given a task, it starts a **run**. A run has an id, an o
     - Everything on this page was run on the offline fake robot, with a scripted LLM and a scripted planner. Nothing here comes from a real robot.
 
 !!! code "Where in the code"
-    - [`Run`, `RunManager`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/interact/run_manager.py#L193-L668) and the [run id](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/interact/run_manager.py#L188-L190)
-    - [`RunRecord`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/observe/record.py#L105-L201), [`metrics_of`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/observe/record.py#L285-L345), [`find_record`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/observe/record.py#L219-L251)
-    - [`paths.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/observe/paths.py#L37-L112) (where files go) and [`replay.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/observe/replay.py#L363-L526) (the replay CLI)
-    - The record is opened by hooks that [`run_control`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/run_control.py#L44-L58) adds to the run manager.
-    - Tests that record a run and replay it: [`test_observe_record_replay.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/tests/test_observe_record_replay.py)
+    - [`Run`, `RunManager`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/interact/run_manager.py#L193-L668) and the [run id](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/interact/run_manager.py#L188-L190)
+    - [`RunRecord`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/observe/record.py#L105-L201), [`metrics_of`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/observe/record.py#L285-L345), [`find_record`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/observe/record.py#L219-L251)
+    - [`paths.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/observe/paths.py#L37-L112) (where files go) and [`replay.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/observe/replay.py#L363-L526) (the replay CLI)
+    - The record is opened by hooks that [`run_control`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/run_control.py#L44-L58) adds to the run manager.
+    - Tests that record a run and replay it: [`test_observe_record_replay.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/tests/test_observe_record_replay.py)
 
 ## The idea in plain words
 
@@ -44,7 +44,7 @@ def _new_run_id() -> str:
     return time.strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:6]
 ```
 
-[Permalink](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/interact/run_manager.py#L188-L190). The id is stamped on every event of the run, and it is the key of `GET /runs/{id}` and `POST /runs/{id}/cancel|pause|resume|inject`.
+[Permalink](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/interact/run_manager.py#L188-L190). The id is stamped on every event of the run, and it is the key of `GET /runs/{id}` and `POST /runs/{id}/cancel|pause|resume|inject`.
 
 A run has one of five states:
 
@@ -56,7 +56,7 @@ A run has one of five states:
 | `done` | Ended. Also the end state after a cancel, with outcome `aborted`. |
 | `failed` | Ended with a failure. |
 
-The first three are the *active* states. `finish` sets `outcome` to the text you pass, or else to `aborted` (after a cancel), `success` or `failed`. A pause is accepted only from `running`, and a resume only from `paused`. A cancel is accepted from any active state and also wakes a paused run and a run that waits on a question.
+The first three are the *active* states. `finish` sets `outcome` to the text you pass, or else to `aborted` (after a cancel), `success` or `failed`. A pause is accepted only from `running`, and a resume only from `paused`. A cancel is accepted from any active state and also wakes a paused run and a run that waits on a question. What a stop interrupts, call by call, is listed in the cancel audit of [`docs/run_manager.md`](https://github.com/mtbui2010/robot_agent/blob/3269923/docs/run_manager.md).
 
 ### One active run per robot
 
@@ -85,6 +85,8 @@ A `RunRecord` is a subclass of `RunLogger`, the JSONL logger of the planning lay
 
 `<host>` is the machine's host id. `<data_dir>` is the value of the environment variable `ROBOT_AGENT_DATA_DIR` (a placeholder in every example here). When the variable is not set, the files stay where they always were, in a `run_records/<host>/` folder under the robot's own config folder. When you look a run up by id, the new place is searched first and the old one second.
 
+There is a second, separate file, off by default: the `trace` option (`trace=1`, `ROBOT_AGENT_TRACE=1`) writes `<dir>/<run_id>/trace.jsonl` with every event, the options' lab entries (for example `look_then_ask` and `bt_goal` write one each time they act), every LLM call (sizes only) and a `recovery` row after each failed step. It adds no LLM or robot call. Format: [`docs/trace.md`](https://github.com/mtbui2010/robot_agent/blob/3269923/docs/trace.md). The record described here does not change when it is on. The offline run on this page did not use it.
+
 Recording is best-effort. It never raises into the run. Setting `ROBOT_AGENT_RECORD=0` turns it off, and a process with no agent state (no data dir) records nothing.
 
 ### The rows
@@ -98,7 +100,7 @@ Each line is one JSON object `{"seq", "t", "kind", ...}`. `seq` counts from 1, a
 | `event` | Every event published on the run: agent events and run-manager notices. |
 | `user` | Something a person said or sent during the run, with `user_id`, `role`, the `intent` and the text. |
 | `llm` | One LLM call: source, request, response, model, backend, seed, temperature, `latency_ms`, error. |
-| `planner` | One planner call at the robot_agent boundary (`generate_plan` or `replan`): inputs, steps, meta. |
+| `planner` | One planner call at the robot_agent boundary (`generate_plan` or `replan`): inputs (with `subgoals` when the loop passes them), steps, meta. |
 | `skill` | One skill call: skill, params, the raw return, its [SkillResult](../start/glossary.md#skillresult), latency, nesting depth, the [belief](../start/glossary.md#belief) before it. |
 | `step` | A plan step that ended: index, status, world before and after. |
 | `health` | The robot adapter's `health()` at start and at the end. |
@@ -109,7 +111,7 @@ Long strings are shortened so a record stays small. A string over 4096 character
 
 ### One real record
 
-The script below mirrors what [`record_run`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/tests/test_observe_record_replay.py#L37-L53) and the fixtures do in the tests, without pytest. It runs the AssistLoop on the fake robot `FakeRobot` ([`tests/fakes.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/tests/fakes.py#L91)) **with a scripted LLM reply** (`FakeLLM`) and **a scripted planner** (`ScriptedPlanner`). The mug is not on the desk, so the first plan fails at `Find`, and the loop replans. The fake person answers "the dining table" to the robot's question. A second user, Bob, asks a question in the middle of the run.
+The script below mirrors what [`record_run`](https://github.com/mtbui2010/robot_agent/blob/3269923/tests/test_observe_record_replay.py#L37-L53) and the fixtures do in the tests, without pytest. It runs the AssistLoop on the fake robot `FakeRobot` ([`tests/fakes.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/tests/fakes.py#L91)) **with a scripted LLM reply** (`FakeLLM`) and **a scripted planner** (`ScriptedPlanner`). The mug is not on the desk, so the first plan fails at `Find`, and the loop replans. The fake person answers "the dining table" to the robot's question. A second user, Bob, asks a question in the middle of the run.
 
 ```python
 """Record one run of AssistLoop on the offline fake robot through the RunManager (mirrors tests/test_observe_record_replay.py).
@@ -219,7 +221,7 @@ The run manager adds its own events, marked `origin: "run_manager"`: `run_state`
 The event names are described by a versioned JSON schema served at `GET /schema/events` (version `1.0.0`, 27 events).
 
 !!! warning "The schema is descriptive and not complete"
-    The models in `api/events.py` allow extra fields and the agent does not validate against them. Seven events that the loops emit are **not** in the schema: `goal_change`, `goal_check`, `health`, `reconcile`, `search`, `task_resumed` and `understand_check` (found by searching for `.ev("...")` calls in `core/`). `task_suspended` is also missing from the schema. If you build a client, handle unknown event names and do not rely on the schema alone.
+    The models in `api/events.py` allow extra fields and the agent does not validate against them. Eight events that the loops emit are **not** in the schema: `goal_change`, `goal_check`, `health`, `reconcile`, `search`, `task_resumed`, `understand_check` and `understand_fallback` (found by searching for `.ev("...")` calls in `core/`, `options/`, `interact/` and `observe/`; `understand_fallback` is new since the earlier check). `task_suspended` is also missing from the schema. If you build a client, handle unknown event names and do not rely on the schema alone.
 
 ## Replay
 
@@ -276,7 +278,7 @@ The `exec` replay re-ran the whole run (understanding, two questions, a plan, a 
 
 ### Golden tests
 
-[`test_observe_record_replay.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/tests/test_observe_record_replay.py) is a golden test of this kind. It records a run of the real AssistLoop on the fake robot through the run manager, replays it in both modes, and asserts the replay is identical. It also edits a record (a place removed from `ENV`, a recorded `place` result turned into a failure) and asserts that the replay reports the change. A second test file, `tests/test_golden_task_runs.py`, replays recorded task runs stored under `tests/data/`. We did not open that data, so this page says nothing about its content. No tests were run for this page, because `pytest` is not installed on the machine used.
+[`test_observe_record_replay.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/tests/test_observe_record_replay.py) is a golden test of this kind. It records a run of the real AssistLoop on the fake robot through the run manager, replays it in both modes, and asserts the replay is identical. It also edits a record (a place removed from `ENV`, a recorded `place` result turned into a failure) and asserts that the replay reports the change. A second test file, `tests/test_golden_task_runs.py`, replays recorded task runs stored under `tests/data/`. We did not open that data, so this page says nothing about its content. No tests were run for this page, because `pytest` is not installed on the machine used.
 
 ## Where to go next
 

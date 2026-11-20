@@ -1,6 +1,6 @@
 ---
 sources: [symbolic_robot:README.md, symbolic_robot:CLAUDE.md, symbolic_robot:Makefile, symbolic_robot:pyproject.toml, symbolic_robot:docs/bench.md, symbolic_robot:bench/suite.py, symbolic_robot:bench/cli.py, symbolic_robot:bench/runner.py, symbolic_robot:bench/campaign.py, symbolic_robot:bench/stats.py, symbolic_robot:bench/protocol.py, symbolic_robot:bench/suites/home/register.py, symbolic_robot:bench/suites/home/cli.py, symbolic_robot:bench/suites/home/runner.py, symbolic_robot:bench/suites/home/env.py, symbolic_robot:bench/suites/home/metrics.py, symbolic_robot:bench/suites/home/report.py, symbolic_robot:bench/suites/home/planners/__init__.py, symbolic_robot:bench/suites/home/planners/base.py, symbolic_robot:bench/suites/home/planners/robot_agent_adapter.py, symbolic_robot:tests/test_layering.py]
-verified_at: {symbolic_robot: f55ace24c3b4}
+verified_at: {robot_agent: 3269923, symbolic_robot: f55ace24c3b4}
 ---
 
 # Benchmark a planner
@@ -77,7 +77,9 @@ robot_agent:sage_norag	[unavailable: robot_agent not importable]
 
 (Only the first two of these lines are shown; each carries a description column that is cut here.)
 
-How the adapter drives the hub is worth knowing before you trust a number. It does not use the hub's public API. It replaces module-level hooks of the hub's loops for the length of one episode and restores them afterwards. The robot package's own skill functions then run on the simulated robot. The hub keeps module-level state, so the runner forces one worker for these planners ([`runner.py`](https://github.com/mtbui2010/symbolic_robot/blob/f55ace24c3b4/bench/suites/home/runner.py#L237), the line `workers = 1`). The household pack declares some planner keys (`translate_budget`, `input_pivot`, `translate_model`, `search_legs`) that the hub's `main` does not define: **not on main, not verified**. The benchmark therefore targets a hub revision that may differ from the one these pages describe. State the hub revision next to every result you publish. The run records the git revisions of the hub and embodiplan in `summary.json` for `robot_agent:*` runs.
+How the adapter drives the hub is worth knowing before you trust a number. It does not use the hub's public API. It replaces module-level hooks of the hub's loops for the length of one episode and restores them afterwards. The robot package's own skill functions then run on the simulated robot. The hub keeps module-level state, so the runner forces one worker for these planners ([`runner.py`](https://github.com/mtbui2010/symbolic_robot/blob/f55ace24c3b4/bench/suites/home/runner.py#L237), the line `workers = 1`). The household pack declares planner keys (`translate_budget`, `input_pivot`, `translate_model`, `search_legs`). The hub's manifest loader at `3269923` knows them (they are in `PLANNER_KEYS`, [`manifest.py:86`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/manifest.py#L86)); the earlier pin of these pages did not. Whether the benchmark's recorded results were made with this hub revision is **unverified**: state the hub revision next to every result you publish.
+
+The hub's engine now has default-on options that change how a run goes: `look_then_ask`, `bring_ask` and `bt_goal` (see [`docs/options.md`](https://github.com/mtbui2010/robot_agent/blob/3269923/docs/options.md)). A benchmark arm or a number made before these defaults existed does not describe the engine as it is now. The effect of `bt_goal` (mixed) on benchmark results is **not measured** in these pages. The run records the git revisions of the hub and embodiplan in `summary.json` for `robot_agent:*` runs.
 
 ### Your own planner
 

@@ -1,6 +1,6 @@
 ---
 sources: [robot_agent:robot_agent/core/planning/action_model.py, robot_agent:robot_agent/core/planning/assist_loop.py, robot_agent:robot_agent/core/planning/plan_tidy.py, robot_agent:robot_agent/core/planning/subgoal_repair.py, robot_agent:robot_agent/core/planning/verify.py, robot_agent:robot_agent/core/planning/loop.py, embodiplan:embodiplan/action_model.py]
-verified_at: {robot_agent: ad501cf15ece, embodiplan: a69064255c69}
+verified_at: {robot_agent: 3269923, embodiplan: 76da520}
 ---
 
 # Checks before motion
@@ -48,7 +48,7 @@ The first plan breaks the rule at step index 1 (the second step, counting from 0
 flowchart LR
     P[Planner writes a plan] --> T[Plan tidy]
     T --> G{1. Gate<br/>whole plan}
-    G -- critical finding --> R[Repair, then one fresh plan]
+    G -- critical finding --> R[Symbolic repair, planner repair,<br/>then one fresh plan]
     R --> G
     G -- still critical --> X[Run fails, robot does not move]
     G -- certified --> S1{2. Guard<br/>before each step}
@@ -63,7 +63,7 @@ flowchart LR
 
 | Check | Question | Where | When | On a violation |
 |---|---|---|---|---|
-| 1. [Gate](../start/glossary.md#gate) | Is the whole plan allowed, and does it reach the goals? | `AssistLoop._check`, used by `_generate_and_certify` | Once, before the first step | Repair, then one fresh plan, else the run ends as failed |
+| 1. [Gate](../start/glossary.md#gate) | Is the whole plan allowed, and does it reach the goals? | `AssistLoop._check`, used by `_generate_and_certify` | Once, before the first step | Symbolic repair, then the planner's own repair, then one fresh plan, else the run ends as failed |
 | 2. [Guard](../start/glossary.md#guard) | Can this step run in the world as it is now? | `AssistLoop._guard`, `_precondition` | Right before every step | One replan of the rest of the plan, else the run ends |
 | 3. Skill | Can the robot do this physically? | In the robot package's skill | During the step | The skill returns a [failure code](../start/glossary.md#failure-code); the recovery policy decides |
 
@@ -75,13 +75,17 @@ flowchart LR
 - It adds findings that need the task: the plan does not achieve the goals, or the goals are already reached after step *k* and later steps repeat the task.
 - It words each finding in plain text for the planner to read.
 
-`_generate_and_certify` then runs up to three rounds. Each round is one `gate` event:
+`_generate_and_certify` then runs up to four rounds. Each round is one `gate` event:
 
-1. **Round 0.** The planner's plan is tidied and checked.
-2. **Round 1.** If any finding is critical, the findings go to the planner's own repair of the part of the plan that owns them. This needs the optional `SubgoalRepair` capability (`subgoal_repair.py`); each repair call uses the run's LLM-call budget. Not used for plans built from templates (go, say, deliver), which have no planner to ask.
-3. **Round 2.** If a critical finding remains, or the planner has no repair, the planner is asked for **one fresh plan** with the findings in the prompt. The gate refines at most once.
+1. **Round 0.** The planner's plan is tidied and checked. The planner is given one sub-goal per goal the loop understood (see [Planners and loops](planners.md)), so its blocks follow the goals.
+2. **Round `symbolic`.** If a finding blocks the plan, the core first edits the plan itself with `plan_repair.py`: fixes whose result the action model proves, such as moving an Open before the Pick that fills the hand, removing a second delivery of an object already at its goal, or adding a missing `MoveTo` or `Find`. An edit is kept only when the number of critical findings goes down. It makes no LLM call. The edits are listed on the event.
+3. **Round 1.** If a critical finding remains, the findings go to the planner's own repair of the part of the plan that owns them. This needs the optional `SubgoalRepair` capability (`subgoal_repair.py`); each repair call uses the run's LLM-call budget. With the option `person_goals` (default off) some blocks are written by the loop itself, as fixed blocks: they are never sent to the planner and never emptied. Not used for plans built from templates (go, say, deliver), which have no planner to ask.
+4. **Round 2.** If a critical finding remains, or the planner has no repair, the planner is asked for **one fresh plan** with the findings in the prompt. The gate refines at most once. A planner whose blocks were already edited by an LLM call in round 1 gets no fresh plan.
 
 Then the plan is **certified** only if no blocking finding is left. Blocking means a critical checker finding, or a step the robot cannot run at all (an action it does not have, a place that is not a known place, a step its adapter cannot bind). An uncertified plan never runs. In `_plan_phase` the run ends as `failed` with a message that starts "I could not make a plan that passes my checks:" and lists up to three findings.
+
+!!! note "Goals run by the option `bt_goal` skip the gate"
+    The option `bt_goal` is on by default, but it does nothing for a robot that declares no behaviour trees. When the robot does declare them, a goal whose kind has a tree is run by the tree, and the planner is not asked for it, so no plan of it goes through this gate. Neighbouring goals without a tree are planned by SAGE once, when the run reaches them, and their steps run one by one through the engine's own step path (guard, bind, verify and recovery as for any step). That plan is **not** put through the gate: only SAGE's own verifier checks it. The effect of this on the benchmark was not measured. The rules are in the hub's [`docs/bt_goal.md`](https://github.com/mtbui2010/robot_agent/blob/3269923/docs/bt_goal.md).
 
 ### 2. The guard: each step
 
@@ -93,7 +97,7 @@ Before it judges, the guard also repairs a belief it can prove is stale:
 - If the belief says the robot holds something and the holding sensor says the hand is empty, the belief is fixed and the step is judged again.
 - Before a Place or PutIn, if the held object is no longer in the gripper, the run ends as failed with the code `dropped`.
 
-A violation that remains is **not** run. It goes to the planner's replan as `precondition: <reason>`. The same violation at the same step is replanned once; the second time the run ends. A replan is also limited by `max_replans` (6 for the AssistLoop). The new suffix of the plan must pass a smaller check (`_hard_findings`: actions the robot has, places it can reach, steps it can bind). A suffix that fails is dropped and the run ends with "the new plan did not pass my checks".
+A violation that remains is **not** run. It goes to the planner's replan as `precondition: <reason>`. The same violation at the same step is replanned once; the second time the run ends. A replan is also limited by `max_replans` (6 for the AssistLoop). The new suffix is first repaired symbolically (no LLM call), then it must pass a smaller check (`_hard_findings`: actions the robot has, places it can reach, steps it can bind). A suffix that fails is dropped and the run ends with "the new plan did not pass my checks".
 
 ### 3. The skill's own check
 
@@ -108,7 +112,7 @@ When a skill reports success, the preconditions are not checked again. The step 
 | `isdone` | The skill's own report. If this fails, the later layers are skipped and the step fails. | none |
 | `symbolic` | The step's effects hold in the belief. | no LLM call |
 | `vlm` | A vision-language model, only if the robot's manifest or the legacy switch asks for it. | one model call |
-| `sensor` / `localization` | The skill's declared sensor (for example the pose after a MoveTo). If none is declared, the result is marked unknown. | one sensor read |
+| `sensor` / `localization` | The skill's declared sensor (for example the pose after a MoveTo). If none is declared, or the sensor itself failed (a device fault, a timeout, no perception), the result is marked unknown: it neither confirms nor contradicts the skill. | one sensor read |
 
 In the offline fake-robot run (below), the Pick step printed three layers: `isdone` ok ("grasped"), `symbolic` ok, `sensor` ok ("grasp_succeed: ok"). The failed Find printed only `isdone`, not ok ("apple not found"), because a failed `isdone` stops the check.
 
@@ -121,7 +125,7 @@ Small planner models repeat themselves ("Find plate, Pick plate" twice). `plan_t
 - `Find X` or `Pick X` while X is already in the hand;
 - `MoveTo P` where the robot already is, `Open C` of an open container, `Close C` of a closed one;
 - a `MoveTo` to a room (not a place) right before another `MoveTo`;
-- every step after the first point where the goals are reached.
+- every step after the first point where the goals are reached, unless those steps only close what the plan itself opened (closing a door after the goals is the expected default, not a repeat).
 
 A step with any other finding is kept, so the gate and the planner can see it. Tidy runs on the first plan, after each repair, on the fresh plan, and on every replan suffix. Removed steps are listed as `tidied` on the `gate` event. The option `plan_tidy` (environment variable `ROBOT_AGENT_PLAN_TIDY=0`) turns it off.
 
@@ -145,12 +149,13 @@ The same offline fake robot (the scripted planner and LLM from the hub's tests, 
     The plain ClosedLoop (planner key `grace`) has no whole-plan simulation and no per-step guard. Its only gate (`_cl_certify`) refuses steps the robot cannot bind to a skill: it asks the planner for one new plan, and ends the run as failed if that does not help. It checks step results with the same layers, but it never looks at the goals at the end: a plan that ran every step is a success. If you need the checks above, select the AssistLoop (planner key `sage`).
 
 !!! code "Where in the code"
-    - Action rules, one source: [`action_model.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/action_model.py#L18-L53) (calls `embodiplan.action_model`)
-    - Gate: [`_check`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/assist_loop.py#L654-L677), [`_generate_and_certify`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/assist_loop.py#L1269-L1314), [`_blocking` and `_hard_findings`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/assist_loop.py#L1324-L1359), [`_plan_phase`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/assist_loop.py#L1240-L1267)
-    - Sub-goal repair: [`subgoal_repair.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/subgoal_repair.py)
-    - Guard: [`_precondition`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/assist_loop.py#L1753-L1761), [`_guard`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/assist_loop.py#L1801-L1833)
-    - Tidy: [`plan_tidy.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/plan_tidy.py#L45-L62)
-    - Verify layers: [`StepVerifier.verify`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/verify.py#L137-L192); goal check: [`_observe_goals`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/assist_loop.py#L1691-L1714), [`_final_check`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/assist_loop.py#L2141-L2150)
-    - Reasons and history (dense): [`docs/guard.md`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/docs/guard.md)
+    - Action rules, one source: [`action_model.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/action_model.py#L18-L53) (calls `embodiplan.action_model`)
+    - Gate: [`_check`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/assist_loop.py#L1300-L1329), [`_generate_and_certify`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/assist_loop.py#L2682-L2742), [`_blocking` and `_hard_findings`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/assist_loop.py#L2902-L2941), [`_plan_phase`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/assist_loop.py#L2651-L2680)
+    - Symbolic repair: [`plan_repair.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/plan_repair.py), called by [`_gate_repair_run`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/assist_loop.py#L2842-L2868)
+    - Sub-goal repair: [`subgoal_repair.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/subgoal_repair.py)
+    - Guard: [`_precondition`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/assist_loop.py#L3467-L3475), [`_guard`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/assist_loop.py#L3515-L3549)
+    - Tidy: [`plan_tidy.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/plan_tidy.py#L45-L84)
+    - Verify layers: [`StepVerifier.verify`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/verify.py#L144-L196); goal check: [`_observe_goals`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/assist_loop.py#L3345-L3374), [`_final_check`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/assist_loop.py#L4066-L4081)
+    - Reasons and history (dense): [`docs/guard.md`](https://github.com/mtbui2010/robot_agent/blob/3269923/docs/guard.md)
 
 See also: [Skills and failures](skills-and-failures.md), [Belief and reconcile](belief-and-reconcile.md), [Planners and loops](planners.md).

@@ -1,6 +1,6 @@
 ---
 sources: [robot_agent:robot_agent/app_factory.py, robot_agent:robot_agent/api/agent.py, robot_agent:robot_agent/api/events.py, robot_agent:robot_agent/core/unified_agent.py, robotapp:frontend/lib/api.ts, robotapp:frontend/app/page.tsx, robotapp:frontend/lib/planView.ts, robotapp:frontend/lib/chatRun.ts, robotapp:scripts/gen_types.sh, robotapp:scripts/dump_openapi.py, robotapp:scripts/lint.mjs, robotapp:frontend/lib/generated/openapi.json, robotapp:docs/features/backend-contract.md]
-verified_at: {robot_agent: ad501cf15ece, robotapp: f30f0b52d969}
+verified_at: {robot_agent: 3269923, robotapp: f30f0b52d969}
 ---
 
 # Dashboard and core
@@ -40,14 +40,14 @@ flowchart LR
 
 | | The hub offers | The dashboard uses |
 |---|---|---|
-| HTTP routes | 17 routers mounted in a loop in [`app_factory.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/app_factory.py#L73-L89) ([the loop](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/app_factory.py#L130-L132)). Many routes declare a response model in `api/models.py`. | Only `frontend/lib/api.ts` makes HTTP calls. `scripts/lint.mjs` states this as a rule: a `fetch()` or `new WebSocket()` elsewhere must take its URL from an `api.` helper ([lint.mjs](https://github.com/mtbui2010/robotapp/blob/f30f0b52d969/scripts/lint.mjs#L9-L10)). |
+| HTTP routes | 17 routers mounted in a loop in [`app_factory.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/app_factory.py#L73-L89) ([the loop](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/app_factory.py#L130-L132)). Many routes declare a response model in `api/models.py`. | Only `frontend/lib/api.ts` makes HTTP calls. `scripts/lint.mjs` states this as a rule: a `fetch()` or `new WebSocket()` elsewhere must take its URL from an `api.` helper ([lint.mjs](https://github.com/mtbui2010/robotapp/blob/f30f0b52d969/scripts/lint.mjs#L9-L10)). |
 | Which hub to call | The hub is one process per robot. | The dashboard stores a list of named robots and the active one in the browser, and builds each URL from the active robot's base URL (`getAgentUrl()`, [`getWsBase()`](https://github.com/mtbui2010/robotapp/blob/f30f0b52d969/frontend/lib/api.ts#L148-L150) swaps `http` for `ws`). |
-| Start a run | The WebSocket [`/ws/agent`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/api/agent.py#L431-L455) reads the first JSON message: `prompt`, `lang`, `direct`, `planner`, `plan_only`, `log_data`, `log_mode`, `log_all`, `options`, `generator`, `user_id`, `role`. | [`page.tsx`](https://github.com/mtbui2010/robotapp/blob/f30f0b52d969/frontend/app/page.tsx#L331-L335) sends the first eight of these. It does not send `options`, `generator`, `user_id` or `role`. |
+| Start a run | The WebSocket [`/ws/agent`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/api/agent.py#L431-L455) reads the first JSON message: `prompt`, `lang`, `direct`, `planner`, `plan_only`, `log_data`, `log_mode`, `log_all`, `options`, `generator`, `user_id`, `role`. | [`page.tsx`](https://github.com/mtbui2010/robotapp/blob/f30f0b52d969/frontend/app/page.tsx#L331-L335) sends the first eight of these. It does not send `options`, `generator`, `user_id` or `role`. `lang` may be empty (the manifest's default) or `auto` (the default, with detection of the user's language per answer). `options` is a mapping of run options (for example `{"bt_goal": 0}` switches the option `bt_goal` off for the run). Only the `sage` planner (the AssistLoop) reads them, and it keeps only the keys it knows ([`unified_agent.py` lines 380-386](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/unified_agent.py#L380-L386)); other keys are ignored. The options are described in [`docs/options.md`](https://github.com/mtbui2010/robot_agent/blob/3269923/docs/options.md). |
 | Follow a run | The same socket sends one JSON object per event, each with an `event` name. | `ws.onmessage` in `page.tsx`; the plan view is built by `reducePlan` in [`planView.ts`](https://github.com/mtbui2010/robotapp/blob/f30f0b52d969/frontend/lib/planView.ts#L103); the chat state by `chatRun.ts`. |
-| Stop and answers | `POST /agent/cancel`; `POST /runs/{run_id}/cancel`, `/pause`, `/resume`, `/inject` ([agent.py](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/api/agent.py#L296-L315)); `POST /agent/listen/{req_id}` for an answer to a question the robot asked. | `api.ts` calls `/agent/cancel` and `/agent/listen/<id>`. The dashboard's own notes: `docs/features/cancel-stop.md` and `hri-voice.md` in the robotapp repo. |
+| Stop and answers | `POST /agent/cancel`; `POST /runs/{run_id}/cancel`, `/pause`, `/resume`, `/inject` ([agent.py](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/api/agent.py#L296-L315)); `POST /agent/listen/{req_id}` for an answer to a question the robot asked. | `api.ts` calls `/agent/cancel` and `/agent/listen/<id>`. The dashboard's own notes: `docs/features/cancel-stop.md` and `hri-voice.md` in the robotapp repo. |
 | Endpoint list | The OpenAPI file of the running hub, at `/openapi.json`. | A prose list in [`docs/features/backend-contract.md`](https://github.com/mtbui2010/robotapp/blob/f30f0b52d969/docs/features/backend-contract.md), and the machine-checked snapshot below. |
 
-CORS is open in the hub (`allow_origins=['*']` in `app_factory.py`), so a dashboard served from any address can call it. WebSocket routes are not part of OpenAPI. The hub has two: `/ws/agent` and `/ws/camera/{connect_id}` ([camera.py](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/api/camera.py#L349)). The lint step skips every path that starts with `/ws/`.
+CORS is open in the hub (`allow_origins=['*']` in `app_factory.py`), so a dashboard served from any address can call it. WebSocket routes are not part of OpenAPI. The hub has two: `/ws/agent` and `/ws/camera/{connect_id}` ([camera.py](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/api/camera.py#L349)). The lint step skips every path that starts with `/ws/`.
 
 ## How the dashboard gets its types
 
@@ -60,10 +60,10 @@ The dashboard does not import anything from the hub. It keeps a copy of the hub'
 
 So the snapshot protects the dashboard against a typo or a removed route. It does not give the dashboard typed responses: the TypeScript types in `api.ts` are written by hand (`./types`, `./recorder`, `./poses`, and so on).
 
-The snapshot at the pinned commit has 66 paths. It was read from the committed file; `make gen-types` was not run here (it needs FastAPI and `node_modules`).
+The snapshot at the pinned commit has 66 paths. At hub `3269923` the only change under `api/` since the earlier pin is one added optional field `prompt` in the request model `RecordingEditIn`; no router or route was added or removed (from the file list of the diff). Whether the dashboard's snapshot is current with it is **unverified**. It was read from the committed file; `make gen-types` was not run here (it needs FastAPI and `node_modules`).
 
 !!! code "Where in the code"
-    - Hub: [`app_factory.py` lines 73-89 and 130-132](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/app_factory.py#L73-L132), [`api/agent.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/api/agent.py), [`api/events.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/api/events.py)
+    - Hub: [`app_factory.py` lines 73-89 and 130-132](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/app_factory.py#L73-L132), [`api/agent.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/api/agent.py), [`api/events.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/api/events.py)
     - Dashboard: [`scripts/dump_openapi.py`](https://github.com/mtbui2010/robotapp/blob/f30f0b52d969/scripts/dump_openapi.py#L16-L18), [`scripts/gen_types.sh`](https://github.com/mtbui2010/robotapp/blob/f30f0b52d969/scripts/gen_types.sh), [`scripts/lint.mjs`](https://github.com/mtbui2010/robotapp/blob/f30f0b52d969/scripts/lint.mjs), [`frontend/lib/api.ts`](https://github.com/mtbui2010/robotapp/blob/f30f0b52d969/frontend/lib/api.ts)
 
 ## What crosses: the event stream
@@ -72,7 +72,7 @@ Every message on `/ws/agent` from the hub is one JSON object with an `event` nam
 
 - It is **descriptive, not a filter**. Every model allows extra fields, and the hub does not check what it sends against the models.
 - It lists the fields as they are today. Where the two emitters differ, the field is optional: the older direct path ("open-loop") sends `step` and `task`; the planning loops send `index` and `action`.
-- Its version is `EVENT_SCHEMA_VERSION = '1.0.0'` ([events.py line 26](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/api/events.py#L26)), a semantic version. Adding an event or an optional field is a minor bump. Renaming or removing one, or making a field required, is a major bump with a CHANGELOG entry.
+- Its version is `EVENT_SCHEMA_VERSION = '1.0.0'` ([events.py line 26](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/api/events.py#L26)), a semantic version. Adding an event or an optional field is a minor bump. Renaming or removing one, or making a field required, is a major bump with a CHANGELOG entry.
 
 The 27 listed events, by group:
 
@@ -104,7 +104,8 @@ The seventeenth router is `events`, which serves `GET /schema/events`. That path
 *How to avoid it:* when you add a router to `app_factory.py`, add its name to `ROUTERS` in the dashboard repo, then run `make gen-types`.
 
 **2. The loops emit events that the schema (version 1.0.0) does not list.**
-The planning loops in `robot_agent/core/planning/` send `goal_change`, `understand_check`, `reconcile`, `task_resumed`, `search`, `health` and `goal_check` through `r.ev("...")`. None of these is among the 27 models, so a client that builds types from the schema has no type for them. The dashboard already handles one of them (`goal_check`) by hand.
+The planning loops in `robot_agent/core/planning/` send `goal_change`, `understand_check`, `reconcile`, `task_resumed`, `search`, `health`, `goal_check` and `understand_fallback` through `r.ev("...")` (the last one was added since the earlier pin of this site; the list is from a grep of the code at `3269923`). None of these is among the 27 models, so a client that builds types from the schema has no type for them. The dashboard already handles one of them (`goal_check`) by hand.
+Lab flags (for example `bt_goal`) are not events at all: they are kept in the loop's `lab_log` and, with the option `trace` on, in the run's `trace.jsonl`; they never reach `/ws/agent` (see [Debug a failed run](../guides/debug-a-failed-run.md)).
 *How to avoid it:* treat the schema as a lower bound. Write a client so that it ignores an event name it does not know, and read the loop code for the full set. Because every model allows extra fields, extra fields on a listed event are also normal.
 
 **3. The dashboard does not read the schema.**

@@ -1,6 +1,6 @@
 ---
 sources: [robot_agent:robot_agent/contract/, robot_agent:robot_agent/runtime.py, robot_agent:robot_agent/app_factory.py, robot_agent:robot_agent/core/skill_registry.py, robot_agent:robot_agent/core/planning/robot.py, robot_agent:robot_agent/api/skills.py, robot_agent:robot_agent/skill_configs.py, robot_agent:robot_agent/new_robot.py, robot_agent:Makefile, kcare_robot:kcare_robot/main.py, kcare_robot:kcare_robot/configs/adapter.py, kcare_robot:kcare_robot/configs/manifest.yaml, kcare_robot:kcare_robot/configs/skills_config.py, kcare_robot:kcare_robot/skills/_recognition_helpers.py, symbolic_robot:symbolic_robot/domains/home/configs/, symbolic_robot:symbolic_robot/domains/factory/configs/, symbolic_robot:symbolic_robot/server.py]
-verified_at: {robot_agent: ad501cf15ece, kcare_robot: d4f5577b342e, symbolic_robot: f55ace24c3b4}
+verified_at: {robot_agent: 3269923, kcare_robot: d4f5577b342e, symbolic_robot: f55ace24c3b4}
 ---
 
 # Robot package and core
@@ -14,8 +14,8 @@ This page describes the agreement between the hub (`robot_agent`) and a robot pa
     - There is **no version number** that the hub checks on this contract. A change on either side is found only by `check_manifest`, by the package's own tests, or at run time.
 
 !!! code "Where in the code"
-    - Hub: [`contract/adapter.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/contract/adapter.py#L18-L51), [`contract/legacy_adapter.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/contract/legacy_adapter.py#L187-L227), [`contract/manifest.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/contract/manifest.py#L92-L209), [`contract/types.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/contract/types.py#L188-L217), [`contract/check_manifest.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/contract/check_manifest.py#L1-L26)
-    - Hub, where the contract is used: [`core/planning/robot.py:59-105`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/robot.py#L59-L105), [`runtime.py:192-201`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/runtime.py#L192-L201)
+    - Hub: [`contract/adapter.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/adapter.py#L18-L51), [`contract/legacy_adapter.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/legacy_adapter.py#L187-L227), [`contract/manifest.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/manifest.py#L155-L282), [`contract/types.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/types.py#L188-L217), [`contract/check_manifest.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/check_manifest.py#L1-L26)
+    - Hub, where the contract is used: [`core/planning/robot.py:59-105`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/robot.py#L59-L105), [`runtime.py:195-204`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/runtime.py#L195-L204)
     - Robot: [`kcare_robot/configs/adapter.py`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/configs/adapter.py), [`kcare_robot/configs/manifest.yaml`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/configs/manifest.yaml)
     - Second robot: [`symbolic_robot/domains/home/configs/`](https://github.com/mtbui2010/symbolic_robot/tree/f55ace24c3b4/symbolic_robot/domains/home/configs)
 
@@ -44,14 +44,14 @@ flowchart LR
   C -. reads .-> S
 ```
 
-The loops never import the robot package directly. `RobotView.load(robot_pkg)` calls `load_adapter(robot_pkg)` ([`robot.py:59-61`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/robot.py#L59-L61)) and keeps the adapter. For the words used here, see the glossary: [adapter](../start/glossary.md#adapter), [manifest](../start/glossary.md#manifest), [SkillSpec](../start/glossary.md#skillspec), [bind](../start/glossary.md#bind).
+The loops never import the robot package directly. `RobotView.load(robot_pkg)` calls `load_adapter(robot_pkg)` ([`robot.py:59-61`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/robot.py#L59-L61)) and keeps the adapter. For the words used here, see the glossary: [adapter](../start/glossary.md#adapter), [manifest](../start/glossary.md#manifest), [SkillSpec](../start/glossary.md#skillspec), [bind](../start/glossary.md#bind).
 
 ## What a robot package must provide
 
 | Piece | Where | Who reads it | What it holds |
 |---|---|---|---|
-| Entry point | `<pkg>/main.py` | the person who starts the server | A call `create_app(robot_pkg='<pkg>', config_dir=...)`. In kcare: [`main.py:27-29`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/main.py#L27-L29). The hub side is [`app_factory.py:50`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/app_factory.py#L50). |
-| Skill table | `<pkg>/configs/skills_config.py` | the skill registry at boot, and `check_manifest` | `SKILL_CONFIGS = {skill name: (module path, function name)}` ([kcare `skills_config.py:6`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/configs/skills_config.py#L6), read at [`runtime.py:197-198`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/runtime.py#L197-L198)). |
+| Entry point | `<pkg>/main.py` | the person who starts the server | A call `create_app(robot_pkg='<pkg>', config_dir=...)`. In kcare: [`main.py:27-29`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/main.py#L27-L29). The hub side is [`app_factory.py:50`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/app_factory.py#L50). |
+| Skill table | `<pkg>/configs/skills_config.py` | the skill registry at boot, and `check_manifest` | `SKILL_CONFIGS = {skill name: (module path, function name)}` ([kcare `skills_config.py:6`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/configs/skills_config.py#L6), read at [`runtime.py:200-201`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/runtime.py#L200-L201)). |
 | Skills | `<pkg>/skills/*.py` | the skill registry | One function per skill, called as `func(node=node, **params)`, returning a result dict. |
 | Manifest | `<pkg>/configs/manifest.yaml` | `Manifest.from_yaml` | Skills, capabilities, geometry, language, planner data. See below. |
 | Adapter | `<pkg>/configs/adapter.py` | `load_adapter` | `ADAPTER` (an instance), or `make_adapter()` / `get_adapter()`, or a class `Adapter`. |
@@ -62,7 +62,7 @@ The loops never import the robot package directly. `RobotView.load(robot_pkg)` c
 
 ## The adapter: `RobotAdapter`
 
-`RobotAdapter` is a Python `Protocol`: a robot's adapter does not have to inherit from anything, it only needs these members ([`adapter.py:23-51`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/contract/adapter.py#L23-L51)).
+`RobotAdapter` is a Python `Protocol`: a robot's adapter does not have to inherit from anything, it only needs these members ([`adapter.py:23-51`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/adapter.py#L23-L51)).
 
 ```python
 @runtime_checkable
@@ -87,9 +87,9 @@ class RobotAdapter(Protocol):
         ...
 ```
 
-`health(node)` is the fourth method ([`adapter.py:48-51`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/contract/adapter.py#L48-L51)): it returns a dict whose keys belong to the adapter, with `ok` (`True`, `False` or `None`) as the summary.
+`health(node)` is the fourth method ([`adapter.py:48-51`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/adapter.py#L48-L51)): it returns a dict whose keys belong to the adapter, with `ok` (`True`, `False` or `None`) as the summary.
 
-Two more methods are **optional** and deliberately not Protocol members, "so older adapters still match" ([`adapter.py:44-46`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/contract/adapter.py#L44-L46)):
+Two more methods are **optional** and deliberately not Protocol members, "so older adapters still match" ([`adapter.py:44-46`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/adapter.py#L44-L46)):
 
 | Optional method | Returns | Used for |
 |---|---|---|
@@ -102,9 +102,9 @@ Two more methods are **optional** and deliberately not Protocol members, "so old
 |---|---|---|
 | `(skill_name, params)` | The robot can do this step with this skill. | Runs the skill through the skill registry. |
 | `None` | A no-op step (the robot has nothing to do for it, for example `Wait` on kcare). | Skips the step. |
-| raises `Unbindable` | The robot has no skill for the action, or the step lacks an argument. | The caller turns it into a replan reason ([`adapter.py:18-20`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/contract/adapter.py#L18-L20)). |
+| raises `Unbindable` | The robot has no skill for the action, or the step lacks an argument. | The caller turns it into a replan reason ([`adapter.py:18-20`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/adapter.py#L18-L20)). |
 
-A plan step that already names its skill (`skill` plus `params`, as the direct planner writes it) does not reach the adapter; `RobotView.bind` checks it against the robot's skill list instead ([`robot.py:99-105`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/robot.py#L99-L105)).
+A plan step that already names its skill (`skill` plus `params`, as the direct planner writes it) does not reach the adapter; `RobotView.bind` checks it against the robot's skill list instead ([`robot.py:99-105`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/robot.py#L99-L105)).
 
 Real values, from the kcare adapter, run offline (no robot, no ROS; the adapter reads its own manifest and name maps). The robot's maker-product name in the error text is written as `<robot>`:
 
@@ -115,13 +115,13 @@ Real values, from the kcare adapter, run offline (no robot, no ROS; the adapter 
 {'action': 'Fly', 'object': 'x'} -> Unbindable: no skill for action 'Fly' on object 'x' on robot '<robot>'
 ```
 
-The `type: fine_move` in the second line is added by kcare's own `build_params` (the adapter calls it, [`legacy_adapter.py:108-112`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/contract/legacy_adapter.py#L108-L112)); the hub knows nothing about it. On the same adapter, outside a running server, `health()` gives `{'frame_age_s': None, 'fps': None, 'depth': None, 'pose_age_s': None, 'ok': None}` and `pose()` gives `{}`: with no ROS node nothing can be read, and both methods return that instead of raising.
+The `type: fine_move` in the second line is added by kcare's own `build_params` (the adapter calls it, [`legacy_adapter.py:108-112`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/legacy_adapter.py#L108-L112)); the hub knows nothing about it. On the same adapter, outside a running server, `health()` gives `{'frame_age_s': None, 'fps': None, 'depth': None, 'pose_age_s': None, 'ok': None}` and `pose()` gives `{}`: with no ROS node nothing can be read, and both methods return that instead of raising.
 
 ## The manifest and `SkillSpec`
 
-The manifest is the robot as data. `Manifest.from_yaml` reads it and checks every field ([`manifest.py:109-176`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/contract/manifest.py#L109-L176)). Top-level keys the contract knows: `robot`, `version`, `language`, `languages`, `capabilities`, `geometry`, `planner`, `skills` ([`manifest.py:40`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/contract/manifest.py#L40)). Other keys are kept in `Manifest.extra`, not rejected.
+The manifest is the robot as data. `Manifest.from_yaml` reads it and checks every field ([`manifest.py:176-245`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/manifest.py#L176-L245)). Top-level keys the contract knows: `robot`, `version`, `language`, `languages`, `capabilities`, `geometry`, `planner`, `skills`, `limits` and `safety` ([`manifest.py:40`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/manifest.py#L40)). `limits` holds what the body can carry (`payload_kg`, `max_object_size_m`). `safety` holds an optional hazard profile (`safety.profile`, a file path or an inline mapping; schema in [`docs/safety.md`](https://github.com/mtbui2010/robot_agent/blob/3269923/docs/safety.md)); a robot that declares none gets no hazard check from the core. Inside `planner:` the contract now accepts many optional keys, among them `planner.options` for the registered options ([`docs/options.md`](https://github.com/mtbui2010/robot_agent/blob/3269923/docs/options.md)); see below. Other keys are kept in `Manifest.extra`, not rejected.
 
-Each entry under `skills:` becomes a `SkillSpec` ([`types.py:188-217`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/contract/types.py#L188-L217)):
+Each entry under `skills:` becomes a `SkillSpec` ([`types.py:188-217`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/types.py#L188-L217)):
 
 | Field | Meaning |
 |---|---|
@@ -159,7 +159,7 @@ The kcare `pick` entry, copied from [`manifest.yaml:114-131`](https://github.com
 
 The `pre` and `effects` here must agree with the shared action model (see [Planner library and core](planner-library.md)); the kcare manifest says so in its own header comment.
 
-Other values read from the kcare manifest at this commit: language `ko`, languages `[ko, en]`, geometry `arrive_tol_m 0.3`, `reach_m 0.78`, `reach_far_m 1.0`, plus free-form extras such as `max_reach_y_m`, `frame_max_age_s` and `pose_max_age_s`. Any `geometry` key that ends in `_m` must be a number; the loader checks this ([`manifest.py:147-152`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/contract/manifest.py#L147-L152)).
+Other values read from the kcare manifest at this commit: language `ko`, languages `[ko, en]`, geometry `arrive_tol_m 0.3`, `reach_m 0.78`, `reach_far_m 1.0`, plus free-form extras such as `max_reach_y_m`, `frame_max_age_s` and `pose_max_age_s`. Any `geometry` key that ends in `_m` must be a number; the loader checks this ([`manifest.py:212-219`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/manifest.py#L212-L219)).
 
 A bad manifest fails at load time, with every bad field listed by path. Real output, run offline:
 
@@ -168,11 +168,11 @@ invalid manifest: skills[0] (p).errors[0]: 'oops' is not a FailureCode (valid: a
 invalid manifest: robot: required, a non-empty string
 ```
 
-`Manifest.skill_for(action)` is the lookup the adapters use: exact action name, then case-insensitive, then `alias_actions` ([`manifest.py:195-209`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/contract/manifest.py#L195-L209)). For a manifest with one `move` skill for `MoveTo`, `skill_for('moveto')` finds it and `skill_for('Fly')` gives `None` (run offline).
+`Manifest.skill_for(action)` is the lookup the adapters use: exact action name, then case-insensitive, then `alias_actions` ([`manifest.py:268-282`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/manifest.py#L268-L282)). For a manifest with one `move` skill for `MoveTo`, `skill_for('moveto')` finds it and `skill_for('Fly')` gives `None` (run offline).
 
 ## How the hub loads a robot: `load_adapter`
 
-`load_adapter(robot_pkg)` is the one entry point ([`legacy_adapter.py:215-227`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/contract/legacy_adapter.py#L215-L227)):
+`load_adapter(robot_pkg)` is the one entry point ([`legacy_adapter.py:215-227`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/legacy_adapter.py#L215-L227)):
 
 ```python
 def load_adapter(robot_pkg: str) -> RobotAdapter:
@@ -192,8 +192,8 @@ def load_adapter(robot_pkg: str) -> RobotAdapter:
 
 Steps, in order:
 
-1. If `<pkg>.configs.adapter` exists, import it. Inside it the hub looks for `ADAPTER` (or `adapter`) as an instance, then calls `make_adapter()`, `get_adapter()` or `Adapter()`. If none of these exists: `ImportError` ([`legacy_adapter.py:201-212`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/contract/legacy_adapter.py#L201-L212)).
-2. Otherwise read `configs/manifest.yaml` if there is one, and wrap `<pkg>.configs.grace_namemap` in a `NamemapAdapter`. Without a manifest, the shim builds a small one from the name map's `SKILL_MAP`, so `adapter.manifest` always exists ([`legacy_adapter.py:51-60`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/contract/legacy_adapter.py#L51-L60)).
+1. If `<pkg>.configs.adapter` exists, import it. Inside it the hub looks for `ADAPTER` (or `adapter`) as an instance, then calls `make_adapter()`, `get_adapter()` or `Adapter()`. If none of these exists: `ImportError` ([`legacy_adapter.py:201-212`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/legacy_adapter.py#L201-L212)).
+2. Otherwise read `configs/manifest.yaml` if there is one, and wrap `<pkg>.configs.grace_namemap` in a `NamemapAdapter`. Without a manifest, the shim builds a small one from the name map's `SKILL_MAP`, so `adapter.manifest` always exists ([`legacy_adapter.py:51-60`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/legacy_adapter.py#L51-L60)).
 3. With neither file: `ImportError`.
 
 `<pkg>` may be a dotted name. The home pack of `symbolic_robot` loads as `load_adapter('symbolic_robot.domains.home')` (run offline).
@@ -248,13 +248,13 @@ How the two packs compare. All values were read from the files at the pinned com
 | | kcare_robot (real robot) | symbolic_robot home pack | symbolic_robot factory pack |
 |---|---|---|---|
 | Skills in the manifest | 10 | 17 | 12 |
-| `check_manifest` result | 0 errors, 0 warnings | 0 errors, 22 warnings | 0 errors, 17 warnings |
+| `check_manifest` result | 0 errors, 0 warnings | 0 errors, 17 warnings | 0 errors, 12 warnings |
 | Default language | `ko` (also `en`) | `en` | not read |
 | Adapter | subclass of the hub's `NamemapAdapter`, over `grace_namemap` | own plain class, no inheritance | own `adapter.py` (not read in detail) |
 | Where skills run | on the robot through ROS agents | in a mock backend (`configs/backend.py`), no motion | same |
 | Reads ROS | yes | no | no |
 
-Why the warnings. In the home pack, 17 come from "skill module is outside the inspected pack folder, not inspected", one per skill (the skills live in `ra_skills.py` under a different import path than the folder `check_manifest` was given). The other 5 are `planner.*` keys (`input_pivot`, `llm_budget`, `search_legs`, `translate_budget`, `translate_model`) that are "not part of the contract (kept, ignored by the core)". At `main` the hub's manifest accepts only `seed_memory` and `notes` under `planner:` ([`manifest.py:42`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/contract/manifest.py#L42)). The five keys exist on a remote branch of the hub that this site does not describe; on `main` they are ignored.
+Why the warnings. Each one is "skill module is outside the inspected pack folder, not inspected", one per skill: the skills live in `ra_skills.py` under a different import path than the folder `check_manifest` was given. With the hub at the earlier pin of this site the home pack had 22 warnings and the factory pack 17: the extra five (home) were `planner.*` keys (`input_pivot`, `llm_budget`, `search_legs`, `translate_budget`, `translate_model`) that the hub did not know yet. The hub's `PLANNER_KEYS` ([`manifest.py:86`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/manifest.py#L86)) now lists them, so they no longer warn. The counts in this table were printed by `check_manifest` at hub `3269923` on the local checkouts of both repos (their commit may differ from the pinned ones above).
 
 ## `check_manifest`: the machine check
 
@@ -262,23 +262,24 @@ Why the warnings. In the home pack, 17 come from "skill module is outside the in
 python -m robot_agent.contract.check_manifest <pkg_dir> [--manifest PATH] [--strict]
 ```
 
-It needs no ROS and imports nothing of the robot: it reads `SKILL_CONFIGS` and the saved `skills.json` the way the registry does, and reads skill signatures from the source text ([`check_manifest.py:1-26`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/contract/check_manifest.py#L1-L26)). `<pkg_dir>` is the inner package folder, its repo root, or an importable name.
+It needs no ROS and imports nothing of the robot: it reads `SKILL_CONFIGS` and the saved `skills.json` the way the registry does, and reads skill signatures from the source text ([`check_manifest.py:1-26`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/check_manifest.py#L1-L26)). `<pkg_dir>` is the inner package folder, its repo root, or an importable name.
 
 | Result | Causes |
 |---|---|
-| **Error** (exit 1) | The manifest does not load; a manifest skill is not in the registry or its module or function is missing; a manifest parameter the function cannot take; a function parameter with no default that the manifest does not declare; a `sensor` verify naming a skill the robot lacks; a `planner.seed_memory` file that is missing or not JSON lines. |
-| **Warning** (exit 1 only with `--strict`) | Unknown manifest keys; an action that the name map binds to a different skill; skills that cannot be inspected. |
+| **Error** (exit 1) | The manifest does not load; a manifest skill is not in the registry or its module or function is missing; a manifest parameter the function cannot take; a function parameter with no default that the manifest does not declare; a `sensor` verify naming a skill the robot lacks; a `planner.seed_memory` file that is missing or not JSON lines; a `planner.options` that is not a mapping of mappings; a `planner.detector_miss_rate` outside 0 to 0.9; a bad field in the `safety.profile` (reported by path). |
+| **Warning** (exit 1 only with `--strict`) | Unknown manifest keys; an action that the name map binds to a different skill; skills that cannot be inspected; the safety profile's own warnings (for example a source still to verify). |
+| **Note** (never a failure) | Counts, for example the safety profile's classes, rules and sourced / assumed words. |
 | Exit 2 | The package or manifest was not found. |
 
-Real runs, offline (path and robot name shortened; the first line of each run):
+Real runs, offline (path and robot name shortened; the first line of each run, hub at `3269923`):
 
 ```text
 manifest <repo>/kcare_robot/kcare_robot/configs/manifest.yaml (<robot>, 10 skills): 0 error(s), 0 warning(s)
-manifest <repo>/symbolic_robot/symbolic_robot/domains/home/configs/manifest.yaml (<robot>, 17 skills): 0 error(s), 22 warning(s)
-manifest <repo>/symbolic_robot/symbolic_robot/domains/factory/configs/manifest.yaml (<robot>, 12 skills): 0 error(s), 17 warning(s)
+manifest <repo>/symbolic_robot/symbolic_robot/domains/home/configs/manifest.yaml (<robot>, 17 skills): 0 error(s), 17 warning(s)
+manifest <repo>/symbolic_robot/symbolic_robot/domains/factory/configs/manifest.yaml (<robot>, 12 skills): 0 error(s), 12 warning(s)
 ```
 
-A robot package can call the same check from its own tests with `assert_manifest_matches(path)` ([`check_manifest.py:332-336`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/contract/check_manifest.py#L332-L336)). kcare keeps `tests/test_manifest.py` and `tests/test_adapter*.py` for this. These tests were not run here (`pytest` is not installed on the machine that wrote this page); only what they check was read.
+A robot package can call the same check from its own tests with `assert_manifest_matches(path)` ([`check_manifest.py:332-336`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/check_manifest.py#L352-L356)). kcare keeps `tests/test_manifest.py` and `tests/test_adapter*.py` for this. These tests were not run here (`pytest` is not installed on the machine that wrote this page); only what they check was read.
 
 ## What breaks when the contract changes
 
@@ -289,23 +290,23 @@ A robot package can call the same check from its own tests with `assert_manifest
 | Robot: the manifest has no skill for an action the planner uses | `bind` raises `Unbindable`; the loop uses it as a reason to replan | run time |
 | Robot: `configs/adapter.py` defines none of `ADAPTER`, `make_adapter()`, `get_adapter()`, `Adapter` | `ImportError` when the loop starts | run time |
 | Hub: a new required member is added to the `RobotAdapter` Protocol | Existing adapters no longer match. This is why `pose` and `container_states` were added as optional | not machine-checked |
-| Hub: a new failure code | The manifest's `errors:` lists accept it; the contract docs list 12 codes, the code has 13 (`budget_exceeded` is the 13th, [`types.py:31`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/contract/types.py#L31)) | `git grep`, tests |
+| Hub: a new failure code | The manifest's `errors:` lists accept it; the contract docs list 12 codes, the code has 13 (`budget_exceeded` is the 13th, [`types.py:31`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/types.py#L31)) | `git grep`, tests |
 | Hub: a rule in the shared action model changes | The manifest's `pre` and `effects` can disagree with it | the package's tests |
 
-There is no contract version that either side compares. The hub's own rule says "SemVer + CHANGELOG on contract changes" ([`CLAUDE.md`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/CLAUDE.md), rule 8), and the hub package is at version `0.1.0` ([`pyproject.toml:7`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/pyproject.toml#L7)). The kcare package depends on `robot_agent` without a version range.
+There is no contract version that either side compares. The hub's own rule says "SemVer + CHANGELOG on contract changes" ([`CLAUDE.md`](https://github.com/mtbui2010/robot_agent/blob/3269923/CLAUDE.md), rule 8), and the hub package is at version `0.1.0` ([`pyproject.toml:7`](https://github.com/mtbui2010/robot_agent/blob/3269923/pyproject.toml#L7)). The kcare package depends on `robot_agent` without a version range.
 
 ## Current behaviour to know
 
 !!! warning "A skill in `skills_config.py` may not load at boot"
-    At boot the hub first tries `configs/common/skills.json`. If that file exists and is a list, the hub uses it and does **not** read `skills_config.py` ([`runtime.py:192-201`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/runtime.py#L192-L201), `load_saved` returns `True` at [`skill_registry.py:319-329`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/skill_registry.py#L319-L329)). kcare tracks that `skills.json` in git. So a new line in `SKILL_CONFIGS` appears only after you call `POST /skills/reload` ([`api/skills.py:44-71`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/api/skills.py#L44-L71)). `check_manifest` reads both sources, so it can pass while the running server does not yet have the skill. This was read from the code, not run on a server. **To avoid it:** after adding a skill, reload skills (or delete the saved file on purpose) and check `GET /skills`.
+    At boot the hub first tries `configs/common/skills.json`. If that file exists and is a list, the hub uses it and does **not** read `skills_config.py` ([`runtime.py:195-204`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/runtime.py#L195-L204), `load_saved` returns `True` at [`skill_registry.py:319-329`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/skill_registry.py#L319-L329)). kcare tracks that `skills.json` in git. So a new line in `SKILL_CONFIGS` appears only after you call `POST /skills/reload` ([`api/skills.py:44-71`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/api/skills.py#L44-L71)). `check_manifest` reads both sources, so it can pass while the running server does not yet have the skill. This was read from the code, not run on a server. **To avoid it:** after adding a skill, reload skills (or delete the saved file on purpose) and check `GET /skills`.
 
 !!! warning "One robot's values live inside the hub"
-    `robot_agent/skill_configs.py` holds `MOBILE_HEIGHT = 435`, `ME = 'living room'`, `STANDING_OBJ_NAMES` and `LYING_OBJ_NAMES` ([`skill_configs.py:104-110`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/skill_configs.py#L104-L110)). These are the same values the kcare manifest declares under `capabilities.standing_objects`, `capabilities.lying_objects` and `defaults` ([`manifest.yaml:41-44, 58-60`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/configs/manifest.yaml#L41-L44)), and kcare imports them from the hub ([`_recognition_helpers.py:20-23`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/skills/_recognition_helpers.py#L20-L23)). The hub's check `make lint-core` finds no robot names in `core/`, `interact/` and `contract/`, but it does not look at this file, and the values carry no name. So a second robot that imports `robot_agent.skill_configs` gets kcare's object lists. kcare's own rule allows importing `robot_agent.skill_configs` ([`docs/rules.md`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/docs/rules.md), rule 1). **To avoid it:** in a new robot, read these lists from your own manifest, not from the hub module.
+    `robot_agent/skill_configs.py` holds `MOBILE_HEIGHT = 435`, `ME = 'living room'`, `STANDING_OBJ_NAMES` and `LYING_OBJ_NAMES` ([`skill_configs.py:104-110`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/skill_configs.py#L104-L110)). These are the same values the kcare manifest declares under `capabilities.standing_objects`, `capabilities.lying_objects` and `defaults` ([`manifest.yaml:41-44, 58-60`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/configs/manifest.yaml#L41-L44)), and kcare imports them from the hub ([`_recognition_helpers.py:20-23`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/skills/_recognition_helpers.py#L20-L23)). The hub's check `make lint-core` finds no robot names in `core/`, `interact/` and `contract/`, but it does not look at this file, and the values carry no name. So a second robot that imports `robot_agent.skill_configs` gets kcare's object lists. kcare's own rule allows importing `robot_agent.skill_configs` ([`docs/rules.md`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/docs/rules.md), rule 1). **To avoid it:** in a new robot, read these lists from your own manifest, not from the hub module.
 
 !!! warning "The robot-copy command defaults to kcare_robot"
-    `python -m robot_agent.new_robot <new_pkg>` copies an existing robot package. Its `--from` option defaults to `kcare_robot` ([`new_robot.py:203-204`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/new_robot.py#L203-L204)). Always pass `--from` with a package you have, and `--blank-configs` if you do not want the source robot's numbers.
+    `python -m robot_agent.new_robot <new_pkg>` copies an existing robot package. Its `--from` option defaults to `kcare_robot` ([`new_robot.py:203-204`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/new_robot.py#L203-L204)). Always pass `--from` with a package you have, and `--blank-configs` if you do not want the source robot's numbers.
 
 !!! warning "The robot template is not in the repository set"
-    The hub's `Makefile` looks for a template folder at `../robot_template` (`TEMPLATE_DIR`, [`Makefile:38`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/Makefile#L38)). On the machine where this page was checked, no such folder exists next to the six repositories. The `make` target that uses it was not run. **To avoid it:** use `new_robot` with `--from`, or follow [Add a robot](../guides/add-a-robot.md).
+    The hub's `Makefile` looks for a template folder at `../robot_template` (`TEMPLATE_DIR`, [`Makefile:38`](https://github.com/mtbui2010/robot_agent/blob/3269923/Makefile#L38)). On the machine where this page was checked, no such folder exists next to the six repositories. The `make` target that uses it was not run. **To avoid it:** use `new_robot` with `--from`, or follow [Add a robot](../guides/add-a-robot.md).
 
-For the other checks in the hub, see [Planner library and core](planner-library.md). The full contract text in the hub's own docs is [`docs/contract.md`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/docs/contract.md); it is source material, and where it differs from the code (it lists 12 failure codes), this page follows the code.
+For the other checks in the hub, see [Planner library and core](planner-library.md). The full contract text in the hub's own docs is [`docs/contract.md`](https://github.com/mtbui2010/robot_agent/blob/3269923/docs/contract.md); it is source material, and where it differs from the code (it lists 12 failure codes), this page follows the code.

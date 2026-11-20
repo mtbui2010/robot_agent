@@ -1,6 +1,6 @@
 ---
 sources: [robot_agent:robot_agent/core/unified_agent.py, robot_agent:robot_agent/core/planning/loop.py, robot_agent:robot_agent/core/planning/assist_loop.py, robot_agent:tests/fakes.py, robot_agent:tests/test_assist_loop_fake_robot.py]
-verified_at: {robot_agent: ad501cf15ece}
+verified_at: {robot_agent: 3269923, embodiplan: 76da520}
 ---
 
 # The closed loop
@@ -14,10 +14,12 @@ A robot that makes one plan and then runs it blindly fails as soon as the world 
     - Example: a run on the hub's fake robot, 33 events. A `Find apple` fails, the loop searches, replans, and ends with `success`. It is a scripted fake, **not run on a real robot**.
 
 !!! code "Where in the code"
-    - Choice of path: [`unified_agent.py` L355-L372](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/unified_agent.py#L355-L372)
-    - Plain loop: [`ClosedLoop.run_blocking`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/loop.py#L553-L573) and [`_cl_step`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/loop.py#L716-L757)
-    - Loop with checks and recovery: [`AssistLoop.run_blocking`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/assist_loop.py#L951-L977), [`_execute_phase`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/assist_loop.py#L1612-L1636), [`_run_step`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/assist_loop.py#L1835-L1877), [`_step_failed`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/assist_loop.py#L1927-L1965), [`_sage_replan`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/assist_loop.py#L1377-L1413), [`_plan_ended`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/assist_loop.py#L1648-L1673), [`_final_check`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/assist_loop.py#L2141-L2150)
-    - The offline fakes: [`tests/fakes.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/tests/fakes.py) and [`tests/test_assist_loop_fake_robot.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/tests/test_assist_loop_fake_robot.py)
+    - Choice of path: [`unified_agent.py` L355-L372](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/unified_agent.py#L364-L381)
+    - Plain loop: [`ClosedLoop.run_blocking`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/loop.py#L572-L592) and [`_cl_step`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/loop.py#L735-L776)
+    - Loop with checks and recovery: [`AssistLoop.run_blocking`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/assist_loop.py#L779-L784) (it wraps `_run_blocking`, [L1662-L1703](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/assist_loop.py#L1662-L1703), where the four phases are called), [`_execute_phase`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/assist_loop.py#L3205-L3233), [`_run_step`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/assist_loop.py#L3551-L3597), [`_step_failed`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/assist_loop.py#L3660-L3708), [`_sage_replan`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/assist_loop.py#L2960-L2995), [`_plan_ended`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/assist_loop.py#L3245-L3274), [`_final_check`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/assist_loop.py#L4066-L4081)
+    - The own ladders of a failed Pick, MoveTo and release: [`step_ladder.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/step_ladder.py) (`_recover_pick`, `_recover_move`, `_recover_place`)
+    - Options that change the flow: [`bt_goal.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/options/bt_goal.py), [`look_then_ask.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/options/look_then_ask.py), [`bring_ask.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/options/bring_ask.py)
+    - The offline fakes: [`tests/fakes.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/tests/fakes.py) and [`tests/test_assist_loop_fake_robot.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/tests/test_assist_loop_fake_robot.py)
 
 ## The idea in plain words
 
@@ -90,7 +92,7 @@ Two honest notes about this run:
 - The reason text says "Look next at sofa@living room", but the new plan goes to `counter@kitchen`. The planner here is a script that returns its second plan whatever the reason says. The apple is on the counter by construction.
 - The `replan` event also lists a `problems` entry from the plan checker about step 3 of the old plan (the user said the apple is on the desk). The run went on regardless.
 
-**What "replan" replaces.** In the code the plan after a failure is `steps[:i] + suffix`, where `i` is the index of the failed step ([`_sage_replan`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/assist_loop.py#L1377-L1413)). In the run, step 0 (the move to the desk) stays and the new plan starts at index 1. A new plan that fails the gate never runs; the rest of the old plan is dropped instead.
+**What "replan" replaces.** In the code the plan after a failure is `steps[:i] + suffix`, where `i` is the index of the failed step ([`_sage_replan`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/assist_loop.py#L2960-L2995)). In the run, step 0 (the move to the desk) stays and the new plan starts at index 1. A new plan that fails the gate never runs; the rest of the old plan is dropped instead.
 
 **Verify the goal (events 30 to 32).** When the steps run out, the loop does not trust its own bookkeeping. `_plan_ended` checks that the goals hold in the belief, then `goal_check` looks at the world: the robot goes to the dining table (if it is not there) and runs `Find apple`. Only after `ok: true` does the run end with `success`. That is why the skill trace ends with one more `find` than the plan has.
 
@@ -104,7 +106,7 @@ find apple (ok, the goal check)
 
 ## Four ways a request is run
 
-`UnifiedAgent.run` picks how a request is executed ([`unified_agent.py` L355-L372](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/unified_agent.py#L355-L372)). `run_direct` is a separate method.
+`UnifiedAgent.run` picks how a request is executed ([`unified_agent.py` L355-L372](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/unified_agent.py#L364-L381)). `run_direct` is a separate method.
 
 | path | when | what runs |
 |---|---|---|
@@ -115,6 +117,23 @@ find apple (ok, the goal check)
 
 `ClosedLoop` and `AssistLoop` are glossary names; see the [glossary](../start/glossary.md#closedloop) and [planners](planners.md) for how the planner behind each key is chosen. The run above is an `AssistLoop` run, which is why it has `understand`, `gate` and `goal_check` events. The plain `ClosedLoop` has the same plan, act, verify and replan shape (`_cl_plan`, `_cl_execute`, `_cl_step`) without those extras.
 
+## Options that change the flow
+
+The `AssistLoop` does not hold every behaviour in its own code. Some are **options**: small modules that the loop calls at fixed points (hooks). They are listed in [`docs/options.md`](https://github.com/mtbui2010/robot_agent/blob/3269923/docs/options.md). Three of them change what the stages above do. All three are on by default.
+
+| Option | What it changes | Switch off |
+|---|---|---|
+| `look_then_ask` | **Before the plan, for a goal whose source is not said.** An `on` or `in` goal with no `from`, whose object the memory does not hold as a trusted sighting, gets one `Find` where the robot stands. Seen: that place is the source, no question. Not seen: the robot asks once, "I don't see the X here. Where is it?". A place in the answer is the source. "I don't know", silence or an answer with no place leaves the goal to the ranked search, and the question is not asked again. If the robot has no `Find` it can use, nothing changes. | run option `look_then_ask=0` (or `ROBOT_AGENT_LOOK_THEN_ASK=0`): the search by belief runs first and the question comes after the misses |
+| `bring_ask` | **In grounding, for "bring me X".** One combined question, "Where are you? Or where should I put it?", also when the robot tracks the person. Asked once per request. Not asked when the words ask for a hand-over ("hand me the mug"). | run option `bring_ask=0` (or `ROBOT_AGENT_BRING_ASK=0`) |
+| `bt_goal` | **Plan and act.** When the manifest declares `trees` (a behaviour tree per goal kind), the goals with a tree are run by the tree and the planner is not called for them. Each tree step goes through the loop's own step path and recovery ladder. With key `mixed` (default on), neighbouring goals without a tree are planned by SAGE once, when the run reaches them. A step with no way left hands the goals still open to the SAGE replan. A robot that declares no `trees`: nothing changes. | run option `bt_goal=0`; `bt_goal.mixed=0` gives the older all-or-nothing rule |
+
+What was checked and what was not:
+
+- `look_then_ask` and `bring_ask` were checked with **English phrases only** (the core's own texts for `q_where_is_here` and `q_where_bring`). A run in Korean or Vietnamese is **not verified** for these two options.
+- For `bt_goal` with `mixed`, a SAGE part skips the loop's certify gate (only the planner's own verifier runs). Its effect on a benchmark is **not measured**. Design: [`docs/bt_goal.md`](https://github.com/mtbui2010/robot_agent/blob/3269923/docs/bt_goal.md).
+- While a tree runs, a failed step is not replanned (`no_replan`): the step stays failed and the tree's own fallback decides. So "the planner replaces the failed step and every step after it" holds for the plain path, not for a tree step.
+- The offline run on this page declares no trees, so it does not use `bt_goal`. It also gives every goal a source, so `look_then_ask` does not ask in it.
+
 ## Where each stage lives
 
 | stage | `ClosedLoop` (`loop.py`) | `AssistLoop` (`assist_loop.py`) |
@@ -123,7 +142,7 @@ find apple (ok, the goal check)
 | plan | `_cl_plan`, `_cl_certify` | `_understand_phase`, `_plan_phase`, `_generate_and_certify` |
 | act | `_cl_step` | `_run_step` (after `_guard`) |
 | verify | `StepVerifier` inside `_cl_step`, `verdict` | `_post_check`, `verdict`, then `_final_check` and `_observe_goals` |
-| recover | `_cl_failed`, `_cl_replan` | `_step_failed`, `_apply_policy`, `_recover_find`, `_recover_pick`, `_recover_move`, `_recover_place`, `_sage_replan` |
+| recover | `_cl_failed`, `_cl_replan` | `_step_failed`, `_apply_policy`, `_recover_find`, `_sage_replan`; `_recover_pick`, `_recover_move`, `_recover_place` are in `step_ladder.py` (the `StepLadder` mixin of `AssistLoop`) |
 
 ## Run it yourself
 

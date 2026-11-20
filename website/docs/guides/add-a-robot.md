@@ -1,6 +1,6 @@
 ---
 sources: [robot_agent:robot_agent/new_robot.py, robot_agent:robot_agent/contract/, robot_agent:robot_agent/runtime.py, robot_agent:robot_agent/app_factory.py, robot_agent:robot_agent/core/skill_registry.py, robot_agent:robot_agent/core/planning/robot.py, robot_agent:robot_agent/core/planning/action_model.py, robot_agent:tests/fakes.py, robot_agent:tests/conftest.py, robot_agent:tests/fakebot/, robot_agent:Makefile, kcare_robot:kcare_robot/main.py, kcare_robot:kcare_robot/configs/, kcare_robot:CLAUDE.md, kcare_robot:Makefile, symbolic_robot:symbolic_robot/domains/factory/configs/]
-verified_at: {robot_agent: ad501cf15ece, kcare_robot: d4f5577b342e, symbolic_robot: f55ace24c3b4}
+verified_at: {robot_agent: 3269923, kcare_robot: d4f5577b342e, symbolic_robot: f55ace24c3b4}
 ---
 
 # Add a new robot
@@ -14,7 +14,7 @@ This guide takes you to the smallest robot package that the hub (`robot_agent`) 
     - Not run here: any real robot, ROS, a running server, `make test`. They are marked where they come up.
 
 !!! code "Where in the code"
-    - Hub: [`new_robot.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/new_robot.py#L1-L40), [`contract/check_manifest.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/contract/check_manifest.py#L1-L26), [`contract/legacy_adapter.py:215-227`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/contract/legacy_adapter.py#L215-L227), [`tests/fakes.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/tests/fakes.py#L91-L91), [`tests/conftest.py:74`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/tests/conftest.py#L74-L96), [`tests/fakebot/`](https://github.com/mtbui2010/robot_agent/tree/ad501cf15ece/tests/fakebot)
+    - Hub: [`new_robot.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/new_robot.py#L1-L40), [`contract/check_manifest.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/check_manifest.py#L1-L26), [`contract/legacy_adapter.py:215-227`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/legacy_adapter.py#L215-L227), [`tests/fakes.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/tests/fakes.py#L91-L91), [`tests/conftest.py:74`](https://github.com/mtbui2010/robot_agent/blob/3269923/tests/conftest.py#L74-L100), [`tests/fakebot/`](https://github.com/mtbui2010/robot_agent/tree/3269923/tests/fakebot)
     - A real robot: [`kcare_robot/configs/`](https://github.com/mtbui2010/kcare_robot/tree/d4f5577b342e/kcare_robot/configs), [`kcare_robot/main.py`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/main.py#L27-L29)
     - A second, ROS-free example: [`symbolic_robot/domains/factory/configs/`](https://github.com/mtbui2010/symbolic_robot/tree/f55ace24c3b4/symbolic_robot/domains/factory/configs)
 
@@ -40,10 +40,10 @@ There are three routes to a package. This guide writes the files by hand.
 |---|---|---|
 | Fork an existing package with `python -m robot_agent.new_robot` | A copy with the package name rewritten everywhere. | Run on the guide's own `tinybot` (below). Not run on `kcare_robot`: that copy is hundreds of megabytes. |
 | Write the files by hand (this guide) | The smallest package, with nothing you do not understand. | Run in full. |
-| The `robot_template` project that the hub's `Makefile` mentions | A clean skeleton with mock skills. | **Not available.** The `Makefile` looks for `../robot_template` ([`Makefile:38`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/Makefile#L38)). No such folder exists next to the six repositories, and the target was not run. |
+| The `robot_template` project that the hub's `Makefile` mentions | A clean skeleton with mock skills. | **Not available.** The `Makefile` looks for `../robot_template` ([`Makefile:38`](https://github.com/mtbui2010/robot_agent/blob/3269923/Makefile#L38)). No such folder exists next to the six repositories, and the target was not run. |
 
 !!! warning "`new_robot` defaults to kcare_robot"
-    `--from` defaults to `kcare_robot` ([`new_robot.py:203-204`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/new_robot.py#L203-L204)). Without `--dest`, the copy goes **next to the source repository**. Always pass `--from` and `--dest`. A fork also carries over the source's site files (device addresses); pass `--reset-sites` if the new robot has other hardware, and `--blank-configs` to empty `configs/tasks.py`. Both options are read from the code; only the plain fork below was run.
+    `--from` defaults to `kcare_robot` ([`new_robot.py:203-204`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/new_robot.py#L203-L204)). Without `--dest`, the copy goes **next to the source repository**. Always pass `--from` and `--dest`. A fork also carries over the source's site files (device addresses); pass `--reset-sites` if the new robot has other hardware, and `--blank-configs` to empty `configs/tasks.py`. Both options are read from the code; only the plain fork below was run.
 
 Real run of a fork, on the `tinybot` built in step 3 (paths shortened). It writes only to `--dest`:
 
@@ -127,7 +127,7 @@ SKILL_CONFIGS: dict = {
 }
 ```
 
-**The adapter**, `tinybot/configs/adapter.py`. It is a plain class with the members of the `RobotAdapter` protocol ([`adapter.py:23-51`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/contract/adapter.py#L23-L51)); it needs no base class. `bind` finds the skill for an action through the manifest; `reconcile` has nothing to sense, so it returns the belief unchanged. See [belief](../start/glossary.md#belief) and [reconcile](../start/glossary.md#reconcile).
+**The adapter**, `tinybot/configs/adapter.py`. It is a plain class with the members of the `RobotAdapter` protocol ([`adapter.py:23-51`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/adapter.py#L23-L51)); it needs no base class. `bind` finds the skill for an action through the manifest; `reconcile` has nothing to sense, so it returns the belief unchanged. See [belief](../start/glossary.md#belief) and [reconcile](../start/glossary.md#reconcile).
 
 ```python
 from pathlib import Path
@@ -234,6 +234,28 @@ manifest <scratch>/repo/tinybot/tinybot/configs/manifest.yaml (tinybot, 3 skills
 
 Success is `0 error(s)` and exit code 0. The tool and its result table are on [Robot package and core](../contracts/robot-package.md#check_manifest-the-machine-check). Repeat it after every change to the manifest or to `skills_config.py`.
 
+### Optional: behaviour trees for goal kinds (`planner.options.bt_goal.trees`)
+
+A robot may declare a small behaviour tree for a kind of goal (`go`, `on`, `in`, `open`, `close`, `say`, ...). The option `bt_goal` (default on) then runs a goal of that kind as the tree, with the engine's own retry and recovery inside each step, instead of a SAGE plan. The place to declare trees is `planner.options.bt_goal.trees` in your manifest. It maps a goal type to an entry `{tree, skip_if?, needs_openable?, source | assumed}`, or to a list of such entries (the first one the goal fills and the robot can run is used). Details: [`docs/bt_goal.md`](https://github.com/mtbui2010/robot_agent/blob/3269923/docs/bt_goal.md).
+
+- **Data with a label.** Every entry must carry a `source` string (where the shape comes from) or `assumed: true`. An entry with neither is not used.
+- **Declare none, and `bt_goal` does nothing.** A robot with no `trees` runs exactly as with the option off: SAGE plans every goal. This is the case for `tinybot` as built above, and for the kcare manifest (it has no `trees` key).
+- **What a tree may use.** Actions the robot's manifest has (`act`), the conditions `holding`, `hand_free`, `at`, `placed`, `opened`, `closed` (`cond`), and phrases the robot's language pack has (`ask`, `confirm`, `reply`). An entry that names an action or phrase the robot lacks is skipped for that goal, and the goal falls back to SAGE.
+- **Mixed runs.** With the key `mixed` (default on), goals with a tree run as trees and neighbouring goals without one are planned by SAGE once when the run reaches them. How that works, and what is not covered (the certify gate is skipped for those parts), is in `docs/bt_goal.md`. The effect on benchmark results is **not measured**.
+
+A minimal entry for `tinybot` (a `go` tree: move unless already there). Checked offline: `check_manifest --strict` still gives `0 error(s), 0 warning(s)`, and the pure function `plan_trees` of the option fills the tree for a `go` goal to `kitchen`, and gives no tree when the `source` / `assumed` label is removed. A full run with the tree was not run here.
+
+```yaml
+planner:
+  options:
+    bt_goal:
+      trees:
+        go:
+          tree: ["fallback", ["cond", "at", "{to}"], ["act", "MoveTo", "{to}"]]
+          source: "tinybot manifest: skill move = MoveTo; the tree shape is assumed"
+          assumed: true
+```
+
 ## 5. Bind plan steps to skills
 
 The first thing the hub does with a plan step is `bind`. Check it alone, with no loop:
@@ -292,7 +314,7 @@ The first line fails on purpose: the robot is at the entrance and the apple is i
 
 ## 7. Run a whole task against the fake robot
 
-Now run the hub's [AssistLoop](../start/glossary.md#assistloop) with your adapter and your skills. This follows the same wiring as the hub's own tests (`make_assist` in [`tests/conftest.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/tests/conftest.py#L74-L96)) and uses the doubles from [`tests/fakes.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/tests/fakes.py): `FakeLLM` (scripted answers), `FakeState` (the part of the agent state the loop reads), `run_task` (collects the events). Three things are replaced and nothing else:
+Now run the hub's [AssistLoop](../start/glossary.md#assistloop) with your adapter and your skills. This follows the same wiring as the hub's own tests (which set `look_then_ask`, `bring_ask` and `bt_goal` to `0` in `make_assist`, because they are on by default in the engine; the script below leaves them at the default, and the `go` run is the same) (`make_assist` in [`tests/conftest.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/tests/conftest.py#L74-L100)) and uses the doubles from [`tests/fakes.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/tests/fakes.py): `FakeLLM` (scripted answers), `FakeState` (the part of the agent state the loop reads), `run_task` (collects the events). Three things are replaced and nothing else:
 
 | Replaced | By | Why |
 |---|---|---|
@@ -341,7 +363,7 @@ for e in evs:
 print("DONE", done(evs).get("status"))
 ```
 
-Run it with `-B` (no bytecode files) and with these folders on `PYTHONPATH`: the hub, the hub's `tests` folder (for `fakes`), your repository folder, and `embodiplan`. The hub imports the planning rules from `embodiplan` ([`action_model.py:14-26`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/action_model.py#L14-L26)). Without it, the run ends with an `error` event that says `robot_agent needs embodiplan>=0.2.1,<0.3`. Real output:
+Run it with `-B` (no bytecode files) and with these folders on `PYTHONPATH`: the hub, the hub's `tests` folder (for `fakes`), your repository folder, and `embodiplan`. The hub imports the planning rules from `embodiplan` ([`action_model.py:14-26`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/action_model.py#L14-L26)). Without it, the run ends with an `error` event that says `robot_agent needs embodiplan>=0.2.1,<0.3`. Real output:
 
 ```text
 teleop stop_all: 'FakeState' object has no attribute 'cm'
@@ -379,8 +401,8 @@ The same script, with a `place` skill added and a plan with five steps, is in [A
 
 Everything above is symbolic. It proves that the hub reads your files and runs your skill functions. It cannot show that a motor moves, that a camera sees, or that your failure codes match what the hardware does.
 
-- **The HTTP server** needs ROS today. `runtime.py` imports `rclpy` without a switch: if it is missing, the hub prints `ERROR: ROS2 not found. Source /opt/ros/*/setup.bash before running.` and re-raises ([`runtime.py:141-148`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/runtime.py#L141-L148)). The simulators in this workspace run against a synced copy of the hub that has an `ROBOT_AGENT_ROS=off` switch; `main` has no such switch. Not run here.
-- **Entry point.** A robot's `main.py` calls `create_app(robot_pkg='<pkg>', config_dir=...)`, as kcare's does ([`main.py:27-29`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/main.py#L27-L29), hub side [`app_factory.py:50`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/app_factory.py#L50)). Not run.
+- **The HTTP server** needs ROS unless you switch it off. `runtime.py` imports `rclpy` at start unless the environment variable `ROBOT_AGENT_ROS` is `0`, `off`, `false` or `no`: if it is missing and the switch is not set, the hub prints `ERROR: ROS2 not found. Source /opt/ros/*/setup.bash before running (or set ROBOT_AGENT_ROS=off for a simulated robot).` and re-raises ([`runtime.py:141-148`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/runtime.py#L141-L152)). A simulated package such as `tinybot` can start with `ROBOT_AGENT_ROS=off` (the switch is in the code at `3269923`; a server start with it was not run here). A real robot keeps the default and needs ROS.
+- **Entry point.** A robot's `main.py` calls `create_app(robot_pkg='<pkg>', config_dir=...)`, as kcare's does ([`main.py:27-29`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/main.py#L27-L29), hub side [`app_factory.py:50`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/app_factory.py#L50)). Not run.
 - **Before the robot.** The hub's own rule: `make lint-core` must stay clean (it counts robot-specific names in `core/`, `interact/` and `contract/`). Real result on the hub at this commit, last line: `total 0`. A robot repository has its own tests (kcare: `make test`, offline, needs `pytest`, which is not installed on the machine that wrote this page, so it was **not run**) and, on the robot, `make doctor` and `make smoke-live` ([`Makefile:676-688`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/Makefile#L676-L688)). Those two need ROS and a running agent. Not run.
 - **The kcare rules** for a robot package are in its [`CLAUDE.md`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/CLAUDE.md): use only the hub's public API, give every skill the planner uses a SkillSpec, treat world state as a belief.
 
@@ -389,7 +411,7 @@ Everything above is symbolic. It proves that the hub reads your files and runs y
 | Package | Why read it | Status |
 |---|---|---|
 | `kcare_robot` | A real robot. Its adapter subclasses the hub's `NamemapAdapter`, reads the pose and the gripper, and has Korean phrases. Manifest with 10 skills; `check_manifest` gives 0 errors, 0 warnings. | Read, and `check_manifest` run. |
-| `symbolic_robot`, factory pack | The smallest complete pack on disk: `adapter.py`, `backend.py`, `manifest.yaml`, `ra_skills.py`, `skills_config.py`, `tasks.py` ([folder](https://github.com/mtbui2010/symbolic_robot/tree/f55ace24c3b4/symbolic_robot/domains/factory/configs)). 12 skills; `check_manifest` gives 0 errors, 17 warnings (see [Robot package and core](../contracts/robot-package.md#a-second-implementation-the-symbolic_robot-packs)). | `check_manifest` run. |
+| `symbolic_robot`, factory pack | The smallest complete pack on disk: `adapter.py`, `backend.py`, `manifest.yaml`, `ra_skills.py`, `skills_config.py`, `tasks.py` ([folder](https://github.com/mtbui2010/symbolic_robot/tree/f55ace24c3b4/symbolic_robot/domains/factory/configs)). 12 skills; `check_manifest` gives 0 errors, 12 warnings (every warning is a skill module outside the inspected folder) (see [Robot package and core](../contracts/robot-package.md#a-second-implementation-the-symbolic_robot-packs)). | `check_manifest` run. |
 
 ## 10. Common errors
 
@@ -406,7 +428,7 @@ All run offline on `tinybot`, with `--strict`. Paths are shortened.
 | `ERROR: ROS2 not found. Source /opt/ros/*/setup.bash before running.` | Starting the real server without ROS. | Source ROS. Not run here. |
 
 !!! warning "A new skill may not appear in a running server"
-    If the package has a saved `configs/common/skills.json`, the hub loads that and does **not** read `skills_config.py` at boot. After you add a skill, restart and call `POST /skills/reload`, then check `GET /skills`. This was read from the code ([`runtime.py:192-201`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/runtime.py#L192-L201)), not run on a server. `tinybot` has no `skills.json`, so the offline runs above are not affected. The details are on [Robot package and core](../contracts/robot-package.md#current-behaviour-to-know).
+    If the package has a saved `configs/common/skills.json`, the hub loads that and does **not** read `skills_config.py` at boot. After you add a skill, restart and call `POST /skills/reload`, then check `GET /skills`. This was read from the code ([`runtime.py:192-201`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/runtime.py#L195-L204)), not run on a server. `tinybot` has no `skills.json`, so the offline runs above are not affected. The details are on [Robot package and core](../contracts/robot-package.md#current-behaviour-to-know).
 
 ## Done when
 

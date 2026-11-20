@@ -1,6 +1,6 @@
 ---
 sources: [kcare_robot:CLAUDE.md, kcare_robot:Makefile, kcare_robot:pyproject.toml, kcare_robot:kcare_robot/main.py, kcare_robot:kcare_robot/configs/adapter.py, kcare_robot:kcare_robot/configs/manifest.yaml, kcare_robot:kcare_robot/configs/grace_namemap.py, kcare_robot:kcare_robot/configs/skills_config.py, kcare_robot:kcare_robot/configs/tasks.py, kcare_robot:kcare_robot/skills/, kcare_robot:kcare_robot/template_skills/, kcare_robot:kcare_robot/planner/seed_memory.jsonl, kcare_robot:tests/, kcare_robot:docs/notes/runtime_data.md, kcare_robot:docs/teleop.md]
-verified_at: {kcare_robot: d4f5577b342e}
+verified_at: {kcare_robot: d4f5577b342e, robot_agent: 3269923}
 ---
 
 # Robot package (kcare_robot)
@@ -19,7 +19,7 @@ This page tells you what `kcare_robot` is, how it connects to the hub, which ski
     - Repo docs: [`docs/README.md`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/docs/README.md) (index), [`docs/notes/architecture.md`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/docs/notes/architecture.md), [`docs/SKILLS.md`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/docs/SKILLS.md), [`docs/testing.md`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/docs/testing.md). The repo has no docs site.
 
 !!! note "Which version this page describes"
-    This page describes the commit `d4f5577b342e` and nothing else. The owner's working copy has about 27 uncommitted changes. Among them, the `vla_drawer_open` skill is removed from `configs/skills_config.py`. **The committed version still registers it** (line 53), and it is listed below. Files that are only in the working copy, for example `skills/vla_stack.py` and `skills/_vla_io.py`, are not described.
+    The tables below describe the commit `d4f5577b342e` and nothing else. The newest commit of the repo's local remote-tracking branch is `f4a8384c59d2` (one commit later, checked in git, not run). It holds the changes that an earlier version of this page called uncommitted. Compared with `d4f5577b342e`: `vla_drawer_open` is no longer in `configs/skills_config.py` (**the tables below still list it, because it is registered at the pinned commit**); `vla_stack` (new file `skills/vla_stack.py`, a dry run by default, its header says it is not tested on the robot) and `rotatet` are registered; `skills/_vla_io.py` is new; the registry then has 60 entries (59 + 2 - 1) and `tests/` has 11 test files. The manifest still has 10 SkillSpecs. The working copy has further uncommitted files (for example `skills/handover.py`, `skills/pi05_act.py`); they are not described. The rest of the page was not re-checked at the later commit.
 
 ## Role
 

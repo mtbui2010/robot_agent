@@ -1,6 +1,6 @@
 ---
 sources: [robot_agent:robot_agent/connect/ros/node.py, robot_agent:robot_agent/connect/codecs.py, robot_agent:robot_agent/core/device_manager.py, robot_agent:robot_agent/runtime.py, robot_agent:tests/fakes.py, kcare_robot:kcare_robot/skills/mobile.py, kcare_robot:kcare_robot/configs/skills_config.py, kcare_sim:sim/scripts/house_bridge.py, kcare_sim:sim/scripts/robot_interfaces.py, kcare_sim:docs/external_contract.md, kcare_sim:symbolic/serve.py, symbolic_robot:symbolic_robot/server.py, symbolic_robot:docs/architecture.md]
-verified_at: {robot_agent: ad501cf15ece, kcare_robot: d4f5577b342e, kcare_sim: a288298acede, symbolic_robot: f55ace24c3b4}
+verified_at: {robot_agent: 3269923, kcare_robot: d4f5577b342e, kcare_sim: a288298acede, symbolic_robot: f55ace24c3b4}
 ---
 
 # Robot, hardware and simulators
@@ -10,7 +10,7 @@ A skill is a Python function. What it controls is not fixed: it can be a real ro
 !!! abstract "In this page"
     - A skill never touches ROS directly. It calls `node.agents['<name>']`, and the named agent does the ROS work. That one line is the seam where hardware or a simulator plugs in.
     - Three stand-ins exist: `kcare_sim` (MuJoCo physics, same ROS names, unmodified robot software), `symbolic_robot` (the official symbolic simulator and benchmark, no ROS) and the hub's offline fake robot (tests only).
-    - At the hub's `main`, the hub imports `rclpy` unconditionally at start-up. The symbolic simulators expect a switch (`ROBOT_AGENT_ROS=off`) that is **not on main, not verified** (details below).
+    - At the hub's `main`, a switch `ROBOT_AGENT_ROS=off` lets a simulated robot package start with no ROS 2 (no `rclpy` import, no node). The default is on, so real robots start as before. It is read from the code; a start without ROS 2 was **not run** for this page (details below).
 
 ## What a skill calls
 
@@ -26,7 +26,7 @@ return node.agents['mobile_move'].send({'x': x, 'y':y, 'z':0., 'qx': qx, 'qy':qy
 
 ([`skills/mobile.py` line 26](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/skills/mobile.py#L26) and [line 41](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/skills/mobile.py#L41).)
 
-The hub's class `CustomNode` owns the dictionary `agents`. Its own docstring says it plainly: a skill calls `node.agents['<name>'].send(...)` or `.get()`, and the agent handles the publisher, subscription, service client or action client underneath ([`connect/ros/node.py` lines 1-6](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/connect/ros/node.py#L1-L6)). The [`DeviceManager`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/device_manager.py#L93-L98) builds one such node per process, on first use, from the robot's `connections.json` (a list of named connections with a ROS name and a message type each).
+The hub's class `CustomNode` owns the dictionary `agents`. Its own docstring says it plainly: a skill calls `node.agents['<name>'].send(...)` or `.get()`, and the agent handles the publisher, subscription, service client or action client underneath ([`connect/ros/node.py` lines 1-6](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/connect/ros/node.py#L1-L6)). The [`DeviceManager`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/device_manager.py#L93-L98) builds one such node per process, on first use, from the robot's `connections.json` (a list of named connections with a ROS name and a message type each).
 
 So there are two facts a stand-in must keep true:
 
@@ -91,41 +91,43 @@ state.dm._ros_node = StubNode({"mobile_pose": PoseAgent(live), "sim_world": Worl
 
 ### 4. The hub's offline fake robot (tests)
 
-The hub's tests use `FakeRobot` ([`tests/fakes.py` line 91](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/tests/fakes.py#L91)): a symbolic house with kcare-like skills (`move`, `find`, `pick`, `place`, `open_drawer`, `close_drawer`, `ask`, `mobile_pose`, `grasp_succeed`). A test can script faults by skill, object and call number. Fault kinds include `fail`, `raise`, `slip`, `wrong_pose`, `drop` and `partial_open`. `FakeSkillRegistry` gives it the `execute` call that the planning loops expect, and `FakeState` gives them the few state fields they read. No ROS, LLM or network is used. A result from the fake robot is a scripted result, never a result from a real robot.
+The hub's tests use `FakeRobot` ([`tests/fakes.py` line 91](https://github.com/mtbui2010/robot_agent/blob/3269923/tests/fakes.py#L91)): a symbolic house with kcare-like skills (`move`, `find`, `pick`, `place`, `open_drawer`, `close_drawer`, `ask`, `mobile_pose`, `grasp_succeed`). A test can script faults by skill, object and call number. Fault kinds include `fail`, `raise`, `slip`, `wrong_pose`, `drop` and `partial_open`. `FakeSkillRegistry` gives it the `execute` call that the planning loops expect, and `FakeState` gives them the few state fields they read. No ROS, LLM or network is used. A result from the fake robot is a scripted result, never a result from a real robot. The tests also hold two small robot packages as data, `tests/fakebot` and `tests/fakehome` (the second adds a hand-over skill), which tests load as robot packages (fakebot is the one the test fixtures install).
 
-## The switch for "no ROS" is not on main
+## The switch for "no ROS": `ROBOT_AGENT_ROS=off`
 
 The two symbolic servers state the same requirement. `symbolic_robot/server.py` says it "needs ... a robot_agent with the ROBOT_AGENT_ROS=off switch" ([line 4](https://github.com/mtbui2010/symbolic_robot/blob/f55ace24c3b4/symbolic_robot/server.py#L4)) and sets `ROBOT_AGENT_ROS=off` as a default ([line 74](https://github.com/mtbui2010/symbolic_robot/blob/f55ace24c3b4/symbolic_robot/server.py#L74)). The `kcare_sim` launcher does the same ([`symbolic/serve.py` line 56](https://github.com/mtbui2010/kcare_sim/blob/a288298acede/symbolic/serve.py#L56)).
 
-The hub at `main` does not read this variable. This is the verified `main` behaviour, in `bootstrap` ([`runtime.py` lines 141-148](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/runtime.py#L141-L148)):
+The hub at `3269923` reads this variable. This is its code, in `bootstrap` ([`runtime.py` lines 141-152](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/runtime.py#L141-L152)):
 
 ```python
-        try:
-            import rclpy
-            if not rclpy.ok():
-                rclpy.init()
-        except ImportError:
-            print('ERROR: ROS2 not found. Source /opt/ros/*/setup.bash before running.',
-                  file=sys.stderr)
-            raise
+        # ROBOT_AGENT_ROS=off: a simulated robot package needs no ROS 2 (no rclpy import, no node).
+        # Default stays on, so real robots behave as before.
+        if os.environ.get('ROBOT_AGENT_ROS', 'on').strip().lower() not in ('0', 'off', 'false', 'no'):
+            try:
+                import rclpy
+                if not rclpy.ok():
+                    rclpy.init()
+            except ImportError:
+                print('ERROR: ROS2 not found. Source /opt/ros/*/setup.bash before running '
+                      '(or set ROBOT_AGENT_ROS=off for a simulated robot).', file=sys.stderr)
+                raise
 ```
 
-`rclpy` is imported with no condition, and a missing ROS 2 stops start-up with the error above. The module `connect/ros/node.py` also imports `rclpy` at its top and calls `rclpy.init()` when it is loaded.
+With the variable unset, `rclpy` is imported and a missing ROS 2 stops start-up with the error above, as before. With `0`, `off`, `false` or `no` the block is skipped. The ROS node is built later and only on first use, by `DeviceManager._get_ros_node` ([`core/device_manager.py` lines 93-98](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/device_manager.py#L93-L98)), and the symbolic server puts its stub node there instead. The module `connect/ros/node.py` still imports `rclpy` at its top, so it must not be imported on a machine without ROS 2.
 
-!!! warning "Status of `ROBOT_AGENT_ROS=off`: not on main, not verified"
-    - At `main`, a search of the whole hub finds no use of `ROBOT_AGENT_ROS`. I also searched the five branches known locally (`main`, `domain-profile` and three `sage-v2/...` branches, including `sage-v2/r14`): none uses it either. It does appear in one place: the gitignored synced copy of the hub inside kcare_sim (`sim/kcare_code/robot_agent/`, see [kcare_sim](../repos/kcare-sim.md)). That copy is the hub revision the simulators in this workspace run against. It differs from `main` in many files, and I did not run it.
-    - Some manifest keys that the household pack declares (`translate_budget` and others) are found on the remote branch `origin/sage-v2/r14` and not on `main`. They are **not on main, not verified** on this site.
-    - From the code, the symbolic servers cannot start without ROS 2 on a hub at this commit. This is reasoned from the code above and was not run.
-    - *How to avoid it:* to use the symbolic simulators, use a hub revision that the simulator's repository says it targets, and check that revision for the switch yourself. For the guarantee on this site, describe the hub as `main`: ROS 2 must be installed.
+!!! warning "Status of `ROBOT_AGENT_ROS=off`: in the code, not run"
+    - The switch is in the hub's code at `3269923` (it was not at the earlier pin of this site). A search for `ROBOT_AGENT_ROS` in the hub finds it only in `runtime.py`; it is not described in the hub's `docs/`.
+    - I did not start a symbolic server with it, so "the symbolic servers start without ROS 2 on this hub" is reasoned from the code, not observed. The simulators' own revisions were not re-read for this update, so whether they need anything else from the hub is **unverified**.
+    - *How to avoid it:* when you start a symbolic simulator, check that the hub you run has this switch, and look for the start-up error above if it does not.
 
 ## What breaks when it changes
 
 - If you rename a ROS name or message type in the simulator alone, the robot package and the real robot no longer agree with it. The simulator's `robot_interfaces.py` says to change them only together with the real robot and the robot package.
 - If you add a skill that calls a new agent name, add the agent to the real `connections.json`, to the simulator that serves it, and to the stub node of the symbolic server.
-- Inline device code in `connections.json` (`encode_func` and `decode_func` as source text) is deprecated. It still works by default and the hub warns once per device ([`codecs.py` lines 11-16](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/connect/codecs.py#L11-L16)). Setting `ROBOT_AGENT_NO_INLINE_CODE=1` turns it off. The hub provides `python -m robot_agent.connect.codecs --scan <connections.json>` to list the inline entries; on one real site file of the example robot it found 39 (run on the planning date; the values are not printed here).
+- Inline device code in `connections.json` (`encode_func` and `decode_func` as source text) is deprecated. It still works by default and the hub warns once per device ([`codecs.py` lines 11-16](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/connect/codecs.py#L11-L16)). Setting `ROBOT_AGENT_NO_INLINE_CODE=1` turns it off. The hub provides `python -m robot_agent.connect.codecs --scan <connections.json>` to list the inline entries; on one real site file of the example robot it found 39 (run on the planning date; the values are not printed here).
 
 !!! code "Where in the code"
-    - Hub: [`connect/ros/node.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/connect/ros/node.py), [`core/device_manager.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/device_manager.py), [`runtime.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/runtime.py), [`tests/fakes.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/tests/fakes.py)
+    - Hub: [`connect/ros/node.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/connect/ros/node.py), [`core/device_manager.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/device_manager.py), [`runtime.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/runtime.py), [`tests/fakes.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/tests/fakes.py)
     - Robot package: [`skills/mobile.py`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/skills/mobile.py)
     - Simulators: [`house_bridge.py`](https://github.com/mtbui2010/kcare_sim/blob/a288298acede/sim/scripts/house_bridge.py), [`external_contract.md`](https://github.com/mtbui2010/kcare_sim/blob/a288298acede/docs/external_contract.md), [`server.py`](https://github.com/mtbui2010/symbolic_robot/blob/f55ace24c3b4/symbolic_robot/server.py)
     - kcare_sim documentation site: <https://mtbui2010.github.io/kcare_sim/>

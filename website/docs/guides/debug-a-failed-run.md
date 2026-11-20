@@ -1,6 +1,6 @@
 ---
 sources: [robot_agent:robot_agent/observe/record.py, robot_agent:robot_agent/observe/replay.py, robot_agent:robot_agent/api/agent.py, robot_agent:robot_agent/api/diagnostics.py, robot_agent:robot_agent/diagnose.py, robot_agent:robot_agent/contract/failures.py, robot_agent:robot_agent/contract/recovery.py, robot_agent:robot_agent/core/planning/assist_loop.py, robot_agent:robot_agent/core/planning/verify.py, robot_agent:robot_agent/core/skill_registry.py, robot_agent:tests/fakes.py]
-verified_at: {robot_agent: ad501cf15ece}
+verified_at: {robot_agent: 3269923}
 ---
 
 # Debug a failed run
@@ -14,13 +14,13 @@ A run failed and you want to know why. This guide shows how to find out which st
     - Three runs were made for this page on the offline fake robot, with a scripted LLM answer. They are fake. Nothing here comes from a real robot, and no recorded real run was opened.
 
 !!! code "Where in the code"
-    - The record and the metrics line: [`observe/record.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/observe/record.py#L254-L345) (`load_record`, `run_metrics`, `metrics_of`); replay CLI: [`observe/replay.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/observe/replay.py#L495-L522)
-    - HTTP endpoints for runs: [`api/agent.py` L251-L287](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/api/agent.py#L251-L287); diagnostics: [`api/diagnostics.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/api/diagnostics.py#L26-L52), [`diagnose.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/diagnose.py)
-    - The gate's end state: [`assist_loop.py` L1262-L1266](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/assist_loop.py#L1262-L1266); the per-step guard: [`_guard` L1801-L1832](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/assist_loop.py#L1801-L1833); pick recovery: [`_recover_pick` L2057-L2095](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/assist_loop.py#L2057-L2095)
-    - Verify layers and their verdict: [`verify.py` L236-L247](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/planning/verify.py#L236-L247)
-    - Failure codes and the recovery table: [`contract/failures.py`](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/contract/failures.py), [`contract/recovery.py` L66-L91](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/contract/recovery.py#L66-L91)
-    - Tracebacks from a skill: [`skill_registry.py` L231-L245](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/robot_agent/core/skill_registry.py#L231-L245)
-    - The fake robot with scripted faults: [`tests/fakes.py` L91](https://github.com/mtbui2010/robot_agent/blob/ad501cf15ece/tests/fakes.py#L91)
+    - The record and the metrics line: [`observe/record.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/observe/record.py#L254-L345) (`load_record`, `run_metrics`, `metrics_of`); replay CLI: [`observe/replay.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/observe/replay.py#L495-L522)
+    - HTTP endpoints for runs: [`api/agent.py` L251-L287](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/api/agent.py#L251-L287); diagnostics: [`api/diagnostics.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/api/diagnostics.py#L26-L52), [`diagnose.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/diagnose.py)
+    - The gate's end state: [`assist_loop.py` L2677-L2678](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/assist_loop.py#L2677-L2678) and the gate rounds [L2704-L2737](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/assist_loop.py#L2704-L2737); the per-step guard: [`_guard` L3515](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/assist_loop.py#L3515); what a failed step does: [`_step_failed` L3660](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/assist_loop.py#L3660); pick recovery: [`_recover_pick` in `step_ladder.py` L23-L82](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/step_ladder.py#L23-L82)
+    - Verify layers and their verdict: [`verify.py` L251-L262](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/verify.py#L251-L262)
+    - Failure codes and the recovery table: [`contract/failures.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/failures.py), [`contract/recovery.py` L66-L92](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/recovery.py#L66-L92) and the step ladders [L94-L112](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/recovery.py#L94-L112)
+    - Tracebacks from a skill: [`skill_registry.py` L231-L245](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/skill_registry.py#L231-L245)
+    - The fake robot with scripted faults: [`tests/fakes.py` L91](https://github.com/mtbui2010/robot_agent/blob/3269923/tests/fakes.py#L91)
 
 ## The runs used in this guide
 
@@ -40,7 +40,7 @@ robot = FakeRobot(env, {"apple": "desk@study room", "mug": "counter@kitchen"},
                            "msg": "could not grasp the apple: gripper is empty"}])
 ```
 
-Run B uses `"kind": "slip"` instead. Run C uses `faults=[]` and a planner whose `generate_plan` returns only `Pick apple` and `Place dining table@kitchen`. The recording script is the one in [Runs and records](../concepts/runs-and-records.md#one-real-record), with the planner chosen by name through the `generator` option. The ids of the three runs were `20261118-170257-6c69d5` (A), `20261118-170415-cbfa3e` (B) and `20261118-170320-ad1364` (C). All three ended with status `failed`.
+Run B uses `"kind": "slip"` instead. Run C uses `faults=[]` and a planner whose `generate_plan` returns only `Pick apple` and `Place dining table@kitchen`. The recording script is the one in [Runs and records](../concepts/runs-and-records.md#one-real-record), with the planner chosen by name through the `generator` option. The runs were recorded again on 2026-11-20 with the hub at `3269923` (the earlier recording, at the earlier pin of this site, ended differently; see the notes below). Their ids are `20261120-094744-f1d627` (A), `20261120-094744-eb0916` (B) and `20261120-094745-8623dc` (C). All three ended with status `failed`. The planner is chosen by name with the `generator` option, as in [Add a planner](add-a-planner.md); for run C it is a stand-in class that returns only the two steps.
 
 ## Step 1. Find the run and its metrics line
 
@@ -55,15 +55,16 @@ A live robot gives you three read-only HTTP endpoints (read in `api/agent.py`; *
 Without a server, read the files. The record is `<data_dir>/run_records/<host>/<run_id>/record.jsonl` and the metrics lines are in `<data_dir>/run_records/<host>/metrics.jsonl`, where `<data_dir>` is the value of `ROBOT_AGENT_DATA_DIR` ([where the files go](../concepts/runs-and-records.md#where-the-file-goes)). This is the real metrics line of run A:
 
 ```json
-{"run_id": "20261118-170257-6c69d5", "task_run_id": null, "robot_id": "default", "user_id": "alice", "goal": "Bring the apple from the desk to the dining table.", "loop": "assist", "started": 1794988977.2997837, "duration_s": 0.107, "outcome": "failed", "status": "failed", "llm_calls": 1, "llm_errors": 0, "llm_latency_ms": 0.0, "planner_calls": 1, "skill_calls": 10, "replans": 0, "failure_codes": {"grasp_failed": 2}, "failure_code": "grasp_failed", "failure_device": "pick", "success": false, "verified_success": false}
+{"run_id": "20261120-094744-f1d627", "task_run_id": null, "robot_id": "default", "user_id": "alice", "goal": "Bring the apple from the desk to the dining table.", "loop": "assist", "started": 1795135664.4461446, "duration_s": 0.123, "outcome": "failed", "status": "failed", "llm_calls": 2, "llm_errors": 1, "llm_latency_ms": 0.0, "planner_calls": 4, "skill_calls": 14, "replans": 2, "failure_codes": {"grasp_failed": 2, "absent": 1}, "failure_code": "grasp_failed", "failure_device": "pick", "success": false, "verified_success": false}
 ```
 
 Read it like this:
 
 - `outcome: failed` and `success: false`: the run did not reach its goal.
 - `failure_code: grasp_failed` and `failure_device: pick`: the deciding failure, and the skill that raised it.
-- `failure_codes: {"grasp_failed": 2}`: two plan steps failed with this code.
-- `replans: 0`, `planner_calls: 1`: the planner was asked once. The loop did not ask it to replan.
+- `failure_codes: {"grasp_failed": 2, "absent": 1}`: two plan steps failed with `grasp_failed` and one with `absent` (the later `Find` at the counter).
+- `replans: 2`, `planner_calls: 4`: the planner was asked again twice, after the grasp failed and after the next `Find` failed. (Earlier, at the older pin, the same run was not replanned: it ended at the question. The engine now replans after an unanswered question for a `Pick`.)
+- `llm_errors: 1`: the scripted LLM of the fake run had no answer for one more call. This is a trace of the fake set-up, not of the fault.
 
 The metrics line is a summary. It cannot tell you the stage or the belief. For that, read the events.
 
@@ -109,7 +110,16 @@ Run A, a failure in the skill:
 {"event": "step_verify", "index": 3, "layers": [["isdone", false]]}
 {"event": "step_done", "index": 3, "status": "failed", "reason": "could not grasp the apple: gripper is empty"}
 {"event": "clarify", "question": "I can't pick up the apple. Could you move it closer to the edge, then say yes?"}
-{"event": "done", "status": "failed", "code": "grasp_failed", "msg": "could not pick up the apple: could not grasp the apple: gripper is empty"}
+{"event": "replan", "at_index": 3, "reason": "E: Pick apple failed. R: could not grasp the apple: gripper is empty; the grasp of the apple failed 2 times and nobody could help: try it again. S: robot at desk@study room, holding nothing; goals: on app...
+{"event": "step_start", "index": 3, "action": "MoveTo", "object": "counter@kitchen"}
+{"event": "step_verify", "index": 3, "layers": [["isdone", true], ["symbolic", true], ["localization", true]]}
+{"event": "step_done", "index": 3, "status": "success"}
+{"event": "step_start", "index": 4, "action": "Find", "object": "apple"}
+{"event": "step_verify", "index": 4, "layers": [["isdone", false]]}
+{"event": "step_done", "index": 4, "status": "failed", "reason": "apple not found"}
+{"event": "search", "object": "apple"}
+{"event": "replan", "at_index": 4, "reason": "E: Find apple failed. R: apple not found; it is not at counter@kitchen. Look next at desk@study room. S: robot at counter@kitchen, holding nothing; goals: on apple from desk@study room to dining table@kitchen", "problems": [...]}
+{"event": "done", "status": "failed", "code": "grasp_failed", "msg": "plan finished but the goals do not hold: on apple from desk@study room to dining table@kitchen"}
 ```
 
 The `...` stands for the repeated `Find` that succeeded (three lines). Read the stream from the top and ask one question at each event: did this stage pass?
@@ -119,7 +129,7 @@ The `...` stands for the repeated `Find` that succeeded (three lines). Read the 
 3. Steps 0 and 1 end with `success`, and all their verify layers pass.
 4. Step 2 (`Pick`) has one verify layer, `isdone`, and it is **false**. The skill itself said it failed. That is where the run went wrong.
 5. `recover` shows the loop retried (look again, grasp again). The retry failed in the same way.
-6. `clarify` shows the loop asked the person for help. The fake person gave no answer, so the run ended: `done` with `status: failed`, the code and the reason.
+6. `clarify` shows the loop asked the person for help. The fake person gave no answer, so the loop asked the planner for a new plan (`replan`). The scripted planner tried the next place, and its `Find` failed too. The run ended: `done` with `status: failed`. The `code` of `done` is still the deciding failure, `grasp_failed`; the `msg` is the loop's last word about the goals.
 
 ### Which stage failed
 
@@ -128,7 +138,7 @@ The event that fails first tells you the stage. Run A is the `skill` row of this
 | Stage | What you see in the events | In the end state |
 |---|---|---|
 | Understand | `understand` with a status other than `clear`, or a `clarify` question | `done` with status `refused` for a refusal. **Not run** here; read in `assist_loop.py`. |
-| Gate | One to three `gate` events whose `problems` are not empty, then `plan` with `certified: false` | `done` with "I could not make a plan that passes my checks". No step runs. |
+| Gate | Up to four `gate` events (`round` 0, then `"symbolic"` when the engine's own repair ran, then 1 and 2) whose `problems` are not empty, then `plan` with `certified: false` | `done` with "I could not make a plan that passes my checks". No step runs. |
 | Guard | A `recover` with `kind` `reconcile` or `dropped`, or a `replan` whose reason starts with `precondition:`, right before a `step_start` | See [Checks before motion](../concepts/checks-before-motion.md). **Not run** here; read in `_guard`. |
 | Skill | `step_verify` where the first layer, `isdone`, is false; `step_done` with `status: failed` and a `code` in its `result` | A recovery (`recover`, `search`, `replan`, `clarify`), then `done` if recovery runs out |
 | Verify | `step_verify` where `isdone` is true and a later layer (`symbolic`, `sensor`, `localization`) is false | The same recovery as for a skill |
@@ -156,11 +166,12 @@ Here `isdone` is **true**. The skill claimed success. The `sensor` layer disagre
 {"event": "gate", "problems": ["step 1 'Pick apple': needs 'Find apple' just before it, at the same place", "step 2 'Place dining table@kitchen': the robot must MoveTo dining table@kitchen first"]}
 {"event": "gate", "problems": ["step 1 'Pick apple': needs 'Find apple' just before it, at the same place", "step 2 'Place dining table@kitchen': the robot must MoveTo dining table@kitchen first"]}
 {"event": "gate", "problems": ["step 1 'Pick apple': needs 'Find apple' just before it, at the same place", "step 2 'Place dining table@kitchen': the robot must MoveTo dining table@kitchen first"]}
+{"event": "gate", "problems": ["step 1 'Pick apple': needs 'Find apple' just before it, at the same place", "step 2 'Place dining table@kitchen': the robot must MoveTo dining table@kitchen first"]}
 {"event": "plan"}
 {"event": "done", "status": "failed", "code": "unknown", "msg": "I could not make a plan that passes my checks: step 1 'Pick apple': needs 'Find apple' just before it, at the same place; step 2 'Place dining table@kitchen': the robot must MoveTo dining table@kitchen first"}
 ```
 
-There is no `step_start`: no skill was called and the fake robot's trace was empty. The `gate` events are the evidence, and each lists what is wrong with the plan. The `msg` of `done` repeats the first three. The three `gate` events are the three rounds of the gate: check, repair, one fresh plan. To fix this you change the planner, not the robot.
+There is no `step_start`: no skill was called and the fake robot's trace was empty. The `gate` events are the evidence, and each lists what is wrong with the plan. The `msg` of `done` repeats the first three. The four `gate` events are the rounds of the gate: the check (`round` 0), the engine's own symbolic repair (`round` `"symbolic"`, added since the earlier pin of this site), the planner's repair (`round` 1) and one fresh plan (`round` 2). The script above does not print the `round` key; it is in the record. To fix this you change the planner, not the robot.
 
 ## Step 3. Read the failure code
 
@@ -183,13 +194,13 @@ A [failure code](../start/glossary.md#failurecode) says **why**, in a form that 
 | `unknown` | Observe, then replan | No usable reason in the result |
 
 !!! note "The table is the default, the loop can do more"
-    Run A got `grasp_failed`, and the table says "retry once, then replan". The AssistLoop handles a `Pick` itself first (`_recover_pick`): it looks and grasps again in place, then asks the person to move the object closer, and ends the run with "could not pick up the apple" if the person does not help. So the events you see (`recover`, `clarify`, `done`) are the AssistLoop's own rule for `Pick`, not the generic table. The same is true for `Find` and `MoveTo`. Read the events, not only the table.
+    Run A got `grasp_failed`, and the table says "retry once, then replan". The AssistLoop handles a `Pick` through a step ladder of its own first (`_recover_pick` in `step_ladder.py`; the ladders are declared in `STEP_LADDER` in `contract/recovery.py`, for `Pick` and `MoveTo`): it looks and grasps again in place, then asks the person to move the object closer, and then, when nobody helps, it asks the planner for a new plan (the failed code's own rule says `then=REPLAN`). So the events you see (`recover`, `clarify`, `replan`) are the ladder's rungs, not the generic table. At the earlier pin of this site the run ended at the question with "could not pick up the apple"; it no longer does. The same kind of ladder exists for `Find` and `MoveTo`. Read the events, not only the table.
 
 The code comes from the skill's result. A skill that still returns only `{'isdone': False, 'msg': '...'}` gets its code read off the text by `classify_legacy_failure`, in one place. A message that matches nothing becomes `unknown`. If you see `unknown` and the message is clear to a person, the text did not match any rule: the fix is in the skill (return a code) or in that function, not in the loop. A message that mentions a Python error, such as `TypeError` or `has no attribute`, becomes `software`, and the run stops.
 
 !!! warning "Two cases where the metrics line is thin"
     - **A gate failure has no useful code.** Run C ended with `failure_code: unknown` and `failure_codes: {}` (its metrics line, from the file: `"failure_codes": {}, "failure_code": "unknown", "failure_device": null`). The code is `unknown` because no skill failed. Read `done.msg` and the `gate` events.
-    - **A verify failure may leave `failure_codes` empty.** Run B's skill reported success, so no step *result* carried a code. Its metrics line has `"failure_codes": {}` and `"failure_code": "grasp_failed"`. The deciding code is `failure_code`; `failure_codes` counts only codes that came from step results.
+    - **A verify failure may leave `failure_codes` empty.** Run B's skill reported success, so no step *result* carried a code. Its metrics line (run B, re-recorded) has `"failure_codes": {"absent": 1}` and `"failure_code": "grasp_failed"`: the two failed picks are not counted, the later failed `Find` is. The deciding code is `failure_code`; `failure_codes` counts only codes that came from step results.
 
 ## Step 4. Read the belief at the failure
 
@@ -210,17 +221,18 @@ print("code:", done.get("code"), "| device:", done.get("device"), "| evidence:",
 Real output for run A (run B gives the same belief lines):
 
 ```text
-arrived  = 'desk@study room'  source: sensor
-found    = 'apple'            source: belief
+arrived  = 'counter@kitchen'  source: sensor
+found    = None               source: belief
 holding  = None               source: belief
 code: grasp_failed | device: pick | evidence: {'step': 'Pick apple', 'reason': 'could not grasp the apple: gripper is empty'}
 ```
 
 What it tells you:
 
-- The robot was at the desk, and a sensor (the pose check after `MoveTo`) vouched for that. The failure is **not** a navigation problem.
-- It believed the apple was found, but only as a belief: the `Find` skill said so, and no sensor confirmed it. In run A the fake `Find` succeeded each time, so the apple was in view; the failure is in the grasp.
-- It believed its hand was empty (`holding = None`), which matches the failed grasp.
+- The belief is taken at the end, after the replan. The robot moved on to the counter, and a sensor (the pose check after `MoveTo`) vouched for that. A belief from the moment of the failed grasp is in the `step_done` event of step 3 (read it with the same keys).
+- `found = None`: the last `Find`, at the counter, did not see the apple, so the belief was cleared. It is a belief value, not a sensor reading.
+- `holding = None` matches the failed grasp: nothing is in the hand.
+- The code, device and evidence in the last line are those of the failed pick, which stay the deciding failure although later steps ran.
 
 Compare this with a belief that is wrong. If `holding` shows an object but the run failed with `dropped` or a "not in the gripper" reason, the belief and the robot disagreed, and the guard or reconcile should have fixed it. See [Belief and reconcile](../concepts/belief-and-reconcile.md).
 
@@ -236,15 +248,15 @@ PYTHONPATH=<repos>/robot_agent/tests:<repos>/embodiplan PYTHONDONTWRITEBYTECODE=
   python3 -B -m robot_agent.observe.replay exec <data_dir>/run_records/<host>/<run_id> --fake
 ```
 
-Real output for run C (the gate failure), both commands, exit status 0 each:
+Real output for run C (the gate failure), both commands, exit status 0 each (re-run at `3269923`):
 
 ```text
-replay plan 20261118-170320-ad1364 (assist): IDENTICAL
+replay plan 20261120-094745-8623dc (assist): IDENTICAL
   recorded plan: pick::apple
 place::dining table@kitchen
   replayed plan: pick::apple
 place::dining table@kitchen
-replay exec 20261118-170320-ad1364 (assist): IDENTICAL
+replay exec 20261120-094745-8623dc (assist): IDENTICAL
 ```
 
 The replay reproduced the bad plan and the same failure. That tells you the cause is in the plan, and that the record is faithful.
@@ -252,11 +264,11 @@ The replay reproduced the bad plan and the same failure. That tells you the caus
 For run A, `plan` printed `IDENTICAL` (exit 0), but `exec --fake` printed this and exited with 1:
 
 ```text
-replay exec 20261118-170257-6c69d5 (assist): DIFFERS
+replay exec 20261120-094744-f1d627 (assist): DIFFERS
   diff: event #5 (plan vs plan):
 --- recorded
 +++ replayed
-@@ -40,2 +40,6 @@
+@@ -42,2 +42,6 @@
     "object": "desk@study room"
 +  },
 +  {
@@ -270,7 +282,40 @@ replay exec 20261118-170257-6c69d5 (assist): DIFFERS
 
 Replay needs the robot package of the run and `embodiplan` importable, as described in [Runs and records](../concepts/runs-and-records.md#replay). Without them you can get a `DIFFERS` that is only an environment problem, or an exit status of 2. Use it from a command line or a test, not inside a live agent process.
 
-## Step 6. Check the robot and the skill
+## Step 6. Read a lab flag (for example `bt_goal`)
+
+Some options record what they did in a **lab flag**. Lab flags are not events: they never reach `/ws/agent` and are not rows of the run record. Two places hold them (`AssistLoop._lab` in `assist_loop.py`, and `docs/trace.md`):
+
+- **`loop.lab_log`**, a list on the loop object, one dict per entry, `{"flag": "<option>", ...}`. It keeps at most 50 entries and is read by a harness (a script or a test) after the run. A dashboard user cannot see it.
+- **The run trace**, when the option `trace` is on (`trace=1`, or `$ROBOT_AGENT_TRACE=1`, or `planner.options.trace.enabled`): `<dir>/<run_id>/trace.jsonl` has a row `{"k": "lab", "flag": ..., "step": ..., "data": {...}}` for every entry, also past the 50-entry cap ([`docs/trace.md`](https://github.com/mtbui2010/robot_agent/blob/3269923/docs/trace.md)). Filter on `k == "lab"` and `flag == "bt_goal"`.
+
+What the `bt_goal` flag says ([`docs/bt_goal.md`](https://github.com/mtbui2010/robot_agent/blob/3269923/docs/bt_goal.md)):
+
+| Entry | Meaning |
+|---|---|
+| `{goal: N, status: "claimed"}` (once) | The option took over N goals as trees. **No `claimed` entry: no goal of the run had a usable tree**, so SAGE planned the run (always so for a robot that declares no `trees`). |
+| `{goal, node, status}` per node | One tree node ran. `node` is its path and label (for example `0.1 act MoveTo kitchen`); `status` is `success` or `failure`. Read these in order to follow a goal node by node. |
+| `{goal, status}` at a goal's end | How the goal's tree ended (`success`, `failure`, `changed` when a goal change was said meanwhile). |
+| `{goal, status: "exhausted", action, ...}` | The tree had no way left. `action` says what followed: a question to the person, a stop, or the goals left handed to the SAGE replan (`sage_once`). |
+| `{goal, status: "sage", steps, count}` | In a mixed run, a run of goals without a tree was planned by SAGE once (service `plan_goals`); `steps` are its steps. |
+
+Real entries, from the `tinybot` of [Add a new robot](add-a-robot.md) with one `go` tree declared and the task "Go to the kitchen." (offline fake run, `loop.lab_log` printed after the run; the run has no `gate` and no `plan` event, because the tree ran the goal and no planner was called):
+
+```text
+{'flag': 'bt_goal', 'goal': 1, 'status': 'claimed'}
+{'flag': 'bt_goal', 'goal': 0, 'node': '0.0 cond at kitchen', 'status': 'failure'}
+{'flag': 'bt_goal', 'goal': 0, 'node': '0.1 act MoveTo kitchen', 'status': 'success'}
+{'flag': 'bt_goal', 'goal': 0, 'node': '0 fallback', 'status': 'success'}
+{'flag': 'bt_goal', 'goal': 'go  kitchen', 'status': 'success'}
+```
+
+The first node, `cond at kitchen`, is the tree's "already achieved?" test: it was false (`failure`), so the fallback went on to the move. A tree that fails is not a failed run: look at `exhausted` and at the `done` event.
+
+How to tell in a failed run whether `bt_goal` was involved: (1) read the manifest, `planner.options.bt_goal.trees` ([Add a new robot](add-a-robot.md)); with no `trees` the option does nothing and the lab log has no `bt_goal` entry. (2) With `trees`, look for `claimed`. (3) You can switch it off for one run with the run option `bt_goal=0` (on the WebSocket, `options: {"bt_goal": 0}`, `sage` planner) and run the task again to see whether the result changes. Its effect on benchmark results is **not measured**.
+
+The step events of a tree run are the usual `step_start`, `step_verify` and `step_done`: a tree acts through the engine's own step path and recovery ladder, so the guide's Steps 2 and 3 apply to them unchanged.
+
+## Step 7. Check the robot and the skill
 
 The record says what the loop saw. If the cause is in the robot, check the robot.
 
@@ -292,7 +337,8 @@ The record says what the loop saw. If the cause is in the robot, check the robot
 4. Read the `done` event: `code`, `device`, `evidence`, `msg`.
 5. Read the belief and its sources.
 6. Replay with `plan` and `exec --fake`. Expect exit 0, except the retry case above.
-7. If the cause is in the robot, run the diagnostics and turn on the debug response.
+7. If an option is suspected (for example `bt_goal`), read its lab flag (Step 6) and run again with the option off.
+8. If the cause is in the robot, run the diagnostics and turn on the debug response.
 
 ## Where to go next
 
