@@ -90,7 +90,7 @@ def make_assist(tmp_path, monkeypatch, env, agent_state):
                   memory_path=str(tmp_path / "object_memory.json"), mute_skill_tts=False,
                   speak_backend=False, vlm_enabled=False,
                   input_pivot="none",      # the older tests exercise the loop without the language layer's IN side
-                  look_then_ask="0", bring_ask="0", bt_goal="0")   # default ON in the engine; the older tests pin the earlier order (new tests turn them on)
+                  look_then_ask="0", bring_ask="0", bt_goal="0", fetch_guard="0")   # default ON in the engine; the older tests pin the earlier order (new tests turn them on)
         ov.update(overrides)
         loop = AL.AssistLoop(agent, emit=None, **ov)
         loop._llm_client = llm
