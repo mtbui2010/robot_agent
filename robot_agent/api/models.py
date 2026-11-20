@@ -55,6 +55,16 @@ class LanguagesIn(_Open):
     languages: list[str]          # the languages to switch on: a non-empty subset of `supported`
 
 
+class RobotManifest(_Open):
+    """``GET /robot/manifest``: what a fleet manager needs to know of this robot (docs/fleet_seams.md); read-only."""
+    robot: str                    # the manifest's `robot`
+    version: str                  # the manifest's `version`
+    plan_actions: list[str] = []  # the abstract actions a plan may use on this robot (sorted)
+    capabilities: dict = {}       # the manifest's `capabilities`
+    places: list[str] = []        # the ENV keys of the ACTIVE site (the robot's own place names)
+    site: str = ''                # the active site (location); '' when the configs have no sites
+
+
 # --- teleop ------------------------------------------------------------------
 class TeleopFunction(_Open):
     name: str
@@ -272,6 +282,7 @@ class RunInfo(_Open):
     awaiting: Optional[str] = None
     pending: list = []
     n_events: Optional[int] = None
+    client_ref: Optional[dict] = None   # only on a run started with one (docs/fleet_seams.md)
     events: Optional[list[dict]] = None
 
 

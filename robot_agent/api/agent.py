@@ -229,7 +229,7 @@ def _runs():
     return manager()
 
 
-_OK_STATUS = ('success', 'aborted', 'planned')
+_OK_STATUS = ('success', 'aborted', 'planned', 'understood')     # understood: option goals_only (an understand-only run)
 
 
 def _done_ok(done: dict) -> bool:
@@ -455,12 +455,13 @@ async def agent_ws(websocket: WebSocket):
         role      = data.get('role')
 
         import asyncio
+        from . import run_start
         sender = _Sender(websocket)
-        # One active run per robot: while one runs, this client observes it and
-        # its prompt becomes an event into that run.
-        start = _runs().start(goal=prompt, user_id=user_id, role=role)
-        if not start.started:
-            await _observe(websocket, sender, start.run, prompt, user_id, role)
+        prompt, options = run_start.with_goals(data, prompt, options)       # typed `goals`: into the run's options (fleet seams)
+        # One active run per robot: while one runs, this client observes it and its prompt becomes an event into that run
+        # (unless it sent busy: "refuse"); an empty prompt with no run starts nothing; a `client_ref` seen before starts nothing.
+        start = await run_start.begin(websocket, sender, data, prompt, direct, user_id, role, _runs(), _observe)
+        if start is None:
             return
         run = start.run
 

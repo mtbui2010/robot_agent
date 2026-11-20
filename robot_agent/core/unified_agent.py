@@ -168,7 +168,7 @@ def _is_failure_event(ev: dict) -> bool:
         if name == 'done':
             st = ev.get('status')
             if st is not None:
-                return st not in ('success', 'planned')
+                return st not in ('success', 'planned', 'understood')
             return ev.get('success') is False
         # SAGE: symbolic precondition violations found while planning.
         if name == 'plan_step' and ev.get('phase') == 'verified' and ev.get('ok') is False:
@@ -304,6 +304,13 @@ def _loop_translates(planner, options) -> bool:
     return bool(sage and pivot in ('translate', 'both'))
 
 
+def _given_goals(assist: bool, options) -> dict:
+    """``run_blocking``'s ``goals`` from the run's options (``/ws/agent`` puts a caller's typed goals there): only the AssistLoop takes
+    them, and only with its ``accept_goals`` on; none given: no argument (the call is the one it always was)."""
+    goals = (options or {}).get('goals')
+    return {'goals': list(goals)} if assist and isinstance(goals, list) and goals else {}
+
+
 class UnifiedAgent:
     def __init__(self, skill_registry, device_manager):
         self.skill_registry = skill_registry
@@ -385,7 +392,7 @@ class UnifiedAgent:
                     _lp = _Loop(self, emit=emit, **_kw)
                     from ..observe.record import note_loop
                     note_loop(_lp, prompt_en, lang, plan_only, kwargs=_kw)   # RunRecord context (replay)
-                    for _ev in _lp.run_blocking(prompt_en, lang, plan_only=plan_only):
+                    for _ev in _lp.run_blocking(prompt_en, lang, plan_only=plan_only, **_given_goals(_assist, options)):
                         emit(_ev)
                     return
 

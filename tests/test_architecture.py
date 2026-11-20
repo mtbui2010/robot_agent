@@ -80,6 +80,7 @@ THROUGH_THE_LOOP["heat_safety"] = "test_option_heat_safety.py"
 THROUGH_THE_LOOP["bt_goal"] = "test_option_bt_goal.py"
 THROUGH_THE_LOOP["heard_check"] = "test_option_heard_check.py"
 THROUGH_THE_LOOP["shared_instances"] = "test_option_shared_instances.py"
+THROUGH_THE_LOOP["goals_only"] = "test_fleet_seams.py"
 
 
 def _specs():
