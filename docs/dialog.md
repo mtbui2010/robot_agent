@@ -47,6 +47,11 @@ The understand model sometimes writes `from: "me"` for "bring me the cup". Befor
 when `to` is set. The source is then searched for or taken from the object memory. "Where are you?" is asked
 only for a `to: "me"` whose place the person's words do not name ("... to me at the sofa" names it).
 
+Option `bring_ask` (default on, `$ROBOT_AGENT_BRING_ASK`): for such a request the robot asks ONE combined question, "Where are you? Or where
+should I put it?" (pack key `q_where_bring`), also when the person is tracked (the answer is kept, the delivery stays the engine's own). A place
+in the answer is the destination; no place is a hand-over; asked once per request. Code `robot_agent/options/bring_ask.py`, service `person_where`
+(used by `assist_loop`). Switch off: key `enabled`.
+
 ### The place the person said is remembered (m10 round 5)
 
 An untracked speaker's answer to "Where are you?" names where they are. The place is kept for the run

@@ -138,6 +138,14 @@ is the extra looks at places already searched and the wrong next guesses.
 * The memory keeps one place per object; older sightings are lost when it is overwritten.
 * `ClosedLoop` (planner `grace`) has no search belief; only the SAGE + assist loop has.
 
+## Look first, then ask (option `look_then_ask`, default on)
+
+For an `on` / `in` goal with no source and no trusted memory, the robot looks around where it stands first (one `Find`). Seen: that place is the
+source, no question. Not seen: one question, "I don't see the fork here. Where is it?" (pack key `q_where_is_here`); a place or room in the answer is
+the source (or is looked at first); "I don't know", no answer or no place: the ranked search above takes over, and the question is not asked again.
+Unlike `ask_source` (asks before any look, default off) it asks after a look; when both are on this one acts first. Code
+`robot_agent/options/look_then_ask.py`; switch off: key `enabled` (`$ROBOT_AGENT_LOOK_THEN_ASK`). Not measured.
+
 ## A room the person named (option `ask_source`, key `use_room`)
 
 `SearchBelief.prefer(obj, places)` puts the places the person pointed at first in `order()` (`(not preferred, -score, ENV order)`); the route

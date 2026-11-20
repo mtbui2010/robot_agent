@@ -13,6 +13,11 @@ Core design:
 - [contract.md](contract.md): RobotAdapter, manifest, SkillSpec / SkillResult / FailureCode
 - [architecture.md](architecture.md): layers (contract <- engine <- options), what `tools/lint_arch.py` enforces, size baseline and the plan to shrink it
 - [options.md](options.md): the option plug-in interface (spec, keys, hooks, registry), how to write an option, the registered options
+- [bt_goal.md](bt_goal.md): option `bt_goal`: goals with a declared behaviour tree run as trees, the others by SAGE (key `mixed`); data, runner, what is not covered
+- [ask_next.md](ask_next.md): option `ask_next`: after a failed step, ask the person what to do next
+- [heard_check.md](heard_check.md): option `heard_check`: a goal's own quote must be in what was heard
+- [heat_safety.md](heat_safety.md): option `heat_safety`: nothing that can burn goes on a heat source
+- [reach_check.md](reach_check.md): reachability check (TAMP-lite) between the plan and the arm
 - [safety.md](safety.md): the per-robot safety profile (hazard / place / receiver classes and rules as data), the engine, the `refusals` event key
 - [metal_microwave.md](metal_microwave.md): the rule 'no metal in a microwave oven' as safety data (sources, words, gaps); no code
 - [run_manager.md](run_manager.md): run ids, one active run per robot, cancel / pause / inject, intent router
