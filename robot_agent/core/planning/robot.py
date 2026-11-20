@@ -126,7 +126,19 @@ class RobotView:
         caps.setdefault("find_reaches", False)
         if "hands" not in caps and "arms" not in caps:
             caps["hands"] = 1
+        caps.setdefault("release_actions", self.release_actions())
         return caps
+
+    def release_actions(self) -> list:
+        """The robot's own actions that release the held object (not Place / PutIn): a manifest skill whose
+        effects include ``hand_empty()``, e.g. a hand-over. Its effect empties the hand in the action model."""
+        out = []
+        for s in self.manifest.skills:
+            if s.action in ("Place", "PutIn") or s.action in out:
+                continue
+            if any(str(e).replace(" ", "") in ("hand_empty()", "hand_empty") for e in (s.effects or [])):
+                out.append(s.action)
+        return out
 
     def seed_memory(self) -> Optional[str]:
         """The robot's curated seed pool for the planner's memory (manifest ``planner.seed_memory``,

@@ -89,11 +89,11 @@ class ActionMapper:
 
     @staticmethod
     def _action(step: dict) -> str:
-        return (step.get("action") or "").strip()
+        return str(step.get("action") or "").strip()
 
     @staticmethod
     def _object(step: dict) -> str:
-        return (step.get("object") or "").strip()
+        return str(step.get("object") or "").strip()
 
     def _concrete(self, step: dict) -> tuple[str, dict]:
         """A step that names its skill call (the direct planner's): that call, checked against the

@@ -33,6 +33,7 @@ from typing import Iterator, Optional
 from robot_agent.observe.paths import data_dir
 from robot_agent.contract import FailureCode, classify_legacy_failure
 from robot_agent.state import current, host_id
+from ..options.spec import NEXT as _OPT_NEXT, STOP as _OPT_STOP
 from . import episode_memory, robot_prompt
 from .announcer import Announcer
 from .base import WorldState
@@ -180,7 +181,7 @@ def _manager_run_id() -> Optional[str]:
 
 
 # step outcomes of the phase methods (generators return one of these)
-_NEXT, _FAIL, _STOP, _DONE = "next", "fail", "stop", "done"
+_NEXT, _FAIL, _STOP, _DONE = _OPT_NEXT, "fail", _OPT_STOP, "done"
 
 
 class RunContext:
@@ -194,6 +195,7 @@ class RunContext:
         self.world = current().world
         self.node = getattr(loop.dm, "_ros_node", None)
         self.muted = False
+        self.speak = None            # the language layer's speak(): every `say` of this run's events passes it
         now = time.time()
         # one id per run: the RunManager run this executive acts for (events, RunLogger file and RunRecord
         # agree, GET /runs/<id> finds it); a run started outside the RunManager gets a time-based one
@@ -231,7 +233,7 @@ class RunContext:
         """An event to stream, logged to the run's JSONL."""
         d = {"event": event, **fields}
         if say is not None:
-            d["say"] = say
+            d["say"] = self.speak(say) if self.speak is not None and isinstance(say, str) else say
         try:
             self.logger.event(event, t=time.time(), **{k: v for k, v in d.items() if k != "event"})
         except Exception:
@@ -253,6 +255,10 @@ class ClosedLoop:
         ``live_path``). Anything not overridden is resolved from env vars /
         sensible defaults in :meth:`_resolve_cfg`.
     """
+
+    # the post-step verify applies a step with the robot's body (its release actions empty the hand); off for the
+    # ClosedLoop / grace path (its behaviour stays as it is), on for AssistLoop (SAGE-v2 F6.1)
+    _verify_with_body = False
 
     def __init__(self, agent, emit=None, **overrides) -> None:
         self.agent = agent
@@ -333,6 +339,7 @@ class ClosedLoop:
     def _make_planner(self):
         name = self.cfg["planner"]
         if name == "grace":
+            opts = getattr(self, "options", None)         # options may add constructor keys (hook on_planner_kwargs)
             return get_planner(
                 "grace",
                 host=self.cfg.get("host"),
@@ -345,6 +352,7 @@ class ClosedLoop:
                 seed_memory=self.robot.seed_memory(),
                 # its plan actions + description in SAGE's prompts (ROBOT_AGENT_SAGE_ROBOT_PROMPT=0: off)
                 **robot_prompt.sage_prompt_kwargs(self.robot),
+                **(opts.transform("on_planner_kwargs", {}) if opts is not None else {}),
             )
         if name == "llm_direct":
             return get_planner(
@@ -370,6 +378,11 @@ class ClosedLoop:
     def _arg_name(self, action: str, obj: str) -> str:
         """Localized-ish argument name for announcements."""
         return self.robot.name_for(action, obj)
+
+    def _announce(self, r, kind: str, step: dict, action: str, obj: str, **kw) -> str:
+        """The announcer's line for a step milestone (``step_start`` / ``step_success`` / ``step_fail``). A host with
+        its own speech layer overrides this (AssistLoop says the robot's own phrase with no model call)."""
+        return r.announcer.announce(kind, **self._say(step, action, obj), **kw)
 
     def _say(self, step: dict, action: str, obj: str) -> dict:
         """Announcer kwargs for a step: the spoken names the plan gave
@@ -409,8 +422,8 @@ class ClosedLoop:
         lines = []
         w = world.copy()
         for st in steps:
-            action = (st.get("action") or "").strip()
-            obj = (st.get("object") or "").strip()
+            action = str(st.get("action") or "").strip()
+            obj = str(st.get("object") or "").strip()
             try:
                 mapped = mapper.to_skill(st, w)
                 if mapped is None:                       # no-op action
@@ -441,7 +454,8 @@ class ClosedLoop:
                        observe=self._observe_object, min_conf=float(robot.geometry.extra.get("vlm_min_conf", 0) or 0))
         return StepVerifier(self.cfg["vlm_enabled"], robot.vlm_actions, robot.vlm_hook, robot=robot,
                             sensor=lambda skill: run_skill(self.sr, skill, {}, node, raise_errors=True),
-                            locate=locate, vlm_check=vlm)
+                            locate=locate, vlm_check=vlm,
+                            capabilities=robot.model_capabilities() if self._verify_with_body else None)
 
     def _observe_object(self, obj: str, node=None):
         """The VLM fallback's look: the robot's Find of ``obj`` here. True seen, False not seen,
@@ -526,7 +540,7 @@ class ClosedLoop:
         ``progress`` hook (base.ProgressReporting; GRACE / SAGE has it). Best-effort."""
         try:
             if self._emit is not None and hasattr(planner, "progress"):
-                _emit = self._emit
+                _emit = self._pushed()
 
                 def _on_progress(d):
                     try:
@@ -545,9 +559,14 @@ class ClosedLoop:
             return None
         try:
             from ..unified_agent import _make_log_fn
-            return _make_log_fn(self._emit, i, allow_say=False)
+            return _make_log_fn(self._pushed(), i, allow_say=False)
         except Exception:
             return None
+
+    def _pushed(self):
+        """The host's live channel (``emit``) with the options' ``on_event`` watchers in front (an AssistLoop's trace); None stays None."""
+        opts = getattr(self, "options", None)
+        return opts.tap_push("on_event", self._emit) if opts is not None else self._emit
 
     # ── main loop ────────────────────────────────────────────────────────
     def run_blocking(self, task: str, lang: str = "en",
@@ -735,7 +754,7 @@ class ClosedLoop:
         rec = StepRecord(index=r.i, action=action, object=obj, skill=skill_name,
                          params=params, status="running", started_at=started)
         yield r.ev("step_start", index=r.i, action=action, object=obj, skill=skill_name,
-                   say=r.announcer.announce("step_start", **self._say(step, action, obj)))
+                   say=self._announce(r, "step_start", step, action, obj))
         res = run_skill(self.sr, skill_name, params, r.node, log_fn=self._log_fn(r.i),
                         interruptible=r.robot.interruptible(skill_name))
         rec.result = res.to_legacy()
@@ -762,7 +781,7 @@ class ClosedLoop:
                                       status="failed", started_at=started, ended_at=time.time(),
                                       verifies=[VerifyResult("isdone", False, reason)]))
         yield r.ev("step_done", index=r.i, status="failed",
-                   say=r.announcer.announce("step_fail", **self._say(step, action, obj), reason=reason),
+                   say=self._announce(r, "step_fail", step, action, obj, reason=reason),
                    reason=reason, world=r.world.to_dict())
         if not self._cl_replan(r, step, reason):
             return _FAIL
@@ -786,7 +805,7 @@ class ClosedLoop:
         r.completed.append(step)
         r.run.steps.append(rec)
         yield r.ev("step_done", index=r.i, status="success", result=rec.result,
-                   say=r.announcer.announce("step_success", **self._say(step, action, obj)),
+                   say=self._announce(r, "step_success", step, action, obj),
                    world=r.world.to_dict())
         r.i += 1
 
@@ -796,7 +815,7 @@ class ClosedLoop:
         rec.status = "failed"
         r.run.steps.append(rec)
         yield r.ev("step_done", index=r.i, status="failed", result=rec.result, reason=reason,
-                   say=r.announcer.announce("step_fail", **self._say(step, action, obj), reason=reason),
+                   say=self._announce(r, "step_fail", step, action, obj, reason=reason),
                    world=r.world.to_dict())
         code = r.robot.failure_code(res, reason)
         r.failed_with(code, res.device or rec.skill, reason, {"action": action, "object": obj})

@@ -93,5 +93,5 @@ def test_geometry_defaults_match_the_current_hardcoded_values():
 def test_messages_fallbacks():
     m = Messages("ko", {"hello": {"en": "Hello {name}", "ko": "안녕 {name}"}})
     assert m.text("hello", name="A") == "안녕 A"
-    assert m.text("hello", lang="vi", name="A") == "Hello A"
+    assert m.text("hello", lang="qq", name="A") == "Hello A"
     assert m.text("missing") == "missing"

@@ -165,7 +165,11 @@ def test_gate_without_repair_falls_back_to_one_fresh_plan(make_assist, env):
         def generate_plan(self, task, obs, visible_objects):
             self.calls.append(("generate_plan", task, obs))
             n = sum(1 for c in self.calls if c[0] == "generate_plan")
-            return ([s for s in GOOD if s["action"] != "Find"] if n == 1 else list(GOOD)), {}
+            # the first plan puts the apple down at the wrong place: no symbolic repair can know where it
+            # belongs instead (SAGE-v2 plan_repair fixes a missing Find without any LLM call)
+            bad = [dict(s) for s in GOOD]
+            bad[-2], bad[-1] = {"action": "MoveTo", "object": DS}, {"action": "Place", "object": DS}
+            return (bad if n == 1 else list(GOOD)), {}
     robot = FakeRobot(env, {"apple": DS})
     planner = TwoPlans(GOOD)
     loop = make_assist(robot, FakeLLM(default=APPLE), planner)

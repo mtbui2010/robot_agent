@@ -60,8 +60,29 @@ def _llm(llm_cfg: dict | None = None):
 
 def translate(text: str, to_language: str = 'korean', llm_cfg: dict | None = None) -> str:
     """Translate *text* into *to_language* using the active LLM."""
-    return _llm(llm_cfg).chat(
-        prompt=f'Translate to daily {to_language}. Output result only: {text}')
+    import threading
+    from .core import run_control          # a Stop interrupts the wait (legacy open-loop path); the closed loop does not call this
+    box: dict = {}
+    done = threading.Event()
+
+    def work():
+        try:
+            box['v'] = _llm(llm_cfg).chat(prompt=f'Translate to daily {to_language}. Output result only: {text}')
+        except BaseException as e:      # noqa: BLE001 - re-raised below
+            box['e'] = e
+        finally:
+            done.set()
+    threading.Thread(target=work, name='translate', daemon=True).start()
+    while not done.wait(0.05):
+        if run_control.cancel_requested():
+            try:
+                from .interact.run_manager import RunCancelled as _Stop
+            except Exception:           # noqa: BLE001
+                _Stop = RuntimeError
+            raise _Stop('translate interrupted by Stop')
+    if 'e' in box:
+        raise box['e']
+    return box['v']
 
 
 # ---------------------------------------------------------------------------
@@ -82,14 +103,14 @@ def skill_tts_muted() -> bool:
     return _SKILL_TTS_MUTED
 
 
-_TTS_LANGS = ('ko', 'en', 'vi')
+_TTS_LANGS = ('ko', 'en')
 
 
 def text2voice(text, lang=None, run_thread=True, slow=False, force=False):
     """Speak *text* through the local audio device via gTTS.
 
     Args:
-        lang: ``'ko'`` / ``'en'`` / ``'vi'``; auto-detected from *text* when
+        lang: ``'ko'`` / ``'en'``; auto-detected from *text* when
             None. Anything else is spoken with the English voice.
         run_thread: play in the background instead of blocking the caller.
         force: speak even while skill-level TTS is muted (announcer path).
@@ -321,6 +342,18 @@ def record_phrase(max_sec: float = 8.0, silence_sec: float = 1.5,
                               min_phrase_sec=min_phrase_sec, wait_sec=wait_sec)
 
 
+def _with_vocabulary(prompt, lang):
+    """`prompt` plus the ENV's place / room names in `lang` (ROBOT_AGENT_STT_HINT=1; default off: `prompt` unchanged)."""
+    from robot_agent.core.planning import stt_hint
+    if not stt_hint.enabled():
+        return prompt
+    try:
+        from robot_agent.skill_configs import ENV
+        return stt_hint.merge(prompt, stt_hint.vocabulary(dict(ENV), lang or 'en', stt_hint.max_chars())) or prompt
+    except Exception:                              # a hint is never worth a failed transcription
+        return prompt
+
+
 _STT_LANG = threading.local()
 
 
@@ -344,7 +377,7 @@ def speech_to_text(audio, lang: str | None = None, prompt: str | None = None,
     connection (`stt` names one; default the first), else the legacy ``vlms``
     TCP server (samples only).
 
-    `lang` pins Whisper's language ('ko', 'en', 'vi', ...) instead of letting it
+    `lang` pins Whisper's language ('ko', 'en', ...) instead of letting it
     guess from a few seconds of audio, which it gets wrong on short answers;
     `prompt` lists words to expect. Returns the transcript stripped, '' when
     nothing was recognised.
@@ -358,6 +391,7 @@ def speech_to_text(audio, lang: str | None = None, prompt: str | None = None,
     dm = current().dm
     stt_client = dm.stt_client(stt) if hasattr(dm, 'stt_client') else None
     if stt_client is not None:
+        prompt = _with_vocabulary(prompt, lang)
         if auto:
             text = stt_client.transcribe(audio, lang=None, prompt=prompt, mime=mime)
             heard = (getattr(stt_client, 'last_language', '') or '').lower()
@@ -387,6 +421,12 @@ def speech_to_text(audio, lang: str | None = None, prompt: str | None = None,
     if isinstance(res, dict):
         res = res.get('text', '')
     return str(res or '').strip()
+
+
+def _cancelled() -> bool:
+    """Has the current run been asked to stop (so a wait that starts now would never be released)?"""
+    from robot_agent.core.run_control import cancel_requested
+    return cancel_requested()
 
 
 _LISTEN_PENDING: dict[str, dict] = {}
@@ -456,7 +496,10 @@ def listen_dashboard(prompt: str | None = None, lang: str = 'ko', max_sec: float
                              'capture': capture if mode == 'voice' else 'browser',
                              'silence_sec': silence_sec, 'earcon': float(earcon or 0),
                              **({'rate': r} if (r := rate or speech_rate()) else {})}})
-        slot['event'].wait(timeout)
+        if _cancelled():
+            slot['error'] = 'cancelled'           # the Stop came before this listen existed: nothing will release it
+        else:
+            slot['event'].wait(timeout)
     finally:
         with _LISTEN_LOCK:
             _LISTEN_PENDING.pop(req_id, None)
@@ -644,6 +687,8 @@ def say_to_user(text: str, lang: str = 'ko', source: str = 'robot', wait: bool |
                 _LISTEN_PENDING[req_id] = slot
             try:
                 log_data({'speak': text, 'speak_lang': lang, 'speak_id': req_id, **extra})
+                if _cancelled():
+                    return                          # the Stop came before this wait existed
                 # ~6 characters a second in speech (times the rate), plus slack for the queue ahead of it.
                 slot['event'].wait(5.0 + len(text) / (6.0 * min(1.0, float(rate or 1.0))) + 5.0)
             finally:

@@ -1,0 +1,365 @@
+{
+ "lang": "en",
+ "heat_safety": {"refuse": "I won't do that: anything that can burn must be kept at least {m} m from a heat source.", "part": "I did the rest, but not all of it: anything that can burn must be kept at least {m} m from a heat source.", "assumed": true, "source": "assumed: plain English wording of option heat_safety's refusal; the rule and its distance are the robot pack's data with their own source (docs/heat_safety.md)"},
+ "words": {
+  "putin": [
+   "\\binto\\b",
+   "\\binside\\b",
+   "\\bin\\b"
+  ],
+  "on_top": [
+   "\\bon top of\\b",
+   "\\bonto\\b",
+   "\\bon\\b"
+  ],
+  "hand": [
+   "\\bhand (?:it |them |that |this )?(?:over )?(?:to )?(?:me|him|her|them)\\b",
+   "\\bhand me\\b",
+   "\\binto (?:my|his|her|their) hands?\\b",
+   "\\bin(?:to)? (?:my|his|her|their) hands?\\b",
+   "\\bpass (?:it |them )?(?:straight |directly )?(?:to )?me\\b",
+   "\\bdirectly to me\\b",
+   "\\bstraight to me\\b",
+   "\\bgive (?:it|them) to me directly\\b",
+   "\\bhand-?over\\b",
+   "\\bhand (?:it|them) over\\b",
+   "\\bhand (?:it|them|this|that|these|those)\\b",
+   "\\bpass me\\b",
+   "\\bpass (?:it|them) to me\\b",
+   "\\bhand (?:\\w+ ){0,2}(?:his|her|their) \\w+"
+  ],
+  "first_person": [
+   "\\bi\\b",
+   "\\bme\\b",
+   "\\bmy\\b",
+   "\\bmyself\\b",
+   "\\bmine\\b"
+  ],
+  "recipient": [
+   "\\bme\\b",
+   "\\bhere\\b",
+   "\\bbring\\b",
+   "\\bbrings\\b",
+   "\\bfetch\\b",
+   "\\bgive\\b",
+   "\\bhand\\b",
+   "\\bpass\\b",
+   "\\bdeliver\\b",
+   "\\bget me\\b",
+   "\\bmy way\\b",
+   "\\bus\\b"
+  ],
+  "tell": [
+   "\\btell\\b",
+   "\\blet \\w+(?: \\w+)? know\\b",
+   "\\bremind\\b",
+   "\\bask \\w+(?: \\w+)? to\\b",
+   "\\bsay to\\b",
+   "\\bpass on\\b",
+   "\\binform\\b",
+   "\\bwarn\\b"
+  ],
+  "open_words": [
+   "\\bopen"
+  ],
+  "where_now": [
+   "where (?:is|are|was|were|can i find|could i find|do i find|would i find|might)\\b|\\blocation of\\b|\\b(?:is|are) (?:located|currently)\\b|\\bcurrent(?:ly)? (?:location|place)\\b|(?:not|n't) (?:know|sure|specified|mentioned|clear|given|stated)\\b[^.?]*\\bwhere (?:the|it|they|this|that|those|these)\\b|(?:location|whereabouts)[^.?]*(?:unknown|not (?:known|specified|mentioned|given|clear|stated|provided))"
+  ],
+  "where_put": [
+   "where (?:should|shall|do you want|would you like|to|must)\\b[^.?]*\\b(?:put|place|leave|bring|take|deliver|move|go|set)"
+  ],
+  "where_obj": [
+   "where (?:is|are|was|were) (?:the |my |your |a |an |some )?([a-z][a-z -]*?)(?: located| kept|\\?| now| currently|,| and | or )"
+  ]
+ },
+ "answer_unsure": [
+  "don't know",
+  "dont know",
+  "do not know",
+  "not sure",
+  "no idea",
+  "dunno",
+  "can't remember",
+  "cannot remember",
+  "can't say",
+  "no clue"
+ ],
+ "articles": [
+  "the",
+  "a",
+  "an",
+  "some",
+  "my",
+  "your"
+ ],
+ "plural_rules": [
+  [
+   "ies",
+   "y"
+  ],
+  [
+   "ches",
+   "ch"
+  ],
+  [
+   "shes",
+   "sh"
+  ],
+  [
+   "ses",
+   "s"
+  ],
+  [
+   "xes",
+   "x"
+  ],
+  [
+   "s",
+   ""
+  ]
+ ],
+ "text_fallback": true,
+ "dialogue_ext": {
+  "self_correction": [
+   "(?:\\.\\.\\.|,|-)?\\s*\\b(?:no wait|wait,? no|no,? i mean|i mean|actually|sorry|rather)\\b"
+  ]
+ },
+ "asr": {
+  "hole": [
+   "\\b(?:the|an|my|your|our|their)\\s+(?:(?:to|in|on|onto|at|from|into|of|for|with|then|by)(?![\\w'-])|(?:and|or)(?![\\w'-])(?!\\s+(?:my|your|his|her|our|their)\\b))",
+   "\\b(?:the|an|my|your|our|their)\\s*[.,!?]*\\s*$"
+  ],
+  "assumed": true,
+  "source": "assumed: general grammar, an article or a possessive that never ends a phrase itself (not her: 'tell her to ...', not his: 'the one that is his', not a bare a: a letter name, 'vitamin a') directly followed by a function word or the end of the request; and / or followed by another possessive is a coordination ('my and your boots'), not a hole"
+ },
+ "patterns": {
+  "into_before": "\\b(?:in|into|inside)\\s+(?:the\\s+|my\\s+|your\\s+|a\\s+|our\\s+|her\\s+|his\\s+)?(?:[\\w'-]+\\s+){0,2}$",
+  "ontop_before": "\\bon\\s+top\\s+of\\s+(?:the\\s+|my\\s+|your\\s+)?(?:[\\w'-]+\\s+){0,2}$|\\bonto\\s+(?:the\\s+)?(?:[\\w'-]+\\s+){0,2}$",
+  "on_before": "\\b(?:on|onto|atop)\\s+(?:top\\s+of\\s+)?(?:the\\s+|my\\s+|your\\s+|a\\s+|our\\s+)?(?:[\\w'-]+\\s+){0,2}$",
+  "open_verb": "\\bopen\\b",
+  "close_verb": "\\b(?:close|shut)\\b",
+  "self_correction": "(?:\\.\\.\\.|,|-)?\\s*\\b(?:no wait|wait,? no|no,? i mean|i mean|actually|sorry|rather)\\b",
+  "addressee": "\\b(?:to|tell|ask|remind|let)\\s+(?:the\\s+|my\\s+|your\\s+)?{name}\\b",
+  "condition": "\\b(?:if|unless|whether|in case)\\b[^,;.]*",
+  "negation": "\\b(?:don'?t|do not|never|except|without|but not|not)\\b[^,;.]*"
+ },
+ "dialogue": {
+  "yes": [
+   "yes",
+   "yeah",
+   "yep",
+   "ok",
+   "okay",
+   "right",
+   "correct",
+   "sure",
+   "go ahead"
+  ],
+  "no": [
+   "no",
+   "nope",
+   "not",
+   "wrong"
+  ],
+  "fillers": [
+   "uh",
+   "um",
+   "umm",
+   "er",
+   "erm",
+   "ah",
+   "eh",
+   "oh",
+   "hm",
+   "hmm",
+   "mm",
+   "mhm",
+   "huh",
+   "what",
+   "sorry",
+   "pardon",
+   "well",
+   "so",
+   "the",
+   "a",
+   "an",
+   "it",
+   "is",
+   "that",
+   "this",
+   "i",
+   "noise",
+   "inaudible",
+   "unk"
+  ],
+  "yn_words": [
+   "yes",
+   "yeah",
+   "yep",
+   "okay",
+   "no",
+   "nope",
+   "sure"
+  ],
+  "stop": [
+   "stop",
+   "halt",
+   "abort",
+   "cancel",
+   "freeze",
+   "emergency stop",
+   "stop the robot",
+   "enough",
+   "that is enough",
+   "that's enough"
+  ],
+  "pause": [
+   "pause",
+   "wait",
+   "hold on",
+   "hang on",
+   "one moment",
+   "just a moment",
+   "wait a moment",
+   "wait a second",
+   "wait a minute",
+   "one second"
+  ],
+  "resume": [
+   "resume",
+   "continue",
+   "go on",
+   "carry on",
+   "keep going",
+   "go ahead",
+   "proceed"
+  ],
+  "tail": [
+   "now",
+   "it",
+   "that",
+   "everything",
+   "right now",
+   "immediately",
+   "moving",
+   "please",
+   "robot"
+  ],
+  "head": [
+   "please",
+   "robot",
+   "ok",
+   "okay",
+   "hey",
+   "oh",
+   "ah",
+   "um",
+   "uh",
+   "just"
+  ],
+  "negation_words": [
+   "don't",
+   "dont",
+   "do not",
+   "never",
+   "not",
+   "no need to",
+   "doesn't",
+   "won't"
+  ],
+  "negation_contains": [
+   "do not",
+   "no need"
+  ],
+  "fallback_status": [
+   "what are you doing",
+   "status",
+   "where are you",
+   "how is it going",
+   "are you done",
+   "progress",
+   "what is happening"
+  ],
+  "fallback_drop": [
+   "forget",
+   "skip",
+   "never mind the",
+   "don't bring",
+   "do not bring",
+   "leave out",
+   "no longer need",
+   "don't need",
+   "drop the"
+  ],
+  "fallback_modify": [
+   "instead",
+   "actually",
+   "not the",
+   "change",
+   "rather",
+   "i meant"
+  ],
+  "fallback_add": [
+   "also",
+   "as well",
+   "too",
+   "and then",
+   "after that",
+   "one more"
+  ]
+ },
+ "grammar": {
+  "sep_or": " or ",
+  "joiners": [
+   "and",
+   "then",
+   "plus"
+  ],
+  "ascii_names": true,
+  "speaker_forms": [
+   "me",
+   "myself",
+   "here",
+   "user",
+   "the user",
+   "you",
+   "person"
+  ],
+  "speaker_forms_weak": [
+   "user",
+   "person",
+   "you",
+   "here"
+  ],
+  "asr_hallucinations": [
+   "thankyou",
+   "thanksforwatching",
+   "thankyouforwatching",
+   "pleasesubscribe",
+   "bye"
+  ]
+ },
+ "speech": {
+  "q_pick_one": "Which one do you mean: {text}?",
+  "q_ask_next_find": "I couldn't find the {object}. Shall I look again here, look somewhere else, or stop?",
+  "q_ask_next_pick": "I couldn't pick up the {object}. Shall I try again here, look somewhere else, or stop?",
+  "q_ask_next_move": "I can't get to the {object}. Shall I try again, or stop?",
+  "q_ask_next_again": "Please say one of: again, somewhere else, or stop.",
+  "q_ask_next_again_move": "Please say one of: again, or stop.",
+  "q_ask_next_place": "Where should I look for the {object}?",
+  "say_bt_goal_done": "I put the {object} on the {place}.",
+  "say_bt_goal_stop_held": "I had to stop. I am still holding the {object}.",
+  "q_metal_microwave": "Is the {object} metal? Metal in a microwave can cause sparks and a fire.",
+  "q_closed_can_microwave": "Is the {object} still sealed? A sealed can could explode in a microwave.",
+  "assumed": true,
+  "source": "assumed: the re-ask of option answer_align after a yes or no to an either-or, naming the options, the menu of option ask_next after a failed step (again here, somewhere else, stop) and the reply of option bt_goal after a goal its tree ran, plain English; q_metal_microwave: the question of a hazard `ask` entry (docs/metal_microwave.md; the reason in short words from the UC Berkeley EH&S page, wording assumed); q_closed_can_microwave: the question of a hazard `ask` entry for a bare can (docs/metal_microwave.md; the reason in short words from the Panasonic HL-MX465S manual, wording assumed; asked so that a clear no is the safe answer); the robot's i18n wins"
+ },
+ "ask_next": {
+  "retry": ["again", "try again", "retry", "one more time", "once more", "same place"],
+  "elsewhere": ["somewhere else", "elsewhere", "another place", "other place", "different place", "not here"],
+  "anywhere": ["anywhere", "wherever", "anyplace", "you decide", "your choice", "up to you"],
+  "stop": ["give up", "forget it", "never mind", "leave it", "quit", "don't bother", "no more"],
+  "assumed": true,
+  "source": "assumed: plain English answers to the menu of option ask_next (again here / somewhere else / stop), matched as whole words; the run's stop words (dialogue.stop) and yes / no count too"
+ }
+}

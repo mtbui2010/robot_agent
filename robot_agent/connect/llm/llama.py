@@ -20,7 +20,8 @@ class LLamaClient(LLMobj):
       2. ``OLLAMA_URL`` environment variable  (default: http://localhost:11434)
     """
 
-    def init(self, url=None, text_model=None, vision_model=None, model=None, num_ctx=None, timeout=None, **kwargs):
+    def init(self, url=None, text_model=None, vision_model=None, model=None, num_ctx=None, timeout=None, think=None,
+             **kwargs):
         from ollama import Client
         self.url          = url          or DEFAULT_URL
         # `model` is the Connections-panel field: one model for both, unless
@@ -32,6 +33,9 @@ class LLamaClient(LLMobj):
         # and a request with a different num_ctx reloads the model.
         self.options      = {'num_ctx': int(num_ctx)} if num_ctx else None
         self.timeout      = float(timeout or DEFAULT_TIMEOUT_S)
+        # Ollama's ``think`` switch (a thinking model such as qwen3.5 answers EMPTY when its reasoning uses the whole
+        # token cap): sent only when set, so a client without it makes the same request as before.
+        self.think        = None if think is None else bool(think)
         self.chatclient   = Client(host=self.url, timeout=self.timeout).chat
         print(f"LLaMA client → {self.url}")
         print(self.chat(prompt="hello"))
@@ -55,8 +59,10 @@ class LLamaClient(LLMobj):
     def send_msgs(self, msgs, **kwargs):
         self.current_model = self.vision_model if self.image_contained(msgs=msgs) else self.text_model
         model = kwargs.get('model', self.current_model)
+        think = kwargs.get('think', self.think)
+        extra = {} if think is None else {'think': bool(think)}
         return self.chatclient(model=model, messages=msgs, format=kwargs.get('format', None),
-                               options=sampling_options(self.options, kwargs)).message.content
+                               options=sampling_options(self.options, kwargs), **extra).message.content
         
 
 if __name__=='__main__':

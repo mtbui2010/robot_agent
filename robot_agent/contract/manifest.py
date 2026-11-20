@@ -37,9 +37,71 @@ from typing import Optional
 
 from .types import VERIFY_KINDS, FailureCode, Geometry, SkillSpec, VerifySpec
 
-_TOP_KEYS = {"robot", "version", "language", "languages", "capabilities", "geometry", "planner", "skills"}
-# keys of the optional `planner:` section (planner data the robot ships)
-PLANNER_KEYS = {"seed_memory", "notes"}
+_TOP_KEYS = {"robot", "version", "language", "languages", "capabilities", "geometry", "planner", "skills", "limits", "safety"}
+# keys of the optional `planner:` section (planner data the robot ships; docs/env.md):
+#   seed_memory, notes; llm_budget (the run's cap on core LLM calls), translate_model / translate_url (the model
+#   that translates what the robot says into the user's language, default the planner's), translate_budget (its
+#   own cap per run), input_pivot (none | translate | both: how a non-English user's words reach the understand prompt)
+#   search_legs (SAGE-v2 search: the belief's next look without a replan; go on after "I don't know"), search_total,
+#   person_goals (0 | 1, default 0: mixed go / say requests planned with the loop's own steps for the template goals),
+#   accept_goals (0 | 1, default 0: a caller may hand the run its goals, which skips the understand step),
+#   go_steps, kind_anchor, name_canon, reask_abstain (0 | 1, default 0: grounding chain v2 and the abstention re-ask, docs/env.md),
+#   exec_integrity (family) / gate_strict / endstate_check / reset_container / wait_on_robot, inventory_ask (0 | 1, default 0:
+#   solution-lab round 3, docs/env.md), dialog_unstick (0 | 1, default 0: round 4, docs/env.md), dialog_agree (0 | 1, default 0: round 12, docs/env.md), canonical_lang (en | none | <code>: the language of the core's object labels),
+#   label_tokens (words | none), recovery.wait ({action, schedule_s: [...]}: the wait skill WAIT_HEALTH may run),
+#   recovery.return_tries (count >= 1: endstate_check tries), kind_anchor_ask (0 | 1, default 0: keep an unasked open goal and
+#   read it back as a doubt instead of dropping it), unstick (the numbers of dialog_unstick: fallback_words, fallback_chars,
+#   restate_frac, restate_word_len, restate_min_words, restate_min_bigrams; none declared = that part does nothing),
+#   reask_anchor, no_shared_listener, understand_views, understand_goals_first (0 | 1 each, default 0: lab round 6, docs/env.md),
+#   understand_model / understand_url (the model that reads the request, default the planner's; the server defaults to
+#   translate_url, then the planner's), understand_model_lang ({language code: model}), understand_max_tokens /
+#   understand_max_goals (the runaway guard of a model other than the planner's; absent = no cap), understand_schema_strict,
+#   understand_give_kind, understand_verify_verdict (0 | 1 each, default 0: lab round 7, docs/env.md),
+#   repair_model / repair_url / repair_max_tokens (the model of the plan gate's repair prompts and its guard),
+#   dialog_model / dialog_model_lang ({language code: model}) / dialog_url / dialog_max_tokens (the model that writes the
+#   robot's words in the user's language), understand_think / repair_think / dialog_think (the role client's Ollama `think`
+#   switch), request_coverage (0 | 1, default 0): lab round 8, docs/env.md,
+#   dialog_agree2 (0 | 1, default 0: round 14, implies dialog_agree; the language pack's dialogue data and the guard against a
+#   confirmation made through garbled words), agree_guard ({garble_ratio: 0..1}: the guard's similarity threshold; none = no guard),
+#   room_names ({language code: {room: [names]}}: the names a room has in a language), relook (0 | 1, default 0: round 14, one more
+#   look, by another sense, at a place the person named / memory holds / the last likely one, before it counts as searched),
+#   reach_delivery (0 | 1, default 0: round 15). With it, the pack's mapping ``person_snapshot: {trust_s: seconds}`` says how
+#   long a person's position in the ENV is trusted: later a put-down for them becomes the hand-over action, and the goal check
+#   reads their entry again; no mapping = the option does nothing)
+#   restates ({frac: 0..1, word_len: letters, min_words: count}: when an answer "says the request again" in the dialogue loop,
+#   defaults 0.6 / 3 / 4, a priori values the manifest may replace),
+#   prompt_lang (two-letter language code, default "" = en: the language the core's prompts and the model's own questions are
+#   written in; its pack holds the question patterns and the markers read from the held reading, langdata.set_prompt_lang),
+#   ask_source (0 | 1, default 0): ask where an object is, before looking for it, when the request does not say and the memory
+#   does not know (option ask_source, docs/options.md).
+#   unapplied_change (0 | 1, default 0: round 15). A correction the robot cannot apply asks the understand step's own question once;
+#   if it still cannot be applied the run ends failed ("I could not apply your change") instead of claiming success),
+#   action_roles ({put_down, move, open, close, find, pick, say: an action of the pack}: round 16, the actions reach_delivery / relook splice;
+#   a role not declared = the part of the option that needs it does nothing), coverage_limits ({max_parts, max_steps}: integers
+#   >= 1, the caps of request_coverage; not declared = no cap), agree_guard also holds particle_chain / tail_chars (integers >= 1;
+#   not declared = that part of the guard is off), person_snapshot ({trust_s: seconds > 0}),
+#   end_state ({places: [ENV keys or heads], action: an action of the pack}: option end_state, the state a task ends in; not declared = nothing),
+#   detector_miss_rate (0 to 0.9, default 0.1: the chance that a look at the right place does not see the object;
+#   one miss is then weak evidence and the search looks again at the places the belief still holds probable)
+PLANNER_KEYS = {"seed_memory", "notes", "llm_budget", "translate_model", "translate_url", "translate_budget",
+                "search_legs", "search_total", "input_pivot", "detector_miss_rate", "person_goals", "accept_goals",
+                "go_steps", "kind_anchor", "name_canon", "reask_abstain", "action_roles", "coverage_limits",
+                "exec_integrity", "gate_strict", "endstate_check", "reset_container", "wait_on_robot", "inventory_ask",
+                "dialog_unstick", "dialog_agree", "dialog_agree2", "relook", "reach_delivery", "unapplied_change", "ask_source", "ask_source_room", "ask_source_near", "ask_source_hedged", "ask_source_clarify", "confirm_look", "translate_retry", "prompt_lang", "restates", "person_snapshot", "agree_guard", "room_names", "canonical_lang", "label_tokens", "recovery", "kind_anchor_ask", "unstick",
+                "reask_anchor", "no_shared_listener", "understand_views", "understand_goals_first",
+                "understand_model", "understand_url", "understand_model_lang", "understand_max_tokens",
+                "understand_max_goals", "understand_schema_strict", "understand_give_kind", "understand_verify_verdict",
+                "repair_model", "repair_url", "repair_max_tokens", "repair_think", "dialog_model", "dialog_model_lang",
+                "dialog_url", "dialog_max_tokens", "dialog_think", "understand_think", "request_coverage",
+                "end_state", "options"}                  # options: {<option>: {<key>: value}}, the registered options' own keys (docs/options.md)
+AGREE_GUARD_KEYS = {"garble_ratio", "particle_chain", "tail_chars"}
+PERSON_SNAPSHOT_KEYS = {"trust_s"}
+ACTION_ROLE_KEYS = {"put_down", "move", "open", "close", "find", "pick", "say"}
+COVERAGE_LIMIT_KEYS = {"max_parts", "max_steps"}
+UNSTICK_KEYS = {"fallback_words", "fallback_chars", "restate_frac", "restate_word_len", "restate_min_words",
+                "restate_min_bigrams"}
+# keys of the optional `limits:` section (what the body can carry; checked against the ENV object estimates)
+LIMIT_KEYS = {"payload_kg", "max_object_size_m"}
 # planner.notes: short lines for the direct planner's prompt (docs/direct_prompt.md)
 NOTE_MAX_CHARS = 300
 _SKILL_KEYS = {"name", "action", "params", "pre", "hold", "effects", "verify", "interruptible", "errors", "version"}
@@ -101,6 +163,11 @@ class Manifest:
     skills: list = field(default_factory=list)        # list[SkillSpec]
     # optional planner data: {seed_memory: <path to a JSONL seed pool, relative to the manifest>}
     planner: dict = field(default_factory=dict)
+    # optional body limits {payload_kg, max_object_size_m} and safety add-ons {hazards: [...]} (docs/env.md)
+    limits: dict = field(default_factory=dict)
+    safety: dict = field(default_factory=dict)
+    # the loaded ``safety.profile`` (core/safety/profile.py SafetyProfile); None = the robot declares none (fail open)
+    safety_profile: object = field(default=None, compare=False, repr=False)
     extra: dict = field(default_factory=dict)
     source: Optional[str] = None                      # file it was read from
 
@@ -152,6 +219,8 @@ class Manifest:
                     errs.append(f"geometry.{k}: must be a number (metres), got {v!r}")
 
         planner = _planner(d.get("planner"), errs)
+        limits = _limits(d.get("limits"), errs)
+        safety, safety_profile = _safety(d.get("safety"), errs, Path(source).parent if source else None)
 
         raw_skills = d.get("skills")
         if raw_skills is None:
@@ -172,7 +241,7 @@ class Manifest:
         if errs:
             raise ManifestError(errs, source)
         return cls(robot=robot.strip(), version=version, capabilities=dict(caps), language=language.strip(), languages=languages, language_declared=declared,
-                   geometry=dict(geom), skills=skills, planner=planner,
+                   geometry=dict(geom), skills=skills, planner=planner, limits=limits, safety=safety, safety_profile=safety_profile,
                    extra={k: v for k, v in d.items() if k not in _TOP_KEYS}, source=source)
 
     def to_dict(self) -> dict:
@@ -182,6 +251,10 @@ class Manifest:
              "skills": [s.to_dict() for s in self.skills]}
         if self.planner:
             d["planner"] = dict(self.planner)
+        if self.limits:
+            d["limits"] = dict(self.limits)
+        if self.safety:
+            d["safety"] = dict(self.safety)
         d.update(self.extra)
         return d
 
@@ -322,6 +395,30 @@ def _version(v, where, errs) -> str:
     return "1.0"
 
 
+def _is_count(x) -> bool:
+    return isinstance(x, int) and not isinstance(x, bool) and x >= 1
+
+
+def _is_name(x) -> bool:
+    return isinstance(x, str) and bool(x.strip())
+
+
+def _section(v: dict, key: str, allowed: set, errs: list, checks: dict, what: str) -> None:
+    """A planner section that is a mapping of known keys with checked values (``planner.<key>``); absent is fine."""
+    sec = v.get(key)
+    if sec is None:
+        return
+    if not isinstance(sec, dict):
+        errs.append(f"planner.{key}: must be a mapping ({what})")
+        return
+    bad = sorted(set(sec) - allowed)
+    if bad:
+        errs.append(f"planner.{key}: unknown keys {bad} (allowed: {sorted(allowed)})")
+    for k, x in sec.items():
+        if k in checks and not checks[k](x):
+            errs.append(f"planner.{key}.{k}: invalid value {x!r} ({what})")
+
+
 def _planner(v, errs) -> dict:
     if v is None:
         return {}
@@ -331,6 +428,75 @@ def _planner(v, errs) -> dict:
     sm = v.get("seed_memory")
     if sm is not None and (not isinstance(sm, str) or not sm.strip()):
         errs.append("planner.seed_memory: must be a file path (relative to the manifest)")
+    for k in ("llm_budget", "translate_budget"):
+        x = v.get(k)
+        if x is not None and not (isinstance(x, int) and not isinstance(x, bool) and x >= 0):
+            errs.append(f"planner.{k}: must be a count of LLM calls (0 = no cap), got {x!r}")
+    for k in ("understand_max_tokens", "understand_max_goals", "repair_max_tokens", "dialog_max_tokens"):
+        x = v.get(k)
+        if x is not None and not (isinstance(x, int) and not isinstance(x, bool) and x >= 1):
+            errs.append(f"planner.{k}: must be a count >= 1, got {x!r}")
+    for key in ("understand_model_lang", "dialog_model_lang"):
+        ml = v.get(key)
+        if ml is not None and (not isinstance(ml, dict) or not all(isinstance(a, str) and a.strip() and isinstance(b, str)
+                                                                    and b.strip() for a, b in ml.items())):
+            errs.append(f"planner.{key}: must map a language code to a model name (non-empty strings)")
+    pv = v.get("input_pivot")
+    if pv is not None and pv not in ("none", "translate", "both"):
+        errs.append(f"planner.input_pivot: must be none, translate or both, got {pv!r}")
+    for k in ("translate_model", "translate_url", "understand_model", "understand_url", "repair_model", "repair_url",
+              "dialog_model", "dialog_url"):
+        x = v.get(k)
+        if x is not None and (not isinstance(x, str) or not x.strip()):
+            errs.append(f"planner.{k}: must be a non-empty string")
+    pl = v.get("prompt_lang")
+    if pl is not None and (not isinstance(pl, str) or not (len(pl) == 2 and pl.isalpha() and pl.islower())):
+        errs.append(f"planner.prompt_lang: must be a two-letter lower-case language code, got {pl!r}")
+    for k in ("canonical_lang", "label_tokens"):
+        x = v.get(k)
+        if x is not None and (not isinstance(x, str) or not x.strip()):
+            errs.append(f"planner.{k}: must be a non-empty string")
+    w = (v.get("recovery") or {}).get("wait") if isinstance(v.get("recovery"), dict) else None
+    if v.get("recovery") is not None and not isinstance(v.get("recovery"), dict):
+        errs.append("planner.recovery: must be a mapping (wait: {action, schedule_s})")
+    elif w is not None:
+        sched = w.get("schedule_s") if isinstance(w, dict) else None
+        if not (isinstance(w, dict) and isinstance(w.get("action"), str) and w["action"].strip()
+                and isinstance(sched, list) and sched
+                and all(isinstance(x, (int, float)) and not isinstance(x, bool) and x > 0 for x in sched)):
+            errs.append("planner.recovery.wait: must be {action: <name>, schedule_s: [seconds > 0, ...]}")
+    rt = (v.get("recovery") or {}).get("return_tries") if isinstance(v.get("recovery"), dict) else None
+    if rt is not None and not (isinstance(rt, int) and not isinstance(rt, bool) and rt >= 1):
+        errs.append(f"planner.recovery.return_tries: must be an integer >= 1, got {rt!r}")
+    rs = v.get("restates")
+    if rs is not None:
+        if not isinstance(rs, dict) or set(rs) - {"frac", "word_len", "min_words"} or not all(
+                isinstance(x, (int, float)) and not isinstance(x, bool) and x > 0 for x in rs.values()) or \
+                float(rs.get("frac", 0.5)) > 1:
+            errs.append("planner.restates: must map frac (0..1], word_len and min_words (> 0) to numbers")
+    un = v.get("unstick")
+    if un is not None:
+        if not isinstance(un, dict) or not all(isinstance(x, (int, float)) and not isinstance(x, bool) and x >= 0
+                                               for x in un.values()):
+            errs.append("planner.unstick: must be a mapping of non-negative numbers")
+        else:
+            bad = sorted(set(un) - UNSTICK_KEYS)
+            if bad:
+                errs.append(f"planner.unstick: unknown keys {bad} (allowed: {sorted(UNSTICK_KEYS)})")
+    _section(v, "agree_guard", AGREE_GUARD_KEYS, errs, {"garble_ratio": lambda x: _is_number(x) and 0 < x <= 1,
+                                                        "particle_chain": _is_count, "tail_chars": _is_count},
+             "garble_ratio a number in (0, 1], particle_chain and tail_chars integers >= 1")
+    _section(v, "person_snapshot", PERSON_SNAPSHOT_KEYS, errs, {"trust_s": lambda x: _is_number(x) and x > 0},
+             "trust_s a number of seconds > 0")
+    _section(v, "action_roles", ACTION_ROLE_KEYS, errs, {k: _is_name for k in ACTION_ROLE_KEYS},
+             "each role an action name (non-empty string)")
+    _section(v, "coverage_limits", COVERAGE_LIMIT_KEYS, errs, {k: _is_count for k in COVERAGE_LIMIT_KEYS},
+             "max_parts and max_steps integers >= 1")
+    rn = v.get("room_names")
+    if rn is not None and not (isinstance(rn, dict) and all(
+            isinstance(lg, str) and isinstance(m, dict) and all(isinstance(rm, str) and isinstance(ns, list) and all(
+                isinstance(n, str) and n.strip() for n in ns) for rm, ns in m.items()) for lg, m in rn.items())):
+        errs.append("planner.room_names: must be {language code: {room: [names]}}")
     notes = v.get("notes")
     if notes is not None:
         if not isinstance(notes, list):
@@ -342,6 +508,37 @@ def _planner(v, errs) -> dict:
                 elif len(n) > NOTE_MAX_CHARS:
                     errs.append(f"planner.notes[{i}]: longer than {NOTE_MAX_CHARS} characters")
     return dict(v)
+
+
+def _limits(v, errs) -> dict:
+    if v is None:
+        return {}
+    if not isinstance(v, dict):
+        errs.append(f"limits: must be a mapping, got {type(v).__name__}")
+        return {}
+    for k, x in v.items():
+        if k in LIMIT_KEYS and not (_is_number(x) and x > 0):
+            errs.append(f"limits.{k}: must be a positive number, got {x!r}")
+    return dict(v)
+
+
+def _safety(v, errs, base=None) -> tuple:
+    """(the ``safety`` section as written, its loaded SafetyProfile or None). ``safety.profile``: a path relative to the
+    manifest or an inline mapping (schema: docs/safety.md); errors name the field path."""
+    if v is None:
+        return {}, None
+    if not isinstance(v, dict):
+        errs.append(f"safety: must be a mapping, got {type(v).__name__}")
+        return {}, None
+    hz = v.get("hazards")
+    if hz is not None and not (isinstance(hz, list) and all(isinstance(h, dict) for h in hz)):
+        errs.append("safety.hazards: must be a list of mappings {objects, places, say}")
+    prof = None
+    if v.get("profile") is not None:
+        from ..core.safety.profile import load
+        prof, perrs = load(v["profile"], base, "safety.profile")
+        errs.extend(perrs)
+    return dict(v), prof
 
 
 def _check_caps(caps: dict, errs: list) -> None:

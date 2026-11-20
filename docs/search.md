@@ -64,6 +64,33 @@ search the robot searched the living room and gave up (T2 S06, H04, H07, M04).
 The planner still writes every plan. The core only moves the search leg of a suffix, as the
 policy above says; it adds no other steps.
 
+## A miss is not proof of absence (the detector's false-negative rate)
+
+An object detector does not see an object that is in view on some looks. The rate is the robot's own
+number: manifest `planner.detector_miss_rate` (0 to 0.9, default 0.1), the option `detector_miss_rate`
+or `ROBOT_AGENT_DETECTOR_MISS_RATE` (option > env > manifest > 0.1). The core never reads a simulator's or
+a benchmark's profile for it; a pack that knows its detector sets it, a pack that does not gets the default.
+
+`SearchBelief.posterior(obj)` is the place's score (sighting, experience, ranking, plus a small floor so no
+place is impossible) times `miss_rate ** misses at that place`, normalised. A sighting that a miss removed
+still counts in the prior, so a place where the object was seen a minute ago stays probable after one miss
+(weight x0.1) and is looked at again before the unlikely rest:
+
+* **Before the search is used up** (`relook_beats_next`): the look at a searched place whose posterior is higher
+  than every place not looked at yet replaces the next leg. Never the place the robot is at.
+* **When the search is used up** (`_second_look`): the searched places in order of posterior, at most
+  `relook_budget()` of them: 0 for a rate of 0 (a perfect detector is believed), else `round(20 x rate)` from 1
+  to 4 (2 at the default rate, as before). Ties go to the place looked at first.
+
+Misses survive `unsearch` (the count is for the whole run) and `to_dict` / `load`.
+
+**A phantom pick.** A Pick that fails with code `absent` right after a Find saw the object has nothing to
+grasp: the Find was a false positive, or the detection at the pick missed a real object. It is not a grasp
+failure: there are no grasp retries and no "move it closer" request. The first time at a place the robot looks
+once more in place; the second time the search state from before the Find (`restore_search`) is back and the
+place is a miss, then the search goes on exactly as for a Find that saw nothing (next leg, second look, ask where,
+give up). This needs `search_legs`; without it the Pick recovery is as before.
+
 ## Searched places are a hard constraint
 
 Kept on the run context: they survive every replan, a pause / resume and a task-stack resume of
@@ -90,6 +117,8 @@ never gets an Open step from the search.
 | `ROBOT_AGENT_SEARCH_TRUST` | | `0.5` | a sighting at least this confident is believed without a ranking |
 | `ROBOT_AGENT_SEARCH_RANK_WEIGHT` | | `0.5` | weight of the ranking against the prior |
 | `ROBOT_AGENT_SEARCH_HABIT_WEIGHT` | `search_habit_weight` | `0.75` | weight of the experience prior; `0`: off (the v2 search) |
+| `ROBOT_AGENT_SEARCH_ROUTE_WEIGHT` | `search_route_weight` | `0` | `>0`: among likely places the nearer one (from where the robot stands) is looked at first; the cost is the distance as a share of the farthest place, times this weight. Needs `loc: {x, y}` in the ENV places; without positions, or at `0`, the order is unchanged (`core/planning/search_route.py`) |
+| `ROBOT_AGENT_DETECTOR_MISS_RATE` | `detector_miss_rate` | manifest `planner.detector_miss_rate`, else `0.1` | the detector's false-negative rate (posterior of a place after a miss; second-look budget) |
 
 The ranking counts against the run's LLM budget (`ROBOT_AGENT_LLM_BUDGET`); a failed or
 over-budget ranking leaves the prior alone, it never ends the run.
@@ -108,3 +137,18 @@ is the extra looks at places already searched and the wrong next guesses.
   that follow (they are excluded by the hard constraint instead).
 * The memory keeps one place per object; older sightings are lost when it is overwritten.
 * `ClosedLoop` (planner `grace`) has no search belief; only the SAGE + assist loop has.
+
+## Look first, then ask (option `look_then_ask`, default on)
+
+For an `on` / `in` goal with no source and no trusted memory, the robot looks around where it stands first (one `Find`). Seen: that place is the
+source, no question. Not seen: one question, "I don't see the fork here. Where is it?" (pack key `q_where_is_here`); a place or room in the answer is
+the source (or is looked at first); "I don't know", no answer or no place: the ranked search above takes over, and the question is not asked again.
+Unlike `ask_source` (asks before any look, default off) it asks after a look; when both are on this one acts first. Code
+`robot_agent/options/look_then_ask.py`; switch off: key `enabled` (`$ROBOT_AGENT_LOOK_THEN_ASK`). Not measured.
+
+## A room the person named (option `ask_source`, key `use_room`)
+
+`SearchBelief.prefer(obj, places)` puts the places the person pointed at first in `order()` (`(not preferred, -score, ENV order)`); the route
+weight and the scores still order them among themselves, and the other places follow as the fallback once the preferred ones are searched.
+`first_place(obj, here)` returns a preferred place even when no score is above 0. The option stores the places in `run.pre_prefer`; `_search_start`
+hands them to the belief, asks the ranking once and gives the goal its first place as `from`.

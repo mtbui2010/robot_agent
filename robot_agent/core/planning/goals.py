@@ -45,6 +45,13 @@ GOAL_KINDS: dict = {
                         '(or ""), from "", to = the place.'),
 }
 TEMPLATE_KINDS = ("go", "say", "deliver")
+# Optional kinds of the understand schema (option ``understand_give_kind``): not part of the table above, so the default
+# schema and prompt do not change. A ``give`` goal is an ``on`` goal whose destination is a person (``canonical``).
+OPTIONAL_KINDS: dict = {
+    "give": GoalKind("give", ("Pick", "Place"),
+                     '"give" = hand an object to a person: object = the item, from = where it is now or "", to = the '
+                     'person ("me" when the speaker receives it). Not for putting an object on a place.'),
+}
 
 
 def missing_actions(goal: dict, actions: Iterable[str]) -> list:
@@ -64,16 +71,34 @@ def missing_actions(goal: dict, actions: Iterable[str]) -> list:
     return out
 
 
-def kinds_for(actions: Iterable[str]) -> list:
+def kinds_for(actions: Iterable[str], optional: Iterable[str] = ()) -> list:
     """The goal kinds the understand step may use for a robot with `actions`: the manipulation
     kinds always (so a request the robot cannot do is understood, then refused with a reason),
-    the others only when the robot has their actions."""
+    the others only when the robot has their actions. ``optional``: names from ``OPTIONAL_KINDS`` the caller switched on,
+    added (as the manipulation kinds are) at the end."""
     acts = set(actions)
-    return list(MANIPULATION) + [k for k in TEMPLATE_KINDS if not missing_actions({"type": k}, acts)]
+    return list(MANIPULATION) + [k for k in TEMPLATE_KINDS if not missing_actions({"type": k}, acts)] \
+        + [k for k in optional if k in OPTIONAL_KINDS]
+
+
+def domain_actions() -> list:
+    """Every abstract action the goal tables name (sorted): the vocabulary a refusal may say a robot lacks."""
+    out = set()
+    for kind in list(GOAL_KINDS.values()) + list(OPTIONAL_KINDS.values()):
+        for need in kind.needs:
+            out.update(need if isinstance(need, tuple) else (need,))
+    return sorted(out)
+
+
+def canonical(goals: list) -> list:
+    """The goals with the optional kinds mapped onto the table's: ``give`` -> ``on`` (its destination is the person, the
+    path of "bring me X" / a hand-over). Other goals are passed on unchanged."""
+    return [{**g, "type": "on"} if g.get("type") == "give" else g for g in goals]
 
 
 def prompt_lines(kinds: Iterable[str]) -> str:
-    lines = [GOAL_KINDS[k].prompt for k in kinds if k in GOAL_KINDS and GOAL_KINDS[k].prompt]
+    table = {**GOAL_KINDS, **OPTIONAL_KINDS}
+    lines = [table[k].prompt for k in kinds if k in table and table[k].prompt]
     return "".join(f"\n  {line}" for line in lines)
 
 
@@ -81,9 +106,25 @@ def is_template(goals: list) -> bool:
     return bool(goals) and all(g.get("type") in TEMPLATE_KINDS for g in goals)
 
 
-def conflicts(goals: list) -> tuple:
+def dedupe(goals: list) -> list:
+    """The goals without an exact repeat (same type, object, from, to), the first one kept: a read-back patch that
+    puts the whole list in twice does not make the robot do everything twice."""
+    seen, out = set(), []
+    for g in goals:
+        k = tuple(str(g.get(f) or "") for f in ("type", "object", "from", "to"))
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(g)
+    return out
+
+
+def conflicts(goals: list, name=None, declare: bool = False) -> tuple:
     """(goals, question|None): the goal validator. Two destinations for one object is a question
-    for the person; an open and a close of one container keep the last one (the final state)."""
+    for the person; an open and a close of one container keep the last one (the final state). ``name``: how a
+    place key is said (default: 'shelf@kitchen' -> 'shelf in the kitchen'). ``declare`` (option ``dialog_agree``): the question
+    comes as a ``speech.LocalText`` with the same English text that declares a choice between the places (intent
+    ``choose_place``, the keys as options), so that the answer can settle the option not taken."""
     q, dest = None, {}
     for g in goals:
         if g.get("type") in ("on", "in") and g.get("object"):
@@ -92,8 +133,11 @@ def conflicts(goals: list) -> tuple:
                 dest[g["object"]].append(g["to"])
     for obj, tos in dest.items():
         if len(tos) > 1:
-            nice = [t.replace("@", " in the ") for t in tos]
+            nice = [name(t) if name is not None else t.replace("@", " in the ") for t in tos]
             q = f"Where should the {obj} go in the end: {' or '.join(nice)}? It cannot be in two places."
+            if declare:
+                from .speech import LocalText
+                q = LocalText("_two_places_q", text=q, ask={"intent": "choose_place", "options": list(tos), "about": str(obj)})
             break
     last = {}
     for k, g in enumerate(goals):
@@ -127,10 +171,38 @@ def speaker_slots(goals: list) -> list:
     return out
 
 
+def subgoal_text(g: dict, places=None) -> str:
+    """One goal as the sub-goal phrase the planner expands (``AssistLoop._subgoals``, SAGE-v2 F1.2): what to do
+    with which object, from where (when known) to where, with the ENV keys the plan must use."""
+    t, o = g.get("type"), g.get("object") or ""
+    src = f" (it is at {g['from']})" if g.get("from") else (
+        f" (look for it at {' or '.join(g['from_any'])})" if g.get("from_any") else "")
+    if t == "on":
+        verb = "hand" if g.get("hand") else "put"
+        return f"{verb} the {o}{src} " + (f"to {g['to']}" if g.get("hand") else f"on {g.get('to')}")
+    if t == "in":
+        return f"put the {o}{src} into {g.get('to')}"
+    if t in ("open", "close"):
+        return f"{t} {o}"
+    if t == "go":
+        return f"go to {g.get('to')}"
+    if t == "say":
+        who = g.get("to") or g.get("person") or ""
+        return f"say \"{o}\"" + (f" at {who}" if who else "")
+    if t == "deliver":
+        return f"deliver the {o} to {g.get('to')}" if o else f"deliver what the robot carries to {g.get('to')}"
+    return describe(g)
+
+
 def describe(g: dict) -> str:
     """The goal in the obs / goal-text form: '<type> <object>[ from <from>][ to <to>]'."""
     return (f"{g['type']} {g.get('object') or ''}".rstrip() + (f" from {g['from']}" if g.get("from") else "")
             + (f" to {g['to']}" if g.get("to") else ""))
+
+
+def goal_text(goals) -> str:
+    """The goals as the planner reads them: 'on apple from desk to dining table; ...'."""
+    return "; ".join(describe(g) for g in goals)
 
 
 def summary(g: dict) -> str:
@@ -168,9 +240,17 @@ def compile_steps(goals: list, at: Optional[str], delivery_text: str = "", can_s
     return out
 
 
-def reached(g: dict, steps: list, at: Optional[str]) -> bool:
-    """Does running `steps` from `at` reach the template goal `g`?"""
+def reached(g: dict, steps: list, at: Optional[str], last: bool = False) -> bool:
+    """Does running `steps` from `at` reach the template goal `g`? A ``go`` goal that is the ``last`` goal is
+    judged where the steps END ("go back and charge": the robot must be at the dock afterwards; a robot that
+    started there and left has not reached it, one that never left has); an earlier ``go`` is reached by a
+    MoveTo there in the steps, or by starting there."""
     t, here = g.get("type"), at
+    if t == "go" and last:
+        for st in steps:
+            if st.get("action") == "MoveTo":
+                here = str(st.get("object") or "")
+        return bool(g.get("to")) and here == g.get("to")
     if t == "go" and here == g.get("to"):
         return True                                   # already there
     for st in steps:
@@ -186,10 +266,20 @@ def reached(g: dict, steps: list, at: Optional[str]) -> bool:
     return False
 
 
+def ends_at(goal: dict, obj: str, place: str, ground=None, langs=None) -> bool:
+    """Pure: ``goal`` (an ``on`` / ``in`` goal) puts ``obj`` at ``place``: its object and ``obj`` are one name (the words of one are whole
+    words of the other, ``names.has``) and its destination is ``place`` or grounds to it (``ground``: text -> place key or None)."""
+    from . import names
+    o, to = str(goal.get("object") or ""), str(goal.get("to") or "")
+    if goal.get("type") not in ("on", "in") or not place or not to or not (names.has(o, obj, langs) or names.has(obj, o, langs)):
+        return False
+    return to == place or (ground is not None and ground(to) == place)
+
+
 def _same_text(a, b) -> bool:
     norm = lambda s: " ".join(str(s or "").lower().replace(",", " ").replace(".", " ").split())
     return norm(a) == norm(b)
 
 
 __all__ = ["GoalKind", "GOAL_KINDS", "MANIPULATION", "TEMPLATE_KINDS", "missing_actions", "kinds_for",
-           "prompt_lines", "is_template", "conflicts", "SPEAKER_WORDS", "is_speaker", "speaker_slots", "describe", "summary", "compile_steps", "reached"]
+           "prompt_lines", "is_template", "dedupe", "conflicts", "SPEAKER_WORDS", "is_speaker", "speaker_slots", "describe", "goal_text", "subgoal_text", "summary", "compile_steps", "reached", "ends_at"]

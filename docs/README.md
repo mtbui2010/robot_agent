@@ -11,7 +11,17 @@ Rules and process:
 Core design:
 
 - [contract.md](contract.md): RobotAdapter, manifest, SkillSpec / SkillResult / FailureCode
+- [architecture.md](architecture.md): layers (contract <- engine <- options), what `tools/lint_arch.py` enforces, size baseline and the plan to shrink it
+- [options.md](options.md): the option plug-in interface (spec, keys, hooks, registry), how to write an option, the registered options
+- [bt_goal.md](bt_goal.md): option `bt_goal`: goals with a declared behaviour tree run as trees, the others by SAGE (key `mixed`); data, runner, what is not covered
+- [ask_next.md](ask_next.md): option `ask_next`: after a failed step, ask the person what to do next
+- [heard_check.md](heard_check.md): option `heard_check`: a goal's own quote must be in what was heard
+- [heat_safety.md](heat_safety.md): option `heat_safety`: nothing that can burn goes on a heat source
+- [reach_check.md](reach_check.md): reachability check (TAMP-lite) between the plan and the arm
+- [safety.md](safety.md): the per-robot safety profile (hazard / place / receiver classes and rules as data), the engine, the `refusals` event key
+- [metal_microwave.md](metal_microwave.md): the rule 'no metal in a microwave oven' as safety data (sources, words, gaps); no code
 - [run_manager.md](run_manager.md): run ids, one active run per robot, cancel / pause / inject, intent router
+- [languages.md](languages.md): language packs (data), what a pack may hold, adding a language, scripts
 - [dialog.md](dialog.md): the robot's questions, yes / no answers (unclear ones asked again), typed refusals, the understand call's sampling
 - [planners.md](planners.md): planner interface, optional capabilities (sub-goal repair), plug-ins by `module:Class` / entry point
 - [memory.md](memory.md): the planner's retrieval memory: the manifest seed pool, which runs are recorded, cleaning
@@ -20,6 +30,7 @@ Core design:
 - [guard.md](guard.md): precondition layers (gate, per-step guard, skill), reconcile with the sensors, provenance
 - [search.md](search.md): search with a belief: location prior, one LLM ranking per object, searched places as a hard constraint
 - [observe.md](observe.md): RunRecord, metrics line, replay CLI, `ROBOT_AGENT_DATA_DIR`, `/ws/agent` event schema
+- [trace.md](trace.md): the run trace of option `trace` (one JSONL per run: events, lab entries, LLM calls, recovery decisions), schema 1
 - [action_model_divergence.md](action_model_divergence.md): the one action model and where the old copies differed
 
 Planning layer (moved here from kcare_robot/docs):
@@ -29,3 +40,4 @@ Planning layer (moved here from kcare_robot/docs):
 - [TRACKING_VERIFY_VOICE.md](TRACKING_VERIFY_VOICE.md): run records, layered verification, announcements
 
 Tests: `make test` (see [testing.md](testing.md)).
+- [env.md](env.md): the ENV contract (places, people), the SAGE-v2 manifest keys and options

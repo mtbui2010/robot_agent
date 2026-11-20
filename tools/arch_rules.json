@@ -1,0 +1,25 @@
+{
+ "layers": {
+  "contract": ["robot_agent/contract"],
+  "engine": ["robot_agent/core"],
+  "options": ["robot_agent/options"],
+  "interact": ["robot_agent/interact"],
+  "api": ["robot_agent/api"]
+ },
+ "may_import": {
+  "contract": [],
+  "engine": ["contract"],
+  "options": ["contract", "engine"],
+  "interact": ["contract", "engine"],
+  "api": ["contract", "engine", "interact"]
+ },
+ "no_cross": ["options"],
+ "forbidden_modules": ["bench", "symbolic_robot", "tests", "pytest"],
+ "only_in": {"embodiplan": ["robot_agent/core/planning/backends/", "robot_agent/core/planning/action_model.py"]},
+ "size": [
+  {"path": "robot_agent/core", "max_function": 80, "max_file": 1200},
+  {"path": "robot_agent/contract", "max_function": 80, "max_file": 1200},
+  {"path": "robot_agent/interact", "max_function": 80, "max_file": 1200},
+  {"path": "robot_agent/options", "max_function": 60, "max_file": 400}
+ ]
+}

@@ -82,6 +82,9 @@ all = [
 where = ["."]
 include = ["robot_agent*"]
 
+[tool.setuptools.package-data]
+"robot_agent.core.planning" = ["lang/*.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"

@@ -120,8 +120,8 @@ def test_site_switches_languages_off_and_on(tmp_path, monkeypatch):
 
 def test_site_cannot_add_what_the_manifest_lacks_or_switch_all_off(tmp_path, monkeypatch):
     _demo(monkeypatch)
-    with pytest.raises(ValueError, match="not in this robot's manifest: vi"):
-        L.set_site_languages("demo", tmp_path, ["ko", "vi"])
+    with pytest.raises(ValueError, match="not in this robot's manifest: qq"):
+        L.set_site_languages("demo", tmp_path, ["ko", "qq"])
     with pytest.raises(ValueError, match="at least one"):
         L.set_site_languages("demo", tmp_path, [])
     assert not (tmp_path / "languages.json").exists()
@@ -129,7 +129,7 @@ def test_site_cannot_add_what_the_manifest_lacks_or_switch_all_off(tmp_path, mon
 
 def test_a_stale_or_broken_site_file_is_ignored(tmp_path, monkeypatch):
     _demo(monkeypatch)
-    (tmp_path / "languages.json").write_text('{"enabled": ["vi"]}')                     # nothing the manifest lists: all on
+    (tmp_path / "languages.json").write_text('{"enabled": ["qq"]}')                     # nothing the manifest lists: all on
     assert L.site_languages("demo", tmp_path)["languages"] == ["ko", "en", "ja"]
     (tmp_path / "languages.json").write_text("{oops")
     assert L.site_languages("demo", tmp_path)["languages"] == ["ko", "en", "ja"]

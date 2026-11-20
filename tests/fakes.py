@@ -18,7 +18,7 @@ DATA = Path(__file__).resolve().parent / "data"
 
 
 def load_env() -> dict:
-    """The sim_house ENV (13 places, aliases in ko / vi) used by the SAGE bench."""
+    """The sim_house ENV (13 places, aliases in ko) used by the SAGE bench."""
     return json.loads((DATA / "env_sim_house.json").read_text())
 
 
@@ -285,3 +285,21 @@ def done(evs) -> dict:
     d = [e for e in evs if e["event"] in ("done", "error")]
     assert d, f"no done event in {[e['event'] for e in evs]}"
     return d[-1]
+
+
+def scrub(x):
+    """Events without wall-clock values at any depth and without the run-start reconcile: two runs compared byte for byte (``_empty`` / ``_off``)."""
+    if isinstance(x, dict):
+        return {k: scrub(v) for k, v in x.items() if k not in ("run_id", "t", "ts", "elapsed_s", "started_at", "plan_sec")}
+    if isinstance(x, list):
+        return [scrub(v) for v in x if not (isinstance(v, dict) and v.get("event") == "reconcile")]
+    return x
+
+
+def safety_profile(name: str = "household_fixture"):
+    """A SafetyProfile from tests/fixtures/safety/<name>.yaml (test data: the household copy, the illustrative factory one)."""
+    from pathlib import Path
+    from robot_agent.core.safety import load_profile
+    prof, errs = load_profile(Path(__file__).parent / "fixtures" / "safety" / f"{name}.yaml")
+    assert not errs, errs
+    return prof

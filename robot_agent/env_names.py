@@ -3,7 +3,7 @@
 An ``ENV`` entry is keyed by its canonical name (``'dressroom@main room'``) and
 may list other names for the same spot::
 
-    'dressroom@main room': {'aliases': ['옷장', 'tủ áo', 'closet'], 'loc': {...}, ...}
+    'dressroom@main room': {'aliases': ['옷장', 'closet'], 'loc': {...}, ...}
 
 ``resolve_env_name`` turns whatever a plan or a person said into the canonical
 key, so every skill works with one name per place; ``validate_env`` is run on
@@ -35,9 +35,9 @@ def normalize(name) -> str:
 
 
 def _fold(name: str) -> str:
-    """*name* with Latin diacritics removed ('tủ áo' -> 'tu ao'). Hangul
+    """*name* with Latin diacritics removed ('café' -> 'cafe'). Hangul
     decomposes into jamo, not combining marks, so it comes back unchanged."""
-    s = unicodedata.normalize('NFD', name.replace('đ', 'd'))
+    s = unicodedata.normalize('NFD', name)
     s = ''.join(c for c in s if unicodedata.category(c) != 'Mn')
     return unicodedata.normalize('NFC', s)
 
@@ -148,10 +148,20 @@ def validate_env(env) -> str:
 
 def describe_env(env) -> str:
     """One line per location for a planner prompt:
-    ``- dressroom@main room (also: 옷장, tủ áo)``."""
+    ``- dressroom@main room (also: 옷장, closet)``."""
     lines = []
     for key, spec in env.items():
         al = spec.get('aliases') if isinstance(spec, dict) else None
         al = [a for a in al if isinstance(a, str) and a.strip()] if isinstance(al, list) else []
         lines.append(f'- {key}' + (f' (also: {", ".join(al)})' if al else ''))
     return '\n'.join(lines)
+
+
+def alias_beats_head(env: dict, said: str, hits: list, head) -> list:
+    """The one place whose alias the words ``said`` name in full and longer than the head that matched ``hits`` ('bathroom shelf' is
+    the restroom's shelf, not the kitchen's 'shelf'); [] when there is none or it is ambiguous."""
+    import re
+    top = max((len(head(h)) for h in hits), default=0)
+    found = {k for k in env for a in env[k].get("aliases") or [] if len(normalize(a)) > top and k not in hits
+             and re.search(r"(?<!\w)" + re.escape(normalize(a)) + r"(?!\w)", said)}
+    return list(found) if len(found) == 1 else []

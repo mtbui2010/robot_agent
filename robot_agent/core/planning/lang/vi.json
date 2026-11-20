@@ -1,0 +1,309 @@
+{
+ "lang": "vi",
+ "name": "Vietnamese",
+ "register": "polite spoken Vietnamese (neutral between the northern and southern speech; dạ / ạ where natural)",
+ "review": "DRAFTED BY THE MODEL (Claude), NOT CHECKED BY A NATIVE SPEAKER. Third language of round 16, added as data only to show that a language needs a pack and no code. Every word list below is a draft to be read and corrected by a Vietnamese speaker before it is used in a measurement.",
+ "latin_script": true,
+ "non_ascii_min": 0.25,
+ "detect_marks": "[ăơưđạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹĂƠƯĐẠẢẤẦẨẪẬẮẰẲẴẶẸẺẼẾỀỂỄỆỈỊỌỎỐỒỔỖỘỚỜỞỠỢỤỦỨỪỬỮỰỲỴỶỸ]",
+ "words": {
+  "putin": [
+   "\\bvào\\b",
+   "\\bbên trong\\b",
+   "\\btrong\\b"
+  ],
+  "on_top": [
+   "\\btrên cùng\\b",
+   "\\bphía trên\\b",
+   "\\blên trên\\b",
+   "\\btrên\\b"
+  ],
+  "hand": [
+   "\\b(?:đưa|trao) (?:tận|trực tiếp)\\b",
+   "\\b(?:đưa|trao) (?:vào|lên) tay\\b",
+   "\\btận tay\\b",
+   "\\btrao tay\\b"
+  ],
+  "first_person": [
+   "\\btôi\\b",
+   "\\bmình\\b",
+   "\\btui\\b",
+   "\\btớ\\b"
+  ],
+  "recipient": [
+   "\\bcho (?:tôi|mình|tui|tớ)\\b",
+   "\\b(?:mang|đem|đưa|lấy|chuyển)\\b",
+   "\\b(?:ở|qua|đến|lại|tới) đây\\b"
+  ],
+  "tell": [
+   "\\bbảo\\b",
+   "\\bnói với\\b",
+   "\\bnhắn\\b",
+   "\\bbáo\\b",
+   "\\bnhắc\\b",
+   "\\bthông báo\\b",
+   "\\bhỏi\\b"
+  ],
+  "open_words": [
+   "\\bmở\\b"
+  ]
+ },
+ "answer_unsure": [
+  "không biết",
+  "không rõ",
+  "không chắc",
+  "chẳng biết",
+  "chả biết",
+  "không nhớ",
+  "quên rồi",
+  "chưa chắc"
+ ],
+ "articles": [
+  "cái",
+  "chiếc",
+  "con",
+  "quả",
+  "các",
+  "những",
+  "mấy"
+ ],
+ "patterns": {
+  "into_before": "\\b(?:vào|bên trong|trong)\\s+(?:cái\\s+|chiếc\\s+|các\\s+|những\\s+)?(?:[\\w'-]+\\s+){0,2}$",
+  "ontop_before": "\\b(?:trên cùng|phía trên|lên trên)\\s+(?:cái\\s+|chiếc\\s+)?(?:[\\w'-]+\\s+){0,2}$",
+  "on_before": "\\b(?:trên|lên|phía trên)\\s+(?:cái\\s+|chiếc\\s+|mặt\\s+)?(?:[\\w'-]+\\s+){0,2}$",
+  "open_verb": "\\bmở\\b",
+  "close_verb": "\\b(?:đóng|khép)\\b",
+  "self_correction": "(?:\\.\\.\\.|,|-)?\\s*\\b(?:à không|ý tôi là|nhầm rồi|nhầm|khoan đã|thực ra|xin lỗi)\\b",
+  "addressee": "\\b(?:nói với|bảo|nhắn|báo|nhắc|hỏi)\\s+(?:cho\\s+)?(?:ông\\s+|bà\\s+|anh\\s+|chị\\s+|em\\s+|cô\\s+|chú\\s+|bác\\s+)?{name}\\b"
+ },
+ "grammar": {
+  "sep_or": " hoặc ",
+  "speaker_forms": [
+   "tôi",
+   "mình",
+   "tui",
+   "tớ",
+   "chỗ tôi",
+   "đây",
+   "ở đây"
+  ],
+  "speaker_forms_weak": [
+   "đây",
+   "ở đây"
+  ]
+ },
+ "dialogue": {
+  "yes": [
+   "vâng",
+   "dạ",
+   "đúng rồi",
+   "đúng",
+   "phải rồi",
+   "ừ",
+   "được",
+   "ok",
+   "okay",
+   "chính xác",
+   "đồng ý"
+  ],
+  "no": [
+   "không phải",
+   "không",
+   "sai rồi",
+   "sai",
+   "chưa phải"
+  ],
+  "fillers": [
+   "ừm",
+   "ờ",
+   "ơ",
+   "hừm",
+   "hả",
+   "hử",
+   "gì",
+   "xin",
+   "lỗi",
+   "thế",
+   "vậy",
+   "à"
+  ],
+  "near_yes_no": [
+   "vang",
+   "khong",
+   "dung",
+   "da",
+   "vâg",
+   "dà",
+   "khôg"
+  ],
+  "polite": [
+   "ạ",
+   "dạ",
+   "thưa"
+  ],
+  "stop": [
+   "dừng",
+   "dừng lại",
+   "dừng lại ngay",
+   "dừng ngay",
+   "ngừng",
+   "thôi",
+   "đủ rồi",
+   "hủy",
+   "hủy bỏ",
+   "đứng lại"
+  ],
+  "pause": [
+   "đợi",
+   "chờ",
+   "đợi chút",
+   "chờ chút",
+   "đợi một chút",
+   "chờ một chút",
+   "đợi tí",
+   "chờ tí",
+   "khoan",
+   "khoan đã",
+   "tạm dừng"
+  ],
+  "resume": [
+   "tiếp tục",
+   "làm tiếp",
+   "tiếp đi",
+   "cứ làm tiếp",
+   "làm đi"
+  ],
+  "tail": [
+   "ngay",
+   "đi",
+   "nhé",
+   "nha",
+   "ạ",
+   "đã",
+   "lập tức",
+   "ngay lập tức",
+   "robot",
+   "làm ơn"
+  ],
+  "head": [
+   "làm ơn",
+   "robot",
+   "này",
+   "ơi",
+   "ok",
+   "okay",
+   "ừ",
+   "à",
+   "ờ",
+   "vâng",
+   "dạ",
+   "thưa"
+  ],
+  "negation_words": [
+   "đừng",
+   "chớ",
+   "chẳng",
+   "chả"
+  ],
+  "negation_contains": [
+   "không cần",
+   "đừng có"
+  ],
+  "fallback_status": [
+   "đang làm gì",
+   "đang làm gì đấy",
+   "tiến độ",
+   "tình hình",
+   "xong chưa",
+   "đã xong chưa",
+   "đang ở đâu"
+  ],
+  "fallback_drop": [
+   "bỏ qua",
+   "thôi đừng",
+   "khỏi cần",
+   "khỏi",
+   "đừng mang",
+   "không cần nữa"
+  ],
+  "fallback_modify": [
+   "thay vì",
+   "thay vào đó",
+   "đổi sang",
+   "không phải cái",
+   "ý tôi là"
+  ],
+  "fallback_add": [
+   "với lại",
+   "sau đó",
+   "thêm một",
+   "một cái nữa",
+   "cả"
+  ]
+ },
+ "dialogue_ext": {
+  "answer_unsure": [
+   "không biết",
+   "không rõ",
+   "không nhớ",
+   "không chắc",
+   "quên rồi"
+  ],
+  "room_names": {
+   "bedroom": [
+    "phòng ngủ"
+   ],
+   "kitchen": [
+    "bếp",
+    "nhà bếp",
+    "phòng bếp"
+   ],
+   "living room": [
+    "phòng khách"
+   ],
+   "bathroom": [
+    "phòng tắm",
+    "nhà tắm",
+    "nhà vệ sinh"
+   ],
+   "restroom": [
+    "nhà vệ sinh",
+    "toilet"
+   ],
+   "study": [
+    "phòng làm việc",
+    "phòng học",
+    "thư phòng"
+   ],
+   "study room": [
+    "phòng làm việc",
+    "phòng học"
+   ],
+   "kids room": [
+    "phòng trẻ em",
+    "phòng của bé",
+    "phòng con"
+   ],
+   "dining room": [
+    "phòng ăn"
+   ],
+   "hallway": [
+    "hành lang"
+   ],
+   "entrance": [
+    "lối vào",
+    "cửa chính"
+   ],
+   "balcony": [
+    "ban công"
+   ],
+   "laundry room": [
+    "phòng giặt"
+   ]
+  }
+ },
+ "object_aliases": [
+  "cốc|ly",
+  "thìa|muỗng"
+ ]
+}

@@ -212,3 +212,7 @@ skills:
     interruptible: true
     errors: [hw_fault, timeout, software]
     version: "1.0"
+
+# a household-style test robot: the test fixture profile (tests/fixtures/safety), so the hazard gate tests run on a profile
+safety:
+  profile: ../../fixtures/safety/household_fixture.yaml

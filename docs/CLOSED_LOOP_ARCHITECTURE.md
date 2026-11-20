@@ -122,7 +122,7 @@ optional (only `GraceBackend` ever imports it, lazily).
 
 ```mermaid
 sequenceDiagram
-  participant U as User (NL, vi/en)
+  participant U as User (NL, ko/en)
   participant UA as UnifiedAgent.run
   participant CL as ClosedLoop ★
   participant NM as grace_namemap.observe()

@@ -294,6 +294,15 @@ def _serialize_result(obj: Any) -> Any:
     return {'__type__': type(obj).__name__, 'repr': repr(obj)[:200]}
 
 
+def _loop_translates(planner, options) -> bool:
+    """Does the SAGE loop's own language layer (``input_pivot`` translate | both: ENV names given to the translator, the original kept for
+    ``said``) read the request, so that the plain translation here must not run first? Then the task reaches the loop in the user's language."""
+    import os
+    sage = planner == 'sage' or (not planner and os.environ.get('ROBOT_AGENT_PLANNER') == 'sage')
+    pivot = str((options or {}).get('input_pivot') or os.environ.get('ROBOT_AGENT_INPUT_PIVOT') or 'none').lower()
+    return bool(sage and pivot in ('translate', 'both'))
+
+
 class UnifiedAgent:
     def __init__(self, skill_registry, device_manager):
         self.skill_registry = skill_registry
@@ -345,7 +354,7 @@ class UnifiedAgent:
                     emit({'event': 'log_dir', 'log_dir': _ds_dir})
 
                 prompt_en = prompt
-                if lang != 'en':
+                if lang != 'en' and not _loop_translates(planner, options):
                     emit({'event': 'status', 'msg': 'Translating...'})
                     from ..utils import translate
                     prompt_en = translate(prompt, to_language='english',
@@ -476,7 +485,9 @@ class UnifiedAgent:
         announcer = Announcer(lang=lang, speak_backend=False)
 
         def _hangul(text) -> bool:
-            return any('\uac00' <= ch <= '\ud7a3' for ch in str(text or ''))
+            """Is the text written in the script of a language with a pack (``script.letters``; Korean ships one)?"""
+            from .planning import langdata
+            return langdata.any_script(text)
 
         def _step_say(kind, vo, **kw):
             """(phrase, its language) for a step, in the run's language. A step written
