@@ -140,6 +140,10 @@ class LoopServices:
     def goal_phrase(self, goal, places):
         return self._lp._goal_phrase(goal, places, lambda k: speech.say_name(places, k, "en"))
 
+    def readback(self, run, goals=None):
+        """The read-back sentence of ``goals`` (default the run's goals): "I will ..., then ...", as the loop reads goals back to the person."""
+        return self._lp.summary(run.goals if goals is None else goals, getattr(run, "places", None))
+
     def subgoals(self, run):
         """The planner's sub-goals for the run's goals now (one per goal), or None when the planner decomposes itself."""
         return self._lp._subgoals(run)

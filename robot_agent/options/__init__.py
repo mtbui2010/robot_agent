@@ -16,3 +16,4 @@ from . import shared_instances   # noqa: F401,E402  (a new option on a line of i
 from . import look_then_ask   # noqa: F401,E402  (a new option on a line of its own)
 from . import bring_ask   # noqa: F401,E402  (a new option on a line of its own)
 from . import fetch_guard   # noqa: F401,E402  (a new option on a line of its own)
+from . import goals_only   # noqa: F401,E402  (a new option on a line of its own)
