@@ -40,7 +40,7 @@ def snapshot(lp):
 
 def test_refresh_options_a_manifest_that_did_not_change_gives_the_same_keys_and_options_empty(loop):
     before = snapshot(loop)
-    refresh_options(loop, {"input_pivot": "none", "look_then_ask": "0", "bring_ask": "0"})
+    refresh_options(loop, {"input_pivot": "none", "look_then_ask": "0", "bring_ask": "0", "bt_goal": "0"})
     assert snapshot(loop) == before
 
 

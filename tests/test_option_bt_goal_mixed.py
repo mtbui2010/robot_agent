@@ -66,7 +66,7 @@ def _run(make_assist, goals, plans, mixed=True, trees=TREES, faults=(), replans=
     und = {"status": "clear", "reason": "", "question": "", "goals": [dict(g) for g in goals]}
     robot = FakeRobot(ENV, objects or {"gizmo": SHELF, "widget": CRATE}, faults=list(faults), start=start)
     planner = PlanPerCall(plans, replans)
-    opts = {"bt_goal": "1", **({"bt_goal.mixed": "1"} if mixed else {})}
+    opts = {"bt_goal": "1", "bt_goal.mixed": "1" if mixed else "0"}
     loop = make_assist(robot, FakeLLM(default=und), planner, detector_miss_rate=0, search_legs=1, health_wait_s=0, **opts)
     loop.robot.manifest.planner = {**(loop.robot.manifest.planner or {}), "options": {"bt_goal": {"trees": trees, "menu": MENU}}}
     return loop, robot, planner, run_task(loop, task_of(goals), max_events=3000)
@@ -85,8 +85,8 @@ def _where(robot, obj):
 
 
 # ── the data: a tree for some goals only ───────────────────────────────────────────────────────────────────────────────────────
-def test_registered_mixed_is_off_by_default():
-    assert REGISTRY.get("bt_goal").key("mixed").default is False
+def test_registered_bt_goal_and_mixed_are_on_by_default_and_do_nothing_without_trees(make_assist):
+    assert REGISTRY.get("bt_goal").key("mixed").default is True and REGISTRY.get("bt_goal").key("enabled").default is True
 
 
 def test_plan_trees_mixed_keeps_the_gaps_and_is_none_only_when_no_goal_has_a_tree_empty():

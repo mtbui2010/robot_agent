@@ -302,8 +302,8 @@ def _skills(robot):
     return [t[:2] for t in robot.trace if t[0] in ("move", "find", "pick", "place")]
 
 
-def test_registered_and_off_by_default_sage_plans_off(make_assist):
-    assert "bt_goal" in ASSIST_OPTIONS and REGISTRY.get("bt_goal").key("enabled").default is False and B.SPEC.enabled == "enabled"
+def test_registered_on_by_default_and_pinned_off_here_sage_plans_off(make_assist):
+    assert "bt_goal" in ASSIST_OPTIONS and REGISTRY.get("bt_goal").key("enabled").default is True and B.SPEC.enabled == "enabled"
     assert REGISTRY.get("bt_goal").key("exhausted").default == "ask_or_stop"
     loop, robot, planner, evs = _run(make_assist, on=False)
     assert planner.calls[0][0] == "generate_plan" and not _flags(loop) and done(evs)["status"] == "success"

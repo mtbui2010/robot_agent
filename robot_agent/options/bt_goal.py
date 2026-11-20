@@ -1,18 +1,18 @@
-"""Option ``bt_goal`` (default off): each goal is a small declared system, a behaviour tree given as data for its kind, not a SAGE plan.
+"""Option ``bt_goal`` (default ON, and it does nothing for a robot that declares no ``trees``): each goal is a small declared system, a behaviour tree given as data for its kind, not a SAGE plan.
 
-What: service ``runs_goals`` says yes when EVERY goal has a usable tree (``tree_for``); the planner is then not called. Hook ``on_run_goals`` ticks
+What: service ``runs_goals`` says yes when a goal has a usable tree (``tree_for``; key ``mixed``, default ON, below; with it off: when EVERY goal has one); the planner is then not called for those goals. Hook ``on_run_goals`` ticks
 the trees in goal order (``core/planning/behavior_tree.py``): ``act`` = one engine step WITH the engine's own recovery ladder (``try_step`` ladder:
 retry, wait schedule, search legs, refind, its help question); only the ladder's planner rung is held back (service ``no_replan``) and fails the
 Act. A no-retry code ends the run at once. A tree with no way left: ``exhausted_action`` on the failed code's rule of the same declared table.
 Key ``exhausted``: ``ask_or_stop`` (default) asks once per goal (``menu`` phrases) when a person can help and ticks the tree once more on a yes or
 a place, else reports and stops; ``sage_once`` hands the remaining goals and the facts to the SAGE planner once where A would stop.
-Key ``mixed`` (default off): goals of a kind WITHOUT a tree no longer make SAGE plan the whole run: the goals go in the reader's order; a run of
+Key ``mixed`` (default ON): goals of a kind WITHOUT a tree no longer make SAGE plan the whole run: the goals go in the reader's order; a run of
 goals with trees is ticked, a run of goals without trees is planned by SAGE once, from the world as it is then (service ``plan_goals``), and its
 steps run through the engine's own step path and ladder; a step with no way left hands the goals left to SAGE (``_to_sage``). Not one goal has
 a tree: SAGE plans the run as when off.
 Why: a declared control flow per goal kind, the engine's own recovery inside it, no planner call unless the policy says so (docs/bt_goal.md).
 Data: ``planner.options.bt_goal.trees`` {type: {tree, skip_if, needs_openable, source | assumed} or a list, first usable}, ``menu``.
-Switch off: key ``enabled`` (run option ``bt_goal``), off by default. Event: lab flag ``bt_goal``: {goal, status} ("claimed", per goal, the
+Switch off: key ``enabled`` (run option ``bt_goal=0``), on by default. Event: lab flag ``bt_goal``: {goal, status} ("claimed", per goal, the
 exhausted action) and {goal, node, status} per node.
 """
 
@@ -36,9 +36,9 @@ CHANGED = "changed"                            # a tree status of its own: a goa
 HEALTH = (Recovery.WAIT_HEALTH, Recovery.HEALTH_CHECK)   # rules about the robot's own health: no person can help
 SPEC = OptionSpec(
     name=FLAG,
-    keys=(Key("enabled", "bool", False, aliases=(FLAG,)), Key("trees", "dict", {}, sources=("manifest",)),
+    keys=(Key("enabled", "bool", True, aliases=(FLAG,)), Key("trees", "dict", {}, sources=("manifest",)),
           Key("exhausted", "str", POLICIES[0], choices=POLICIES), Key("menu", "dict", {}, sources=("manifest",)),
-          Key("mixed", "bool", False)),
+          Key("mixed", "bool", True)),
     hooks=("on_run_goals", "on_step_failed"),
     services=("runs_goals", "no_replan"),
     order=5,
@@ -216,7 +216,7 @@ class BtGoal(Option):
 
     def runs_goals(self, run):
         """Service: True when every goal of ``run`` has a usable tree (they are kept for ``on_run_goals``), else None (SAGE plans)."""
-        found = self._trees(run, list(getattr(run, "goals", None) or ()), mixed=bool(self._key("mixed")))
+        found = self._trees(run, list(getattr(run, "goals", None) or ()), mixed=self.cfg.get("mixed", True) is not False)    # not ``_key``: it reads a False (a run option set to 0) as empty and gives the default
         self._state(run)["trees"] = found
         if found:
             self.svc.lab(FLAG, goal=len(found), status="claimed")

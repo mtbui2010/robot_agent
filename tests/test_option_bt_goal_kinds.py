@@ -133,10 +133,10 @@ def understood(*goals):
     return {"status": "clear", "reason": "", "question": "", "goals": [{"type": t, "object": o, "from": "", "to": to} for t, o, to in goals]}
 
 
-def _cart(make_assist, env, goals, on=True, trees=TREES, fails=None, answers=(), policy=None, menu=None):
+def _cart(make_assist, env, goals, on=True, trees=TREES, fails=None, answers=(), policy=None, menu=None, mixed=True):
     bot = CartBot(env, fails, answers)
     planner = ScriptedPlanner([])
-    opts = {**({"bt_goal": "1"} if on else {}), **({"bt_goal.exhausted": policy} if policy else {})}
+    opts = {**({"bt_goal": "1"} if on else {}), **({"bt_goal.exhausted": policy} if policy else {}), "bt_goal.mixed": "1" if mixed else "0"}
     loop = make_assist(bot, FakeLLM(default=understood(*goals)), planner, **opts)
     loop.robot, loop.sr = RobotView(bot), bot
     data = {k: v for k, v in (("trees", trees), ("menu", menu)) if v is not None}
@@ -174,7 +174,7 @@ def test_loop_say_with_no_usable_data_is_byte_identical_to_off_empty(make_assist
         agent_state.world = WorldState()
         loop, bot, _p, evs = _cart(make_assist, env, SAY_GO, trees=trees, **o)
         return json.dumps(scrub(evs), sort_keys=True, default=str), bot.trace, loop.lab_log
-    assert run(on=True) == run(on=False)
+    assert run(on=True, mixed=False) == run(on=False)      # all or nothing: key mixed (default ON) has its own tests
 
 
 MENU = {"phrases": {"MoveTo": "q_ask_next_move"}, "retry": ["ask_next.retry", "dialogue.yes"], "stop": ["ask_next.stop", "dialogue.stop"],

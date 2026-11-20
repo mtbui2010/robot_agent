@@ -1,10 +1,10 @@
-# bt_goal: each goal run by a small declared system, a behaviour tree given as data (default off)
+# bt_goal: each goal run by a small declared system, a behaviour tree given as data (default ON; a robot with no declared trees is unchanged)
 
-**Idea.** The reader (LLM) makes the goals; when EVERY goal has a usable tree for its kind, the trees run the goals and the planner is not
+**Idea.** The reader (LLM) makes the goals; with `mixed` off (see Mixed below), when EVERY goal has a usable tree for its kind, the trees run the goals and the planner is not
 called. All or nothing: one goal without a tree (a kind with none, a `skip_if` field set, a slot not filled, an action or Ask skill the robot
 lacks, a phrase its language lacks) and SAGE plans the whole run, as when off.
 
-**Mixed (key `mixed`, default off).** All or nothing is the default. With `mixed` on, goals of a kind WITHOUT a tree no longer make SAGE plan the
+**Mixed (key `mixed`, default ON).** All or nothing is what `mixed` off gives (run option `bt_goal.mixed=0`). With `mixed` on (the default), goals of a kind WITHOUT a tree no longer make SAGE plan the
 whole run: the goals go in the reader's order. A run of neighbouring goals WITH trees is ticked as above. A run of neighbouring goals WITHOUT a
 tree is planned by the SAGE planner ONCE, when the run reaches it, from the world as it is then (so it sees what the trees before it did; core
 service `plan_goals(run, goals)`: the planner's steps for those goals alone, grounded and tidied), and its steps run one by one through
@@ -52,7 +52,7 @@ calls when nothing fails) and has no entry condition (no belief predicate reads 
 **Engine touch (core).** Service `runs_goals` (asked once in `_plan_phase`), hook `on_run_goals` (start of `_execute_phase`), service `try_step`
 (key `ladder`: drain the ladder's spliced steps), `changes_waiting` and service `no_replan` (asked at the top of `_sage_replan`; nobody answers it by default).
 
-**Switch off:** key `enabled` (run option `bt_goal`), default off. **Event:** lab flag `bt_goal`: `{goal, status}` ("claimed" once, per goal its
+**Switch off:** key `enabled` (run option `bt_goal=0`), default ON (it does nothing for a robot that declares no `trees`). **Event:** lab flag `bt_goal`: `{goal, status}` ("claimed" once, per goal its
 end, `exhausted` with the action taken) and `{goal, node, status}` per node.
 **Goal changes.** A correction said while a tree runs ends the trees before the next Act (status `changed`, service `changes_waiting`); the
 engine applies it at its step boundary as for a plan (its repair, a SAGE replan for the new goals).
