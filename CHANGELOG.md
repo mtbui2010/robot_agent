@@ -5,6 +5,9 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+### Fix: an old `found` no longer skips the Find (2026-11-20)
+- 2026-11-20 At run start (the sensor reconcile of the AssistLoop) an object kept as `found` from an earlier run is dropped when the base has moved more than 0.25 m from where it was seen (`reconcile.drop_stale_found`, using `WorldState.found_pose_is_stale`); the report of the reconcile event names it (`found_dropped`). Why: on the real kcare robot a run started with `found=plastic spoon` from a find made 10 minutes and more than 3 m earlier; the planner trusted it, skipped the Find, went to the destination and never asked where the object was. A sighting with no base pose, or a pose that cannot be read, is left as it is (not provable). Tests: `tests/test_reconcile_stale_found.py`.
+
 ### Renamed: GRACE is now SAGE (2026-11-20)
 - 2026-11-20 The planner GRACE is now SAGE in robot_agent: backend `GraceBackend` -> `SageBackend` (`backends/pyplanner_grace.py` -> `pyplanner_sage.py`), registry key `sage`, `grace_namemap` -> `sage_namemap`, memory kind `grace_memory` -> `sage_memory`, extra `.[sage]`; the request name of the plain ClosedLoop is now `sage_plain` (`sage` = AssistLoop, `direct` unchanged; with `ROBOT_AGENT_CLOSED_LOOP=1` the default is `sage_plain`). Five bridges, no behaviour change on a robot: registry key `grace` -> `sage` and request name `grace` -> `sage_plain` (both case-insensitive, one deprecation warning per process); a robot package with only `configs.grace_namemap` still loads (`sage_namemap` first); an existing `grace_memory` store is copied once on first use; `.[grace]` stays an alias of `.[sage]`. Records: a plain-loop run writes planner `sage_plain`, AssistLoop `sage+assist` (cfg `planner: "sage"`); old records with `grace` still replay. New tests `tests/test_grace_bridges.py`. The dashboard still sends `grace` (works via the bridge). See `docs/planners.md`.
 

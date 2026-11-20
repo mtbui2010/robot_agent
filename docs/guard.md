@@ -26,8 +26,9 @@ Code: `core/planning/reconcile.py` (pose / containers -> belief, the `arrived` g
    (operator / belief) is checked against a fresh pose for a step that acts at a place (Find, Pick,
    Place, PutIn, Open, Close): when the pose puts the robot elsewhere the belief is fixed and the
    event `recover kind=reconcile` (`was`, `now`, `msg`) is sent. A believed-held object the holding
-   sensor does not see is dropped the same way. A violation that remains goes to the planner's
-   replan (`precondition: ...`).
+   sensor does not see is dropped the same way. An object kept as `found` from an earlier run is dropped at run start when the base
+   has moved more than 0.25 m from where it was seen (`reconcile.drop_stale_found`; a sighting with no base pose, or no readable pose, is
+   left as it is). A violation that remains goes to the planner's replan (`precondition: ...`).
 3. **Skill** (on the robot): the skill checks its own preconditions and fails with a FailureCode
    (`unreachable`, `grasp_failed`, ...) handled by the recovery policy.
 
