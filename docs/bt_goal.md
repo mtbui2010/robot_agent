@@ -4,6 +4,16 @@
 called. All or nothing: one goal without a tree (a kind with none, a `skip_if` field set, a slot not filled, an action or Ask skill the robot
 lacks, a phrase its language lacks) and SAGE plans the whole run, as when off.
 
+**Mixed (key `mixed`, default off).** All or nothing is the default. With `mixed` on, goals of a kind WITHOUT a tree no longer make SAGE plan the
+whole run: the goals go in the reader's order. A run of neighbouring goals WITH trees is ticked as above. A run of neighbouring goals WITHOUT a
+tree is planned by the SAGE planner ONCE, when the run reaches it, from the world as it is then (so it sees what the trees before it did; core
+service `plan_goals(run, goals)`: the planner's steps for those goals alone, grounded and tidied), and its steps run one by one through
+`try_step(..., ladder=True)` (the engine's own step path and ladder, the planner rung held back). A step with no way left hands the goals LEFT
+(this part and every goal after it, trees included) to the SAGE replan once (`_to_sage`). Calls: one planner call per run of neighbouring
+goals without a tree (none when every goal has a tree). No goal with a tree: SAGE plans the run, byte for byte as when off. **Not covered:**
+the plan of a SAGE part skips the loop's certify gate (`_check`, the repair), only the planner's own verifier runs; a goal change said while
+a part runs ends it like a tree (the engine applies the change).
+
 **Runner** (`core/planning/behavior_tree.py`, pure, no clock): a node is `[type, *args]`: `sequence`, `fallback`, `retry n child`, the leaves
 `cond name *slots` (reads the belief: `holding`, `hand_free`, `at`, `placed`, `opened`, `closed`), `act Action slot` (one robot step), `ask key
 refs`, `confirm key`, `reply key` (pack phrases). Slots `{object}`, `{from}`, `{to}` come from the goal (`{from}` empty: the engine's trusted

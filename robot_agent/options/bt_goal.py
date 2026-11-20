@@ -6,6 +6,10 @@ retry, wait schedule, search legs, refind, its help question); only the ladder's
 Act. A no-retry code ends the run at once. A tree with no way left: ``exhausted_action`` on the failed code's rule of the same declared table.
 Key ``exhausted``: ``ask_or_stop`` (default) asks once per goal (``menu`` phrases) when a person can help and ticks the tree once more on a yes or
 a place, else reports and stops; ``sage_once`` hands the remaining goals and the facts to the SAGE planner once where A would stop.
+Key ``mixed`` (default off): goals of a kind WITHOUT a tree no longer make SAGE plan the whole run: the goals go in the reader's order; a run of
+goals with trees is ticked, a run of goals without trees is planned by SAGE once, from the world as it is then (service ``plan_goals``), and its
+steps run through the engine's own step path and ladder; a step with no way left hands the goals left to SAGE (``_to_sage``). Not one goal has
+a tree: SAGE plans the run as when off.
 Why: a declared control flow per goal kind, the engine's own recovery inside it, no planner call unless the policy says so (docs/bt_goal.md).
 Data: ``planner.options.bt_goal.trees`` {type: {tree, skip_if, needs_openable, source | assumed} or a list, first usable}, ``menu``.
 Switch off: key ``enabled`` (run option ``bt_goal``), off by default. Event: lab flag ``bt_goal``: {goal, status} ("claimed", per goal, the
@@ -33,7 +37,8 @@ HEALTH = (Recovery.WAIT_HEALTH, Recovery.HEALTH_CHECK)   # rules about the robot
 SPEC = OptionSpec(
     name=FLAG,
     keys=(Key("enabled", "bool", False, aliases=(FLAG,)), Key("trees", "dict", {}, sources=("manifest",)),
-          Key("exhausted", "str", POLICIES[0], choices=POLICIES), Key("menu", "dict", {}, sources=("manifest",))),
+          Key("exhausted", "str", POLICIES[0], choices=POLICIES), Key("menu", "dict", {}, sources=("manifest",)),
+          Key("mixed", "bool", False)),
     hooks=("on_run_goals", "on_step_failed"),
     services=("runs_goals", "no_replan"),
     order=5,
@@ -91,9 +96,12 @@ def _filled(entry, goal, actions, can_ask, has_phrase, values, openable=None) ->
     return tree
 
 
-def plan_trees(goals, trees, actions, can_ask: bool, has_phrase, source=lambda obj: None, extra=None, openable=None) -> Optional[list]:
-    """One filled tree per goal, in goal order; None when any goal has none (then SAGE plans the whole run)."""
+def plan_trees(goals, trees, actions, can_ask: bool, has_phrase, source=lambda obj: None, extra=None, openable=None, mixed: bool = False) -> Optional[list]:
+    """One filled tree per goal, in goal order; None when any goal has none (then SAGE plans the whole run). ``mixed``: a goal without a tree is
+    None in the list (SAGE plans it), and the result is None only when NO goal has a tree."""
     out = [tree_for(g, trees, actions, can_ask, has_phrase, source(g.get("object")), extra, openable) for g in goals or ()]
+    if mixed:
+        return out if any(t is not None for t in out) else None
     return out if out and all(t is not None for t in out) else None
 
 
@@ -197,18 +205,18 @@ class BtGoal(Option):
     def _key(self, name):
         return pack_data.fresh(SPEC, self.cfg, pack_data.planner_of(self.svc), name)
 
-    def _trees(self, run, goals):
+    def _trees(self, run, goals, mixed=False):
         robot, lang = self.svc.robot, getattr(run, "lang", None) or "en"
         spec, text, places = getattr(robot, "ask_spec", None), getattr(robot, "text", None), getattr(run, "places", None)
         return plan_trees(goals, self._key("trees"), set(getattr(robot, "plan_actions", None) or ()), callable(spec) and spec() is not None,
                           lambda k: speech.pack_phrase(robot, k, lang, object="", place="") is not None,
                           lambda obj: self.svc.remembered(run, obj) if obj else None,
                           {DELIVERY: text(DELIVERY, lang) if callable(text) else ""},
-                          lambda k: places is not None and declared_openable(getattr(places, "env", None), k, places.openable))
+                          lambda k: places is not None and declared_openable(getattr(places, "env", None), k, places.openable), mixed)
 
     def runs_goals(self, run):
         """Service: True when every goal of ``run`` has a usable tree (they are kept for ``on_run_goals``), else None (SAGE plans)."""
-        found = self._trees(run, list(getattr(run, "goals", None) or ()))
+        found = self._trees(run, list(getattr(run, "goals", None) or ()), mixed=bool(self._key("mixed")))
         self._state(run)["trees"] = found
         if found:
             self.svc.lab(FLAG, goal=len(found), status="claimed")
@@ -244,16 +252,45 @@ class BtGoal(Option):
     def on_run_goals(self, run):
         """Flow: tick each goal's tree in order; a tree with no way left goes to ``_exhausted``. STOP: the run ended; NEXT: the plan's end."""
         goals, trees = list(run.goals), self._state(run)["trees"]
-        for idx, (goal, tree) in enumerate(zip(goals, trees or ())):
-            status = yield from self._tick(run, idx, goal, tree)
-            if status == bt.FAILURE:
-                status = yield from self._exhausted(run, idx, goal, goals[idx:])
+        idx = 0
+        while idx < len(goals) and idx < len(trees or ()):
+            goal, tree, n = goals[idx], trees[idx], 1
+            if tree is None:                                 # key mixed: a run of goals without a tree, planned by SAGE at this point
+                while idx + n < min(len(goals), len(trees)) and trees[idx + n] is None:
+                    n += 1
+                status = yield from self._sage_goals(run, idx, goals[idx:idx + n], goals[idx:])
+            else:
+                status = yield from self._tick(run, idx, goal, tree)
+                if status == bt.FAILURE:
+                    status = yield from self._exhausted(run, idx, goal, goals[idx:])
             self.svc.lab(FLAG, goal=f"{goal.get('type')} {goal.get('object')} {goal.get('to')}", status=status)
             if status in (bt.STOPPED, STOP):
                 return STOP
             if status in (NEXT, CHANGED):
                 return NEXT                                  # SAGE took the remaining goals over / the engine applies the change
+            idx += n
         return NEXT if trees else None
+
+    def _sage_goals(self, run, idx, part, left):
+        """Flow (key ``mixed``): the goals ``part`` (no tree) planned by SAGE now, from the world as it is, and run step by step through the engine's
+        own path and ladder; the planner rung is held back, so a step with no way left hands ``left`` to SAGE once (``_to_sage``). A tree status."""
+        s = self._state(run)
+        steps = self.svc.plan_goals(run, part)
+        self.svc.lab(FLAG, goal=idx, status="sage", steps=[f"{x.get('action')} {x.get('object')}" for x in steps], count=len(part))
+        waits = getattr(self.svc, "changes_waiting", None)
+        for st in steps:
+            if callable(waits) and waits(run):
+                return CHANGED
+            s["active"], s["failed"] = True, None
+            try:
+                ok = yield from self.svc.try_step(run, st, ladder=True)
+            finally:
+                s["active"] = False
+            if ok is None:
+                return bt.STOPPED
+            if not ok:
+                return (yield from self._to_sage(run, s["failed"] or {}, left))
+        return bt.SUCCESS
 
     def _exhausted(self, run, idx, goal, left):
         """Flow: the goal's tree has no way left: one more tick when the object memory now names another place (a person's answer to the

@@ -91,6 +91,22 @@ class LoopServices:
         own = last is not None and last.index == len(run.steps) - 1      # of the step itself, not of a step the ladder put before it
         return (own and last.status == "success") or any(c is run.steps[-1] for c in run.completed[n:])
 
+    def plan_goals(self, run, goals):
+        """The planner's steps for ``goals`` alone (a part of the run's goals), planned from the world now: grounded and tidied, not
+        yet run (the caller runs them, e.g. through ``try_step``). A request of template goals only (go / say / deliver) is compiled as the
+        engine compiles it. Raises what the planner raises (the budget, a cancel); the run's own goals are kept."""
+        from . import goals as goal_kinds
+        lp, keep = self._lp, (run.goals, run.goal_txt)
+        run.goals, run.goal_txt = list(goals), goal_kinds.goal_text(goals)
+        try:
+            if goal_kinds.is_template(run.goals):
+                raw = goal_kinds.compile_steps(run.goals, run.world.arrived, run.robot.text("delivery", run.lang), can_say="Say" in run.robot.plan_actions)
+            else:
+                raw, _meta = lp._plan_call(run, "generate_plan", run.restated, lp._obs(run), [], what="plan", subgoals=lp._subgoals(run))
+            return lp._tidy(run, lp._ground_all(run, raw or []))[0]
+        finally:
+            run.goals, run.goal_txt = keep
+
     def changes_waiting(self, run) -> bool:
         """Is a goal change said during the run (MODIFY / ADD / DROP / NEW) waiting for the loop's next step boundary? Not taken: the loop
         applies it there (``_apply_pending``), e.g. once the option that runs the goals itself (``runs_goals``) gives the run back."""
