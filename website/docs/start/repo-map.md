@@ -10,7 +10,7 @@ verified_at: {robot_agent: 3269923, kcare_robot: f4a8384c59d2, embodiplan: 76da5
     - `robot_agent` is the hub. Robot packages, the dashboard and the simulators connect to it.
 
 !!! note "Some commits are not on GitHub yet"
-    The `robot_agent` pin `3269923` is on a local branch (`main` plus the merge of `live/no-ros`). It is not on GitHub yet, so code links into `robot_agent` resolve after the owner pushes it. `kcare_sim` `c6e32368f1cf` is 7 commits ahead of its remote-tracking branch, so its links resolve after a push too. The other pins are the newest commits of their local remote-tracking branches; nothing was fetched, so these branches may be out of date. The commit ids below are the ones the links use; they do not change.
+    The `robot_agent` pin `3269923` (`main` plus the merge of `live/no-ros`) was pushed to GitHub `main` on 2026-11-20, so its code links resolve. `kcare_sim` `c6e32368f1cf` is 7 commits ahead of its remote-tracking branch, so its links resolve after a push too. The other pins are the newest commits of their local remote-tracking branches; nothing was fetched, so these branches may be out of date. The commit ids below are the ones the links use; they do not change.
 
 | Repo | Role | Depends on | Language | Docs | Checked against |
 |---|---|---|---|---|---|

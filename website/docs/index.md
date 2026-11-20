@@ -50,8 +50,8 @@ What was run for these pages was offline, on the machine used to write them:
 ## Not yet
 
 - **No real robot, no ROS, no MuJoCo and no real language model** were used. Pages that describe those parts are read from code and are marked "not run".
-- **No test suite was run.** `pytest` was not installed on the machine used to write these pages. Where a test is mentioned, the page says only what the test checks, from reading it.
-- The pages describe the **committed code at the pinned commits**. The `robot_agent` pin `3269923` is on a local branch (`main` plus the merge of `live/no-ros`) and is not on GitHub yet, so code links into `robot_agent` resolve after the owner pushes it. The other pins were on the remote-tracking branches known locally when the pages were checked.
+- **The pages were not written from a test run.** Where a test is mentioned, the page says what the test checks, from reading it. For the record, `pytest tests` on the merged code `3269923` gave 2827 passed and 4 skipped (run on 2026-11-20, with a fake robot and scripted planner; no real robot, no real language model).
+- The pages describe the **committed code at the pinned commits**. The `robot_agent` pin `3269923` (`main` plus the merge of `live/no-ros`) was pushed to GitHub `main` on 2026-11-20, so its code links resolve. The other pins were on the remote-tracking branches known locally when the pages were checked.
 - Known defects are written as current behaviour in [Known pitfalls](reference/known-pitfalls.md).
 
 ## The six repos
