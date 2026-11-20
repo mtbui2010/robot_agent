@@ -16,7 +16,7 @@ Decisions (locked): layered verify **incl. VLM (toggleable)** · TaskRecord
 (dashboard)** · announce **milestones + failures, language follows `lang`
 (ko/en)**.
 
-> Constraint preserved: `pyplanner/`, `paper_grace/` untouched; kcare **skills not
+> Constraint preserved: `pyplanner/`, the planner research repo untouched; kcare **skills not
 > edited** (skill TTS is *muted via a flag*, not removed); plan-level concerns live
 > in the robot_agent planning layer.
 
@@ -42,7 +42,7 @@ class VerifyResult:
 @dataclass
 class StepRecord:
     index: int
-    action: str                             # GRACE action (MoveTo, Pick, …)
+    action: str                             # SAGE action (MoveTo, Pick, …)
     object: str                             # CamelCase target
     skill: Optional[str]                    # mapped kcare skill (None for no-op)
     params: dict = field(default_factory=dict)
@@ -66,7 +66,7 @@ class TaskRecord:
     lang: str = 'en'
     obs: str = ''
     visible: list[str] = field(default_factory=list)
-    planner: str = 'grace'                  # which backend produced the plan
+    planner: str = 'sage'                  # which backend produced the plan
     plan_meta: dict = field(default_factory=dict)         # PlanMetrics
     warnings: list[str] = field(default_factory=list)     # mapper.screen()
     steps: list[StepRecord] = field(default_factory=list)
@@ -86,7 +86,7 @@ def new_task_record(
     lang: str = 'en',
     obs: str = '',
     visible: Optional[list[str]] = None,
-    planner: str = 'grace',
+    planner: str = 'sage',
     started_at: float = 0.0,
 ) -> TaskRecord: ...
 ```
@@ -184,7 +184,7 @@ class StepVerifier:
   carries `skill_result['msg']`.
 - **Layer 2 — symbolic** (`symbolic_check(step, world)`): apply the step's effect
   to a **copy** of the mapper's `WorldState` and confirm consistency (mirror of
-  GRACE's effect model, robot-side — no pyplanner import). `world` is **never
+  SAGE's effect model, robot-side — no pyplanner import). `world` is **never
   mutated** (`world.copy()`). Returns `(ok, reason)`. Modeled actions and their
   precondition/effect:
 
@@ -223,7 +223,7 @@ class StepVerifier:
 `StepVerifier(cfg.vlm_enabled, set(nm.VLM_ACTIONS), nm.vlm_hook)`, where
 `vlm_enabled` comes from `ROBOT_AGENT_VERIFY_VLM` (default off) and
 `VLM_ACTIONS = {Pick, Place, PutIn, Open, Close}` + the `vlm_hook` come from
-`kcare_robot/configs/grace_namemap.py`. **TODO:** the `vlm_hook`'s non-`Pick` path
+`kcare_robot/configs/sage_namemap.py`. **TODO:** the `vlm_hook`'s non-`Pick` path
 is a text-LLM heuristic stand-in until a true vision-language check is wired (the
 `Pick` path already uses the real `grasp_succeed` depth check).
 
@@ -343,10 +343,10 @@ event in plan-only mode (`status="planned"`).
 `world` carries the live `WorldState.to_dict()`
 (`arrived/found/holding/opened/on/holding_since/found_pose`) so the dashboard
 "Robot State" panel stays current each step. The **open-loop / direct** executor
-(`UnifiedAgent.run` / `run_direct`) has no GRACE step, so it emits a dedicated
+(`UnifiedAgent.run` / `run_direct`) has no SAGE step, so it emits a dedicated
 **`world`** event (`{event:'world', world:{…}, found_pose_stale?}`) — once as an
 initial snapshot and once after each step — via `_emit_world`, which applies the
-`grace_namemap.apply_skill_effect` hook, reconciles `arrived`, computes
+`sage_namemap.apply_skill_effect` hook, reconciles `arrived`, computes
 `found_pose_stale`, and persists. Operators can correct a stale belief live with
 `PUT /agent/world` (the panel is editable mid-run).
 
@@ -404,10 +404,10 @@ full success best-effort calls `planner.record_episode(task, completed)`.
 |---|---|---|
 | `robot_agent/robot_agent/utils.py` | `set_skill_tts_muted`/`skill_tts_muted` flag; `text2voice(..., force=False)` honors it | ✅ done |
 | `robotapp/frontend/app/page.tsx` | wires events into `useVoiceOutput` (`speak(ev.say)`); header **🔊 voice** toggle; `voiceLang` follows run `lang` | ✅ done |
-| `kcare_robot/kcare_robot/configs/grace_namemap.py` | `VLM_ACTIONS` + robot `vlm_hook(step, node)` (Pick = `grasp_succeed`) | ✅ built (true *vision* check = **TODO**, §3) |
+| `kcare_robot/kcare_robot/configs/sage_namemap.py` | `VLM_ACTIONS` + robot `vlm_hook(step, node)` (Pick = `grasp_succeed`) | ✅ built (true *vision* check = **TODO**, §3) |
 
 ### ✗ UNTOUCHED
-`pyplanner/**`, `paper_grace/**`, `kcare_robot/skills/*.py` (TTS muted via flag, not
+`pyplanner/**`, the planner research repo, `kcare_robot/skills/*.py` (TTS muted via flag, not
 edited), `skill_registry.py`, `device_manager.py`.
 
 ---

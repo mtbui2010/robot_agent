@@ -1,46 +1,46 @@
-# ActionMapper — GRACE action ↔ kcare_robot skill mapping (as-built spec)
+# ActionMapper — SAGE action ↔ kcare_robot skill mapping (as-built spec)
 
-This documents the glue layer that turns a **GRACE/pyplanner plan** (abstract symbolic
+This documents the glue layer that turns a **SAGE/pyplanner plan** (abstract symbolic
 actions) into **kcare_robot skill calls** (`SkillRegistry.execute`), and tracks the
-symbolic world state in lock-step so a real skill failure can drive GRACE's `replan()`.
+symbolic world state in lock-step so a real skill failure can drive SAGE's `replan()`.
 
 The implementation is split across **two packages**, on purpose:
 
 | Half | Package / module | Role |
 |---|---|---|
 | **Engine** (robot-agnostic) | `robot_agent/robot_agent/core/planning/mapper.py` + `…/base.py` | `ActionMapper`, `WorldState`, `Planner` Protocol. Hard-codes **no** robot knowledge. |
-| **NameMap** (robot-specific) | `kcare_robot/kcare_robot/configs/grace_namemap.py` | The GRACE↔kcare tables, skill map, action sets, param/perception/VLM hooks. |
+| **NameMap** (robot-specific) | `kcare_robot/kcare_robot/configs/sage_namemap.py` | The SAGE↔kcare tables, skill map, action sets, param/perception/VLM hooks. |
 
 `ActionMapper(namemap)` takes the robot config module by **duck typing** — it reads
 attributes (`SKILL_MAP`, `SUPPORTED_ACTIONS`, …) and calls `to_loc` / `to_obj` off
 whatever module is handed in. Swapping robots = swapping the namemap module; the
 engine is untouched.
 
-> **Hard constraint (still in force): do NOT modify `pyplanner/` or `paper_grace/`.**
-> GRACE stays a black box consumed through its public API (`generate_plan`, `replan`).
+> **Hard constraint (still in force): do NOT modify `pyplanner/` or the planner research repo.**
+> SAGE stays a black box consumed through its public API (`generate_plan`, `replan`).
 > Neither `mapper.py` nor `base.py` imports `pyplanner`; the planner contract is the
-> structural `Planner` Protocol in `base.py`, satisfied by GRACE's `BasePlanner`.
+> structural `Planner` Protocol in `base.py`, satisfied by SAGE's `BasePlanner`.
 
 Companion: skill semantics in [`SKILLS.md`](../../kcare_robot/docs/SKILLS.md); driver/architecture in
 [`CLOSED_LOOP_ARCHITECTURE.md`](CLOSED_LOOP_ARCHITECTURE.md).
 
 ---
 
-## 1. GRACE side (recap — read-only, authoritative)
+## 1. SAGE side (recap — read-only, authoritative)
 
-GRACE plan = `list[dict]`. `base.py` aliases this as `PlanStep = dict` and documents
+SAGE plan = `list[dict]`. `base.py` aliases this as `PlanStep = dict` and documents
 the shape (each step is a **plain dict, not a class**):
 
 ```python
 {
-    "action": str,   # one GRACE action, CamelCase
+    "action": str,   # one SAGE action, CamelCase
     "object": str,   # target, CamelCase (Apple, CoffeeMachine, DiningTable)
     "target": str,   # optional, rarely used
     "reason": str,   # optional, ignored by the verifier
 }
 ```
 
-**GRACE action vocabulary** — 14 actions (`pyplanner/base.py` `ROBOT_ACTIONS`):
+**SAGE action vocabulary** — 14 actions (`pyplanner/base.py` `ROBOT_ACTIONS`):
 
 ```
 MoveTo, Find, Pick, Place, PutIn, Open, Close,
@@ -49,7 +49,7 @@ TurnOn, TurnOff, Wash, Sit, LieOn, Serve, Wait
 
 **Preconditions & symbolic effects** (`verifier.py`, for reference):
 
-| GRACE action | arg | precondition (`verify_step`) | state effect |
+| SAGE action | arg | precondition (`verify_step`) | state effect |
 |---|---|---|---|
 | `MoveTo` | location | — | `arrived=loc`; reset `found` unless `found==loc` |
 | `Find` | object | — (soft: warn if not visible) | `found=obj` |
@@ -66,11 +66,11 @@ TurnOn, TurnOff, Wash, Sit, LieOn, Serve, Wait
 | `Serve` | — | — | — |
 | `Wait` | — | — | — |
 
-`SymbolicState` (GRACE side): `arrived, found, holding: str|None`; `opened, on, visible: set[str]`.
+`SymbolicState` (SAGE side): `arrived, found, holding: str|None`; `opened, on, visible: set[str]`.
 Container rule: `MoveTo C → Open C → Find obj → Pick → Close C`.
 
 **Planner contract** — engine-side, in `base.py`, as a structural `typing.Protocol`
-(`@runtime_checkable`). Any backend matching this shape is accepted; GRACE is
+(`@runtime_checkable`). Any backend matching this shape is accepted; SAGE is
 instantiated robot-side and never edited:
 
 ```python
@@ -91,28 +91,28 @@ Both methods return `(steps, metrics)` where `steps` is a list of PlanStep dicts
 
 ```python
 import pyplanner
-planner: Planner = pyplanner.get("GRACE", host=..., model=...)
+planner: Planner = pyplanner.get("SAGE", host=..., model=...)
 steps, m  = planner.generate_plan(task, obs, visible_objects)
 suffix, m = planner.replan(task, completed, failed_step, failure_reason, obs, visible_objects)
 ```
 
 ---
 
-## 2. The mapping table (GRACE → kcare skill)
+## 2. The mapping table (SAGE → kcare skill)
 
 The table below is the **robot-specific** `SKILL_MAP` + action sets declared in
-`kcare_robot/configs/grace_namemap.py`. The engine reads it through the namemap; it
+`kcare_robot/configs/sage_namemap.py`. The engine reads it through the namemap; it
 contains no kcare names itself.
 
 `<obj>` / `<loc>` = robot-side name produced by the **NameMap** (§4). `world` =
 the `WorldState` the mapper maintains in lock-step with the executed plan.
 
-| GRACE action | `SKILL_MAP` skill | Param adapter (`build_params` / `to_skill`) | Notes |
+| SAGE action | `SKILL_MAP` skill | Param adapter (`build_params` / `to_skill`) | Notes |
 |---|---|---|---|
 | **MoveTo** `Loc` | `move` | `{'inputs': to_loc(Loc)}` | `<loc>` must exist in robot ENV; an unknown one should surface as a replan-able failure. |
-| **Find** `Obj` | `find` | `{'inputs': to_obj(Obj)}` | Keep GRACE's explicit MoveTo+Find split; don't collapse into `find::obj@loc`. |
-| **Pick** | `pick` (`obj = world.found`) | `{'inputs': to_obj(world.found or Obj), 'type': 'fine_move'}` | GRACE `Pick` carries no object → taken from `world.found`. `pick` self-verifies via `grasp_succeed`. |
-| **Place** `Recept` | `place` | `{'inputs': to_obj_or_loc(Recept)}` | Robot already `arrived==recept` (GRACE precond). |
+| **Find** `Obj` | `find` | `{'inputs': to_obj(Obj)}` | Keep SAGE's explicit MoveTo+Find split; don't collapse into `find::obj@loc`. |
+| **Pick** | `pick` (`obj = world.found`) | `{'inputs': to_obj(world.found or Obj), 'type': 'fine_move'}` | SAGE `Pick` carries no object → taken from `world.found`. `pick` self-verifies via `grasp_succeed`. |
+| **Place** `Recept` | `place` | `{'inputs': to_obj_or_loc(Recept)}` | Robot already `arrived==recept` (SAGE precond). |
 | **PutIn** `Container` | `place` | `{'inputs': to_obj_or_loc(Cont)}` | Realized as place-into-open-container; requires a prior `Open`. See §5. |
 | **Open** `Container` | `open_drawer` | `{'inputs': to_loc(Cont)}` | **Drawers only.** Non-drawer Open → physically unsupported (no generic fridge/cabinet open). |
 | **Close** `Container` | `close_drawer` | `{'inputs': to_loc(Cont)}` | **Drawers only.** Pair with the Open of the same container; thread its `pose_after_open/lift_after_open/forward_after_open`. See §5. |
@@ -145,7 +145,7 @@ are absent and therefore unsupported by construction.
 
 > Skills like `grip`, `approach_pick`, `fine_move`, `movel/j/t`, `lift`, `moveh`,
 > `find_arm`, `grasp_succeed` are **sub-skills** invoked *inside* the high-level skills
-> above — they are **not** direct GRACE targets. The mapper targets only the coarse
+> above — they are **not** direct SAGE targets. The mapper targets only the coarse
 > registered names in `SKILL_MAP` (`move`, `find`, `pick`, `place`, `open_drawer`,
 > `close_drawer`); kcare's composites drive the primitives.
 
@@ -156,7 +156,7 @@ integration finding.
 
 ---
 
-## 3. State tracking (engine-owned `WorldState`, mirrors GRACE)
+## 3. State tracking (engine-owned `WorldState`, mirrors SAGE)
 
 `WorldState` lives in `robot_agent/core/planning/base.py` (robot-agnostic, no
 `pyplanner` import). It is a `@dataclass`:
@@ -180,7 +180,7 @@ class WorldState:
     def found_pose_is_stale(self, robot_xy, threshold=0.25) -> bool:  ...
 ```
 
-The first five fields mirror GRACE (`visible` is **not** mirrored). The two extra
+The first five fields mirror SAGE (`visible` is **not** mirrored). The two extra
 fields support the dashboard "Robot State" panel and sensorless beliefs:
 
 - `holding_since` — there is no gripper width/force sensor, so `holding` is a
@@ -223,8 +223,8 @@ reuse `pyplanner.verifier.simulate(...)` (read-only call — no pyplanner change
 
 ### 3.1 Two effect sources + sensor reconcile
 
-`apply_effect` above is the **closed-loop** path (keyed on GRACE *actions*). The
-**open-loop / direct** path runs raw skills with no GRACE step, so the engine
+`apply_effect` above is the **closed-loop** path (keyed on SAGE *actions*). The
+**open-loop / direct** path runs raw skills with no SAGE step, so the engine
 instead calls three optional, duck-typed hooks on the namemap (best-effort; absent
 hooks → graceful fallback):
 
@@ -248,15 +248,15 @@ knowledge in the namemap, exactly as the engine/namemap split above requires.
 
 ---
 
-## 4. NameMap — GRACE CamelCase ↔ robot names (robot-specific)
+## 4. NameMap — SAGE CamelCase ↔ robot names (robot-specific)
 
-GRACE emits CamelCase (`CoffeeMachine`, `DiningTable`, `Kitchen`); kcare uses ENV
+SAGE emits CamelCase (`CoffeeMachine`, `DiningTable`, `Kitchen`); kcare uses ENV
 location keys / open-vocab detector strings. The two-way map lives **in the robot
-package** (`kcare_robot/configs/grace_namemap.py`), declared as explicit tables plus a
+package** (`kcare_robot/configs/sage_namemap.py`), declared as explicit tables plus a
 CamelCase fallback:
 
 ```python
-LOCATIONS = {     # GRACE location -> kcare ENV key (move::<value>)
+LOCATIONS = {     # SAGE location -> kcare ENV key (move::<value>)
     "LivingRoom": "living room", "Bedroom": "bedroom", "Kitchen": "kitchen",
     "Restroom": "restroom", "Bathroom": "restroom",
     "Table": "table@living room", "DiningTable": "dining table",
@@ -264,7 +264,7 @@ LOCATIONS = {     # GRACE location -> kcare ENV key (move::<value>)
     "BedTable": "bed table", "Shelf": "shelf", "Sink": "sink",
     "Drawer": "drawer", "Home": "home",
 }
-OBJECTS = {       # GRACE object -> detector/skill string (open-vocab, lowercase)
+OBJECTS = {       # SAGE object -> detector/skill string (open-vocab, lowercase)
     "Cup": "cup", "Mug": "mug", "Can": "can", "Bottle": "bottle",
     "WaterBottle": "water bottle", "Apple": "apple", "Coke": "coke",
     "Coffee": "coffee", "CoffeeMachine": "coffee machine", "Towel": "towel",
@@ -305,7 +305,7 @@ Rules / as-built behaviour:
 
 ## 5. Container realization (PutIn / Open+Find+Pick+Close)
 
-GRACE's container rule decomposes into discrete steps the mapper already handles
+SAGE's container rule decomposes into discrete steps the mapper already handles
 individually — **as long as the container is a drawer**:
 
 ```
@@ -357,7 +357,7 @@ so the operator is warned *before* execution. Coverage stays auditable because
 `SUPPORTED_ACTIONS` is derived from `SKILL_MAP` + `NOOP_ACTIONS` in one place.
 
 > **Extension path:** adding appliance control later = add a `turn_on`/`turn_off`
-> skill in kcare + one row in `SKILL_MAP`; no GRACE change. `SUPPORTED_ACTIONS`
+> skill in kcare + one row in `SKILL_MAP`; no SAGE change. `SUPPORTED_ACTIONS`
 > (and `screen`) update automatically.
 
 ---
@@ -368,7 +368,7 @@ so the operator is warned *before* execution. Coverage stays auditable because
 
 ```python
 class Unmappable(Exception):
-    """No executable skill for this GRACE step on this robot."""
+    """No executable skill for this SAGE step on this robot."""
 
 # location-like vs object-like arg routing (param building):
 _LOCATION_ACTIONS = {"MoveTo", "Place", "PutIn"}                 # -> namemap.to_loc
@@ -380,12 +380,12 @@ class ActionMapper:
 
     def to_skill(self, step: dict, world: WorldState
                  ) -> Optional[tuple[str, dict]]:
-        """GRACE step -> (skill_name, params); None for a NOOP_ACTIONS step.
+        """SAGE step -> (skill_name, params); None for a NOOP_ACTIONS step.
            Raises Unmappable for unsupported / no-SKILL_MAP / no-object steps.
            params shape: {'inputs': <robot-name>}.  Pick fills obj from world.found."""
 
     def apply_effect(self, step: dict, world: WorldState) -> None:
-        """Mutate world to mirror the GRACE symbolic effect (call after success)."""
+        """Mutate world to mirror the SAGE symbolic effect (call after success)."""
 
     def screen(self, steps: list[dict]) -> list[str]:
         """Pre-flight human warnings for steps this robot can't execute."""
@@ -397,8 +397,8 @@ The engine reads these attributes off `namemap` (all optional, defaulted defensi
 Closed-loop driver (pseudocode — the real one is `core/planning/loop.py::ClosedLoop`):
 
 ```python
-planner = pyplanner.get("GRACE", host=H, model=M)
-mapper  = ActionMapper(grace_namemap)
+planner = pyplanner.get("SAGE", host=H, model=M)
+mapper  = ActionMapper(sage_namemap)
 steps, _ = planner.generate_plan(task, obs, visible)
 warns = mapper.screen(steps)                            # tell operator up-front
 world, completed = WorldState(), []
@@ -423,11 +423,11 @@ while i < len(steps):
         if exceeded_replan_budget: break
 ```
 
-**Two/three-level checking** (the design's core): GRACE's `verify_step` is a *pre*-check
+**Two/three-level checking** (the design's core): SAGE's `verify_step` is a *pre*-check
 (symbolic, 0-token, inside `generate_plan`); kcare's per-skill perception
 (`grasp_succeed`, retries) is the *post*-check (ground truth); and an optional **layer-3
 VLM** post-check (`VLM_ACTIONS` + `vlm_hook`, §8) re-verifies world-changing actions.
-The mapper bridges them: GRACE's `failure_reason` is sourced from the real skill's
+The mapper bridges them: SAGE's `failure_reason` is sourced from the real skill's
 `isdone/msg` (or the `Unmappable` message). The layered verifier itself is
 `core/planning/verify.py::StepVerifier` (see
 [`TRACKING_VERIFY_VOICE.md`](TRACKING_VERIFY_VOICE.md)).
@@ -436,13 +436,13 @@ The mapper bridges them: GRACE's `failure_reason` is sourced from the real skill
 
 ## 8. Robot-side hooks: Grounder (`observe`) and layer-3 verifier (`vlm_hook`)
 
-These live in the namemap (`grace_namemap.py`) because they touch robot perception.
+These live in the namemap (`sage_namemap.py`) because they touch robot perception.
 Both import all runtime state (`robot_agent.state.current`, the ROS node, TCP clients)
 **lazily inside the function** so the module imports cleanly outside a booted runtime
 (tests, plan pre-screening).
 
 **`observe(node=None) -> tuple[str, list[str]]`** — the "Grounder": a lightweight
-perception pass producing `(obs_text, visible_objects)` for GRACE. As-built it is a
+perception pass producing `(obs_text, visible_objects)` for SAGE. As-built it is a
 **conservative stub**: best-effort and non-fatal, it returns `("", [])` on any path
 (no runtime, no ROS node, or any exception). A real grounding pass (head-camera
 open-vocab `find`/`detect` over a candidate set) is sketched but left disabled because
@@ -467,14 +467,14 @@ a true vision-language check (grab a head/arm frame → VLM) is an integrator TO
 
 ## 9. Open items for the integrator
 
-- **ENV ↔ GRACE location table** (`LOCATIONS`) must be trimmed/filled from the active
+- **ENV ↔ SAGE location table** (`LOCATIONS`) must be trimmed/filled from the active
   site's ENV config so `to_loc()` agrees with what `move::<loc>` can navigate to;
   unknown locations should be validated by the driver into a replan-able failure.
 - **`Find` inside vs outside containers**: outside → `find` (head/multi-view); inside
   an open drawer → `find_arm` (wrist). Pick based on whether `world.opened` shows the
   object's container is open. (The engine maps both to the `find` skill via `SKILL_MAP`;
   drawer-aware switching is driver/namemap policy.)
-- **`obs` / `visible_objects` for GRACE** must come from real perception — implement
+- **`obs` / `visible_objects` for SAGE** must come from real perception — implement
   `observe()` (the Grounder) beyond its current safe stub.
 - **Replan budget** (max attempts) and operator escalation on `Unmappable` — the
   driver already bounds this via `max_replans` (default 3).

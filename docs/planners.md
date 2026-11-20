@@ -4,7 +4,7 @@ Code: `robot_agent/core/planning/base.py` (interface), `registry.py` (loading by
 `subgoal_repair.py` (the gate's use of the optional repair), `backends/` (built-in planners).
 Tests: `tests/test_v2_planner_plugin.py`; scenarios `scenarios/tests/test_t1_v2_planner_plugin.py` (PL01-PL04).
 
-The planner turns a task into steps. SAGE / GRACE (embodiplan) is one planner among others: a new
+The planner turns a task into steps. SAGE (embodiplan; formerly GRACE, see [Renamed](#renamed-grace-is-now-sage)) is one planner among others: a new
 method is a class in its own repo, selected by name, with no edit in robot_agent.
 
 ## The interface
@@ -60,7 +60,7 @@ A planner MAY offer more. The core checks each one with a plain attribute look-u
 then takes `join_blocks(blocks)` as the plan. `state` is the action model's symbolic state at the block's
 start. `repair_block` returns `[]` when nothing usable came back and raises on planner errors.
 
-GraceBackend (`backends/pyplanner_grace.py`) implements all three on embodiplan's public SAGE API
+SageBackend (`backends/pyplanner_sage.py`) implements all three on embodiplan's public SAGE API
 (`last_blocks`, `flatten`, `edit_block` with the memory examples of `retrieve_examples`, `progress`,
 `record_episode`); it is the only module that knows those names.
 
@@ -68,20 +68,20 @@ GraceBackend (`backends/pyplanner_grace.py`) implements all three on embodiplan'
 
 | where | value |
 |---|---|
-| `ROBOT_AGENT_PLANNER` | the ClosedLoop planner (default `grace`); `sage` = AssistLoop |
-| `ROBOT_AGENT_SAGE_GENERATOR` | the planner behind AssistLoop (default `grace`) |
-| `/ws/agent` `planner` | `grace`, `direct`, `sage`, or any planner name below (ClosedLoop) |
+| `ROBOT_AGENT_PLANNER` | the request-level planner when a request names none: `sage` (AssistLoop), `sage_plain`, `direct`, or any name below; `ROBOT_AGENT_CLOSED_LOOP=1` alone gives `sage_plain` |
+| `ROBOT_AGENT_SAGE_GENERATOR` | the planner behind AssistLoop (default: the backend `sage`) |
+| `/ws/agent` `planner` | `sage` = AssistLoop (understands, clarifies, guards each step); `sage_plain` = the plain ClosedLoop around the SAGE backend; `grace` = deprecated alias of `sage_plain`; `direct` = the `llm_direct` backend; or any planner name below (ClosedLoop) |
 | `/ws/agent` `generator` | with `planner: "sage"`: the planner behind AssistLoop |
 
 A planner name is (`registry.resolve_planner`):
 
-1. a built-in name: `grace` (embodiplan SAGE / GRACE), `llm_direct` (one LLM call, its prompt built from the robot: [direct_prompt.md](direct_prompt.md));
+1. a built-in name: `sage` (embodiplan SAGE), `llm_direct` (one LLM call, its prompt built from the robot: [direct_prompt.md](direct_prompt.md));
 2. `package.module:Class`: any importable class or factory; nothing to register;
 3. the name of an entry point in the group `robot_agent.planners`.
 
-An unknown name fails with `unknown planner 'x'; available planners: grace, llm_direct, ...`.
+An unknown name fails with `unknown planner 'x'; available planners: sage, llm_direct, ...`.
 
-Config: `grace` and `llm_direct` get their config as before. A plug-in's constructor gets the keys of this
+Config: `sage` and `llm_direct` get their config as before. A plug-in's constructor gets the keys of this
 set that it accepts (all of them when it takes `**kwargs`; `None` values are left out):
 `host`, `model` (the LLM config), `live_path` (a per-machine data path for memory), `llm_cfg`,
 `robot_pkg`, `capabilities` (the manifest capabilities, with the core's defaults), `actions` (the
@@ -137,3 +137,22 @@ The same for SAGE and a plug-in; none of it is the planner's job:
   health, search, ask the person, replan through `replan`, give up), within `max_replans`.
 - **Goal check**: "success" only when the goals are observed to hold (`goal_check`).
 - **Learning**: `record_episode` after a success, when the planner has it.
+
+## Renamed: GRACE is now SAGE
+
+The planner that was called GRACE is SAGE in robot_agent: the backend is `SageBackend` in
+`backends/pyplanner_sage.py` (was `GraceBackend`, `pyplanner_grace.py`), the registry key is `sage`, a robot's name map is
+`<pkg>.configs.sage_namemap`, the live memory is `sage_memory`, the install extra is `.[sage]`. The request name of the plain
+loop (which was `grace`) is now `sage_plain`. The old names are in `core/planning/planner_names.py` (`_OLD_BACKEND`,
+`_OLD_REQUEST`). Bridges keep existing robots, requests and stored data working:
+
+1. Registry key `grace` still resolves to the backend `sage` (case-insensitive, one deprecation warning per process).
+2. Request name `grace` (`/ws/agent` `planner`, `ROBOT_AGENT_PLANNER`; the dashboard still sends it) is a deprecated alias
+   of `sage_plain` (one warning per process).
+3. A robot package that still provides `<pkg>.configs.grace_namemap` keeps working: the loader tries `sage_namemap`
+   first and falls back to `grace_namemap`.
+4. An existing `grace_memory` store is copied once, on first use, to `sage_memory` (`observe/paths.py`, `_OLD_NAMES`).
+5. The extra `.[grace]` is kept as an alias of `.[sage]`; old run records with planner `grace` still replay.
+
+Records: a plain-loop run writes planner `sage_plain`; AssistLoop writes `sage+assist` in its run record and
+`planner: "sage"` in its cfg. Tests: `tests/test_grace_bridges.py`.

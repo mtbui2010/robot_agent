@@ -136,7 +136,7 @@ is the extra looks at places already searched and the wrong next guesses.
 * One ranking per object per run: a ranking made before the first look does not know the misses
   that follow (they are excluded by the hard constraint instead).
 * The memory keeps one place per object; older sightings are lost when it is overwritten.
-* `ClosedLoop` (planner `grace`) has no search belief; only the SAGE + assist loop has.
+* ``ClosedLoop` (planner `sage_plain`) has no search belief; only the SAGE + assist loop has.
 
 ## Look first, then ask (option `look_then_ask`, default on)
 

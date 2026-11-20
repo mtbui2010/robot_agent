@@ -35,7 +35,7 @@ Core design:
 
 Planning layer (moved here from kcare_robot/docs):
 
-- [CLOSED_LOOP_ARCHITECTURE.md](CLOSED_LOOP_ARCHITECTURE.md): closed-loop planning (GRACE / SAGE via embodiplan)
+- [CLOSED_LOOP_ARCHITECTURE.md](CLOSED_LOOP_ARCHITECTURE.md): closed-loop planning (SAGE via embodiplan)
 - [ACTION_MAPPER_SPEC.md](ACTION_MAPPER_SPEC.md): plan step -> skill call, world-state effects
 - [TRACKING_VERIFY_VOICE.md](TRACKING_VERIFY_VOICE.md): run records, layered verification, announcements
 

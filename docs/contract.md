@@ -101,7 +101,7 @@ Unset geometry falls back to the values the core used to hard-code:
 1. `<pkg>/configs/adapter.py`, if it exists. It must define `ADAPTER` (an
    instance), `make_adapter()` / `get_adapter()` (a factory) or a class
    `Adapter`. New robots made from `robot_template` get this file.
-2. Otherwise `NamemapAdapter(<pkg>.configs.grace_namemap, manifest)`, a shim
+2. Otherwise X, a shim
    over the existing duck-typed namemap. `bind()` reproduces what
    `ActionMapper.to_skill` and `ClosedLoop._build_params` do today:
    - `SKILL_MAP` / `NOOP_ACTIONS` / `SUPPORTED_ACTIONS`
@@ -125,7 +125,7 @@ An adapter may also define (read by `core/planning/robot.py` `RobotView`):
 
 The robot's capabilities (`hands`, `find_reaches`, default one hand and
 `find_reaches: false`) go to the action model and to SAGE
-(`SAGEPlanner(capabilities=...)` through `GraceBackend`).
+(`SAGEPlanner(capabilities=...)` through `SageBackend`).
 
 `bind()` returns `(skill, params)`, returns `None` for a no-op step, and raises
 `Unbindable` when the robot cannot do the step.

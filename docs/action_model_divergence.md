@@ -9,7 +9,7 @@ that had drifted apart:
 | 2 | `robot_agent/core/planning/verify.py` (`symbolic_check`) | post-step symbolic verify (`StepVerifier`) and, in `AssistLoop`, the pre-step guard |
 | 3 | `robot_agent/core/planning/mapper.py` (`ActionMapper.apply_effect`) | world effects in `ClosedLoop` |
 | 4 | `robot_agent/core/planning/assist_loop.py` (`AssistLoop._check`, `_effect`, the inline guard in `run_blocking`) | plan checker that drives SAGE edits, world effects in `AssistLoop` |
-| 5 | `kcare_robot/configs/grace_namemap.apply_skill_effect` | effects of raw (open-loop / direct) kcare skills, keyed on skill names |
+| 5 | `kcare_robot/configs/sage_namemap.apply_skill_effect` | effects of raw (open-loop / direct) kcare skills, keyed on skill names |
 
 Every row below was produced by calling each copy on the same world and step (no reimplementation): the
 world is given as the state before the step, and `_check` is called on a one-step plan with the goals shown

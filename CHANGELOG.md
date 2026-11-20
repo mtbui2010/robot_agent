@@ -5,6 +5,9 @@ manifest format, the event schema). See `docs/contract.md`.
 
 ## Unreleased
 
+### Renamed: GRACE is now SAGE (2026-11-20)
+- 2026-11-20 The planner GRACE is now SAGE in robot_agent: backend `GraceBackend` -> `SageBackend` (`backends/pyplanner_grace.py` -> `pyplanner_sage.py`), registry key `sage`, `grace_namemap` -> `sage_namemap`, memory kind `grace_memory` -> `sage_memory`, extra `.[sage]`; the request name of the plain ClosedLoop is now `sage_plain` (`sage` = AssistLoop, `direct` unchanged; with `ROBOT_AGENT_CLOSED_LOOP=1` the default is `sage_plain`). Five bridges, no behaviour change on a robot: registry key `grace` -> `sage` and request name `grace` -> `sage_plain` (both case-insensitive, one deprecation warning per process); a robot package with only `configs.grace_namemap` still loads (`sage_namemap` first); an existing `grace_memory` store is copied once on first use; `.[grace]` stays an alias of `.[sage]`. Records: a plain-loop run writes planner `sage_plain`, AssistLoop `sage+assist` (cfg `planner: "sage"`); old records with `grace` still replay. New tests `tests/test_grace_bridges.py`. The dashboard still sends `grace` (works via the bridge). See `docs/planners.md`.
+
 ### Editable "Go to" poses (`/poses`)
 - A pose is a label + a PLAN of steps written like a shortcut button's (`lift::0.5&&movej::approach_drawer`), stored in `<common>/poses.json` (shared and merged like the buttons). The
   operator adds / edits / deletes ALL of them (`GET|POST /poses`, `PUT|DELETE /poses/{id}`); the robot package only SEEDS the first list (`POSES['seed']`, kcare: the `approach_*` of

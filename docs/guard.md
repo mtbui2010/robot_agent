@@ -2,7 +2,7 @@
 
 How the AssistLoop (planner `sage`) makes sure a step only runs when the world allows it, and that
 the belief it plans on matches the robot. Robot-agnostic: the sensors, places and tolerances come
-from the RobotAdapter and `manifest.yaml`. The plain `ClosedLoop` (planner `grace`) is unchanged.
+from the RobotAdapter and `manifest.yaml`. The plain `ClosedLoop` (planner `sage_plain`) is unchanged.
 
 Code: `core/planning/reconcile.py` (pose / containers -> belief, the `arrived` guard),
 `core/planning/base.py` (`WorldState.provenance`), hooks in `assist_loop.py` (`_reconcile`,

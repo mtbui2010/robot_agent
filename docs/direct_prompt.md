@@ -74,7 +74,7 @@ Binding (`concrete.bind`, called first by `RobotView.bind` and `ActionMapper.to_
 `skill` is `(skill, params)` as written, after checking that the skill is one of the robot's (manifest,
 skill map, else `RobotView.registry`, the loop's skill registry: plan skills and aliases); an unknown one
 raises `Unbindable` / `Unmappable` (`no skill 'fly' on robot 'kaair'`), so ClosedLoop's gate refuses
-the plan before any motion. A step without `skill` (grace, SAGE) binds through the adapter exactly as
+the plan before any motion. A step without `skill` (SAGE) binds through the adapter exactly as
 before. A skill-only step (`action: ""`) has no symbolic effect: the action model applies nothing,
 `symbolic_check` and `ActionMapper.screen` pass it, and AssistLoop's checker skips it.
 `replan` parses its answer the same way; its prompt names the failed step as written (`pick::apple`).
@@ -89,13 +89,13 @@ Until 2026-11-02 the steps carried the skill name as `action` (`{"action": "move
 `{prompt, examples, planner, uses_prompt}`: the prompt the direct planner would send for that
 command (with the live memory's examples), the examples' `task` / `score` / `source`, the planner
 asked about (default: the one a request without a planner runs) and whether it uses this prompt
-(`direct` / `llm_direct`: yes; `grace`: no; `sage`: only with generator `llm_direct`; a plug-in: when
+(`direct` / `llm_direct`: yes; `sage_plain`: no; `sage`: only with generator `llm_direct`; a plug-in: when
 its class says `uses_direct_prompt = True`). robotapp's **Planner prompt** panel shows it.
 
 ## SAGE's prompts from the same generator
 
 `ClosedLoop._make_planner` passes `robot_prompt.action_lines(view)` (`style="action"`:
-`MoveTo <place>: move to a place`) and `describe_robot(view)` to `GraceBackend` -> embodiplan
+`MoveTo <place>: move to a place`) and `describe_robot(view)` to `SageBackend` -> embodiplan
 `SAGEPlanner(actions=..., robot_description=...)` (embodiplan >= 0.2.4): the decompose / expand /
 refine / repair system prompts list only the robot's actions and describe the robot instead of "a
 household robot". `ROBOT_AGENT_SAGE_ROBOT_PROMPT=0` switches this off. SAGE does not use the
