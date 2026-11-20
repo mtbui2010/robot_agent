@@ -103,6 +103,29 @@ Saved as `giveup_planner.py` outside the repository and put on `PYTHONPATH`, it 
 
 ## What the runner does
 
+The loop below is the whole benchmark for the household suites. The runner plays every task with every seed against one planner. A judge scores each final world, and the result files are written. To compare two planners, you run the loop twice on the same tasks and seeds and test the pairs.
+
+```mermaid
+flowchart TD
+    T["task set: a split of the household tasks<br/>load_tasks, --split and --limit"] --> M["run_many<br/>tasks x seeds 0 to K-1"]
+    P["planner: --planner<br/>oracle, naive, robot_agent:sage, ..."] --> M
+    M --> E["run_episode task, planner, profile, seed"]
+    subgraph EP["one episode"]
+        W["EpisodeEnv: true world, robot,<br/>simulated person, safety monitor"] --> PL["planner.run env<br/>skills run on the simulated robot<br/>within the budgets"]
+        PL --> F["status: done, refuse or give_up<br/>or budget, error"]
+        F --> J["EpisodeEnv.judge<br/>reads the true world, not the planner"]
+    end
+    E --> W
+    J --> R["record: success, claimed, false_success, gc"]
+    R --> S["summarize, write_run<br/>episodes.jsonl, summary.json, report.md"]
+    S --> C["second planner, same tasks and seeds<br/>compare: paired test"]
+    C --> X["McNemar on task, seed pairs<br/>and task-level tests"]
+```
+
+Success is the judge's call from the true world. A false success is a record with `claimed` true and `success` false: the planner said `done` and the world is wrong. The paired test uses only the pairs where the two planners differ.
+
+Drawn from the code at `f55ace24c3b4` ([`run_episode`](https://github.com/mtbui2010/symbolic_robot/blob/f55ace24c3b4/bench/suites/home/runner.py#L59), [`run_many`](https://github.com/mtbui2010/symbolic_robot/blob/f55ace24c3b4/bench/suites/home/runner.py#L237), [`judge`](https://github.com/mtbui2010/symbolic_robot/blob/f55ace24c3b4/bench/suites/home/env.py#L552-L594), [`compare`](https://github.com/mtbui2010/symbolic_robot/blob/f55ace24c3b4/bench/suites/home/metrics.py#L401-L416)), not from a recorded run; I read the working tree, which differs from that commit only in `planners/d1_options.py`. An infrastructure failure (an LLM server error, an import error) stops the whole run instead of becoming a record, as described below.
+
 For each task and each seed, `run_episode` ([`runner.py:59`](https://github.com/mtbui2010/symbolic_robot/blob/f55ace24c3b4/bench/suites/home/runner.py#L59)) does this:
 
 1. It builds the true world, the robot, the simulated person and the safety monitor for the task's house, with a seed derived from the task id and the seed number. Every random draw comes from that seed.

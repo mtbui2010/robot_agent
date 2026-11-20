@@ -52,6 +52,27 @@ There is one belief per robot process. A run does not make its own copy: the loo
 
 The belief is written to a file for this machine after a step's effect, after a reconcile that changed it, and when the dashboard edits it ([`save_world`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/state.py#L162-L188)). On start, `load_world` reads it back, **but drops `arrived`**: the saved place is not trusted, and reconcile re-reads it from the sensors.
 
+## Where each field changes
+
+The belief is written in six places. Each arrow ends in the same `WorldState`. The text in the box says which function writes it.
+
+```mermaid
+flowchart TD
+  WS["WorldState, base.py<br/>arrived, found, holding, opened, on<br/>and a provenance label per field"]
+  A["A step succeeds<br/>_step_succeeded in assist_loop.py"] -- "_effect: action_model.apply, in place" --> WS
+  A2["A MoveTo that localization checked<br/>confirm_arrival in reconcile.py"] -- "arrived labelled sensor" --> WS
+  R["Run start, resume, task taken back<br/>_reconcile, then RobotView.reconcile"] -- "pose, containers, hand, old found" --> WS
+  G["Before an at-place step<br/>_guard and _guard_arrived"] -- "arrived fixed by a fresh pose<br/>holding cleared if the hand is empty" --> WS
+  O["PUT /agent/world<br/>set_world in api/agent.py"] -- "fields a person sent, labelled operator" --> WS
+  L["End of the plan<br/>_plan_ended, _observe_goals, _look"] -- "MoveTo and Find, effect applied on success" --> WS
+  WS -- "save_world" --> D["the file for this machine"]
+  D -- "load_world on start, arrived dropped" --> WS
+```
+
+Read it as a map, not a timeline. A skill's success applies the action model's effect ([`_effect`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/assist_loop.py#L1604-L1612)). The run-start reconcile is the next section. The guard before a step that acts at a place (`Find`, `Pick`, `Place`, `PutIn`, `Open`, `Close`) is [`guard_arrived`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/reconcile.py#L178-L196). At the end of the plan the loop looks at each `on` or `in` goal ([`_observe_goals`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/assist_loop.py#L3345-L3374)). A goal it cannot look at stays a belief.
+
+*Drawn from the code at e65e9aa, not from a recorded run. Not drawn: the places where a step handler sets `found` to `None` after a failed `Find`.*
+
 ## Why the belief can be wrong
 
 | cause | example | field |
@@ -79,6 +100,29 @@ Which of these a robot can check depends on what it declares. The core does not 
 It returns what changed as `{field: [before, after]}`. Only `arrived`, `holding`, `found` and `opened` are compared, so a dropped `found` shows up in the returned dict. When the dict is not empty, the loop saves the belief and emits a `reconcile` event.
 
 **When it runs.** At the start of a run, after a pause that ended (`resume`), and when a suspended task is taken back. In the `AssistLoop` there is a second, smaller fix before each step that acts at a place (`Find`, `Pick`, `Place`, `PutIn`, `Open`, `Close`): if `arrived` is not backed by a sensor, it is compared with a fresh pose and corrected if wrong ([`guard_arrived`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/reconcile.py#L178-L196)). This is part of [Checks before motion](checks-before-motion.md), which also explains how the belief feeds the other checks. The switch `ROBOT_AGENT_RECONCILE=0` turns the pose-and-container stage off; the loop then uses the plain reconcile (the adapter's, then the holding check).
+
+The run-start reconcile in order, as `RobotView.reconcile` does it ([`robot.py`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/robot.py#L210-L252)). The loop calls it from [`_reconcile`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/assist_loop.py#L3480-L3493) when its option `reconcile` is on.
+
+```mermaid
+flowchart TD
+  S["_run_blocking calls _reconcile with 'start'"] --> B0["RobotView.reconcile<br/>reads the belief before"]
+  B0 --> A1["adapter.reconcile if it has one,<br/>else reconcile_world<br/>errors are swallowed"]
+  A1 --> H{"Belief holds an object and<br/>a holding sensor is declared?"}
+  H -- "yes" --> HS["Run the sensor<br/>empty hand clears holding<br/>unreadable changes nothing"]
+  H -- "no" --> PL
+  HS --> PL{"Did the loop pass the places?"}
+  PL -- "yes" --> RA["reconcile_arrived<br/>fresh pose gives the nearest place within arrive_tol<br/>old or missing pose gives None, unknown"]
+  PL -- "no" --> RT
+  RA --> RC["reconcile_containers<br/>container_states sets opened, labelled sensor"]
+  RC --> DS["drop_stale_found<br/>base moved more than 0.25 m from the sighting"]
+  DS --> OP["opened is labelled belief if a container<br/>is unconfirmed, else sensor"]
+  OP --> RT["Return changed: field to before and after"]
+  RT --> CH{"Anything changed?"}
+  CH -- "yes" --> EV["_save_world and a reconcile event"]
+  CH -- "no" --> NO["The run goes on, no event"]
+```
+
+*Drawn from the code at e65e9aa, not from a recorded run. The case with the option `reconcile` off is not drawn.*
 
 ### Dropping an old `found`
 

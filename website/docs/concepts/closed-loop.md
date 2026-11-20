@@ -104,6 +104,82 @@ find apple (ok), pick apple (ok), move dining table@kitchen (ok), place dining t
 find apple (ok, the goal check)
 ```
 
+## Where options act in one run
+
+`_run_blocking` calls four phases in order: understand, plan, execute, final check ([L1690-L1696](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/assist_loop.py#L1690-L1696)). The diagram follows one run and names, in the boxes, the hook (`on_...`) or service of the option dispatcher that is called at that point. A hook is a call the loop makes to every option that lists it. A service is a question the loop asks (`options.query`). Only names that exist in `core/options/spec.py` are drawn; some hooks are left out to keep it short.
+
+```mermaid
+flowchart TD
+  S["start: _open_run and reconcile<br/>hook on_start"] --> U["_understand_phase<br/>hooks on_heard and on_goals<br/>then _goal_readback"]
+  U --> SS["_plan_phase: _search_start"]
+  SS --> RG{"service runs_goals<br/>an option runs the goals?"}
+  RG -- "no" --> GC["_generate_and_certify<br/>planner plans, the gate checks<br/>hooks on_plan and on_plan_findings"]
+  RG -- "yes: plan is empty" --> EX
+  GC --> EX["_execute_phase starts<br/>hook on_run_goals"]
+  EX --> ST["_run_step<br/>hook on_step"]
+  ST --> OK{"step ok?"}
+  OK -- "yes" --> SD["hook on_step_done"]
+  SD --> LEFT{"steps left?"}
+  LEFT -- "yes" --> ST
+  LEFT -- "no" --> PE["_plan_ended: goals looked at<br/>hook on_goal_check"]
+  OK -- "no" --> SF["_step_failed<br/>service failure_code<br/>hook on_step_failed"]
+  SF --> RP["recovery policy and ladders<br/>hook on_ask_help in step_ladder.py"]
+  RP --> RE["_sage_replan<br/>service no_replan<br/>hook on_replan_findings"]
+  RE --> ST
+  PE -- "goals not met" --> RE
+  PE -- "goals hold" --> FC["_final_check<br/>hooks on_final and on_goals_met"]
+  FC --> FI["_finish<br/>hook on_finish"]
+```
+
+*Drawn from the code at e65e9aa, not from a recorded run.* Not drawn: the retries in place inside the recovery policy, a run that ends because no new plan came, and a cancel. The `on_goal_check` hook is called from `_observe_goal`, which `_plan_ended` reaches through `_observe_goals`.
+
+| hook or service | when it runs | example option |
+|---|---|---|
+| `on_start` (observe) | run set-up, [L1670](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/assist_loop.py#L1670) | `bring_ask` |
+| `on_heard` (decide) | the words, before the reader is called, [L1824](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/assist_loop.py#L1824) | `asr_guard` (named in the code comment) |
+| `on_goals` (decide) | the understood goals, before the read-back, [L1870](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/assist_loop.py#L1870) | `look_then_ask` |
+| `runs_goals` (service) | after `_search_start`, [L2660](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/assist_loop.py#L2660): true means no planner call | `bt_goal` |
+| `on_plan` (transform) | in `_tidy`, before no-op steps are removed, [L2896](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/assist_loop.py#L2896) | `place_find` (code comment) |
+| `on_plan_findings` (transform) | the gate's hard findings, [L2909](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/assist_loop.py#L2909) | `fetch_guard` |
+| `on_run_goals` (decide) | when execute starts with an empty plan, [L3215](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/assist_loop.py#L3215) | `bt_goal` |
+| `on_step` (decide) | before a step runs, [L3554](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/assist_loop.py#L3554) | `reach_delivery` (code comment) |
+| `on_step_done` (observe) | a step succeeded, [L3638](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/assist_loop.py#L3638) | none of the four options |
+| `failure_code` (service) | the typed code of a failure, [L3676](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/assist_loop.py#L3676) | `fetch_guard` (`absent_find`) |
+| `on_step_failed` (decide) | before the recovery policy, [L3680](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/assist_loop.py#L3680) | `bt_goal` |
+| `on_ask_help` (decide) | a failed step used its retries, [`step_ladder.py` L119](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/step_ladder.py#L119) | none of the four options |
+| `no_replan` (service) | in `_sage_replan`, [L2963](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/assist_loop.py#L2963): true keeps the step failed | `bt_goal` |
+| `on_replan_findings` (transform) | a replan's findings, [L3010](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/assist_loop.py#L3010) | none of the four options |
+| `on_goal_check` (decide) | the check of one goal, [L3425](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/assist_loop.py#L3425) | `reach_delivery` (code comment) |
+| `on_final`, `on_goals_met` (decide) | the end-of-run check, [L4067](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/assist_loop.py#L4067) and [L4076](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/assist_loop.py#L4076) | `unapplied_change`, `hazard` (code comments) |
+| `on_finish` (observe) | the `done` event's fields, [L1726](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/assist_loop.py#L1726) | `hazard` (code comment) |
+
+The kinds come from `HOOKS` in [`spec.py`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/options/spec.py): `decide` means the first answer that is not `None` wins, `transform` means the options are chained and each returns a new value, `observe` means all run and the results are dropped. Examples marked "code comment" are the options named in the comment at the call site; I did not open those options. "None of the four options" means none of `look_then_ask`, `bring_ask`, `fetch_guard`, `bt_goal` lists that hook in its `OptionSpec`.
+
+### How an option plugs in
+
+An option is a module in `robot_agent/options/` that registers one `OptionSpec` (and a factory). The `Dispatcher` builds only the options whose `enabled` key is on, and calls their hooks in `order`.
+
+```mermaid
+flowchart LR
+  M["option module<br/>robot_agent/options/name.py"] --> SP["OptionSpec<br/>name, keys, hooks, services, order, enabled"]
+  SP --> REG["registry"]
+  REG --> D["Dispatcher<br/>keeps options whose enabled key is on"]
+  D --> H["hooks: called in order<br/>decide, transform, observe"]
+  D --> V["services: options.query"]
+  K["key values<br/>run option, env, manifest"] --> D
+```
+
+What each option of this page declares, read from its `OptionSpec`:
+
+| option | hooks | services | order | enabled |
+|---|---|---|---|---|
+| `look_then_ask` | `on_goals` | none | 29 | key `enabled` |
+| `bring_ask` | `on_start` | `person_where` | 75 | key `enabled` |
+| `fetch_guard` | `on_plan_findings` | `rank_first`, `failure_code` | 32 | key `enabled` |
+| `bt_goal` | `on_run_goals`, `on_step_failed` | `runs_goals`, `no_replan` | 5 | key `enabled` |
+
+*Drawn from the code at e65e9aa (`spec.py`, `dispatch.py`, the four option modules), not from a recorded run.* The default value of each `enabled` key is not shown here; the text above says all four are on by default.
+
 ## Four ways a request is run
 
 `UnifiedAgent.run` picks how a request is executed ([`unified_agent.py` L365-L384](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/unified_agent.py#L365-L384)). `run_direct` is a separate method.

@@ -157,6 +157,105 @@ Flags that matter:
 
 Pick and MoveTo also have a ladder of their own after the policy's rung. `STEP_LADDER` in `contract/recovery.py` names the code whose rule gives the ladder (Pick: `grasp_failed`, MoveTo: `blocked`), and `step_rung` picks the rung: retry, then ask the person once, then replan (Pick) or stop (MoveTo). The code that runs these rungs is in [`step_ladder.py`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/step_ladder.py). A failed `Find` with `absent` (or with `unknown`, which `fetch_guard` turns into `absent`, see above) uses the search described in the closed-loop page; its three retries are the default of the loop's `search_max`, after which the person is asked where the object is. Before that search starts, `look_then_ask` may already have looked where the robot stands and asked once "I don't see the X here. Where is it?" (see [Dialog and intent](dialog-and-intent.md#two-questions-the-robot-adds-before-it-plans); English phrases only, other languages not verified).
 
+### One failed step to its recovery
+
+The picture follows one failed step in the AssistLoop (`_step_failed` and `_apply_policy` in `assist_loop.py`). The step first gets a failure code. The code picks a row of `DEFAULT_RECOVERY`. Then the loop applies the row, and the step's own ladder if it has one (`step_ladder.py`).
+
+```mermaid
+flowchart TD
+    A["Step runs: the skill returns a SkillResult,<br/>then the verify layers read it: isdone, symbolic, sensor"]
+    B{"Skill ok and every layer ok?"}
+    C["Next step"]
+    D["Failure code:<br/>the skill's own code,<br/>else the text rules of failures.py,<br/>else unknown"]
+    E{"A Find with code unknown<br/>and fetch_guard absent_find on?"}
+    F["The code becomes absent"]
+    G["The rule: the row of the code in DEFAULT_RECOVERY,<br/>plus the robot's own overrides"]
+    H{"retry_allowed is false?<br/>estop, cancelled, software, budget_exceeded"}
+    S["Stop: the run ends as failed"]
+    I{"_apply_policy:<br/>what does the rule say for the n-th failure?"}
+    J{"Robot health ok?<br/>wait_health waits first, health_check asks once"}
+    K{"Which step failed?"}
+    L["Find: the Find path<br/>in the next picture"]
+    M["Pick: look and grasp again,<br/>ask the person once,<br/>then replan if nobody helps"]
+    N["MoveTo: move again,<br/>ask the person once,<br/>then stop"]
+    P["Any other action:<br/>per-action recovery, else replan"]
+    Q{"Replans used less than max_replans?"}
+    T["Planner repairs the plan<br/>from this step"]
+    R["The same step runs again"]
+
+    A --> B
+    B -- "yes" --> C
+    B -- "no" --> D
+    D --> E
+    E -- "yes" --> F
+    E -- "no" --> G
+    F --> G
+    G --> H
+    H -- "yes" --> S
+    H -- "no" --> I
+    I -- "stop: retries used up" --> S
+    I -- "wait_health or health_check" --> J
+    I -- "any other action of the rule" --> K
+    J -- "no" --> S
+    J -- "yes, wait_health" --> R
+    J -- "yes, health_check" --> K
+    K -- "Find" --> L
+    K -- "Pick" --> M
+    K -- "MoveTo" --> N
+    K -- "other" --> P
+    M -- "retry or the person helped" --> R
+    N -- "retry or the person helped" --> R
+    M -- "replan rung, or the person named a place" --> Q
+    N -- "no help" --> S
+    L -- "a new plan is needed" --> Q
+    P --> Q
+    Q -- "yes" --> T
+    Q -- "no" --> S
+    R --> A
+    T --> A
+```
+
+*Drawn from the code at e65e9aa, not from a recorded run.* What each box reads: the code box is `failure_code` in `robot.py` and `classify_legacy_failure` in `failures.py`; the rule is `policy.rule_for(code)`; `max_replans` has the default 6 in `assist_loop.py`. The rungs of the Pick and MoveTo ladders are `STEP_LADDER` and `step_rung`, run by `_recover_pick` and `_recover_move`. Not drawn: the option hook `on_step_failed` (an option can end the run before the rule is applied), the check that stops a non-Find step which failed the same way a third time, the `Open`, `Place` and `PutIn` recovery, and the VLM refusal path (a step the VLM says did not happen goes straight to a replan). The Find box is also not drawn to the end: a Find may be re-run in place without a replan (a second look, a search leg), and the Find path says why.
+
+#### The Find path
+
+A failed Find with code `absent` is a search, not a mistake. `_recover_find` marks the place as searched, picks the next place from the belief, and asks the person "I couldn't find the X. Where is it?" once the misses are over `search_max`. The default of `search_max` is the `retries` of the `absent` row (3), so a robot that overrides that row also moves the question.
+
+```mermaid
+flowchart TD
+    A["A Find failed"]
+    B{"Code?"}
+    C["unknown becomes absent<br/>when fetch_guard absent_find is on"]
+    D["perception_unavailable:<br/>wait_health first, the place is NOT marked searched"]
+    E{"The object was lost here earlier in this run<br/>and not looked at again yet?"}
+    F["Look again once here"]
+    G["The place counts as searched<br/>only if the rule has mark_searched: absent"]
+    H["Count the miss<br/>and pick the next place from the belief"]
+    I{"Misses over search_max, or no place left,<br/>and the loop may ask?"}
+    J["Ask: I couldn't find the X. Where is it?"]
+    K{"Did the answer name a place?"}
+    L["The belief says: user said.<br/>The planner repairs the plan with that place"]
+    M["No place: search the likely rest,<br/>or stop naming the places looked at"]
+    N["Search on: the next place replaces the Find,<br/>or a replan says Look next at ...<br/>Stop when the places run out"]
+
+    A --> B
+    B -- "unknown" --> C
+    B -- "perception_unavailable" --> D
+    B -- "absent" --> E
+    C --> E
+    E -- "yes" --> F
+    E -- "no" --> G
+    G --> H
+    H --> I
+    I -- "yes" --> J
+    I -- "no" --> N
+    J --> K
+    K -- "yes" --> L
+    K -- "no" --> M
+```
+
+*Drawn from the code at e65e9aa, not from a recorded run.* Read from `_recover_find` and `_missed_enough` (`search_hooks.py`) and `FetchGuard.failure_code`. The box for `perception_unavailable` ends there on purpose: the loop waits for the robot's health first (see the first picture) and does not treat the failure as evidence of absence. Whether the question is worded the same in other languages is not verified here.
+
 I read `_step_failed` and `_apply_policy`. I did not trace each per-action recovery method, so this page does not claim that every action in the table is carried out the same way in every case. For the two loops themselves, see [Planners](planners.md) and [The closed loop](closed-loop.md).
 
 ## VerifySpec: how a step is checked

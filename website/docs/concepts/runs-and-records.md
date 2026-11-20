@@ -76,6 +76,27 @@ When a run starts, the run manager calls its `on_start` hooks. `run_control` reg
 
 A `RunRecord` is a subclass of `RunLogger`, the JSONL logger of the planning layer (`core/planning/records.py`). It adds typed rows and a lock, because the executive thread and the API's event loop write to it at the same time.
 
+### The life of a run, and who writes which row
+
+Two writers fill the record. The run manager's hooks write the first and last rows, and the `event`, `step` and `user` rows follow the events of the run ([`on_run_start`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/observe/record.py#L388-L401), [`on_event`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/observe/record.py#L160-L182), [`close_record`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/observe/record.py#L404-L427)). The executive writes the `context`, `skill`, `planner` and `llm` rows from inside the run: [`note_loop`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/observe/record.py#L532-L576), [`observed_skill`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/observe/record.py#L503-L531), [`RecordingPlanner`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/observe/record.py#L601-L636) and the LLM wrapper [`observe/llm.py`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/observe/llm.py#L66-L100).
+
+```mermaid
+flowchart TD
+  ST["RunManager.start<br/>on_start hook: on_run_start"] --> HD["header row<br/>health row, when start"]
+  HD --> EV["Each event published on the run<br/>on_event writes an event row<br/>step_done also writes a step row<br/>run_input also writes a user row"]
+  HD --> LW["Written by the executive while it works<br/>context row: note_loop<br/>skill row: observed_skill<br/>planner row: RecordingPlanner<br/>llm row: the LLM wrapper"]
+  EV --> FN["RunManager.finish<br/>on_finish hook: close_record"]
+  LW --> FN
+  FN --> H2["health row, when end"]
+  H2 --> EN["end row: outcome and state"]
+  EN --> SN["snapshot row: the header with the metrics"]
+  SN --> MJ["write_metrics adds one line to metrics.jsonl"]
+```
+
+The two middle boxes run side by side, so their rows are interleaved in the file by `seq`. In the real record below, the first rows are `header`, `health`, two `event` rows (`run_state`, `start`), then `context`.
+
+*Drawn from the code at e65e9aa. The order of the first and last rows was also checked against one real record, run `20261120-123109-cf6cd8` (read: 108 rows, 78 of them `event`; its kinds are the ones in the table below).*
+
 ### Where the file goes
 
 ```text
@@ -88,6 +109,21 @@ A `RunRecord` is a subclass of `RunLogger`, the JSONL logger of the planning lay
 There is a second, separate file, off by default: the `trace` option (`trace=1`, `ROBOT_AGENT_TRACE=1`) writes `<dir>/<run_id>/trace.jsonl` with every event, the options' lab entries (for example `look_then_ask` and `bt_goal` write one each time they act), every LLM call (sizes only) and a `recovery` row after each failed step. It adds no LLM or robot call. Format: [`docs/trace.md`](https://github.com/mtbui2010/robot_agent/blob/3269923/docs/trace.md). The record described here does not change when it is on. The offline run on this page did not use it.
 
 Recording is best-effort. It never raises into the run. Setting `ROBOT_AGENT_RECORD=0` turns it off, and a process with no agent state (no data dir) records nothing.
+
+### Which file holds what
+
+One run leaves up to three files. They have different writers, so they are not copies of each other.
+
+```mermaid
+flowchart LR
+  RUN["One run"] --> REC["record.jsonl<br/>run_records/HOST/RUNID/<br/>every row of the run<br/>written by RunRecord"]
+  RUN --> MET["metrics.jsonl<br/>run_records/HOST/<br/>one metrics line per finished run<br/>written by close_record"]
+  RUN --> TR["task_runs/HOST/RUNID.jsonl<br/>the planning loop's own log<br/>one line per loop event, kind is the event name<br/>written by RunLogger in loop.py"]
+```
+
+`HOST` is the machine's host id and `RUNID` is the run id. The loop's log file is named by the run id when the run was started through the run manager (comment in [`RunContext`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/loop.py#L201-L207)); the `snapshot` line that `_close_run` appends to it ([`loop.py`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/loop.py#L495-L505)) holds the whole task record. The paths follow [`paths.py`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/observe/paths.py#L8-L18).
+
+*Drawn from the code at e65e9aa, not from a recorded run. I read no real `task_runs` file for this diagram.*
 
 ### The rows
 

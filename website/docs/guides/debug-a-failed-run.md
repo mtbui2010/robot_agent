@@ -145,6 +145,55 @@ The event that fails first tells you the stage. Run A is the `skill` row of this
 
 The verify layers are the checks after a skill says it worked. See [Checks before motion](../concepts/checks-before-motion.md) and the [glossary](../start/glossary.md#verify-layers). `verdict` in `verify.py` says a step passes only when every layer passed, and its reason is the first failing detail.
 
+### Where did my run fail? A decision tree
+
+Start from the `done` event and the first event that went wrong. The tree asks the same questions as the table above, in the order the loop meets them. Each leaf is a branch; the table under the picture says which record rows and which page to read for it.
+
+```mermaid
+flowchart TD
+    A["Read the done event<br/>and the events before it"]
+    F{"Was the run stopped by the person?<br/>done outcome aborted"}
+    G["5. Cancelled or stopped"]
+    B{"Did a step start?<br/>any step_start event"}
+    C{"Did understand end without goals?<br/>status not clear, a clarify question, or refused"}
+    D["1. Understand or clarify"]
+    E["2. Plan gate"]
+    H{"In the failed step, is the first verify layer isdone false?"}
+    I["3. A skill failed"]
+    J{"Is isdone true<br/>and a later layer false?"}
+    K["4. A sensor check disagreed"]
+    L{"Did the run end after the replans were used up?<br/>replan events up to max_replans"}
+    M["6. Replans used up"]
+    N["Read the done event again:<br/>code, device, evidence, msg"]
+
+    A --> F
+    F -- "yes" --> G
+    F -- "no" --> B
+    B -- "no" --> C
+    C -- "yes" --> D
+    C -- "no, goals exist but the plan did not run" --> E
+    B -- "yes" --> H
+    H -- "yes" --> I
+    H -- "no" --> J
+    J -- "yes" --> K
+    J -- "no" --> L
+    L -- "yes" --> M
+    L -- "no" --> N
+```
+
+*Drawn from the code at e65e9aa, not from a recorded run.* The question order follows `assist_loop.py`: the refusal and clarify path, the gate end state (`I could not make a plan that passes my checks`), `_cancelled` (asked first in the picture because a stop can come at any time), and the step verdict in `verify.py`, then `_replan_or_fail` and `max_replans` (default 6). Several branches can show up in one run: a skill failure that is retried and then replanned until the budget is used is branch 3 first and branch 6 at the end. Read the first failure first.
+
+| Branch | What you see | Record rows to read | Where to read more |
+|---|---|---|---|
+| 1. Understand or clarify | `understand` with a status other than `clear`, a `clarify` question, or `done` with status `refused` and a `refusal` kind. No `plan` of steps. | `event` rows `understand`, `clarify`, `done`; `user` rows for the answers; `llm` rows for the model's reading | [Dialog and intent](../concepts/dialog-and-intent.md#typed-refusals): typed refusals and the questions before a plan |
+| 2. Plan gate | `gate` events with non-empty `problems`, then `plan` with `certified: false`; `done` says "I could not make a plan that passes my checks"; no `step_start` | `event` rows `gate`, `plan`, `done`; `planner` rows for what the planner returned | [Run C above](#run-c-the-plan-never-ran), [Checks before motion](../concepts/checks-before-motion.md#1-the-gate-the-whole-plan), [Add a planner](add-a-planner.md) |
+| 3. A skill failed | `step_verify` with `isdone` false, `step_done` with `status: failed`, then `recover`, `search`, `clarify` or `replan` | `skill` rows (the raw return and the SkillResult with its `code`), `event` rows `step_done`, `recover`, `done` | [Step 3 above](#step-3-read-the-failure-code), [Skills, results, failure codes](../concepts/skills-and-failures.md#the-failure-codes) and its [recovery picture](../concepts/skills-and-failures.md#one-failed-step-to-its-recovery) |
+| 4. A sensor check disagreed | `isdone` true, then a later layer (`symbolic`, `sensor`, `localization`) false in `step_verify`; the step still fails | `event` rows `step_verify`, `step_done`; the `skill` row of the check skill (for example the sensor skill) | [Run B above](#run-b-the-skill-said-yes-a-check-said-no), [Checks before motion](../concepts/checks-before-motion.md#success-needs-an-observation), [VerifySpec](../concepts/skills-and-failures.md#verifyspec-how-a-step-is-checked) |
+| 5. Cancelled or stopped | `done` with outcome `aborted` and the message "Cancelled by user"; or a stop by the recovery table (`estop`, `software`, `budget_exceeded`: `retry_allowed` false) | `event` row `done`; `end` row; `user` rows for a stop said during the run | [Runs and records](../concepts/runs-and-records.md#a-run-and-its-id) for the run states, [Skills, results, failure codes](../concepts/skills-and-failures.md#the-failure-codes) for codes that never retry |
+| 6. Replans used up | Several `replan` events; `replans` in the metrics line; `done` ends with "(replan budget used)" or "the new plan did not pass my checks" | `event` rows `replan` and `gate` after it; `planner` rows of each repair; the metrics line | [Step 1 above](#step-1-find-the-run-and-its-metrics-line), [The closed loop](../concepts/closed-loop.md), [Planners](../concepts/planners.md) |
+
+Branches 5 and 6 are about how a run ended, not where it began. Branch 5 by a stop from the table is also a skill failure (branch 3): read the failure code to tell them apart. When the tree gives no leaf, the checklist at the end of this page is the fallback.
+
 ### Run B: the skill said yes, a check said no
 
 Run B had the same fault in the world but a different symptom. The part of its events that differs:
