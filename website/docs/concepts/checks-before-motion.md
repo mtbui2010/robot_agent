@@ -9,7 +9,7 @@ verified_at: {robot_agent: 3269923, embodiplan: 76da520}
     - A plan can be wrong in ways a robot should never find out by moving. The framework checks a plan three times before the robot acts on it: once for the whole plan, once for each step, and once inside the skill.
     - The first two checks run on the [belief](../start/glossary.md#belief) (the robot's written picture of the world), not on hardware. They use one set of rules, the [action model](../start/glossary.md#action-model).
     - A step that ran is not "done" because the skill said so. The result is checked in layers, and the whole task is done only when the goals are seen to hold.
-    - These checks are in the [AssistLoop](../start/glossary.md#assistloop) (planner key `sage`). The plain [ClosedLoop](../start/glossary.md#closedloop) (planner key `grace`) has a much smaller version. See [Planners and loops](planners.md).
+    - These checks are in the [AssistLoop](../start/glossary.md#assistloop) (planner key `sage`). The plain [ClosedLoop](../start/glossary.md#closedloop) (planner key `sage_plain`) has a much smaller version. See [Planners and loops](planners.md).
 
 ## The idea in plain words
 
@@ -146,7 +146,7 @@ This output is real: it came from `plan_tidy.tidy(plan, world, [], lambda *a: Fa
 The same offline fake robot (the scripted planner and LLM from the hub's tests, no ROS, no LLM) ran the task "Bring the apple from the desk to the dining table". The apple is not on the desk. The events printed, in order, were: `gate` with `problems: []` (the plan passed), `plan`, five steps, a failed Find ("apple not found") that produced `search` and `replan`, five more steps, `goal_check` with `ok: true`, and `done` with `success`. The fake run printed one harmless warning line (`teleop stop_all: 'FakeState' object has no attribute 'cm'`). This is a scripted fake result, not a real robot result.
 
 !!! warning "What the ClosedLoop does instead"
-    The plain ClosedLoop (planner key `grace`) has no whole-plan simulation and no per-step guard. Its only gate (`_cl_certify`) refuses steps the robot cannot bind to a skill: it asks the planner for one new plan, and ends the run as failed if that does not help. It checks step results with the same layers, but it never looks at the goals at the end: a plan that ran every step is a success. If you need the checks above, select the AssistLoop (planner key `sage`).
+    The plain ClosedLoop (planner key `sage_plain`) has no whole-plan simulation and no per-step guard. Its only gate (`_cl_certify`) refuses steps the robot cannot bind to a skill: it asks the planner for one new plan, and ends the run as failed if that does not help. It checks step results with the same layers, but it never looks at the goals at the end: a plan that ran every step is a success. If you need the checks above, select the AssistLoop (planner key `sage`).
 
 !!! code "Where in the code"
     - Action rules, one source: [`action_model.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/action_model.py#L18-L53) (calls `embodiplan.action_model`)

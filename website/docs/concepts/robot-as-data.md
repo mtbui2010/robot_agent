@@ -64,10 +64,10 @@ The protocol is in [`adapter.py:23-51`](https://github.com/mtbui2010/robot_agent
 
 The core wraps the adapter in a `RobotView` ([`robot.py:48-63`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/robot.py#L48-L63)). The loops talk only to the view.
 
-`load_adapter(robot_pkg)` ([`legacy_adapter.py:215-227`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/legacy_adapter.py#L215-L227)) finds it by this rule:
+`load_adapter(robot_pkg)` ([`legacy_adapter.py:227-240`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/contract/legacy_adapter.py#L227-L240)) finds it by this rule:
 
 1. If `<pkg>.configs.adapter` exists, use it. It may expose `ADAPTER` (an instance), `make_adapter()` / `get_adapter()` (a factory) or a class `Adapter`.
-2. Otherwise, if `<pkg>.configs.grace_namemap` exists, wrap that older module in `NamemapAdapter`, together with `configs/manifest.yaml` when there is one. Without a manifest, one is made from the module's `SKILL_MAP`.
+2. Otherwise, if `<pkg>.configs.sage_namemap` exists (a package with the old-named file is read too), wrap that older module in `NamemapAdapter`, together with `configs/manifest.yaml` when there is one. Without a manifest, one is made from the module's `SKILL_MAP`.
 3. Otherwise it raises `ImportError`.
 
 ```mermaid

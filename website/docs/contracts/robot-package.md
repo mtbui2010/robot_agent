@@ -14,7 +14,7 @@ This page describes the agreement between the hub (`robot_agent`) and a robot pa
     - There is **no version number** that the hub checks on this contract. A change on either side is found only by `check_manifest`, by the package's own tests, or at run time.
 
 !!! code "Where in the code"
-    - Hub: [`contract/adapter.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/adapter.py#L18-L51), [`contract/legacy_adapter.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/legacy_adapter.py#L187-L227), [`contract/manifest.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/manifest.py#L155-L282), [`contract/types.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/types.py#L188-L217), [`contract/check_manifest.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/check_manifest.py#L1-L26)
+    - Hub: [`contract/adapter.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/adapter.py#L18-L51), [`contract/legacy_adapter.py`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/contract/legacy_adapter.py#L191-L240), [`contract/manifest.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/manifest.py#L155-L282), [`contract/types.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/types.py#L188-L217), [`contract/check_manifest.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/check_manifest.py#L1-L26)
     - Hub, where the contract is used: [`core/planning/robot.py:59-105`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/robot.py#L59-L105), [`runtime.py:195-204`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/runtime.py#L195-L204)
     - Robot: [`kcare_robot/configs/adapter.py`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/configs/adapter.py), [`kcare_robot/configs/manifest.yaml`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/configs/manifest.yaml)
     - Second robot: [`symbolic_robot/domains/home/configs/`](https://github.com/mtbui2010/symbolic_robot/tree/f55ace24c3b4/symbolic_robot/domains/home/configs)
@@ -58,7 +58,7 @@ The loops never import the robot package directly. `RobotView.load(robot_pkg)` c
 | Site files | `<pkg>/configs/locations/<site>/` | the hub, at boot | `connections.json`, `skill_configs_override.json`, and a `.env` file for secrets (not committed). |
 
 !!! note "Older robots"
-    A package with no `configs/adapter.py` can still load. Then the hub wraps `<pkg>.configs.grace_namemap` (an older module of name maps) in a `NamemapAdapter`. See "How the hub loads a robot" below.
+    A package with no `configs/adapter.py` can still load. Then the hub wraps `<pkg>.configs.sage_namemap` (an older module of name maps; a package that still has the old-named file is read too, see [Planners](../concepts/planners.md)) in a `NamemapAdapter`. See "How the hub loads a robot" below.
 
 ## The adapter: `RobotAdapter`
 
@@ -115,7 +115,7 @@ Real values, from the kcare adapter, run offline (no robot, no ROS; the adapter 
 {'action': 'Fly', 'object': 'x'} -> Unbindable: no skill for action 'Fly' on object 'x' on robot '<robot>'
 ```
 
-The `type: fine_move` in the second line is added by kcare's own `build_params` (the adapter calls it, [`legacy_adapter.py:108-112`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/legacy_adapter.py#L108-L112)); the hub knows nothing about it. On the same adapter, outside a running server, `health()` gives `{'frame_age_s': None, 'fps': None, 'depth': None, 'pose_age_s': None, 'ok': None}` and `pose()` gives `{}`: with no ROS node nothing can be read, and both methods return that instead of raising.
+The `type: fine_move` in the second line is added by kcare's own `build_params` (the adapter calls it, [`legacy_adapter.py:112-116`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/contract/legacy_adapter.py#L112-L116)); the hub knows nothing about it. On the same adapter, outside a running server, `health()` gives `{'frame_age_s': None, 'fps': None, 'depth': None, 'pose_age_s': None, 'ok': None}` and `pose()` gives `{}`: with no ROS node nothing can be read, and both methods return that instead of raising.
 
 ## The manifest and `SkillSpec`
 
@@ -172,28 +172,29 @@ invalid manifest: robot: required, a non-empty string
 
 ## How the hub loads a robot: `load_adapter`
 
-`load_adapter(robot_pkg)` is the one entry point ([`legacy_adapter.py:215-227`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/legacy_adapter.py#L215-L227)):
+`load_adapter(robot_pkg)` is the one entry point ([`legacy_adapter.py:227-240`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/contract/legacy_adapter.py#L227-L240)):
 
 ```python
 def load_adapter(robot_pkg: str) -> RobotAdapter:
     """The robot's adapter: ``<pkg>.configs.adapter`` if present, else
     ``configs/manifest.yaml`` (when there is one) wrapped around
-    ``<pkg>.configs.grace_namemap``."""
+    ``<pkg>.configs.sage_namemap`` (:func:`namemap_module_name`)."""
     if _has_module(f"{robot_pkg}.configs.adapter"):
         return _from_adapter_module(importlib.import_module(f"{robot_pkg}.configs.adapter"))
     manifest = None
     d = _pkg_dir(robot_pkg)
     if d is not None and (d / "configs" / "manifest.yaml").is_file():
         manifest = Manifest.from_yaml(d / "configs" / "manifest.yaml")
-    if not _has_module(f"{robot_pkg}.configs.grace_namemap"):
-        raise ImportError(f"{robot_pkg}: no configs/adapter.py and no configs/grace_namemap.py")
-    return NamemapAdapter(importlib.import_module(f"{robot_pkg}.configs.grace_namemap"), manifest)
+    name = namemap_module_name(robot_pkg)
+    if name is None:
+        raise ImportError(f"{robot_pkg}: no configs/adapter.py and no configs/{NAMEMAP_MODULES[0]}.py")
+    return NamemapAdapter(importlib.import_module(name), manifest)
 ```
 
 Steps, in order:
 
-1. If `<pkg>.configs.adapter` exists, import it. Inside it the hub looks for `ADAPTER` (or `adapter`) as an instance, then calls `make_adapter()`, `get_adapter()` or `Adapter()`. If none of these exists: `ImportError` ([`legacy_adapter.py:201-212`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/legacy_adapter.py#L201-L212)).
-2. Otherwise read `configs/manifest.yaml` if there is one, and wrap `<pkg>.configs.grace_namemap` in a `NamemapAdapter`. Without a manifest, the shim builds a small one from the name map's `SKILL_MAP`, so `adapter.manifest` always exists ([`legacy_adapter.py:51-60`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/legacy_adapter.py#L51-L60)).
+1. If `<pkg>.configs.adapter` exists, import it. Inside it the hub looks for `ADAPTER` (or `adapter`) as an instance, then calls `make_adapter()`, `get_adapter()` or `Adapter()`. If none of these exists: `ImportError` ([`legacy_adapter.py:213-224`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/contract/legacy_adapter.py#L213-L224)).
+2. Otherwise read `configs/manifest.yaml` if there is one, and wrap the package's name-map module (`<pkg>.configs.sage_namemap`) in a `NamemapAdapter`. Without a manifest, the shim builds a small one from the name map's `SKILL_MAP`, so `adapter.manifest` always exists ([`legacy_adapter.py:55-64`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/contract/legacy_adapter.py#L55-L64)).
 3. With neither file: `ImportError`.
 
 `<pkg>` may be a dotted name. The home pack of `symbolic_robot` loads as `load_adapter('symbolic_robot.domains.home')` (run offline).
@@ -210,7 +211,7 @@ The kcare adapter wraps the older name map and the manifest, and adds the robot'
         self.i18n.phrases = phrases
 ```
 
-The adapter class subclasses the hub's `NamemapAdapter` (its name contains the robot maker's product name, so it is not repeated here). `make_adapter()` at [`adapter.py:224-225`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/configs/adapter.py#L224-L225) is what `load_adapter` calls. The adapter adds:
+The adapter class subclasses the hub's `NamemapAdapter` (its name contains the robot maker's product name, so it is not repeated here; the kcare name-map file still has its old name, and the loader reads it). `make_adapter()` at [`adapter.py:224-225`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/configs/adapter.py#L224-L225) is what `load_adapter` calls. The adapter adds:
 
 - `pose()` ([`adapter.py:111-137`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/configs/adapter.py#L111-L137)): the base pose and its receive time from the `mobile_pose` ROS agent, or `{}` outside a runtime. It has no `container_states()`: the robot has no sensor for drawer state, so "opened" stays a belief.
 - `health()` ([`adapter.py:139-167`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/configs/adapter.py#L139-L167)): camera frame age, frame rate, depth, and pose age, compared with `frame_max_age_s` and `pose_max_age_s` from the manifest's geometry.
@@ -250,7 +251,7 @@ How the two packs compare. All values were read from the files at the pinned com
 | Skills in the manifest | 10 | 17 | 12 |
 | `check_manifest` result | 0 errors, 0 warnings | 0 errors, 17 warnings | 0 errors, 12 warnings |
 | Default language | `ko` (also `en`) | `en` | not read |
-| Adapter | subclass of the hub's `NamemapAdapter`, over `grace_namemap` | own plain class, no inheritance | own `adapter.py` (not read in detail) |
+| Adapter | subclass of the hub's `NamemapAdapter`, over its name-map module | own plain class, no inheritance | own `adapter.py` (not read in detail) |
 | Where skills run | on the robot through ROS agents | in a mock backend (`configs/backend.py`), no motion | same |
 | Reads ROS | yes | no | no |
 
@@ -279,7 +280,7 @@ manifest <repo>/symbolic_robot/symbolic_robot/domains/home/configs/manifest.yaml
 manifest <repo>/symbolic_robot/symbolic_robot/domains/factory/configs/manifest.yaml (<robot>, 12 skills): 0 error(s), 12 warning(s)
 ```
 
-A robot package can call the same check from its own tests with `assert_manifest_matches(path)` ([`check_manifest.py:332-336`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/check_manifest.py#L352-L356)). kcare keeps `tests/test_manifest.py` and `tests/test_adapter*.py` for this. These tests were not run here (`pytest` is not installed on the machine that wrote this page); only what they check was read.
+A robot package can call the same check from its own tests with `assert_manifest_matches(path)` ([`check_manifest.py:353-357`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/contract/check_manifest.py#L353-L357)). kcare keeps `tests/test_manifest.py` and `tests/test_adapter*.py` for this. These tests were not run here (`pytest` is not installed on the machine that wrote this page); only what they check was read.
 
 ## What breaks when the contract changes
 

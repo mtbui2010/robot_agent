@@ -111,7 +111,7 @@ find apple (ok, the goal check)
 | path | when | what runs |
 |---|---|---|
 | open loop (legacy) | no `planner` in the request and `ROBOT_AGENT_CLOSED_LOOP` is not `1` | the language model writes a `skill::input` plan once, steps run in order, no per-step recovery |
-| `ClosedLoop` | planner `grace`, `direct`, or a plug-in planner name | plan, act, verify, replan, as in `loop.py` |
+| `ClosedLoop` | planner `sage_plain`, `direct`, or a plug-in planner name | plan, act, verify, replan, as in `loop.py` |
 | `AssistLoop` | planner `sage` (or env `ROBOT_AGENT_PLANNER=sage`) | the same loop plus understanding and clarification of the task, a certified gate, a guard before each step, per-action recovery and a goal check |
 | `run_direct` | a plan that is already `skill::input` text | runs the steps without an LLM |
 

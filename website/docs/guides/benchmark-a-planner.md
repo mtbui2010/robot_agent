@@ -12,7 +12,7 @@ This guide shows how to measure a task planner on the [symbolic simulator](../st
     - The runner plays each task against a planner, and a **judge** scores the result from the simulator's `truth`, never from what the planner says. The judge lives only in `bench/`.
     - The same command with the same seeds gives the same files. A run writes `episodes.jsonl`, `summary.json` and `report.md`.
     - To compare two planners, run both on the same tasks and seeds and use a **paired test**. Do not compare two success numbers by eye.
-    - The full household benchmark with an LLM planner (SAGE, `grace`, `llm_direct`) needs the hub and an LLM. It was **not run** for this page.
+    - The full household benchmark with an LLM planner (SAGE with the AssistLoop, SAGE with the plain loop, `llm_direct`) needs the hub and an LLM. It was **not run** for this page.
 
 !!! code "Where in the code"
     - The suite type: [`bench/suite.py:10`](https://github.com/mtbui2010/symbolic_robot/blob/f55ace24c3b4/bench/suite.py#L10); the front end: [`bench/cli.py`](https://github.com/mtbui2010/symbolic_robot/blob/f55ace24c3b4/bench/cli.py); the household suites: [`bench/suites/home/register.py`](https://github.com/mtbui2010/symbolic_robot/blob/f55ace24c3b4/bench/suites/home/register.py)
@@ -25,7 +25,7 @@ This guide shows how to measure a task planner on the [symbolic simulator](../st
 |---|---|
 | The reference planners `oracle` and `naive` (this guide) | Python 3.10 or later, `pyyaml`, and `websockets` (the extra `bench`). The front end `python -m bench` imports `websockets` even when you run a household suite. Without it you get `ModuleNotFoundError: No module named 'websockets'`. |
 | LLM planners such as `saycan_like`, `progprompt_like` | The above, and an LLM address with `--llm`. Not run here. |
-| The hub planners `robot_agent:sage`, `robot_agent:grace`, `robot_agent:llm_direct` | The hub and embodiplan importable, and an LLM. Not run here. |
+| The three hub planners (`robot_agent:sage`, `robot_agent:grace`, `robot_agent:llm_direct`) | The hub and embodiplan importable, and an LLM. Not run here. |
 
 Install the repository with `pip install -e .` and the extra `bench`. See [Symbolic simulator and benchmark](../repos/symbolic-robot.md) for the other needs. The commands below use the repository root as the current folder.
 
@@ -66,7 +66,7 @@ Run `python -m bench run --domain home --suite planners` to list them. This need
 | Baselines in the style of published planners | `saycan_like`, `inner_monologue_like`, `progprompt_like`, `knowno_like` | An LLM. |
 | The hub's planners | `robot_agent:sage`, `robot_agent:grace`, `robot_agent:llm_direct`, and many named variants of `robot_agent:sage` for ablations | The hub, embodiplan, an LLM. |
 
-`robot_agent:sage` runs the hub's [AssistLoop](../start/glossary.md#assistloop); `robot_agent:grace` and `robot_agent:llm_direct` run the [ClosedLoop](../start/glossary.md#closedloop) with the planner keys `grace` and `llm_direct` ([`robot_agent_adapter.py:1-17`](https://github.com/mtbui2010/symbolic_robot/blob/f55ace24c3b4/bench/suites/home/planners/robot_agent_adapter.py#L1-L17)). Read [Planners and loops](../concepts/planners.md) for the difference.
+`robot_agent:sage` runs the hub's [AssistLoop](../start/glossary.md#assistloop); `robot_agent:grace` and `robot_agent:llm_direct` run the [ClosedLoop](../start/glossary.md#closedloop) around the SAGE planner and around `llm_direct`. The name `robot_agent:grace` is the benchmark's own key (class `GracePlanner` in `symbolic_robot`, not renamed there); in the hub the request name `grace` is now a deprecated alias of `sage_plain`, so the run still works (checked in the hub code; the benchmark was not re-run after the rename) ([`robot_agent_adapter.py:1-17`](https://github.com/mtbui2010/symbolic_robot/blob/f55ace24c3b4/bench/suites/home/planners/robot_agent_adapter.py#L1-L17)). Read [Planners and loops](../concepts/planners.md) for the difference.
 
 Here the hub is not importable, so the listing marks every `robot_agent:*` name as unavailable:
 
@@ -261,7 +261,7 @@ A second real example, against the floor planner above: the oracle succeeded in 
 
 | Part | Why not |
 |---|---|
-| The household benchmark with `robot_agent:sage`, `robot_agent:grace`, `robot_agent:llm_direct` | Needs the hub, embodiplan and an LLM, and the hub is not importable on this machine. |
+| The household benchmark with the three hub planners | Needs the hub, embodiplan and an LLM, and the hub is not importable on this machine. |
 | Any planner that needs an LLM (`saycan_like`, `progprompt_like`, ...), and `--llm cache-only` | No LLM was called. |
 | A full run (all of dev, more seeds, both languages) | The runs here are 20-task smoke runs for the output format. No benchmark numbers are quoted from the repository's recorded results either. |
 | The factory suites, `make run`, the server | They need a server, the hub with the ROS-off switch (see the [warning](../repos/symbolic-robot.md#how-it-plugs-into-the-hub)) and an LLM. Only `--dry-run` of one factory suite was run. |

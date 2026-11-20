@@ -16,7 +16,7 @@ Every time the robot is given a task, it starts a **run**. A run has an id, an o
 !!! code "Where in the code"
     - [`Run`, `RunManager`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/interact/run_manager.py#L193-L668) and the [run id](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/interact/run_manager.py#L188-L190)
     - [`RunRecord`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/observe/record.py#L105-L201), [`metrics_of`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/observe/record.py#L285-L345), [`find_record`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/observe/record.py#L219-L251)
-    - [`paths.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/observe/paths.py#L37-L112) (where files go) and [`replay.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/observe/replay.py#L363-L526) (the replay CLI)
+    - [`paths.py`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/observe/paths.py#L37-L129) (where files go) and [`replay.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/observe/replay.py#L363-L526) (the replay CLI)
     - The record is opened by hooks that [`run_control`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/run_control.py#L44-L58) adds to the run manager.
     - Tests that record a run and replay it: [`test_observe_record_replay.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/tests/test_observe_record_replay.py)
 
@@ -269,10 +269,10 @@ replay exec 20261118-165807-acde22 (assist): IDENTICAL
 
 The `exec` replay re-ran the whole run (understanding, two questions, a plan, a miss and a replan) and got the same events, the same skill calls and the same outcome. Both runs also printed `teleop stop_all: 'ReplayState' object has no attribute 'cm'` on stderr. It is harmless here.
 
-`<run>` can be a run folder, a `record.jsonl` file, or a bare run id (with `--data-dir` to say where to look). Other options: `--planner auto|recorded|live`, `--robot-pkg`, `--strict` and `--json`. With `recorded`, the planner is served from the recorded `generate_plan` and `replan` rows. With `live`, the planner's own logic (SAGE or GRACE) runs and only its LLM calls are served; embodiplan must be importable. `auto` picks `live` when the record has embodiplan calls and embodiplan imports, else `recorded`.
+`<run>` can be a run folder, a `record.jsonl` file, or a bare run id (with `--data-dir` to say where to look). Other options: `--planner auto|recorded|live`, `--robot-pkg`, `--strict` and `--json`. With `recorded`, the planner is served from the recorded `generate_plan` and `replan` rows. With `live`, the planner's own logic (SAGE) runs and only its LLM calls are served; embodiplan must be importable. `auto` picks `live` when the record has embodiplan calls and embodiplan imports, else `recorded`.
 
 !!! warning "Replay needs the code and the robot package of the run"
-    - **The robot package must be importable.** The record names it in `robot_pkg`. Without it, `exec` ended with an `ImportError` (`fakebot: no configs/adapter.py and no configs/grace_namemap.py`) and exit status 2. Put the package on `PYTHONPATH`, or pass `--robot-pkg`.
+    - **The robot package must be importable.** The record names it in `robot_pkg`. Without it, `exec` ended with an `ImportError` (`fakebot: no configs/adapter.py and no configs/sage_namemap.py`) and exit status 2. Put the package on `PYTHONPATH`, or pass `--robot-pkg`.
     - **embodiplan should be importable.** When we left `embodiplan` off the path for the record above, `plan` printed `DIFFERS` with `replayed plan: None` and exited with 1. With embodiplan on the path it printed `IDENTICAL`. So a `DIFFERS` is not always a real difference: check the environment first.
     - Replay patches a few module globals while it runs and restores them. Use it from a command line or a test, not inside a live agent process.
 

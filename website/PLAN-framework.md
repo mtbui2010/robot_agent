@@ -81,7 +81,7 @@ flowchart TB
     CONN["connect/  ROS 2 node, codecs,<br/>LLM / STT clients"]
   end
   subgraph LIB["embodiplan (planner library)"]
-    SAGE["SAGEPlanner (alias GRACE)"]
+    SAGE["SAGEPlanner"]
     AM["action_model<br/>ACTION_MODEL_VERSION 1.0"]
   end
   subgraph PKG["robot package: kcare_robot"]
@@ -150,8 +150,8 @@ value, one figure, links down to module pages and to the glossary.
 ### C1. The closed loop of a robot agent: plan, act, verify, recover (`concepts/closed-loop.md`)
 - **Teach**: why a robot agent is a loop and not a one-shot plan; the four phases; what "replan" replaces (the
   failed step and everything after it, `docs/planners.md`); the three execution paths a run can take and when:
-  open-loop (legacy default when no `planner` is sent, `core/unified_agent.py:363-366`), ClosedLoop (`grace`,
-  `direct`, plug-ins), AssistLoop (`sage`, `unified_agent.py:371-372`), plus `run_direct` (structured
+  open-loop (legacy default when no `planner` is sent, `core/unified_agent.py:365-368`), ClosedLoop (`sage_plain`,
+  `direct`, plug-ins), AssistLoop (`sage`, `unified_agent.py:379-381`), plus `run_direct` (structured
   `skill::input` plan, no LLM, `unified_agent.py:466`).
 - **Real example**: the fake-robot run (section 8): plan `MoveTo desk@study room, Find apple, Pick apple, MoveTo
   dining table@kitchen, Place dining table@kitchen`; `Find apple` fails (`apple not found`), a `search` event
@@ -218,18 +218,21 @@ value, one figure, links down to module pages and to the glossary.
 
 ### C6. Planners and the loop: ClosedLoop, AssistLoop and embodiplan (`concepts/planners.md`)
 - **Teach**: the planner protocol (`generate_plan(task, obs, visible_objects)`, `replan(...)`, both `-> (steps,
-  meta)`, `core/planning/base.py:247`); names: `grace` = the ClosedLoop around the built-in `GraceBackend`
-  (`registry.py` `_BUILTIN`); `sage` is **not** a planner name (`resolve_planner('sage')` raises, run) but the
-  choice of the AssistLoop in `unified_agent.py:359-372`, whose generator defaults to `grace`; embodiplan's
-  `GRACEPlanner` is an alias of `SAGEPlanner` (`embodiplan/__init__.py:79-80`) and SAGE expands to "Symbolic
-  Action-Gating and Editing planner" (embodiplan site, `planners/sage.md`). So both codenames end up in the same
-  embodiplan class; they differ in the loop around it. `llm_direct` = one LLM call producing `skill::inputs`.
+  meta)`, `core/planning/base.py:247`); two levels of names: the registry names the planner (`sage` = the built-in
+  `SageBackend`, `llm_direct`; `registry.py` `_BUILTIN`), a request (`/ws/agent` `planner`, `ROBOT_AGENT_PLANNER`)
+  names a loop: `sage` = the AssistLoop (`unified_agent.py:379-381`, generator default `sage`), `sage_plain` = the
+  ClosedLoop around the same backend, `direct` = the ClosedLoop around `llm_direct` (`planner_names.py:62-71`
+  `loop_choice`). SAGE expands to "Symbolic Action-Gating and Editing planner" (embodiplan site,
+  `planners/sage.md`). Both `sage` and `sage_plain` end up in the same embodiplan class; they differ in the loop
+  around it. One sentence on the old name (SAGE was called GRACE before; the old names still work, deprecated)
+  goes on this page only. `llm_direct` = one LLM call producing `skill::inputs`.
   Optional capabilities (`SubgoalRepair`, `ProgressReporting`, `EpisodeMemory`).
-- **Real values** (run): `resolve_planner('grace')` -> `GraceBackend`; `'llm_direct'` -> `LlmDirectBackend`;
-  `'sage'` -> `ValueError unknown planner 'sage'; available planners: grace, llm_direct (or 'package.module:Class',
-  or an entry point in group 'robot_agent.planners')`; `ACTION_MODEL_VERSION` `1.0`; `ROBOT_ACTIONS` (14):
+- **Real values** (run): `resolve_planner('sage')` -> `SageBackend`; `'llm_direct'` -> `LlmDirectBackend`;
+  `'sage_plain'` -> `ValueError unknown planner 'sage_plain'; available planners: sage, llm_direct (or
+  'package.module:Class', or an entry point in group 'robot_agent.planners')`; `ACTION_MODEL_VERSION` `1.0`;
+  `ROBOT_ACTIONS` (14):
   `Close Find LieOn MoveTo Open Pick Place PutIn Serve Sit TurnOff TurnOn Wait Wash`.
-- **Figure**: matrix "loop x planner" (ClosedLoop|AssistLoop x grace|llm_direct|plug-in) with what the core adds.
+- **Figure**: matrix "loop x planner" (ClosedLoop|AssistLoop x sage|llm_direct|plug-in) with what the core adds.
 - **Sources**: `robot_agent/core/planning/base.py`, `robot_agent/core/planning/registry.py`, `robot_agent/core/planning/backends/`, `robot_agent/core/unified_agent.py`, `embodiplan:embodiplan/__init__.py`, `embodiplan:embodiplan/sage.py`.
 
 ### C7. Runs and records: observe and replay (`concepts/runs-and-records.md`)
@@ -282,7 +285,7 @@ symbolic_robot: f55ace2`; list only the repos the page cites).
 - sources: as in section 3. Content = section 3.
 
 #### O3. Architecture (`start/architecture.md`)
-- sources: `robot_agent/api/agent.py`, `robot_agent/core/unified_agent.py`, `robot_agent/core/planning/assist_loop.py`, `robot_agent/core/planning/loop.py`, `robot_agent/core/planning/robot.py`, `robot_agent/core/skill_registry.py`, `robot_agent/connect/ros/node.py`, `robot_agent/core/planning/backends/pyplanner_grace.py`, `robotapp:frontend/app/page.tsx`, `robotapp:frontend/lib/api.ts`, `robotapp:frontend/lib/planView.ts`, `kcare_robot:kcare_robot/configs/adapter.py`, `kcare_robot:kcare_robot/configs/skills_config.py`, `kcare_robot:kcare_robot/skills/mobile.py`, `kcare_sim:sim/scripts/house_bridge.py`, `embodiplan:embodiplan/__init__.py`, `embodiplan:embodiplan/sage.py`
+- sources: `robot_agent/api/agent.py`, `robot_agent/core/unified_agent.py`, `robot_agent/core/planning/assist_loop.py`, `robot_agent/core/planning/loop.py`, `robot_agent/core/planning/robot.py`, `robot_agent/core/skill_registry.py`, `robot_agent/connect/ros/node.py`, `robot_agent/core/planning/backends/pyplanner_sage.py`, `robotapp:frontend/app/page.tsx`, `robotapp:frontend/lib/api.ts`, `robotapp:frontend/lib/planView.ts`, `kcare_robot:kcare_robot/configs/adapter.py`, `kcare_robot:kcare_robot/configs/skills_config.py`, `kcare_robot:kcare_robot/skills/mobile.py`, `kcare_sim:sim/scripts/house_bridge.py`, `embodiplan:embodiplan/__init__.py`, `embodiplan:embodiplan/sage.py`
 - Content: the layer diagram (section 2); the hub's internal layering rule (`contract <- model <- plan/execute <-
   interact <- api`, `CLAUDE.md` rule 2, link to `docs/rules.md`); **one request end to end** (below); a
   "Decisions, and why" table, reasons taken from `docs/contract.md`, `docs/guard.md`, `docs/planners.md`,
@@ -301,13 +304,12 @@ planner `sage`, kcare_robot driving the MuJoCo house). Lines verified at the com
 3. `agent.py:483-488` -> `core/unified_agent.py:322` `UnifiedAgent.run`: translation to English if `lang != 'en'`
    (`:346-352`); planner choice `:359`; `sage` -> `AssistLoop` (`:371-372`), else `ClosedLoop` (`:366-370`); no
    planner and no `ROBOT_AGENT_CLOSED_LOOP=1` -> open-loop path (`:383-...`).
-4. The loop loads the robot: `core/planning/robot.py:60` `RobotView.load` -> `contract/legacy_adapter.py:215`
+4. The loop loads the robot: `core/planning/robot.py:60` `RobotView.load` -> `contract/legacy_adapter.py:227`
    `load_adapter('kcare_robot')` -> `kcare_robot:kcare_robot/configs/adapter.py:224` `make_adapter()` (the adapter
    class at `:87` reads `configs/manifest.yaml`).
 5. `AssistLoop.run_blocking` (`core/planning/assist_loop.py:951`): reconcile (`:1766`), understand -> goals,
-   plan from the generator: `core/planning/backends/pyplanner_grace.py:222-229` -> embodiplan `get("GRACE")`
-   (`pyplanner_grace.py:219-220`) = `SAGEPlanner` (`embodiplan:embodiplan/__init__.py:79-80`, class at
-   `embodiplan/sage.py:334`, `generate_plan` `:560`).
+   plan from the generator: `core/planning/backends/pyplanner_sage.py:222-223` -> embodiplan `get("SAGE")`
+   = `SAGEPlanner` (class at `embodiplan/sage.py:334`, `generate_plan` `:560`).
 6. Gate: `assist_loop.py:654` `_check` -> `core/planning/action_model.py:40-42` `simulate` ->
    `embodiplan:embodiplan/action_model.py:422`. Event `gate`.
 7. Per step: guard (`assist_loop.py:1801`), bind (`robot.py:99` -> `legacy_adapter.py:87`; real value: `MoveTo
@@ -332,7 +334,7 @@ planner `sage`, kcare_robot driving the MuJoCo house). Lines verified at the com
 - sources: `robot_agent/contract/`, `robot_agent/core/planning/`, `robot_agent/interact/`, `robot_agent/observe/`, `docs/`
 - One table, alphabetical, columns `Term | Plain meaning | Also called | Where explained`. Writers verify each
   meaning against the cited code before publishing; the list below is the minimum (collected from code and
-  `docs/`; GRACE appears 61 times in `robot_agent/docs/*.md`):
+  `docs/`):
 
 | term | plain meaning (draft) | also called / code name | evidence |
 |---|---|---|---|
@@ -347,7 +349,7 @@ planner `sage`, kcare_robot driving the MuJoCo house). Lines verified at the com
 | budget (LLM-call budget) | max LLM calls a run may make; running out is failure `budget_exceeded` | `llm_budget` | `core/planning/budget.py`, `types.py:31` |
 | certified gate | check of the whole plan before motion; a plan with critical findings never runs | gate | `docs/guard.md`, `assist_loop.py:654` |
 | clarify | the robot asks the person a question before planning | | `api/events.py` (`clarify`) |
-| ClosedLoop | the plain plan -> act -> check -> replan loop around any planner | codename `grace` (as a run's planner choice) | `core/planning/loop.py:242` |
+| ClosedLoop | the plain plan -> act -> check -> replan loop around any planner | request name `sage_plain` (as a run's planner choice) | `core/planning/loop.py:246` |
 | codec | a named function that encodes/decodes a device message (`codec:<name>`); inline code strings are deprecated | `encode_func`, `decode_func` | `connect/codecs.py:1-25` |
 | connections.json | per-site list of device connections (ROS topics/actions/services, TCP, LLM servers) | devices | `kcare_robot/configs/locations/<site>/` |
 | device agent | one named connection inside the ROS node (`node.agents['mobile_move']`) with `get` / `send` | NodeAgent | `connect/ros/node.py:93` |
@@ -359,8 +361,8 @@ planner `sage`, kcare_robot driving the MuJoCo house). Lines verified at the com
 | FailureCode | why a skill failed, one of 13 shared codes | code | `contract/types.py:15-31` |
 | goal (typed goal) | what the person wants, as `on / in / open / close / go / say / deliver` | | `core/planning/goals.py:33-47` |
 | goal check | success is declared only when goals are observed to hold | `goal_check` event | `assist_loop.py:1708` |
-| GRACE | in robot_agent: the built-in planner name of the ClosedLoop (`GraceBackend`); in embodiplan: an alias of SAGEPlanner | `grace` | `registry.py` `_BUILTIN`, `embodiplan/__init__.py:79-80` |
-| grace_namemap | older per-robot module of name maps and param builders, wrapped by `NamemapAdapter` | namemap | `contract/legacy_adapter.py:34` |
+| GRACE | the old name of the SAGE planner; the old names (registry and request `grace`, the robot module, the memory store, the install extra) still work, deprecated | | `core/planning/planner_names.py` |
+| sage_namemap | older per-robot module of name maps and param builders, wrapped by `NamemapAdapter` | namemap | `contract/legacy_adapter.py:38` |
 | guard (per-step guard) | check of one step's preconditions on the current belief right before it runs | | `assist_loop.py:1801` |
 | health / sensor health | adapter's report of frame age, pose age etc.; stale sensors block trust | | `core/planning/sensor_health.py`, `contract/adapter.py:72` |
 | intent | what someone's words during a run mean: stop, pause, resume, modify, add, drop, new, status, answer | intent router | `interact/intent_router.py:28-38` |
@@ -428,7 +430,7 @@ Version compatibility table:
 
 | consumer | needs | declared in | checked by |
 |---|---|---|---|
-| robot_agent | `embodiplan>=0.2.1,<0.3` (core dependency **and** `[grace]` extra) | `robot_agent/pyproject.toml:24, 59` | `tests/test_action_model_agreement.py:285-287` (pin regex + same ACTION_MODEL_VERSION) |
+| robot_agent | `embodiplan>=0.2.1,<0.3` (core dependency **and** `[sage]` extra) | `robot_agent/pyproject.toml:24, 59` | `tests/test_action_model_agreement.py:285-287` (pin regex + same ACTION_MODEL_VERSION) |
 | robot_agent | `numpy==1.26.4` | `pyproject.toml:17` | none found |
 | kcare_robot | `robot_agent` (no version), `visionserve`, `numpy==1.26.4`, `opencv-python<5`; extra `planner`: `embodiplan>=0.2.1,<0.3` | `kcare_robot/pyproject.toml:22-35` | `make install` checks the pin (comment `:34`) - not run |
 | embodiplan | provides 0.2.5, `ACTION_MODEL_VERSION = "1.0"` | `embodiplan/pyproject.toml:7`, `embodiplan/__init__.py:57`, `action_model.py:29` | its own rule 2 (bump on rule change) |
@@ -470,7 +472,7 @@ and pin", "What breaks when it changes" (real cases only), "How to check" (comma
 - Link (do not rewrite): robotapp site and `docs/features/backend-contract.md`.
 
 #### K2. Robot package <-> core: RobotAdapter, manifest, skills (`contracts/robot-package.md`)
-- sources: `robot_agent/contract/`, `robot_agent/runtime.py`, `robot_agent/app_factory.py`, `robot_agent/core/skill_registry.py`, `robot_agent/core/planning/robot.py`, `robot_agent/api/skills.py`, `robot_agent/skill_configs.py`, `kcare_robot:kcare_robot/main.py`, `kcare_robot:kcare_robot/configs/adapter.py`, `kcare_robot:kcare_robot/configs/manifest.yaml`, `kcare_robot:kcare_robot/configs/skills_config.py`, `kcare_robot:kcare_robot/configs/grace_namemap.py`, `kcare_robot:kcare_robot/skills/_recognition_helpers.py`, `kcare_robot:CLAUDE.md`, `symbolic_robot:symbolic_robot/domains/home/configs/`, `symbolic_robot:symbolic_robot/domains/factory/configs/`
+- sources: `robot_agent/contract/`, `robot_agent/runtime.py`, `robot_agent/app_factory.py`, `robot_agent/core/skill_registry.py`, `robot_agent/core/planning/robot.py`, `robot_agent/api/skills.py`, `robot_agent/skill_configs.py`, `kcare_robot:kcare_robot/main.py`, `kcare_robot:kcare_robot/configs/adapter.py`, `kcare_robot:kcare_robot/configs/manifest.yaml`, `kcare_robot:kcare_robot/configs/skills_config.py`, `kcare_robot:kcare_robot/configs/*_namemap.py`, `kcare_robot:kcare_robot/skills/_recognition_helpers.py`, `kcare_robot:CLAUDE.md`, `symbolic_robot:symbolic_robot/domains/home/configs/`, `symbolic_robot:symbolic_robot/domains/factory/configs/`
 - What a robot package must provide (table): `<pkg>/main.py` calling `create_app(robot_pkg=..., config_dir=...)`
   (`kcare_robot/main.py:29` <- `app_factory.py:50`); `configs/skills_config.py: SKILL_CONFIGS = {name: (module,
   func)}` (`kcare_robot/configs/skills_config.py:3` <- `runtime.py:192-201`, `skill_registry.py:334-345`);
@@ -513,13 +515,13 @@ and pin", "What breaks when it changes" (real cases only), "How to check" (comma
   kcare working tree (F10).
 
 #### K4. Planner library <-> core: planner protocol, action model, pins (`contracts/planner-library.md`)
-- sources: `robot_agent/core/planning/base.py`, `robot_agent/core/planning/registry.py`, `robot_agent/core/planning/backends/pyplanner_grace.py`, `robot_agent/core/planning/backends/examples.py`, `robot_agent/core/planning/action_model.py`, `robot_agent:pyproject.toml`, `tests/test_action_model_agreement.py`, `tests/test_v2_planner_plugin.py`, `embodiplan:embodiplan/__init__.py`, `embodiplan:embodiplan/action_model.py`, `embodiplan:embodiplan/sage.py`, `embodiplan:embodiplan/memory_retriever.py`, `embodiplan:pyproject.toml`, `embodiplan:CLAUDE.md`, `symbolic_robot:bench/suites/home/planners/robot_agent_adapter.py`
+- sources: `robot_agent/core/planning/base.py`, `robot_agent/core/planning/registry.py`, `robot_agent/core/planning/backends/pyplanner_sage.py`, `robot_agent/core/planning/backends/examples.py`, `robot_agent/core/planning/action_model.py`, `robot_agent:pyproject.toml`, `tests/test_action_model_agreement.py`, `tests/test_v2_planner_plugin.py`, `embodiplan:embodiplan/__init__.py`, `embodiplan:embodiplan/action_model.py`, `embodiplan:embodiplan/sage.py`, `embodiplan:embodiplan/memory_retriever.py`, `embodiplan:pyproject.toml`, `embodiplan:CLAUDE.md`, `symbolic_robot:bench/suites/home/planners/robot_agent_adapter.py`
 - Both sides: rule 3 of the hub (`CLAUDE.md`): embodiplan is imported only in `core/planning/backends/` and
-  `core/planning/action_model.py` (grep confirms: `backends/pyplanner_grace.py:141,157,192,262`,
+  `core/planning/action_model.py` (grep confirms: `backends/pyplanner_sage.py:144,160,195,306`,
   `backends/examples.py:67`, `action_model.py:21`; `observe/replay.py:418` only calls `planner_available`).
   embodiplan rule 1: keep `__all__` backwards compatible within 0.x.
-- What crosses: `embodiplan.get("GRACE", **selected)` (`pyplanner_grace.py:219-220`) with kwargs filtered to
-  `_GRACE_KWARGS`; `generate_plan/replan` returning `(steps, metrics)`; SAGE extras `last_blocks`, `flatten`,
+- What crosses: `embodiplan.get("SAGE", **selected)` (`pyplanner_sage.py:222-223`) with kwargs filtered to
+  `_SAGE_KWARGS`; `generate_plan/replan` returning `(steps, metrics)`; SAGE extras `last_blocks`, `flatten`,
   `edit_block`, `retrieve_examples`, `progress`, `record_episode`; action model `check / apply / simulate`,
   `Capabilities`, `Violation`, `ROBOT_ACTIONS`, `ACTION_MODEL_VERSION`.
 - Pins: `>=0.2.1,<0.3` (`pyproject.toml:24, 59`, kcare `pyproject.toml:35`); provided 0.2.5; the agreement test
@@ -594,7 +596,7 @@ and pin", "What breaks when it changes" (real cases only), "How to check" (comma
 #### G5 (proposed). Benchmark a planner (`guides/benchmark-a-planner.md`)
 - sources: `symbolic_robot:README.md`, `symbolic_robot:docs/bench.md`, `symbolic_robot:docs/home/bench/planners.md`, `symbolic_robot:docs/home/bench/robot_agent.md`, `symbolic_robot:bench/suites/home/planners/robot_agent_adapter.py`
 - Short page for researchers: which planners exist (`oracle, naive, keyword, saycan_like, knowno_like,
-  progprompt_like, inner_monologue_like`, and `robot_agent:sage|grace|llm_direct`, from file names and
+  progprompt_like, inner_monologue_like`, and `robot_agent:sage|llm_direct` and a plain-loop sibling, from file names and
   `robot_agent_adapter.py:1-3`), the command shape (`make bench ROBOT=home SUITE=run ARGS="--planner oracle --split
   dev --limit 20 --llm fake"`, README), the test-split rule (symbolic_robot rule 4), licences of the task data
   (README table). No numbers unless quoted with file, date and count. Bench **not run** (it writes results).
@@ -606,7 +608,7 @@ Each: role (1 line), how it plugs into the hub (which contract page), its module
 
 | page | role | plugs in via | module table rows (from the repo) | needs to run | own docs to link |
 |---|---|---|---|---|---|
-| `repos/kcare-robot.md` | skills + config of one mobile manipulator (real robot) | K2, K3 | `configs/` (manifest, adapter, grace_namemap, skills_config, tasks, locations/), `skills/` by family: recognition (1139 lines + helpers 1030), hri (2994), pick (697), place/pnp, stack, vla/vla_stack, mobile, arm, lift, head, grip, emergency, switchbot, align_shoes, real2sim_capture; `template_skills/`; `planner/seed_memory.jsonl`; `tests/` (10 files) | ROS 2, colcon ws, visionserve, embodiplan extra; `make run` | `kcare_robot/docs/` (README, notes/architecture.md, SKILLS.md, testing.md): no site |
+| `repos/kcare-robot.md` | skills + config of one mobile manipulator (real robot) | K2, K3 | `configs/` (manifest, adapter, name map, skills_config, tasks, locations/), `skills/` by family: recognition (1139 lines + helpers 1030), hri (2994), pick (697), place/pnp, stack, vla/vla_stack, mobile, arm, lift, head, grip, emergency, switchbot, align_shoes, real2sim_capture; `template_skills/`; `planner/seed_memory.jsonl`; `tests/` (10 files) | ROS 2, colcon ws, visionserve, embodiplan extra; `make run` | `kcare_robot/docs/` (README, notes/architecture.md, SKILLS.md, testing.md): no site |
 | `repos/robotapp.md` | dashboard for any robot_agent backend | K1 | `frontend/app/page.tsx`, `frontend/components/*Panel.tsx` (Agent, Plan, Map, Skill, Device, Env, Data, Button, Chat ...), `frontend/lib/api.ts` (+ planView, chatRun, recorder ...), `scripts/` (gen_types, dump_openapi, lint, test_lib) | Node; a backend URL | its live Starlight site (`docs/astro.config.mjs:29-30`) and `docs/features/*.md`: **link only** |
 | `repos/embodiplan.md` | planner library; SAGE + baselines; the action model | K4 | `embodiplan/`: sage.py, action_model.py, memory_retriever.py, memory_tools.py, direct.py, cot.py, react.py, saycan.py, llmp.py, hierarchical.py, few_shot*.py, self_refine.py, verifier.py, llm_router.py, robot_prompt.py | Python, an LLM for real planning | its site (20 pages, `website/mkdocs.yml:3`; PR pending, so link may 404 until merged: Q6) |
 | `repos/kcare-sim.md` | MuJoCo copy of the home with the robot's ROS names; VLA drawer policy data, training, evaluation; a symbolic mode | K3 | `sim/scripts/` (house_bridge, house_scene, robot_interfaces, make_kcare_sim_location, gen_dataset, eval_policy, expert_*), `sim/config/`, `sim/mjcf|urdf|assets`, `symbolic/` (engine, profiles, serve, tests), `website/` | docker + ROS 2 Humble + GPU (bridge); conda env per mode (`make install SIM=...`) | its live site (`website/mkdocs.yml:3`): **link only**; quote its README's policy table only with source (`kcare_sim/README.md` at `4a8d0af`: 44/50 office, 4/50 house, 26/50 house after more data; not re-measured) |
@@ -636,7 +638,7 @@ Each later part writes its own plan with the full module recipe (`deep-dive.md`)
 | `modules/guard-and-reconcile.md` | per-step guard, reconcile with sensors, provenance | `core/planning/reconcile.py`, `assist_loop.py` (`_guard`, `_reconcile`), `base.py` |
 | `modules/robot-view.md` | the robot as the loops see it; `run_skill` | `core/planning/robot.py` |
 | `modules/planner-interface.md` | Planner protocol, optional capabilities, registry, plug-ins | `core/planning/base.py`, `registry.py` |
-| `modules/planner-backends.md` | GraceBackend (embodiplan), LlmDirectBackend, concrete steps, example retrieval | `core/planning/backends/`, `core/planning/concrete.py` |
+| `modules/planner-backends.md` | SageBackend (embodiplan), LlmDirectBackend, concrete steps, example retrieval | `core/planning/backends/`, `core/planning/concrete.py` |
 | `modules/action-model.md` | the facade over embodiplan's rules | `core/planning/action_model.py`, `embodiplan:embodiplan/action_model.py` |
 | `modules/skill-registry.md` | internal / external / plan skills, aliases, spoken names, shared skills.json | `core/skill_registry.py`, `core/plan_skill.py`, `spoken.py`, `core/shared_json.py` |
 
@@ -700,7 +702,7 @@ Each later part writes its own plan with the full module recipe (`deep-dive.md`)
   - **tests (7)**: `tests/test_contract_adapter.py:15-16, 171` (reads the sibling checkout, skips when absent; also
     a hard-coded absolute home-directory path, privacy), `test_contract_manifest.py:12, 139`,
     `test_contract_check_manifest.py:10, 114` (sibling checkout), `test_episodes.py:321-338` (a tmp dir name),
-    `tests/fakebot/configs/{adapter.py:2, grace_namemap.py:3, manifest.yaml:2}` ("copied from" comments).
+    `tests/fakebot/configs/{adapter.py:2, sage_namemap.py:3, manifest.yaml:2}` ("copied from" comments).
   - **comments, docstrings, help text, usage examples (11)**: `app_factory.py:4`, `cli.py:5-20`,
     `copy_skill.py:8-15`, `delete_skill.py:18-19, 59, 146`, `diagnose.py:8-9, 49`, `new_skill.py:7-15, 464`,
     `rename_skill.py:25-26, 97`, `runtime.py:72`, `skill_config_defaults.py:18`, `skills/__init__.py:11`,
@@ -753,7 +755,7 @@ Each later part writes its own plan with the full module recipe (`deep-dive.md`)
   kcare's `vla_drawer_open` skill; the kcare working tree removes `'vla_drawer_open'` from `skills_config.py`
   (present at `d4f5577`) and adds `vla_stack`.
 - **F11. `embodiplan` is both a core dependency and an "optional" extra**: `pyproject.toml:24` (dependencies)
-  and `:55-59` (`[grace]`, comment "kept out of the core deps so the generic runtime never hard-depends on a
+  and `:56-59` (`[sage]`, comment "kept out of the core deps so the generic runtime never hard-depends on a
   planner"); `action_model.py:20-26` raises ImportError without it, so the loops need it.
 
 ---

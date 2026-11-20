@@ -1,6 +1,6 @@
 ---
-sources: [robot_agent:robot_agent/core/planning/base.py, robot_agent:robot_agent/core/planning/registry.py, robot_agent:robot_agent/core/planning/backends/pyplanner_grace.py, robot_agent:robot_agent/core/planning/backends/examples.py, robot_agent:robot_agent/core/planning/action_model.py, robot_agent:robot_agent/core/planning/verify.py, robot_agent:robot_agent/core/planning/assist_loop.py, robot_agent:robot_agent/core/planning/loop.py, robot_agent:robot_agent/core/unified_agent.py, robot_agent:pyproject.toml, robot_agent:CLAUDE.md, robot_agent:tests/test_action_model_agreement.py, robot_agent:tests/test_v2_planner_plugin.py, embodiplan:embodiplan/__init__.py, embodiplan:embodiplan/action_model.py, embodiplan:embodiplan/sage.py, embodiplan:pyproject.toml, embodiplan:CLAUDE.md, kcare_robot:pyproject.toml, symbolic_robot:bench/suites/home/planners/robot_agent_adapter.py]
-verified_at: {robot_agent: 3269923, embodiplan: 76da520, kcare_robot: d4f5577b342e, symbolic_robot: f55ace24c3b4}
+sources: [robot_agent:robot_agent/core/planning/base.py, robot_agent:robot_agent/core/planning/registry.py, robot_agent:robot_agent/core/planning/backends/pyplanner_sage.py, robot_agent:robot_agent/core/planning/backends/examples.py, robot_agent:robot_agent/core/planning/action_model.py, robot_agent:robot_agent/core/planning/verify.py, robot_agent:robot_agent/core/planning/assist_loop.py, robot_agent:robot_agent/core/planning/loop.py, robot_agent:robot_agent/core/unified_agent.py, robot_agent:pyproject.toml, robot_agent:CLAUDE.md, robot_agent:tests/test_action_model_agreement.py, robot_agent:tests/test_v2_planner_plugin.py, embodiplan:embodiplan/__init__.py, embodiplan:embodiplan/action_model.py, embodiplan:embodiplan/sage.py, embodiplan:pyproject.toml, embodiplan:CLAUDE.md, kcare_robot:pyproject.toml, symbolic_robot:bench/suites/home/planners/robot_agent_adapter.py]
+verified_at: {robot_agent: 5058637, embodiplan: 76da520, kcare_robot: d4f5577b342e, symbolic_robot: f55ace24c3b4}
 ---
 
 # Planner library and core
@@ -12,10 +12,10 @@ This page describes the agreement between the hub (`robot_agent`) and the planne
     - The rules that say what each action needs and changes (the [action model](../start/glossary.md#action-model)) live in embodiplan only. The hub's plan gate, step guard and post-step check all call that one module.
     - The hub pins embodiplan to `>=0.2.1,<0.3`. The hub imports embodiplan in only three files.
     - Optional keywords and capabilities go only to a planner that declares them: `subgoals=` and `budget=` (embodiplan 0.2.6 and later), fixed sub-goals (0.2.7), and a model of its own for some calls (`chat_override`).
-    - `resolve_planner('sage')` fails. `sage` is the name of a loop (AssistLoop), not of a planner. The planner key behind it is `grace`.
+    - `sage` names two things: in the registry the SAGE planner (`resolve_planner('sage')` returns `SageBackend`), and in a request the AssistLoop around it. `sage_plain` is a request name, not a registry name.
 
 !!! code "Where in the code"
-    - Hub: [`core/planning/base.py:246-279`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/base.py#L246-L279) (the protocol), [`registry.py:72-93`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/registry.py#L72-L93) (`resolve_planner`), [`core/planning/action_model.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/action_model.py) (the only door to the rules), [`backends/pyplanner_grace.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/backends/pyplanner_grace.py)
+    - Hub: [`core/planning/base.py:246-279`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/base.py#L246-L279) (the protocol), [`registry.py:74-95`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/core/planning/registry.py#L74-L95) (`resolve_planner`), [`core/planning/action_model.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/action_model.py) (the only door to the rules), [`backends/pyplanner_sage.py`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/core/planning/backends/pyplanner_sage.py)
     - Library: [`embodiplan/__init__.py`](https://github.com/mtbui2010/embodiplan/blob/76da520/embodiplan/__init__.py), [`embodiplan/action_model.py`](https://github.com/mtbui2010/embodiplan/blob/76da520/embodiplan/action_model.py), [`embodiplan/sage.py`](https://github.com/mtbui2010/embodiplan/blob/76da520/embodiplan/sage.py)
     - Pins: [`pyproject.toml`](https://github.com/mtbui2010/robot_agent/blob/3269923/pyproject.toml#L21-L25), [`tests/test_action_model_agreement.py:285-287`](https://github.com/mtbui2010/robot_agent/blob/3269923/tests/test_action_model_agreement.py#L285-L287)
 
@@ -26,14 +26,14 @@ flowchart LR
   subgraph HUB[robot_agent]
     LOOP[ClosedLoop / AssistLoop]
     REG[registry.resolve_planner]
-    GB[backends/pyplanner_grace.py<br/>GraceBackend]
+    GB[backends/pyplanner_sage.py<br/>SageBackend]
     AM[core/planning/action_model.py]
     GATE[plan gate]
     GUARD[step guard]
     VER[post-step check]
   end
   subgraph LIB[embodiplan]
-    SAGE[SAGEPlanner<br/>get 'GRACE']
+    SAGE[SAGEPlanner<br/>get 'SAGE']
     MODEL[action_model.py<br/>check / apply / simulate]
   end
   LOOP --> REG --> GB --> SAGE
@@ -44,7 +44,7 @@ flowchart LR
   SAGE --> MODEL
 ```
 
-The same `MODEL` serves the planner (SAGE's own gate, inside the library) and the hub (three checks). That is by design: there is one source of the rules, so the planner and the robot cannot disagree about what a step needs. The terms used here are in the glossary: [gate](../start/glossary.md#certified-gate), [guard](../start/glossary.md#guard), [ClosedLoop](../start/glossary.md#closedloop) (planner key `grace`), [AssistLoop](../start/glossary.md#assistloop) (planner key `sage`).
+The same `MODEL` serves the planner (SAGE's own gate, inside the library) and the hub (three checks). That is by design: there is one source of the rules, so the planner and the robot cannot disagree about what a step needs. The terms used here are in the glossary: [gate](../start/glossary.md#certified-gate), [guard](../start/glossary.md#guard), [ClosedLoop](../start/glossary.md#closedloop) (planner key `sage_plain`), [AssistLoop](../start/glossary.md#assistloop) (planner key `sage`).
 
 ## 1. The planner protocol: two methods
 
@@ -105,7 +105,7 @@ Some planners offer more. The core looks for these by attribute and uses them wh
 
 Two more things are passed only when the planner says it takes them. `base.accepts(planner, method, name)` is true only for a parameter of that exact name (a `**kwargs` planner does not count). Then `generate_plan` and `replan` get `subgoals=` (one sub-goal per goal the loop understood, so the planner does not decompose the task) and `budget=` (an object with `take(n=1, what="")`, taken before every LLM call). A planner without the `budget` parameter gets one unit taken before the call and its reported `llm_calls - 1` added after it. A planner with the attribute `fixed_subgoals = True` keeps the steps of a sub-goal given as `(text, steps)`; the loop uses this only with the option `person_goals` (default off). SAGE in embodiplan 0.2.7 does all of this; see [Planner library (embodiplan)](../repos/embodiplan.md#sage-as-the-hub-uses-it).
 
-`GraceBackend` offers these through embodiplan's SAGE: it reads `last_blocks` and `edit_block` ([`pyplanner_grace.py:296-302`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/backends/pyplanner_grace.py#L296-L302)) and calls `flatten` from `embodiplan.sage` ([`:304-307`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/backends/pyplanner_grace.py#L304-L307)). In embodiplan these are in [`sage.py`](https://github.com/mtbui2010/embodiplan/blob/76da520/embodiplan/sage.py) (`generate_plan` at line 597, `replan` at 807, `edit_block` at 472, `last_blocks` at 464, `flatten` at 251).
+`SageBackend` offers these through embodiplan's SAGE: it reads `last_blocks` and `edit_block` ([`pyplanner_sage.py:296-302`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/core/planning/backends/pyplanner_sage.py#L296-L302)) and calls `flatten` from `embodiplan.sage` ([`:304-307`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/core/planning/backends/pyplanner_sage.py#L304-L307)). In embodiplan these are in [`sage.py`](https://github.com/mtbui2010/embodiplan/blob/76da520/embodiplan/sage.py) (`generate_plan` at line 597, `replan` at 807, `edit_block` at 472, `last_blocks` at 464, `flatten` at 251).
 
 ## 2. The action model: one source of rules
 
@@ -160,7 +160,7 @@ Both sides declare the same range, `>=0.2.1,<0.3`:
 | Place | Line | What it says |
 |---|---|---|
 | Hub `pyproject.toml`, `dependencies` | [`:24`](https://github.com/mtbui2010/robot_agent/blob/3269923/pyproject.toml#L24) | `"embodiplan>=0.2.1,<0.3"` |
-| Hub `pyproject.toml`, extra `grace` | [`:59`](https://github.com/mtbui2010/robot_agent/blob/3269923/pyproject.toml#L59) | the same range again |
+| Hub `pyproject.toml`, extra `sage` | [`:59`](https://github.com/mtbui2010/robot_agent/blob/5058637/pyproject.toml#L59) | the same range again |
 | Hub error text when embodiplan is missing | [`action_model.py:23-26`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/action_model.py#L23-L26) | "robot_agent needs embodiplan>=0.2.1,<0.3 ..." |
 | Hub rule 3 | [`CLAUDE.md`](https://github.com/mtbui2010/robot_agent/blob/3269923/CLAUDE.md) | "public API, `>=0.2.1,<0.3`" |
 | kcare_robot `pyproject.toml`, extra `planner` | [`:35`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/pyproject.toml#L35) | the same range |
@@ -168,10 +168,10 @@ Both sides declare the same range, `>=0.2.1,<0.3`:
 
 The library at the checked commit is version `0.2.7` ([`pyproject.toml`](https://github.com/mtbui2010/embodiplan/blob/76da520/pyproject.toml), `__init__.py:57`), which is inside the range. The hub's test checks that its own `pyproject.toml` still holds a pin of the form `embodiplan>=0.2[.N],<0.3` ([`test_action_model_agreement.py:285-287`](https://github.com/mtbui2010/robot_agent/blob/3269923/tests/test_action_model_agreement.py#L285-L287)). It does not check the installed version. These tests were not run here (`pytest` is not installed on the machine that wrote this page); only what they check was read.
 
-The hub also adapts to older versions in code. For example, a JSONL seed pool is used only if embodiplan lists `jsonl` in `SEED_FORMATS` (embodiplan 0.2.3 and later), otherwise the hub logs a warning and starts without it ([`pyplanner_grace.py:147-163`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/backends/pyplanner_grace.py#L150-L166)).
+The hub also adapts to older versions in code. For example, a JSONL seed pool is used only if embodiplan lists `jsonl` in `SEED_FORMATS` (embodiplan 0.2.3 and later), otherwise the hub logs a warning and starts without it ([`pyplanner_sage.py:150-166`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/core/planning/backends/pyplanner_sage.py#L150-L166)).
 
 !!! warning "embodiplan is both required and optional"
-    In `pyproject.toml` embodiplan is a normal dependency (line 24), and it is also an extra named `grace` (lines 56-59) whose comment says it is "kept out of the core deps so the generic runtime never hard-depends on a planner". In practice the loops need it: the first call to the action model raises `ImportError` without it ([`action_model.py:20-26`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/action_model.py#L20-L26)). The package is local, not on PyPI: install it first (`pip install -e ../embodiplan`).
+    In `pyproject.toml` embodiplan is a normal dependency (line 24), and it is also an extra named `sage` (lines 56-59) whose comment says it is "kept out of the core deps so the generic runtime never hard-depends on a planner". In practice the loops need it: the first call to the action model raises `ImportError` without it ([`action_model.py:20-26`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/action_model.py#L20-L26)). The package is local, not on PyPI: install it first (`pip install -e ../embodiplan`).
 
 ## 4. Where the hub imports embodiplan
 
@@ -180,54 +180,63 @@ Hub rule 3: import `embodiplan` only in `core/planning/backends/` and `core/plan
 | File and line | What is imported | Why |
 |---|---|---|
 | [`core/planning/action_model.py:21`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/action_model.py#L21) | `embodiplan.action_model` | the rules, on first use |
-| [`backends/pyplanner_grace.py:144`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/backends/pyplanner_grace.py#L144) | `embodiplan` | `available()`: can the planner be built here |
-| [`backends/pyplanner_grace.py:160`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/backends/pyplanner_grace.py#L160) | `embodiplan.memory_retriever.SEED_FORMATS` | seed pool format check |
-| [`backends/pyplanner_grace.py:195, 222-223`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/backends/pyplanner_grace.py#L195-L223) | `embodiplan`, then `embodiplan.get("GRACE", **selected)` | builds the planner |
-| [`backends/pyplanner_grace.py:306`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/backends/pyplanner_grace.py#L306) | `embodiplan.sage.flatten` | `join_blocks` |
+| [`backends/pyplanner_sage.py:144`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/core/planning/backends/pyplanner_sage.py#L144) | `embodiplan` | `available()`: can the planner be built here |
+| [`backends/pyplanner_sage.py:160`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/core/planning/backends/pyplanner_sage.py#L160) | `embodiplan.memory_retriever.SEED_FORMATS` | seed pool format check |
+| [`backends/pyplanner_sage.py:195, 222-223`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/core/planning/backends/pyplanner_sage.py#L195-L223) | `embodiplan`, then `embodiplan.get("SAGE", **selected)` | builds the planner |
+| [`backends/pyplanner_sage.py:306`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/core/planning/backends/pyplanner_sage.py#L306) | `embodiplan.sage.flatten` | `join_blocks` |
 | [`backends/examples.py:67`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/backends/examples.py#L67) | `embodiplan.memory_retriever` | ranks example plans, returns `None` without the library |
 
-All imports are inside functions, so `import robot_agent.core.planning` does not load embodiplan ([`core/planning/__init__.py:22-23`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/__init__.py#L22-L23)). One other file touches the library without importing it: `observe/replay.py:418` only calls `planner_available('grace')`.
+All imports are inside functions, so `import robot_agent.core.planning` does not load embodiplan ([`core/planning/__init__.py:22-23`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/__init__.py#L22-L23)). One other file touches the library without importing it: `observe/replay.py:418` only calls `planner_available('sage')`.
 
-What crosses at `get("GRACE")`: the hub builds a dict of candidate settings (`host`, `model`, `provider`, `api_key`, `gt_path`, `live_path`, `safe_refine`, plus the extra keys the loop passes) and keeps only those named in `_GRACE_KWARGS` ([`pyplanner_grace.py:36-60, 206-221`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/backends/pyplanner_grace.py#L36-L60)). `GRACE` is an old name that embodiplan still accepts: `GRACEPlanner = SAGEPlanner` and `ALIASES = {"GRACE": "SAGE"}` ([`__init__.py:79-80`](https://github.com/mtbui2010/embodiplan/blob/76da520/embodiplan/__init__.py#L79-L80)). So `get("GRACE")` returns the SAGE planner.
+What crosses at `get("SAGE")`: the hub builds a dict of candidate settings (`host`, `model`, `provider`, `api_key`, `gt_path`, `live_path`, `safe_refine`, plus the extra keys the loop passes) and keeps only those named in `_SAGE_KWARGS` ([`pyplanner_sage.py:36-60, 206-221`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/core/planning/backends/pyplanner_sage.py#L36-L60)). So `get("SAGE")` returns the SAGE planner.
 
 The test `test_no_private_embodiplan_access` ([`test_action_model_agreement.py:276-282`](https://github.com/mtbui2010/robot_agent/blob/3269923/tests/test_action_model_agreement.py#L276-L282)) checks by text search that `assist_loop.py` does not use four of SAGE's private names, and that three planning files do not mention `embodiplan.verifier`.
 
 ## 5. `resolve_planner`
 
-`resolve_planner(name)` returns `(factory, builtin)` and takes four kinds of name ([`registry.py:72-93`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/registry.py#L72-L93)):
+`resolve_planner(name)` returns `(factory, builtin)` and takes four kinds of name ([`registry.py:74-95`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/core/planning/registry.py#L74-L95)):
 
 | Name | Result |
 |---|---|
-| `grace` (any case) | the built-in `GraceBackend` (a wrapper around embodiplan's SAGE planner) |
+| `sage` (any case) | the built-in `SageBackend` (a wrapper around embodiplan's SAGE planner) |
 | `llm_direct` | the built-in `LlmDirectBackend`, one LLM call, no embodiplan |
 | `package.module:Class` | any importable class or factory that returns a `Planner` |
 | an entry-point name in the group `robot_agent.planners` | what that entry point loads |
 
-Any other name raises `ValueError`. Real results, run offline (a stub `requests` module was put in place, because embodiplan imports it and nothing here calls it):
+Any other name raises `ValueError`. Real results, run offline:
 
 ```text
-'grace' -> GraceBackend True
+'sage' -> SageBackend True
 'llm_direct' -> LlmDirectBackend True
-'GRACE' -> GraceBackend True
-'sage' -> ValueError unknown planner 'sage'; available planners: grace, llm_direct (or 'package.module:Class', or an entry point in group 'robot_agent.planners')
+'SAGE' -> SageBackend True
+'sage_plain' -> ValueError unknown planner 'sage_plain'; available planners: sage, llm_direct (or 'package.module:Class', or an entry point in group 'robot_agent.planners')
 'tests.fakes:ScriptedPlanner' -> ScriptedPlanner False
 ```
 
-### Why `sage` fails
+### Request names and registry names
 
-`sage` is a loop, not a planner. The code that reads the user's choice maps three words ([`unified_agent.py:368`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/unified_agent.py#L368)): `grace` to the planner `grace`, `direct` to `llm_direct`, and `sage` to the value `'sage'`. Then the choice of loop is made ([`unified_agent.py:380-381`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/unified_agent.py#L380-L381)): `'sage'` selects `AssistLoop`, anything else selects `ClosedLoop`. The word `'sage'` is never given to `get_planner` by that path. `AssistLoop` sets its own planner to the `generator` option, or the environment variable `ROBOT_AGENT_SAGE_GENERATOR`, or `grace` ([`assist_loop.py:372`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/assist_loop.py#L372)).
+A request (the `planner` on `/ws/agent`, or `ROBOT_AGENT_PLANNER`) is not a registry name. `loop_choice` ([`planner_names.py:62-71`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/core/planning/planner_names.py#L62-L71)) turns it into a planner for the ClosedLoop and a flag for the AssistLoop; it is called at [`unified_agent.py:369-371`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/core/unified_agent.py#L369-L371). Run offline, `loop_choice` gave:
+
+```text
+'sage' -> ('sage', True)
+'sage_plain' -> ('sage', False)
+'direct' -> ('llm_direct', False)
+'tests.fakes:ScriptedPlanner' -> ('tests.fakes:ScriptedPlanner', False)
+```
+
+Then the choice of loop is made ([`unified_agent.py:379-381`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/core/unified_agent.py#L379-L381)): the flag `True` selects `AssistLoop`, otherwise `ClosedLoop` runs the planner. `AssistLoop` sets its own planner to the `generator` option, or the environment variable `ROBOT_AGENT_SAGE_GENERATOR`, or `sage` ([`assist_loop.py:372`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/core/planning/assist_loop.py#L372)).
 
 | User choice | Loop | Planner that is built |
 |---|---|---|
-| `grace` | ClosedLoop | `GraceBackend` (embodiplan's SAGE planner) |
+| `sage_plain` | ClosedLoop | `SageBackend` (embodiplan's SAGE planner) |
 | `direct` | ClosedLoop | `LlmDirectBackend` |
-| `sage` | AssistLoop | by default `grace`, so the same `GraceBackend` |
+| `sage` | AssistLoop | by default `sage`, so the same `SageBackend` |
 | `package.module:Class` or an entry point | ClosedLoop | that planner |
 
-So both `grace` and `sage` end in the same embodiplan class. They differ in the loop around it: AssistLoop adds understanding of the command, clarification and a guard on each step. The page [Planners](../concepts/planners.md) explains the choice in plain words.
+So both `sage_plain` and `sage` end in the same embodiplan class. They differ in the loop around it: AssistLoop adds understanding of the command, clarification and a guard on each step. The page [Planners](../concepts/planners.md) explains the choice in plain words.
 
-!!! warning "Do not pass `sage` where a planner name is expected"
-    `resolve_planner('sage')` and `get_planner('sage')` raise `ValueError` (run, above). By reading the code, the same happens if you set the `generator` option or `ROBOT_AGENT_SAGE_GENERATOR` to `sage`, because that value is passed to `get_planner` ([`loop.py:362`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/loop.py#L362)); that case was not run. Use `grace` as the planner, and choose `sage` only as the loop. To add your own planner, see [Add a planner](../guides/add-a-planner.md).
+!!! note "The generator is a registry name"
+    The `generator` option and `ROBOT_AGENT_SAGE_GENERATOR` name a planner, so a registry name or `package.module:Class` fits. The ClosedLoop reads the value through `loop_backend` ([`loop.py:314`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/core/planning/loop.py#L314)), which also maps `sage_plain` to `sage`; that was read in the code, not run. To add your own planner, see [Add a planner](../guides/add-a-planner.md).
 
 ## What breaks when the contract changes
 
@@ -237,8 +246,8 @@ So both `grace` and `sage` end in the same embodiplan class. They differ in the 
 | embodiplan changes a rule but does **not** bump the version | The same change, with no signal. The hub's version test still passes, since it compares the two names of one value. | not machine-checked |
 | embodiplan removes or renames a name in `__all__` | Breaks only within a major step of the range; embodiplan's rule 1 forbids this within 0.x. The hub names `get`, `LLMBackend`, `action_model`, `memory_retriever`, `sage.flatten`. | hub tests, at install |
 | embodiplan `0.3` is released | `pip` refuses it for the hub (`<0.3`). The hub must edit three places (`pyproject.toml` twice, the error text), plus the kcare pin. | install |
-| A planner returns something that is not `(steps, metrics)` | The loop cannot read the plan. `GraceBackend` converts embodiplan's metrics object into a dict ([`_metrics_to_dict`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/backends/pyplanner_grace.py#L63)). | run time |
-| A new key is added to `_GRACE_KWARGS` that an older embodiplan does not take | Per the code comment, versions from 0.2.4 take the `actions` and `robot_description` keys; older ones take `**kwargs` and ignore them. The key `replan_block_fix` (set by the hub's option `replan_guard`, part `block_fix`) is not defined in embodiplan 0.2.7: its constructor takes `**kwargs`, so it is ignored there ([`pyplanner_grace.py:53-55`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/backends/pyplanner_grace.py#L53-L55)). | not machine-checked |
+| A planner returns something that is not `(steps, metrics)` | The loop cannot read the plan. `SageBackend` converts embodiplan's metrics object into a dict ([`_metrics_to_dict`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/core/planning/backends/pyplanner_sage.py#L63)). | run time |
+| A new key is added to `_SAGE_KWARGS` that an older embodiplan does not take | Per the code comment, versions from 0.2.4 take the `actions` and `robot_description` keys; older ones take `**kwargs` and ignore them. The key `replan_block_fix` (set by the hub's option `replan_guard`, part `block_fix`) is not defined in embodiplan 0.2.7: its constructor takes `**kwargs`, so it is ignored there ([`pyplanner_sage.py:53-55`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/core/planning/backends/pyplanner_sage.py#L53-L55)). | not machine-checked |
 
 !!! warning "The household benchmark drives the hub by replacing module globals"
     `symbolic_robot`'s in-process benchmark runs the hub's loops without a server. Its adapter replaces `state.current`, `assist_loop.current`, `loop.current`, `host_id`, `skill_configs.ENV` and `connect.llm.init_llm_client` with its own values for each episode, and restores them after ([`robot_agent_adapter.py:1-17`](https://github.com/mtbui2010/symbolic_robot/blob/f55ace24c3b4/bench/suites/home/planners/robot_agent_adapter.py#L1-L17)). That is not the hub's public API. A rename of any of those names inside the hub breaks the benchmark, and no hub test knows about it. Also, whether the benchmark's home pack matches the hub revision this site describes was not re-checked for this revision (an earlier version of this page found `planner:` manifest keys that the hub did not know yet; the hub has since added many options). **To avoid it:** when you benchmark, check that the hub revision you run is the one the benchmark was written for. See [Benchmark a planner](../guides/benchmark-a-planner.md).

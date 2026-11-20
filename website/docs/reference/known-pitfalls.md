@@ -144,9 +144,9 @@ Link base for the code links below: `https://github.com/mtbui2010/<repo>/blob/<s
 
 ### P12. `embodiplan` is both a required dependency and an optional extra
 
-**Symptom.** `pip install robot_agent` pulls in `embodiplan`, although the `[grace]` extra suggests it is optional.
+**Symptom.** `pip install robot_agent` pulls in `embodiplan`, although the `[sage]` extra suggests it is optional.
 
-**Cause.** [`pyproject.toml:24`](https://github.com/mtbui2010/robot_agent/blob/3269923/pyproject.toml#L24) lists `embodiplan>=0.2.1,<0.3` in the dependencies. [`:55-59`](https://github.com/mtbui2010/robot_agent/blob/3269923/pyproject.toml#L55-L59) declares it again as the extra `grace`, with a comment that it is "kept out of the core deps". The comment and the dependency list disagree. The planning loops need the package, so it is required in practice. The package is a local path package, not on PyPI (the comment in the file says `pip install -e ../embodiplan`).
+**Cause.** [`pyproject.toml:24`](https://github.com/mtbui2010/robot_agent/blob/5058637/pyproject.toml#L24) lists `embodiplan>=0.2.1,<0.3` in the dependencies. [`:56-59`](https://github.com/mtbui2010/robot_agent/blob/5058637/pyproject.toml#L56-L59) declares it again as the extra `sage` (the old extra name is kept as an alias), with a comment that it is "kept out of the core deps". The comment and the dependency list disagree. The planning loops need the package, so it is required in practice. The package is a local path package, not on PyPI (the comment in the file says `pip install -e ../embodiplan`).
 
 **Avoid.** Install `embodiplan` first from its checkout, then the hub.
 

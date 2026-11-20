@@ -15,16 +15,16 @@ A [planner](../concepts/planners.md) is the part that writes the plan. This guid
 
 !!! code "Where in the code"
     - Planner protocol: [`base.py` L246-L279](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/base.py#L246-L279); optional capabilities: [`base.py` L289-L364](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/base.py#L289-L401)
-    - Name lookup: [`resolve_planner`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/registry.py#L72-L93), [`accepted_kwargs`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/registry.py#L105-L116), [`get_planner`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/registry.py#L134-L160)
-    - What the core offers a plug-in: [`loop.py` L362-L375](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/loop.py#L362-L375)
-    - The generator setting of the AssistLoop: [`assist_loop.py` L372](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/assist_loop.py#L372)
-    - Choosing a loop and a planner: [`unified_agent.py` L364-L391](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/unified_agent.py#L364-L391)
+    - Name lookup: [`resolve_planner`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/core/planning/registry.py#L74-L95), [`accepted_kwargs`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/core/planning/registry.py#L107-L118), [`get_planner`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/core/planning/registry.py#L136-L162)
+    - What the core offers a plug-in: [`loop.py` L364-L377](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/core/planning/loop.py#L364-L377)
+    - The generator setting of the AssistLoop: [`assist_loop.py` L372](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/core/planning/assist_loop.py#L372)
+    - Choosing a loop and a planner: [`unified_agent.py` L365-L390](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/core/unified_agent.py#L365-L390), [`loop_choice` in `planner_names.py` L62-L71](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/core/planning/planner_names.py#L62-L71)
     - The recording proxy: [`record.py` `RecordingPlanner`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/observe/record.py#L601)
     - Fake robot and scripted planner used below: [`tests/fakes.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/tests/fakes.py#L63-L91); a test of the plug-in route: [`tests/test_v2_planner_plugin.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/tests/test_v2_planner_plugin.py)
 
 ## Before you start
 
-You need the `robot_agent` and `embodiplan` repositories on `PYTHONPATH` (the loops import `embodiplan`'s action model, see [Planners and loops](../concepts/planners.md)), Python 3.10 or newer, and `pyyaml`. Nothing else: no ROS, no robot, no LLM server. For the library planners that already exist (GRACE and SAGE, with sub-goals, editing and memory), read the [embodiplan site](https://mtbui2010.github.io/embodiplan/) and the [planner library contract](../contracts/planner-library.md). This guide is about a planner of your own.
+You need the `robot_agent` and `embodiplan` repositories on `PYTHONPATH` (the loops import `embodiplan`'s action model, see [Planners and loops](../concepts/planners.md)), Python 3.10 or newer, and `pyyaml`. Nothing else: no ROS, no robot, no LLM server. For the library planners that already exist (SAGE, with sub-goals, editing and memory), read the [embodiplan site](https://mtbui2010.github.io/embodiplan/) and the [planner library contract](../contracts/planner-library.md). This guide is about a planner of your own.
 
 ```mermaid
 flowchart LR
@@ -93,7 +93,7 @@ The action names (`MoveTo`, `Find`, `Pick`, `Place`) are the vocabulary of the a
 
 | Name | What happens |
 |---|---|
-| `grace`, `llm_direct` | Built-in planners (`builtin` is `True`). |
+| `sage`, `llm_direct` | Built-in planners (`builtin` is `True`). |
 | `package.module:Class` | The module is imported and the class is read from it. Nothing is registered. `builtin` is `False`. |
 | A bare name such as `search` | Looked up in the entry points of the group `robot_agent.planners`. A planner package declares one in its own `pyproject.toml`. |
 
@@ -119,12 +119,12 @@ To select it for a real run, use one of these (the first two are read in the cod
 
 | Where | Setting |
 |---|---|
-| ClosedLoop, from the dashboard | Send the name as the `planner` choice on `/ws/agent`. Any name that `is_planner_name` accepts is used as given (`unified_agent.py` L368-L372). |
-| ClosedLoop, by default | The environment variable `ROBOT_AGENT_PLANNER` (default `grace`). |
-| AssistLoop (`sage`) | The `generator` option on `/ws/agent`, or the environment variable `ROBOT_AGENT_SAGE_GENERATOR` (default `grace`). The AssistLoop's planner is called the generator. |
+| ClosedLoop, from the dashboard | Send the name as the `planner` choice on `/ws/agent`. Any name that `is_planner_name` accepts is used as given (`loop_choice` in `planner_names.py` L62-L71). |
+| ClosedLoop, by default | The environment variable `ROBOT_AGENT_PLANNER` (default `sage_plain`, the plain loop around SAGE). |
+| AssistLoop (`sage`) | The `generator` option on `/ws/agent`, or the environment variable `ROBOT_AGENT_SAGE_GENERATOR` (default `sage`). The AssistLoop's planner is called the generator. |
 
-!!! warning "`sage` is not a planner name"
-    `resolve_planner("sage")` raises `ValueError`. `sage` selects the [AssistLoop](../start/glossary.md#assistloop). To plug your planner into it, set the generator to your name. See [Planners and loops](../concepts/planners.md).
+!!! note "`sage` names two things"
+    In the registry `sage` is the built-in SAGE planner. In a `/ws/agent` request `sage` selects the [AssistLoop](../start/glossary.md#assistloop), and `sage_plain` selects the plain ClosedLoop around SAGE. To plug your planner into the AssistLoop, set the generator to your name. See [Planners and loops](../concepts/planners.md).
 
 ## Step 3. Know what the core passes to the constructor
 
@@ -149,7 +149,7 @@ If the class does not have both methods, `get_planner` raises `TypeError`. A wro
 ```text
 TypeError: planner 'bad:OnlyOneMethod' built a OnlyOneMethod, which has no generate_plan / replan (see docs/planners.md)
 ValueError: planner 'search_planner:Missing': 'search_planner' has no 'Missing'
-ValueError: unknown planner 'nosuch_planner'; available planners: grace, llm_direct (or 'package.module:Class', or an entry point in group 'robot_agent.planners')
+ValueError: unknown planner 'nosuch_planner'; available planners: sage, llm_direct (or 'package.module:Class', or an entry point in group 'robot_agent.planners')
 ```
 
 ## Step 4. Optional capabilities

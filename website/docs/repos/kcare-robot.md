@@ -14,7 +14,7 @@ This page tells you what `kcare_robot` is, how it connects to the hub, which ski
 
 !!! code "Where in the code"
     - Entry point: [`kcare_robot/main.py`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/main.py)
-    - Contract files: [`configs/manifest.yaml`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/configs/manifest.yaml), [`configs/adapter.py`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/configs/adapter.py), [`configs/grace_namemap.py`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/configs/grace_namemap.py), [`configs/skills_config.py`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/configs/skills_config.py)
+    - Contract files: [`configs/manifest.yaml`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/configs/manifest.yaml), [`configs/adapter.py`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/configs/adapter.py), [the name-map file `configs/*_namemap.py`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/configs/grace_namemap.py) (its file name is the old one; the hub's loader reads it), [`configs/skills_config.py`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/configs/skills_config.py)
     - Skills: [`kcare_robot/skills/`](https://github.com/mtbui2010/kcare_robot/tree/d4f5577b342e/kcare_robot/skills)
     - Repo docs: [`docs/README.md`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/docs/README.md) (index), [`docs/notes/architecture.md`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/docs/notes/architecture.md), [`docs/SKILLS.md`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/docs/SKILLS.md), [`docs/testing.md`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/docs/testing.md). The repo has no docs site.
 
@@ -41,7 +41,7 @@ flowchart LR
     MAIN[main.py<br/>create_app]
     MAN[configs/manifest.yaml]
     AD[configs/adapter.py<br/>make_adapter]
-    NM[configs/grace_namemap.py]
+    NM[configs/*_namemap.py]
     REG[configs/skills_config.py]
     SK[skills/*.py]
   end
@@ -57,7 +57,7 @@ flowchart LR
 |---|---|---|
 | App entry | `create_app(robot_pkg='kcare_robot', config_dir=...)` makes the hub's web app for this package. | `main.py` |
 | Adapter | `make_adapter()` returns the robot's adapter object. It builds on the hub's name-map adapter, adds the robot's own `reconcile` (it also senses the gripper), `pose`, `health` and a vision-model hook. The hub finds it with `load_adapter('kcare_robot')`. | `configs/adapter.py` |
-| Name map | Maps abstract actions (`MoveTo`, `Find`, `Pick`, ...) to skills, converts names, and applies each skill's effect to the [belief](../start/glossary.md#belief). Read about the idea in [Skills and failures](../concepts/skills-and-failures.md). | `configs/grace_namemap.py` |
+| Name map | Maps abstract actions (`MoveTo`, `Find`, `Pick`, ...) to skills, converts names, and applies each skill's effect to the [belief](../start/glossary.md#belief). Read about the idea in [Skills and failures](../concepts/skills-and-failures.md). | `configs/*_namemap.py` |
 | Manifest | The robot as data: capabilities, geometry, defaults, the path of the seed plans, and one SkillSpec per planner skill. The committed manifest has 10 SkillSpecs: `move`, `find`, `pick`, `place`, `open_drawer`, `close_drawer`, `grasp_succeed`, `mobile_pose`, `ask`, `llm`. | `configs/manifest.yaml` |
 | Skill registry | A dictionary from skill name to `(module, function)`. The committed file has 59 entries. `skills/__init__.py` wraps every entry with the hub's `skill_entry`. | `configs/skills_config.py` |
 | Seed plans | Example plans that the SAGE planner retrieves before the robot has its own memory. A test checks that they pass the action model. | `planner/seed_memory.jsonl` |

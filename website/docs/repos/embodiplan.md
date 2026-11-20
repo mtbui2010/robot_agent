@@ -1,6 +1,6 @@
 ---
-sources: [embodiplan:embodiplan/__init__.py, embodiplan:embodiplan/base.py, embodiplan:embodiplan/action_model.py, embodiplan:embodiplan/sage.py, embodiplan:embodiplan/memory_retriever.py, embodiplan:embodiplan/memory_tools.py, embodiplan:embodiplan/verifier.py, embodiplan:embodiplan/robot_prompt.py, embodiplan:embodiplan/data/eval_dataset_gt.json, embodiplan:pyproject.toml, embodiplan:CLAUDE.md, embodiplan:website/mkdocs.yml, robot_agent:robot_agent/core/planning/action_model.py, robot_agent:robot_agent/core/planning/backends/pyplanner_grace.py, robot_agent:robot_agent/core/planning/registry.py, robot_agent:pyproject.toml]
-verified_at: {embodiplan: 76da520, robot_agent: 3269923}
+sources: [embodiplan:embodiplan/__init__.py, embodiplan:embodiplan/base.py, embodiplan:embodiplan/action_model.py, embodiplan:embodiplan/sage.py, embodiplan:embodiplan/memory_retriever.py, embodiplan:embodiplan/memory_tools.py, embodiplan:embodiplan/verifier.py, embodiplan:embodiplan/robot_prompt.py, embodiplan:embodiplan/data/eval_dataset_gt.json, embodiplan:pyproject.toml, embodiplan:CLAUDE.md, embodiplan:website/mkdocs.yml, robot_agent:robot_agent/core/planning/action_model.py, robot_agent:robot_agent/core/planning/backends/pyplanner_sage.py, robot_agent:robot_agent/core/planning/registry.py, robot_agent:pyproject.toml]
+verified_at: {embodiplan: 76da520, robot_agent: 5058637}
 ---
 
 # Planner library (embodiplan)
@@ -8,13 +8,13 @@ verified_at: {embodiplan: 76da520, robot_agent: 3269923}
 embodiplan is a Python library of 11 LLM planners and the one set of action rules that the hub shares with them. This page tells you what is in the repository, how the hub uses it, and where its own documentation is. It does not teach the planners; their site does.
 
 !!! abstract "In this page"
-    - embodiplan gives the hub two things: the SAGE planner (behind the planner key `grace`) and the [action model](../start/glossary.md#action-model), the rules that the plan gate, the step guard and the post-step check all call.
+    - embodiplan gives the hub two things: the SAGE planner (behind the planner key `sage` of the registry) and the [action model](../start/glossary.md#action-model), the rules that the plan gate, the step guard and the post-step check all call.
     - The hub pins it as `embodiplan>=0.2.1,<0.3` and imports it in only three files.
     - The library has its own finished documentation site. Use it for the planners; use this page for how they plug in.
 
 !!! code "Where in the code"
     - Library at the pinned commit: [`embodiplan/__init__.py`](https://github.com/mtbui2010/embodiplan/blob/76da520/embodiplan/__init__.py) (the registry is at [lines 98-109](https://github.com/mtbui2010/embodiplan/blob/76da520/embodiplan/__init__.py#L98-L109)), [`embodiplan/action_model.py`](https://github.com/mtbui2010/embodiplan/blob/76da520/embodiplan/action_model.py), [`embodiplan/sage.py`](https://github.com/mtbui2010/embodiplan/blob/76da520/embodiplan/sage.py)
-    - Hub side: [`core/planning/action_model.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/action_model.py), [`backends/pyplanner_grace.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/backends/pyplanner_grace.py), [`registry.py:72-93`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/registry.py#L72-L93)
+    - Hub side: [`core/planning/action_model.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/action_model.py), [`backends/pyplanner_sage.py`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/core/planning/backends/pyplanner_sage.py), [`registry.py:74-95`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/core/planning/registry.py#L74-L95)
 
 ## Role
 
@@ -28,7 +28,7 @@ The library plans. It does not run anything on a robot, check sensors or record 
 flowchart LR
   subgraph HUB[robot_agent]
     LOOP[ClosedLoop / AssistLoop]
-    GB[GraceBackend]
+    GB[SageBackend]
     AM[core/planning/action_model.py]
   end
   subgraph LIB[embodiplan]
@@ -42,13 +42,13 @@ flowchart LR
 
 | What the hub takes | How | Where |
 |---|---|---|
-| The SAGE planner | `GraceBackend` builds it with `embodiplan.get("GRACE", ...)`. `GRACE` is an old name that the library still accepts for SAGE. It is the planner key `grace`. The loop called [AssistLoop](../start/glossary.md#assistloop) (key `sage`) wraps it with understanding, the gate and the guard. | [`pyplanner_grace.py:195-223`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/backends/pyplanner_grace.py#L195-L223), [`__init__.py:79-80`](https://github.com/mtbui2010/embodiplan/blob/76da520/embodiplan/__init__.py#L79-L80) |
+| The SAGE planner | `SageBackend` builds it with `embodiplan.get("SAGE", ...)`. It is the registry planner `sage`. The loop called [AssistLoop](../start/glossary.md#assistloop) (request key `sage`) wraps it with understanding, the gate and the guard. | [`pyplanner_sage.py:195-223`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/core/planning/backends/pyplanner_sage.py#L195-L223) |
 | The action model | The hub reaches the rules only through its own `core/planning/action_model.py`, which loads the library on first use. Gate, guard and post-step check all decide through it, so they cannot disagree with the planner. | [`action_model.py:18-53`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/action_model.py#L18-L53) |
-| The version pin | `embodiplan>=0.2.1,<0.3` in the hub's `pyproject.toml`. The hub's test compares `ACTION_MODEL_VERSION` on both sides. | [`pyproject.toml:24`](https://github.com/mtbui2010/robot_agent/blob/3269923/pyproject.toml#L24) |
+| The version pin | `embodiplan>=0.2.1,<0.3` in the hub's `pyproject.toml`. The hub's test compares `ACTION_MODEL_VERSION` on both sides. | [`pyproject.toml:24`](https://github.com/mtbui2010/robot_agent/blob/5058637/pyproject.toml#L24) |
 
 ### SAGE as the hub uses it
 
-The hub works with SAGE as embodiplan 0.2.7 has it. Three inputs are new since the older version of this site, and the hub passes each one only to a planner that declares it (`accepts` and `fixed_subgoals` in the hub's `base.py` and `GraceBackend`):
+The hub works with SAGE as embodiplan 0.2.7 has it. Three inputs are new since the older version of this site, and the hub passes each one only to a planner that declares it (`accepts` and `fixed_subgoals` in the hub's `base.py` and `SageBackend`):
 
 - **Caller-given sub-goals.** `generate_plan(..., subgoals=[...])`: SAGE makes no decompose call and expands each given sub-goal. The AssistLoop passes one sub-goal per goal it understood (option `sage_subgoals`, default `goals`).
 - **Fixed blocks.** A given sub-goal may be `(text, steps)`: SAGE keeps the caller's steps, with no expand call, no gate check and no refine, and `SAGEPlanner.fixed_subgoals` is `True`. The hub uses this only with the option `person_goals` (default off), for goals of a template kind (go, say, deliver).
@@ -58,7 +58,7 @@ Mixed use with behaviour trees: with the option `bt_goal` (key `mixed`, on by de
 
 One key goes to SAGE that embodiplan 0.2.7 does not define: `replan_block_fix` (set by the hub's option `replan_guard`). The constructor takes `**kwargs`, so it is ignored there.
 
-The details (the protocol, the three hub users of the action model, every import) are on [Planner library and core](../contracts/planner-library.md). A newcomer's view of planners and loops is on [Planners and loops](../concepts/planners.md). Note that `resolve_planner('sage')` raises `ValueError`: `sage` names a loop, and the planner behind it is `grace`.
+The details (the protocol, the three hub users of the action model, every import) are on [Planner library and core](../contracts/planner-library.md). A newcomer's view of planners and loops is on [Planners and loops](../concepts/planners.md). Note that `sage` names two things: in the registry it is the planner (`SageBackend`), and in a request it selects the AssistLoop around that planner.
 
 ## The 11 planners
 

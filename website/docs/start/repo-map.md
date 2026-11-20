@@ -41,8 +41,8 @@ An arrow points from the repo that depends on another to the one it depends on. 
 
 | Consumer | Needs | Declared in |
 |---|---|---|
-| robot_agent | `embodiplan>=0.2.1,<0.3`, as a core dependency | [`pyproject.toml:24`](https://github.com/mtbui2010/robot_agent/blob/3269923/pyproject.toml#L24) |
-| robot_agent | the same pin again in the optional extra `grace` | [`pyproject.toml:59`](https://github.com/mtbui2010/robot_agent/blob/3269923/pyproject.toml#L59) |
+| robot_agent | `embodiplan>=0.2.1,<0.3`, as a core dependency | [`pyproject.toml:24`](https://github.com/mtbui2010/robot_agent/blob/5058637/pyproject.toml#L24) |
+| robot_agent | the same pin again in the optional extra `sage` | [`pyproject.toml:59`](https://github.com/mtbui2010/robot_agent/blob/5058637/pyproject.toml#L59) |
 | robot_agent | `numpy==1.26.4`, because ROS 2 extensions are built for numpy 1.x | [`pyproject.toml:19`](https://github.com/mtbui2010/robot_agent/blob/3269923/pyproject.toml#L19) |
 | kcare_robot | `robot_agent` and `visionserve` with no version; `numpy==1.26.4`; `opencv-python<5` | [`pyproject.toml:22-28`](https://github.com/mtbui2010/kcare_robot/blob/f4a8384c59d2/pyproject.toml#L22-L28) |
 | kcare_robot | extra `planner`: `embodiplan>=0.2.1,<0.3` | [`pyproject.toml:35`](https://github.com/mtbui2010/kcare_robot/blob/f4a8384c59d2/pyproject.toml#L35) |
@@ -55,7 +55,7 @@ An arrow points from the repo that depends on another to the one it depends on. 
 
 What was verified in the files at these commits:
 
-- `embodiplan` is declared twice in `robot_agent`: as a core dependency (line 24) and again in the `grace` extra (line 59). Both use the same range. The core entry means a plain `pip install -e .` already needs `embodiplan`, which is not on PyPI; install it first with `pip install -e ../embodiplan`.
+- `embodiplan` is declared twice in `robot_agent`: as a core dependency (line 24) and again in the `sage` extra (line 59). Both use the same range. The core entry means a plain `pip install -e .` already needs `embodiplan`, which is not on PyPI; install it first with `pip install -e ../embodiplan`.
 - A test, `test_embodiplan_pin` in [`tests/test_action_model_agreement.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/tests/test_action_model_agreement.py#L285-L287), checks that `pyproject.toml` holds the pin and that both repos report the same `ACTION_MODEL_VERSION`. It was read, not run.
 - `robot_agent` has `version = "0.1.0"`, and its [`CHANGELOG.md`](https://github.com/mtbui2010/robot_agent/blob/3269923/CHANGELOG.md#L1-L4) promises SemVer for the contract, the manifest format and the event schema, but lists only "Unreleased". No contract version has been released yet.
 - The switch `ROBOT_AGENT_ROS` is in `robot_agent` at `3269923` ([`runtime.py:141-150`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/runtime.py#L141-L150)). It was not in the earlier pin `ad501cf15ece`, which imported `rclpy` unconditionally. The default is `on`, so a real robot behaves as before; with `off` (also `0`, `false`, `no`) the hub imports no `rclpy` and starts no node. The two simulator repos above set it, so they need a hub at this revision or later. Read from the code; no simulator was started here.
