@@ -2906,7 +2906,7 @@ class AssistLoop(WhichOne, SearchHooks, StepLadder, ClosedLoop):
         unt = self._untouched(r.goals, steps)
         goals = [g for g in r.goals if g not in unt] if unt and len(unt) < len(r.goals) else r.goals
         probs = [p_[1] for p_ in self._check(steps, r.world, r.places, goals) if p_[2]] if steps else []
-        out = list(dict.fromkeys(probs + self._hard_findings(r, steps)))
+        out = list(dict.fromkeys(probs + self.options.transform("on_plan_findings", self._hard_findings(r, steps), r, steps)))
         if per_goal and any(f.startswith(exec_integrity.MISSING_PREFIX) for f in out):
             out = exec_integrity.per_goal_findings(out, len(self._missing(steps, r.world, goals)))
         return out
@@ -3673,7 +3673,7 @@ class AssistLoop(WhichOne, SearchHooks, StepLadder, ClosedLoop):
                 return out
         # ── stop at once: the recovery policy does not retry it (a skill bug, an e-stop), or the same
         # failure twice ──
-        code = r.robot.failure_code(res, reason)
+        code = self.options.query("failure_code", r, a, base := r.robot.failure_code(res, reason), default=base)     # e.g. fetch_guard: a silent Find miss is ABSENT
         rule = r.robot.policy.rule_for(code)
         device = res.device or skill
         self._note_failure(r, st, code, device, reason)

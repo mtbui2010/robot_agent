@@ -73,6 +73,7 @@ THROUGH_THE_LOOP = {"look_then_ask": "test_option_look_then_ask.py", "bring_ask"
                     "repair_sync": "test_option_repair_sync.py", "goal_ledger": "test_option_goal_ledger.py", "answer_align": "test_option_answer_align.py",
                     "reach_check": "test_option_reach_check.py"}
 THROUGH_THE_LOOP["trace"] = "test_option_trace.py"
+THROUGH_THE_LOOP["fetch_guard"] = "test_option_fetch_guard.py"
 THROUGH_THE_LOOP["ask_next"] = "test_option_ask_next.py"
 THROUGH_THE_LOOP["drop_search"] = "test_option_drop_search.py"
 THROUGH_THE_LOOP["heat_safety"] = "test_option_heat_safety.py"

@@ -46,6 +46,7 @@ HOOKS: Dict[str, Tuple[str, bool]] = {
     "on_planner_kwargs": ("transform", False),  # the constructor keys the planner is built with (a dict): options add the ones the planner backend accepts
     "on_goal_replan": ("decide", False),     # the goals changed mid-run, before the plan is repaired: sub-goals for the rest of the plan, or None
     "on_replan_findings": ("transform", False),  # a replan's suffix, after the engine's own findings (a list): options add findings (one refine, then the run ends uncertified)
+    "on_plan_findings": ("transform", False),  # a plan's hard findings at the gate (a list; run, steps): options add findings (the gate's repair and its one refine see them)
     "on_listener_rule": ("decide", False),   # a delivery to a person who is also a message's listener (run, goals, words): (goals, notes) of an option's rule in place of the engine's, or None
     "on_event": ("observe", False),          # every event of a run as it is yielded or pushed live (ev, a dict; None: the run's stream ended): watchers only
     "on_lab": ("observe", False),            # a lab_log entry as it is recorded (flag, fields): watchers only

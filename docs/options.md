@@ -88,6 +88,7 @@ dropped. A *flow* hook is a generator (`yield from`): it may yield run events an
 | `on_planner_kwargs(kwargs)` | transform | the constructor keys of the planner (a dict) the loop builds; a key must also be in the backend's whitelist (`_SAGE_KWARGS`) | `replan_guard` (`replan_block_fix`) |
 | `on_goal_replan(run)` | decide | the goals changed mid-run, before the plan is repaired: sub-goals for the rest of the plan (the planner's `replan(subgoals=)`), or None | `replan_guard` |
 | `on_replan_findings(bad, run, suffix)` | transform | a replan's suffix (and its refine), after the engine's own findings: the list; a finding makes the one refine, then the uncertified end | `replan_guard`, `repair_sync` (`release_off_goal`) |
+| `on_plan_findings(bad, run, steps)` | transform | the gate's findings of a plan (`_blocking`), after the engine's hard findings: the list; a finding counts in the gate's symbolic repair score and goes to its one refine, then the uncertified end | `fetch_guard` (`plan_finding`) |
 | `on_listener_rule(run, goals, words)` | decide | a delivery to a person who is also a message's listener, in grounding: `(goals, notes)` of the option's rule in place of `goal_fix.shared_listener`, or None (the engine's rule). The loop puts the hook on `places.listener_rule` when an option answers it (as it puts the `goal_guard` service on `places.guard`); none: None | `recipient_keep` |
 | `on_goal_edit(run, text)` | observe | a correction is about to be read | `unapplied_change` |
 | `on_goal_reread(run, text, understood, goals, q)` | observe | the understand LLM re-read a correction | `unapplied_change` |
@@ -124,7 +125,28 @@ question. Not seen: ONE question, "I don't see the mug here. Where is it?" (pack
 source (or looked at first); "I don't know", silence or an answer with no place leaves the goal to the ranked search by belief, and the question is not
 asked again after the first misses. No look can be made (no `Find` bound): the engine's own order. When `ask_source` is also on, this option acts first and
 `ask_source` does not ask about the same object. Hook `on_goals` (order 29). Key `enabled` (legacy `look_then_ask`, `$ROBOT_AGENT_LOOK_THEN_ASK`); off
-(`0`) is the earlier order: the search by belief first, the question after the misses. Tests: `tests/test_option_look_then_ask.py`.
+(`0`) is the earlier order: the search by belief first, the question after the misses.
+Key `offer_near` (`look_then_ask.offer_near`, default on): an answer that names something the map does not match (a typo, a name the ENV does not
+have; not an "I don't know", read by `svc.is_unsure`: the language pack's and the robot pack's `answer_unsure` phrases) gets ONE follow-up offering up to
+3 places it nearly names, closest first (`svc.near_places`: the measure of `understand.fuzzy_place` with `typo=True`, every place under its threshold, a
+longer name nearly said first; persons, `search: false` places and the goal's destination are never offered): "I could not find 'on the benhc' on my map.
+Do you mean: bench in the den? Or tell me another place." (pack i18n key `q_place_unknown`; English default only, other languages go through the
+translator). Its answer is read as the first one (a place is the source, a room's places are looked at first; "yes" takes the one place offered);
+still nothing: no third question, the ranked search as before. No place near enough: no follow-up. Off (`0`): the unmatched answer is dropped as before.
+Lab flag fields: `answered_unmatched`, `second_answer`, `place`. Tests: `tests/test_option_look_then_ask.py`.
+
+### `fetch_guard` (default ON)
+The place an object must end up is never taken for the place where it is now. It acts on `on` / `in` goals whose object has no source: no `from`, no
+`from_any`, and no trusted sighting in the object memory (e.g. `look_then_ask` asked and the answer named no place). (1) `rank_unknown`: the
+service `rank_first(run, obj)` (asked by `search_hooks._search_start`) says yes, so the engine's ranked search runs before planning for that object too
+(before, only for an object with stale sightings) and its first place that is NOT the goal's destination becomes the goal's `from`; a ranking that
+knows no other place (no ranking call, a failed call, no habit) leaves the goal as it was. (2) `plan_finding`: hook `on_plan_findings` adds a gate
+finding when the plan drives to that goal's destination (a plan `MoveTo`, the place tracked on the action model) and makes its first `Find` /
+`Pick` of the object there: "the destination is where the object must end up, not where it is". The gate's one refine sees it; a plan that still
+looks there ends uncertified. A look where the robot already stands is not flagged. Same-place sources (`from` equal to `to`) are already cleared by
+the grounding (`assist_loop._ground_goals`) and by every option that sets a `from`. Keys `enabled` (legacy `fetch_guard`, `$ROBOT_AGENT_FETCH_GUARD`),
+`rank_unknown`, `plan_finding`, `absent_find` (all default on; off (`0`) is the earlier order). (3) `absent_find`: service `failure_code(run, action, code)` (asked at the step failure in `assist_loop`): a failed `Find` whose code is UNKNOWN (the skill reported "not done" and no text the engine knows) is ABSENT, so the search ladder (the robot's `search_max`) and then the question "I couldn't find the X. Where is it?" run, instead of a replan that returns the same plan (seen on the real robot: 5 silent misses, 4 identical replans). A camera that cannot look is caught before the Find (`PERCEPTION_UNAVAILABLE`) and keeps its code. Lab flag `fetch_guard` (`part`: `rank_unknown` | `plan_finding`).
+Tests: `tests/test_option_fetch_guard.py`.
 
 ### `bring_ask` (default ON)
 A request to bring something to the speaker ("bring me the mug") asks ONE combined question, "Where are you? Or where should I put it?" (pack i18n key

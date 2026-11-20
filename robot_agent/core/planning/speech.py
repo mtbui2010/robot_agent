@@ -37,6 +37,7 @@ CORE_PHRASES = {
     "q_where_is": "I couldn't find the {object}. Where is it?",
     "q_where_is_obj": "Where is the {object}?",
     "q_where_is_here": "I don't see the {object} here. Where is it?",
+    "q_place_unknown": "I could not find '{said}' on my map. Do you mean: {options}? Or tell me another place.",
     "q_where_bring": "Where are you? Or where should I put it?",
     "q_where_in_home": "Which room, or which piece of furniture, is it in?",
     "a_look_in_room": "OK, I will look in the {room}.",

@@ -62,12 +62,22 @@ class SearchHooks:
         r.goals = [dict(g) for g in r.goals]           # the understand event keeps what was understood
         for g in r.goals:
             o = g.get("object")
-            if g.get("type") in ("on", "in") and not g.get("from") and not g.get("from_any") \
-                    and (r.search.needs_rank_first(o) or o in r.search.preferred):
+            if g.get("type") not in ("on", "in") or g.get("from") or g.get("from_any"):
+                continue
+            asked = bool(self.options.query("rank_first", r, o, default=False))     # an option asks the ranking for this object too
+            if asked or r.search.needs_rank_first(o) or o in r.search.preferred:
                 yield from self._search_rank(r, o)
-                k = r.search.first_place(o, r.world.arrived if o in r.search.preferred else None)
+                here = r.world.arrived if o in r.search.preferred else None
+                k = self._first_source(r.search, o, g.get("to"), here) if asked else r.search.first_place(o, here)
                 if k and k != g.get("to"):
                     g["from"] = k
+
+    @staticmethod
+    def _first_source(s, o, to, here) -> Optional[str]:
+        """The belief's first place for ``o`` that is not its destination ``to`` (the place it must end up is not where it is now),
+        scored or pointed at as ``first_place`` requires; None when the belief knows no other place."""
+        sc, pref = s.scores(o), s.preferred.get(o) or ()
+        return next((p for p in s.order(o, here) if p != to and (sc.get(p, 0) > 0 or p in pref)), None)
 
     def _search_rank(self, r, obj):
         """The LLM ranks the places for `obj` (once per object and run; a failed call: the prior alone)."""

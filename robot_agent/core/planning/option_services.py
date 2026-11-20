@@ -318,6 +318,26 @@ class LoopServices:
         return said, self.places_of_room(run, room)
 
     @staticmethod
+    def near_places(run, text, threshold: float = 0.25) -> list:
+        """The searchable places (not persons, not ``search: false``) whose name or alias is within ``threshold`` normalised distance of a
+        word span of ``text``, closest first: ``understand.fuzzy_place``'s measure with ``typo=True`` and its threshold, but every place
+        near enough is kept, not one best; a longer name nearly said ranks first ("dinnig table" names the "dining table", not any "table")."""
+        from . import understand as u
+        pl, score = run.places, {}
+        spans = [u._jamo(s) for s in u._spans(text)] if text else []
+        for k in pl.keys:
+            e = pl.env.get(k) or {}
+            if e.get("person") or e.get("search", True) is False:
+                continue
+            for n in {u._norm(pl.head(k))} | {u._norm(a) for a in e.get("aliases") or [] if a and "@" not in str(a)}:
+                name = u._jamo(n)
+                for sp in spans if len(n) >= 2 else ():
+                    d = u.near_distance(sp, name) / max(len(sp), len(name))
+                    if d <= threshold:
+                        score[k] = max(score.get(k, 0.0), len(name) * (1.0 - d))
+        return sorted(score, key=lambda k: -score[k])
+
+    @staticmethod
     def places_of_room(run, room) -> list:
         """The searchable places of ``room`` (not persons, not ``search: false``)."""
         return [k for k in run.places.in_room(room) if not (e := run.places.env.get(k) or {}).get("person")
