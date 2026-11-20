@@ -37,6 +37,7 @@ Full rule text and reasons: [docs/rules.md](docs/rules.md). Docs index: [docs/RE
 - [docs/memory.md](docs/memory.md): planner memory (seed pool, recording, cleaning)
 - [docs/verify.md](docs/verify.md): verification layers, VLM verify, sensor health, LLM-call budget
 - [docs/observe.md](docs/observe.md): RunRecord, metrics, replay, event schema
+- [docs/training_images.md](docs/training_images.md): docker images for training openpi / LeRobot policies (`make build-openpi-train`, `make build-lerobot-train`)
 - Planning-layer specs: [closed loop](docs/CLOSED_LOOP_ARCHITECTURE.md), [action mapper](docs/ACTION_MAPPER_SPEC.md), [records / verify / voice](docs/TRACKING_VERIFY_VOICE.md)
 
 ## Quy tắc phát triển chung (skill `dev-principles`)

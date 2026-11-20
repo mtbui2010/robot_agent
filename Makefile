@@ -57,7 +57,7 @@ EXTRAS ?= all
 # The GRACE/SAGE planner checkout installed by `make install-dev`.
 EMBODIPLAN_DIR ?= $(abspath $(ROOT)/../embodiplan)
 
-.PHONY: install install-dev robot test test-smoke lint-core clean help _require-py _require-import
+.PHONY: install install-dev robot test test-smoke lint-core clean help build-openpi-train build-lerobot-train up-openpi-train up-lerobot-train down-openpi-train down-lerobot-train _require-train-dirs _require-py _require-import
 
 help:
 	@echo "robot_agent -- generic robot runtime (FastAPI + skills + connect layer)"
@@ -80,8 +80,68 @@ help:
 	@echo "  make lint-core                        Fail on robot-specific names in core/interact/contract"
 	@echo "  make clean                            Remove __pycache__ and *.egg-info"
 	@echo ""
+	@echo "Training images (docker, see docs/training_images.md; ~10 GB each, 15-20 min):"
+	@echo "  make build-openpi-train               $(TRAIN_IMAGE):openpi   (JAX, openpi pi0 / pi0.5)"
+	@echo "  make build-lerobot-train              $(TRAIN_IMAGE):lerobot  (PyTorch, LeRobot policies)"
+	@echo "  make up-openpi-train DATA=.. RUNS=..  A long-lived container openpi-train (also up-lerobot-train; down-... removes it)"
+	@echo "  docker/vla-train openpi run RUN.yaml  init / run / resume / status / stop inside it"
+	@echo ""
 	@echo "Target python : $(ENV_PY)"
 	@echo "Overridables  : CONDA_ENV=$(CONDA_ENV)  EXTRAS=$(EXTRAS)  ROBOTS_DIR=$(ROBOTS_DIR)"
+
+# ── Training images ──────────────────────────────────────────────────────────
+# One image per policy family, robot-agnostic (docs/training_images.md). The revisions are build args of the Dockerfiles; a tag with the version
+# (what the image holds) and a short tag (the latest build of the family) are both set.
+#   make build-openpi-train                     TRAIN_IMAGE=myrepo/vla-train   DOCKER_BUILD_ARGS="--no-cache"
+TRAIN_IMAGE       ?= vla-train
+OPENPI_REV        ?= 215abfb217dbac7d5f1273282331b9b1866c0479
+LEROBOT_VERSION   ?= 0.6.1
+TORCH_CUDA        ?= cu128
+DOCKER_BUILD_ARGS ?=
+
+build-openpi-train:
+	docker build $(DOCKER_BUILD_ARGS) -f docker/openpi-train.Dockerfile --build-arg OPENPI_REV=$(OPENPI_REV) \
+	    -t $(TRAIN_IMAGE):openpi-$(shell echo $(OPENPI_REV) | cut -c1-7) -t $(TRAIN_IMAGE):openpi docker
+
+build-lerobot-train:
+	docker build $(DOCKER_BUILD_ARGS) -f docker/lerobot-train.Dockerfile --build-arg LEROBOT_VERSION=$(LEROBOT_VERSION) --build-arg TORCH_CUDA=$(TORCH_CUDA) \
+	    -t $(TRAIN_IMAGE):lerobot-$(LEROBOT_VERSION)-$(TORCH_CUDA) -t $(TRAIN_IMAGE):lerobot docker
+
+# The long-lived containers: `docker exec <family>-train vla-train init|run|resume|status|stop` (or docker/vla-train <family> ...).
+# RAM is capped when the container is created (change TRAIN_MEM and run `up-` again: checkpoints and data are mounted, nothing is lost).
+#   make up-openpi-train DATA=/path/datasets RUNS=/path/runs CODE=/path/project_code
+# TRAIN_CACHE: a named volume (default) or a bind-mounted folder for the downloaded weights (use a folder when your user id is not 1000).
+TRAIN_MEM   ?= 44g
+TRAIN_SHM   ?= 8g
+TRAIN_CACHE ?= vla-cache
+DATA ?=
+RUNS ?=
+CODE ?=
+TRAIN_RUN_ARGS ?=     # more `docker run` flags, e.g. another mount: -v /path/openpi_cache:/cache/openpi
+
+_require-train-dirs:
+	@if [ -z "$(DATA)" ] || [ -z "$(RUNS)" ]; then echo "usage: make up-<family>-train DATA=/path/to/datasets RUNS=/path/to/runs [CODE=/path/to/project_code]"; exit 2; fi
+	@mkdir -p "$(RUNS)"
+
+define _UP_TRAIN
+	-docker rm -f $(1)-train > /dev/null 2>&1
+	docker run -d --name $(1)-train --gpus all --memory $(TRAIN_MEM) --memory-swap $(TRAIN_MEM) --shm-size $(TRAIN_SHM) --oom-score-adj 1000 \
+	    --user $(shell id -u):$(shell id -g) -e HOME=/tmp -v "$(abspath $(DATA))":/data:ro -v "$(abspath $(RUNS))":/runs -v $(TRAIN_CACHE):/cache \
+	    $(if $(CODE),-v "$(abspath $(CODE))":/code:ro,) $(TRAIN_RUN_ARGS) $(TRAIN_IMAGE):$(1) sleep infinity
+	@echo "container $(1)-train is up: docker/vla-train $(1) init | run RUN.yaml | resume NAME | status | stop NAME"
+endef
+
+up-openpi-train: _require-train-dirs
+	$(call _UP_TRAIN,openpi)
+
+up-lerobot-train: _require-train-dirs
+	$(call _UP_TRAIN,lerobot)
+
+down-openpi-train:
+	docker rm -f openpi-train
+
+down-lerobot-train:
+	docker rm -f lerobot-train
 
 # ── Environment ──────────────────────────────────────────────────────────────
 
