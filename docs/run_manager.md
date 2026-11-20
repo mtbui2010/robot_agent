@@ -53,7 +53,9 @@ from the CLI) the old process-global flag is used, as before.
 
 - `begin_run()` no longer clears anything while the active run is being cancelled.
 - `request_cancel()` (dashboard Stop, `/agent/cancel`, a client going away) cancels the active run
-  without a role check, then stops the robot as before.
+  without a role check, then stops the robot as before. Its answer `{ok, cancelled, errors}` says `ok: false` when any step of the stop raised
+  (a partial stop is not a clean stop); an empty `cancelled` alone is not an error (nothing may have been in flight), so a caller that must know
+  what stopped reads that list.
 - New: `wait_if_paused()`, `check_cancel()`, `current_run()`, `manager()`.
 
 ## Intent router
@@ -93,7 +95,7 @@ role-checked.
 
 ## API
 
-- Every event on `/ws/agent` now has `run_id`. The first message may carry `user_id` and `role`.
+- Every event on `/ws/agent` now has `run_id`. The first message may carry `user_id` and `role`. A first message with an empty prompt (and no `direct`) while no run is active starts nothing: the socket answers one `error` event (`empty prompt: no run was started`); with a run active it still observes it.
   Nothing was renamed.
 - During the run a client may send `{"text": "..."}`, which is injected. The reply is
   `{"event": "run_injected", "action", "intent", ...}`. `{"cancel": true}` and disconnecting still

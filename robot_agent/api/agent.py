@@ -456,6 +456,10 @@ async def agent_ws(websocket: WebSocket):
 
         import asyncio
         sender = _Sender(websocket)
+        if not direct and not str(prompt or '').strip() and _runs().active() is None:
+            # an empty prompt with no run to watch is no request: opening the socket to read must not start a run
+            await websocket.send_text(json.dumps({'event': 'error', 'msg': 'empty prompt: no run was started'}))
+            return
         # One active run per robot: while one runs, this client observes it and
         # its prompt becomes an event into that run.
         start = _runs().start(goal=prompt, user_id=user_id, role=role)
