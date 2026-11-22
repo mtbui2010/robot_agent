@@ -25,12 +25,13 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable, Iterable, Optional
 
+from ..pack import actions as action_data
 from .search_route import route_scores
 
 # steps a planner may put between the MoveTo of a search leg and its Find
-_BETWEEN = {"Open", "Close"}
+_BETWEEN = set(action_data.names(action_data.default_table(), cls=("open", "close")))   # pack: actions.yaml
 # steps that act at the robot's place (a MoveTo there must come first)
-_AT_PLACE = {"Place", "PutIn", "Open", "Close"}
+_AT_PLACE = set(action_data.names(action_data.default_table(), cls=("release", "open", "close")))   # pack: actions.yaml
 _NOT_A_PLACE = {"robot", "floor", "", None}
 
 RANK_SCHEMA = {

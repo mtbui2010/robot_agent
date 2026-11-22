@@ -18,23 +18,16 @@ from __future__ import annotations
 import os
 from typing import Any, Optional
 
+from ..pack import actions as action_data
+
 # canonical order of the abstract actions in a prompt (the robot's others follow, sorted)
 ORDER = ("MoveTo", "Find", "Pick", "Place", "PutIn", "Open", "Close", "Say", "WaitForUnload", "Dock")
 
 # what an abstract action does, and the word for its argument (robots override it with a
 # skill-level manifest `description`)
-ACTION_TEXT = {
-    "MoveTo": ("place", "move to a place"),
-    "Find": ("object", "look for an object where the robot is"),
-    "Pick": ("object", "pick up the found object"),
-    "Place": ("place", "put the held object on a place the robot is at"),
-    "PutIn": ("container", "put the held object into an open container the robot is at"),
-    "Open": ("container", "open a container the robot is at"),
-    "Close": ("container", "close a container the robot is at"),
-    "Say": ("text", "say a sentence to the person"),
-    "WaitForUnload": ("item", "wait until a person takes the carried item"),
-    "Dock": ("dock", "drive onto the charging dock"),
-}
+# (pack data: actions.yaml, fields ``arg.name`` and ``describe``, in the order of ORDER)
+_TEXT = action_data.prompt_text(action_data.default_table())
+ACTION_TEXT = {a: _TEXT[a] for a in ORDER if a in _TEXT}
 
 # capability key -> how the description says it (value true / > 0)
 _CAPS = (("base", "drives on a mobile base"), ("lift", "has a lift"), ("head", "has a movable head camera"),
