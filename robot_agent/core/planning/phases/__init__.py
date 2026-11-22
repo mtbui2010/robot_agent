@@ -7,5 +7,8 @@ editing the class line (docs/proposals/generalize_core_design.md, "Phase pipelin
 Switch off: an empty tuple (today) is the old class exactly; a step is reverted by removing its line and its module.
 """
 
+from .exec_helpers import ExecHelpers
+
 PHASE_MIXINS: tuple = (
+    ExecHelpers,
 )
