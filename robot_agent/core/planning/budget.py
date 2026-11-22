@@ -16,11 +16,12 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from robot_agent.contract import FailureCode
+from robot_agent.core.pack import phrases as pack_phrases
 
 DEFAULT_LLM_BUDGET = 20
 
-# the core's phrase when the robot's i18n has none (RobotView.text falls back to CORE_TEXT)
-BUDGET_TEXT = "I have to stop: I could not work this task out within my limit of tries."
+# the core's phrase when the robot's i18n has none (RobotView.text falls back to CORE_TEXT); data of the core pack
+BUDGET_TEXT = pack_phrases.text("llm_budget")
 
 
 class EditProgress:

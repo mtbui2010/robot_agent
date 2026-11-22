@@ -8,8 +8,8 @@
   ``key`` and its ``slots``, so ``render(text, lang, robot, places, slot_tr=...)`` says the ROBOT's own phrase in the user's
   language (its i18n), with the slots named by ``say_name``. Only free text (the model's own questions, Say
   sentences) needs the translator.
-* ``CORE_PHRASES``: the English phrases (the core default; a robot pack gives other languages in its i18n under
-  the same keys).
+* ``CORE_PHRASES``: the English phrases (the core default, a view of the shipped packs' ``phrases`` files; a robot
+  pack gives other languages in its i18n under the same keys).
 * ``guard(text, lang, keep)``: is a translation in the target script and does it keep the names
   (``translate_model``'s output check)?
 """
@@ -19,75 +19,16 @@ from __future__ import annotations
 import re
 from typing import Optional
 
+from robot_agent.core.pack import phrases as pack_phrases
+
 from . import langdata
 
-CORE_PHRASES = {
-    "q_where_put": "Where should I put the {object}?",
-    "q_which_place": "Which place do you mean: {options}?",
-    "q_which_x": "Which {what} do you mean: {options}?",
-    "q_which_one": "I see more than one {object} here: {text}. Which one do you mean?",
-    "q_which_reading": "I can read that two ways: I will {first}, or I will {second}. Which one do you mean?",
-    "q_which_known": "I know of more than one {object}: {text}. Which one do you mean?",
-    "q_which_drawer": "Which drawer should I {verb}?",
-    "q_where_go": "Where should I go?",
-    "q_where_take": "Where should I take it?",
-    "q_what_say": "What should I say?",
-    "q_where_are_you": "Where are you?",
-    "q_where_is_person": "Where is {person}?",
-    "q_where_is": "I couldn't find the {object}. Where is it?",
-    "q_where_is_obj": "Where is the {object}?",
-    "q_where_is_here": "I don't see the {object} here. Where is it?",
-    "q_place_unknown": "I could not find '{said}' on my map. Do you mean: {options}? Or tell me another place.",
-    "q_where_bring": "Where are you? Or where should I put it?",
-    "q_where_in_home": "Which room, or which piece of furniture, is it in?",
-    "a_look_in_room": "OK, I will look in the {room}.",
-    "q_repeat": "Sorry, I didn't catch that. Could you say it again?",
-    "q_silence": "Sorry, I didn't hear you.",
-    "q_did_you_mean": "Did you mean the {object}?",
-    "q_which_name": "Did you mean {options}?",
-    "q_what_bring": "What should I bring?",
-    "q_coverage": "You also asked me for this, but I have not done it: {what}. Should I do it now?",
-    "q_confirm": "{summary} Is that right?",
-    "rb_restated": "I understood it the same way again.",
-    "rb_on": "put the {object} on the {place}",
-    "rb_on_from": "put the {object} from the {source} on the {place}",
-    "sep_then": ", then ",
-    "sep_or": " or ",
-    "rb_in": "put the {object} in the {place}",
-    "rb_to_you": "bring you the {object}",
-    "rb_on_near_you": "bring you the {object} and put it on the {place} next to you",
-    "rb_on_near_person": "bring the {object} to {person} and put it on the {place} next to them",
-    "rb_hand_you": "hand you the {object}",
-    "rb_to_person": "bring the {object} to {person}",
-    "rb_hand_person": "hand the {object} to {person}",
-    "rb_open": "open the {place}",
-    "rb_close": "close the {place}",
-    "rb_go": "go to the {place}",
-    "rb_say": "tell {person}: \"{text}\"",
-    "rb_say_here": "say \"{text}\"",
-    "rb_say_at": "say \"{text}\" in the {place}",
-    "rb_will": "I will {what}.",
-    "q_mentioned": "You mentioned the {what}. What should I do there?",
-    "q_unclear_task": "Sorry, I did not understand. Could you say the task in other words?",
-    "q_what_exactly": "What should I do exactly?",
-    "q_what_do": "Sorry. What should I do?",
-    "q_which_part": "Which part is not right: what I take, where I put it, or who it is for?",
-    "iss_place": "the {what} you mentioned is not in my plan",
-    "iss_unsaid": "you did not say the {what}",
-    "iss_object": "the {what} is not in my plan",
-    "rb_unsure": "I am not sure I understood ({issues}).",
-    "sep_semi": "; ",
-    "say_stopped": "Okay, I stopped.",
-    "say_no_answer": "I did not hear an answer, so I will stop here.",
-    "say_not_confirmed": "I could not confirm with you what to do, so I will stop here.",
-    "say_could_not_do": "Sorry, I could not finish the task.",
-    "say_gave_up": "I am sorry, I still could not understand what you want me to do.",
-    "say_untranslated": "Sorry, I cannot say that in your language right now.",
-    "safety_partial": "I won't {what}: {why}.",
-}
+# the English phrases and the two fixed help-question ends are DATA of the shipped packs (packs/core/phrases.yaml and
+# packs/household/phrases.yaml, read by core/pack/phrases.py); these names are loaded views of them.
+CORE_PHRASES = pack_phrases.view()
 # the fixed ends of the Pick / MoveTo ladders' help questions (step_ladder.py; English free text, as before; a bench's question parser anchors on them)
-HELP_PICK = "Could you move it closer to the edge, then say yes?"
-HELP_MOVE = "Is something in the way? Please clear the way and say yes."
+HELP_PICK = pack_phrases.text("help_pick")
+HELP_MOVE = pack_phrases.text("help_move")
 
 # A question's kind survives the language layer's last resort (``language._fallback``): a read-back is never replaced by
 # "say the task in other words" (a different question). ``q_confirm_restated`` (a pack's whole-sentence phrase for a
@@ -234,7 +175,7 @@ def _fmt(s: str, slots: dict) -> str:
 
 def phrase(robot, key: str, lang: str) -> Optional[str]:
     """The robot's phrase for ``key`` in ``lang`` (its i18n), else the language pack's own (block ``speech``, labelled data of the pack),
-    the core English one for en, else None."""
+    the shipped packs' phrase (English: ``CORE_PHRASES``; another language only if the files hold it), else None."""
     lg = (lang or "en")[:2]
     by = ((getattr(getattr(robot, "i18n", None), "phrases", None) or {}).get(key) or {}) if robot is not None else {}
     if by.get(lg):
@@ -242,7 +183,7 @@ def phrase(robot, key: str, lang: str) -> Optional[str]:
     own = langdata.block(lg, "speech").get(key)
     if isinstance(own, str) and own:
         return own
-    return CORE_PHRASES.get(key) if lg == "en" else None
+    return CORE_PHRASES.get(key) if lg == "en" else pack_phrases.other(key, lg)
 
 
 def pack_phrase(robot, key: str, lang: str, **slots) -> Optional[LocalText]:
