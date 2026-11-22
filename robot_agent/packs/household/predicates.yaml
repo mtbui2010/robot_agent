@@ -1,0 +1,15 @@
+# The standard pack's predicate table: the six conditions a behaviour tree may test (options/bt_goal.py CONDITIONS and holds) and the
+# six predicates a skill's `effects` may use (core/planning/verify.py _holds), as they were in robot_agent 8002347. Nothing is new.
+# `scopes` says where a name is read: `tree` (a `cond` leaf: every argument required) or `effect` (after a step: an argument may be
+# the wildcard *). `pre` and `goal` are declared for the later steps that read them; no code reads them yet.
+predicates:
+  holding:    {eval: std.holding,     args: ["object?"],       scopes: [tree, effect, pre, goal], source: "options/bt_goal.py holds (tree), core/planning/verify.py _holds (effect), 8002347"}
+  hand_free:  {eval: std.hand_free,   args: [],              scopes: [tree, pre, goal],         source: "options/bt_goal.py holds, 8002347"}
+  hand_empty: {eval: std.hand_free,   args: [],              scopes: [effect],                  source: "core/planning/verify.py _holds, 8002347: the manifest's name for the same test"}
+  at:         {eval: std.at,          args: [place],         scopes: [tree, pre, goal],         source: "options/bt_goal.py holds, 8002347"}
+  arrived:    {eval: std.at,          args: ["place?"],        scopes: [effect],                  source: "core/planning/verify.py _holds, 8002347"}
+  placed:     {eval: std.placed,      args: [object, place], scopes: [tree, goal],              source: "options/bt_goal.py holds, 8002347: put at the place and not in the hand"}
+  opened:     {eval: std.opened,      args: ["container?"],    scopes: [tree, effect, pre, goal], source: "options/bt_goal.py holds (tree), core/planning/verify.py _holds (effect), 8002347"}
+  closed:     {eval: std.closed,      args: [container],     scopes: [tree, goal],              source: "options/bt_goal.py holds, 8002347"}
+  found:      {eval: std.found,       args: ["object?"],       scopes: [effect],                  source: "core/planning/verify.py _holds, 8002347"}
+  "on":       {eval: std.switched_on, args: ["appliance?"],    scopes: [effect],                  source: "core/planning/verify.py _holds, 8002347"}

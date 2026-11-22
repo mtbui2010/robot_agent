@@ -1,0 +1,7 @@
+{
+ "about": "Step S06 (one predicate table for tree conditions and effect checks): the commit the S06 set cassettes of tests/golden/scenario_sets/s06_*.py were recorded on (bt_hand_full, bt_holding_other_object: a tree condition read false with the hand full). Recorded on the code before the step's production change.",
+ "kind": "equivalence",
+ "old_code": "2d57c99",
+ "commits": ["2d57c99"],
+ "notes": {"2d57c99": "generalize-core tip after wave W1 (S02, S03); the cassettes were recorded in a detached worktree of it, before the S06 edit of robot_agent/"}
+}
