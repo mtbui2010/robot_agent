@@ -1,0 +1,359 @@
+{
+ "format": 1,
+ "name": "in_goal_armless_refused",
+ "tags": [
+  "refused",
+  "failure",
+  "fakeline"
+ ],
+ "about": "an in goal on the armless cart of the line: refused before any plan, with the actions it lacks (the in kind's needs)",
+ "scenario": {
+  "name": "in_goal_armless_refused",
+  "env": {
+   "bin@cell a": {
+    "aliases": [
+     "bin"
+    ],
+    "loc": {
+     "x": 1.0,
+     "y": 1.0
+    },
+    "surface": true
+   },
+   "jig@cell a": {
+    "aliases": [
+     "jig"
+    ],
+    "loc": {
+     "x": 2.0,
+     "y": 1.0
+    },
+    "surface": true
+   },
+   "outfeed@cell b": {
+    "aliases": [
+     "outfeed"
+    ],
+    "loc": {
+     "x": 6.0,
+     "y": 3.0
+    },
+    "surface": true
+   },
+   "tote@cell b": {
+    "aliases": [
+     "tote"
+    ],
+    "loc": {
+     "x": 6.5,
+     "y": 3.0
+    },
+    "openable": true
+   }
+  },
+  "robot_pkg": "fakeline.cart",
+  "task": "Put the bracket in the tote.",
+  "robot": {
+   "objects": {
+    "bracket": "bin@cell a",
+    "bolt": "jig@cell a"
+   },
+   "start": "bin@cell a",
+   "skills": {
+    "say": {
+     "isdone": true,
+     "msg": "said"
+    },
+    "wait_for_unload": {
+     "isdone": true,
+     "msg": "tray empty"
+    },
+    "inspect": {
+     "isdone": true,
+     "msg": "inspected"
+    },
+    "fasten": {
+     "isdone": true,
+     "msg": "fastened"
+    }
+   }
+  },
+  "llm": {
+   "script": [],
+   "default": {
+    "status": "clear",
+    "reason": "",
+    "question": "",
+    "goals": [
+     {
+      "type": "in",
+      "object": "bracket",
+      "from": "bin",
+      "to": "tote"
+     }
+    ]
+   }
+  },
+  "planner": {
+   "plan": [],
+   "replans": []
+  },
+  "options": {
+   "input_pivot": "none",
+   "look_then_ask": "0",
+   "bring_ask": "0",
+   "bt_goal": "0",
+   "fetch_guard": "0"
+  }
+ },
+ "recorded": {
+  "llm_calls": [
+   {
+    "prompt": "798f1bc14a3cffb9",
+    "format": "0d88e5861dd05da8",
+    "head": "You turn a household robot task into goals. The robot can: move to a pla",
+    "answer": "{\"status\": \"clear\", \"reason\": \"\", \"question\": \"\", \"goals\": [{\"type\": \"in\", \"object\": \"bracket\", \"from\": \"bin\", \"to\": \"tote\"}]}"
+   }
+  ],
+  "planner_calls": [],
+  "robot_calls": [
+   {
+    "skill": "mobile_pose",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "pose": [
+      1.0,
+      1.0,
+      0
+     ]
+    }
+   }
+  ],
+  "events": [
+   {
+    "event": "task_start",
+    "task": "Put the bracket in the tote.",
+    "world": {
+     "arrived": "bin@cell a",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from bin@cell a"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Starting the task"
+   },
+   {
+    "event": "reconcile",
+    "when": "start",
+    "changed": {
+     "arrived": [
+      null,
+      "bin@cell a"
+     ]
+    },
+    "sensors": {
+     "arrived": {
+      "pose": [
+       1.0,
+       1.0
+      ],
+      "detail": "0.00 m from bin@cell a",
+      "source": "mobile_pose"
+     },
+     "containers": {},
+     "unconfirmed": []
+    },
+    "provenance": {
+     "arrived": {
+      "source": "sensor",
+      "detail": "0.00 m from bin@cell a"
+     },
+     "found": {
+      "source": "belief"
+     },
+     "holding": {
+      "source": "belief"
+     },
+     "opened": {
+      "source": "sensor",
+      "containers": {},
+      "unconfirmed": []
+     },
+     "on": {
+      "source": "belief"
+     }
+    },
+    "world": {
+     "arrived": "bin@cell a",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from bin@cell a"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    }
+   },
+   {
+    "event": "status",
+    "msg": "Understanding the task..."
+   },
+   {
+    "event": "understand",
+    "status": "clear",
+    "reason": "",
+    "goals": [
+     {
+      "type": "in",
+      "object": "bracket",
+      "from": "",
+      "to": "tote@cell b"
+     }
+    ],
+    "question": null
+   },
+   {
+    "event": "done",
+    "status": "refused",
+    "msg": "this robot has no Pick, PutIn skill, needed for: in bracket to tote@cell b",
+    "world": {
+     "arrived": "bin@cell a",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from bin@cell a"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "refusal": "capability",
+    "say": "I have no arm."
+   }
+  ],
+  "final": {
+   "robot": {
+    "at": "bin@cell a",
+    "holding": null,
+    "objects": {
+     "bracket": "bin@cell a",
+     "bolt": "jig@cell a"
+    },
+    "opened": [],
+    "asked": []
+   },
+   "belief": {
+    "arrived": "bin@cell a",
+    "found": null,
+    "holding": null,
+    "opened": [],
+    "on": [],
+    "found_pose": null,
+    "holding_pose": null,
+    "provenance": {
+     "arrived": {
+      "source": "sensor",
+      "detail": "0.00 m from bin@cell a"
+     },
+     "found": {
+      "source": "belief"
+     },
+     "holding": {
+      "source": "belief"
+     },
+     "opened": {
+      "source": "sensor",
+      "containers": {},
+      "unconfirmed": []
+     },
+     "on": {
+      "source": "belief"
+     }
+    }
+   },
+   "lab_log": [],
+   "record": {
+    "task": "Put the bracket in the tote.",
+    "lang": "en",
+    "obs": "",
+    "visible": [],
+    "planner": "sage+assist",
+    "plan_meta": {},
+    "warnings": [],
+    "steps": [],
+    "replans": [],
+    "status": "refused",
+    "failure": {}
+   },
+   "log_kinds": [
+    "reconcile",
+    "task_start",
+    "status",
+    "understand",
+    "done",
+    "snapshot"
+   ]
+  }
+ },
+ "commit": "4d584ba"
+}

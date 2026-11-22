@@ -1,0 +1,605 @@
+{
+ "format": 1,
+ "name": "real_reconcile",
+ "tags": [
+  "success",
+  "reconcile",
+  "fakeline"
+ ],
+ "about": "the legacy run-start reconcile (option reconcile off: loop.reconcile_world, not stubbed) with the pack's own pose reader (the cart's name map robot_xy): the belief says jig, the reader says bin",
+ "scenario": {
+  "name": "real_reconcile",
+  "env": {
+   "bin@cell a": {
+    "aliases": [
+     "bin"
+    ],
+    "loc": {
+     "x": 1.0,
+     "y": 1.0
+    },
+    "surface": true
+   },
+   "jig@cell a": {
+    "aliases": [
+     "jig"
+    ],
+    "loc": {
+     "x": 2.0,
+     "y": 1.0
+    },
+    "surface": true
+   },
+   "outfeed@cell b": {
+    "aliases": [
+     "outfeed"
+    ],
+    "loc": {
+     "x": 6.0,
+     "y": 3.0
+    },
+    "surface": true
+   }
+  },
+  "robot_pkg": "fakeline.cart",
+  "task": "Go to the outfeed.",
+  "robot": {
+   "objects": {
+    "bracket": "bin@cell a",
+    "bolt": "jig@cell a"
+   },
+   "start": "bin@cell a",
+   "skills": {
+    "say": {
+     "isdone": true,
+     "msg": "said"
+    },
+    "wait_for_unload": {
+     "isdone": true,
+     "msg": "tray empty"
+    },
+    "inspect": {
+     "isdone": true,
+     "msg": "inspected"
+    },
+    "fasten": {
+     "isdone": true,
+     "msg": "fastened"
+    }
+   }
+  },
+  "llm": {
+   "script": [],
+   "default": {
+    "status": "clear",
+    "reason": "",
+    "question": "",
+    "goals": [
+     {
+      "type": "go",
+      "object": "",
+      "from": "",
+      "to": "outfeed"
+     }
+    ]
+   }
+  },
+  "planner": {
+   "plan": [],
+   "replans": []
+  },
+  "options": {
+   "input_pivot": "none",
+   "look_then_ask": "0",
+   "bring_ask": "0",
+   "bt_goal": "0",
+   "fetch_guard": "0",
+   "reconcile": "0"
+  },
+  "capture": [
+   "reconcile",
+   "prompts"
+  ],
+  "world": {
+   "arrived": "jig@cell a",
+   "holding": null
+  }
+ },
+ "recorded": {
+  "llm_calls": [
+   {
+    "prompt": "e94781baa6f868b8",
+    "format": "0d88e5861dd05da8",
+    "head": "You turn a household robot task into goals. The robot can: move to a pla",
+    "answer": "{\"status\": \"clear\", \"reason\": \"\", \"question\": \"\", \"goals\": [{\"type\": \"go\", \"object\": \"\", \"from\": \"\", \"to\": \"outfeed\"}]}"
+   }
+  ],
+  "planner_calls": [],
+  "robot_calls": [
+   {
+    "skill": "move",
+    "params": {
+     "inputs": "outfeed@cell b"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "arrived at outfeed@cell b"
+    }
+   },
+   {
+    "skill": "mobile_pose",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "pose": [
+      6.0,
+      3.0,
+      0
+     ]
+    }
+   }
+  ],
+  "events": [
+   {
+    "event": "task_start",
+    "task": "Go to the outfeed.",
+    "world": {
+     "arrived": "bin@cell a",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "belief"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Starting the task"
+   },
+   {
+    "event": "reconcile",
+    "when": "start",
+    "changed": {
+     "arrived": [
+      "jig@cell a",
+      "bin@cell a"
+     ]
+    },
+    "world": {
+     "arrived": "bin@cell a",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "belief"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    }
+   },
+   {
+    "event": "status",
+    "msg": "Understanding the task..."
+   },
+   {
+    "event": "understand",
+    "status": "clear",
+    "reason": "",
+    "goals": [
+     {
+      "type": "go",
+      "object": "",
+      "from": "",
+      "to": "outfeed@cell b"
+     }
+    ],
+    "question": null
+   },
+   {
+    "event": "status",
+    "msg": "Generating task plan..."
+   },
+   {
+    "event": "gate",
+    "round": 0,
+    "problems": [],
+    "plan": [
+     "MoveTo outfeed@cell b"
+    ]
+   },
+   {
+    "event": "plan",
+    "steps": [
+     {
+      "action": "MoveTo",
+      "object": "outfeed@cell b",
+      "grounded": true
+     }
+    ],
+    "plan_meta": {
+     "method": "compiled",
+     "llm_plan": [
+      {
+       "action": "MoveTo",
+       "object": "outfeed@cell b",
+       "grounded": true
+      }
+     ],
+     "edits": [],
+     "certified": true,
+     "gate_findings": [],
+     "repaired_by_op": {},
+     "completed_by_gate": 0
+    },
+    "warnings": [],
+    "plan_text": "move::outfeed@cell b",
+    "certified": true,
+    "world": {
+     "arrived": "bin@cell a",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "belief"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    }
+   },
+   {
+    "event": "step_start",
+    "index": 0,
+    "action": "MoveTo",
+    "object": "outfeed@cell b",
+    "skill": "move",
+    "say": "I will move to outfeed in the cell b"
+   },
+   {
+    "event": "step_verify",
+    "index": 0,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "arrived at outfeed@cell b",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "localization",
+      "ok": true,
+      "detail": "0.00 m from outfeed@cell b",
+      "confidence": null,
+      "unknown": false
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 0,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "arrived at outfeed@cell b"
+    },
+    "world": {
+     "arrived": "outfeed@cell b",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: move to outfeed in the cell b"
+   },
+   {
+    "event": "status",
+    "msg": "Checking the goals..."
+   },
+   {
+    "event": "goal_check",
+    "goal": {
+     "type": "go",
+     "object": "",
+     "from": "",
+     "to": "outfeed@cell b"
+    },
+    "ok": null,
+    "evidence": "go : no sensor declared for it (belief)",
+    "world": {
+     "arrived": "outfeed@cell b",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    }
+   },
+   {
+    "event": "done",
+    "status": "success",
+    "msg": "",
+    "world": {
+     "arrived": "outfeed@cell b",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Task completed"
+   }
+  ],
+  "final": {
+   "robot": {
+    "at": "outfeed@cell b",
+    "holding": null,
+    "objects": {
+     "bracket": "bin@cell a",
+     "bolt": "jig@cell a"
+    },
+    "opened": [],
+    "asked": []
+   },
+   "belief": {
+    "arrived": "outfeed@cell b",
+    "found": null,
+    "holding": null,
+    "opened": [],
+    "on": [],
+    "found_pose": null,
+    "holding_pose": null,
+    "provenance": {
+     "arrived": {
+      "source": "sensor",
+      "detail": "MoveTo localization check"
+     },
+     "found": {
+      "source": "belief"
+     },
+     "holding": {
+      "source": "belief"
+     },
+     "opened": {
+      "source": "belief",
+      "containers": {},
+      "unconfirmed": []
+     },
+     "on": {
+      "source": "belief"
+     }
+    }
+   },
+   "lab_log": [],
+   "record": {
+    "task": "Go to the outfeed.",
+    "lang": "en",
+    "obs": "goals: [{\"type\": \"go\", \"object\": \"\", \"from\": \"\", \"to\": \"outfeed@cell b\"}]",
+    "visible": [],
+    "planner": "sage+assist",
+    "plan_meta": {
+     "method": "compiled",
+     "llm_plan": [
+      {
+       "action": "MoveTo",
+       "object": "outfeed@cell b",
+       "grounded": true
+      }
+     ],
+     "edits": [],
+     "certified": true,
+     "gate_findings": [],
+     "repaired_by_op": {},
+     "completed_by_gate": 0
+    },
+    "warnings": [],
+    "steps": [
+     {
+      "index": 0,
+      "action": "MoveTo",
+      "object": "outfeed@cell b",
+      "skill": "move",
+      "params": {
+       "inputs": "outfeed@cell b"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "arrived at outfeed@cell b"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "arrived at outfeed@cell b",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "localization",
+        "ok": true,
+        "detail": "0.00 m from outfeed@cell b",
+        "confidence": null,
+        "unknown": false
+       }
+      ],
+      "logs": []
+     }
+    ],
+    "replans": [],
+    "status": "success",
+    "failure": {}
+   },
+   "log_kinds": [
+    "reconcile",
+    "task_start",
+    "status",
+    "understand",
+    "status",
+    "gate",
+    "plan",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "status",
+    "goal_check",
+    "done",
+    "snapshot"
+   ]
+  },
+  "prompts": {
+   "sage_prompt_kwargs": {
+    "actions": {
+     "sha": "0e01e1ce562640aa",
+     "head": "[\"MoveTo <place>: move to a place\", \"Say <text>: say a sentence to the person\", \"WaitForUnload <",
+     "chars": 147
+    },
+    "robot_description": {
+     "sha": "8e5fcf05ce46097e",
+     "head": "fakeline_cart: a robot that has no arm, so it cannot pick up, put down or open anything, drives ",
+     "chars": 163
+    }
+   },
+   "direct_prompt": {
+    "sha": "98b5f1439c38b84c",
+    "head": "You plan tasks for this robot: fakeline_cart: a robot that has no arm, so it cannot pick up, put",
+    "chars": 722
+   },
+   "planner_cfg": {
+    "sha": "7f2c213f046bbdf0",
+    "head": "{\"actions\": [\"MoveTo\", \"Say\", \"WaitForUnload\"], \"capabilities\": {\"arms\": 0, \"base\": true, \"find_",
+    "chars": 527
+   }
+  }
+ },
+ "commit": "4d584ba"
+}
