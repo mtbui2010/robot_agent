@@ -31,7 +31,7 @@ with `wc -l`, `awk` and `ast` (commands in "Sizes"). "Not read" is listed at the
 7. The fleet's closed table is `_NEEDS` (`robot_fleet/scheduler.py:16-23`) plus `_CONTAINER_KINDS` (`robot_fleet/graph.py:26`); voice and assignment are already open. The robot's `GET /robot/manifest`
    carries `plan_actions` but not goal kinds, their needs, phrases or goal-kind capabilities (`robot_agent/api/robot_info.py:17-21`).
 8. Questions: 28 kinds of question (30 of the 62 `CORE_PHRASES` are `q_` keys); 16 carry an event `kind`, 12 carry none, one emits no event at all; the answer is read by EIGHT different routes (yes/no three-way, yes/no four-way, place grounding,
-   pack word lists, instance choice, re-understanding by the model, ad-hoc regex, option-specific functions). Only en, ko and vi have full language packs; ja and zh have detection marks only.
+   pack word lists, instance choice, re-understanding by the model, ad-hoc regex, option-specific functions). Only three languages (en, ko and one more, see `robot_agent/core/planning/lang/`) have full language packs; ja and zh have detection marks only.
 9. Verdict on `pex_case/docs/framework_fit.md`: of G1-G13, S1-S10 and the P rows, the robot_agent lines are right (within 1 line) for G2-G6, G12, S1, S3, S9, P2-P4, P6, P8; G1 is right only for the LLM path; G7 has WRONG evidence (its
    conclusion holds for a pack skill, not for options); G11 and P7 have WRONG LINES; G8-G10, S4-S8, S10, P1, P5 cite no robot_agent line. Ten corrections to the level-A inventory are listed at the end.
 
@@ -519,7 +519,7 @@ fallback at :1079.
 
 | route | function | gives | used by |
 |---|---|---|---|
-| 1 yes/no, three-way | `yes_no` (`robot_agent/interact/dialog.py:119-130`) | `True` / `False` / `None`(silence) + the rest of the text as a correction; words from the language packs (`robot_agent/core/planning/lang/en.json:146-163`, ko, vi) | ladder help, coverage, new task, bt `confirm` |
+| 1 yes/no, three-way | `yes_no` (`robot_agent/interact/dialog.py:119-130`) | `True` / `False` / `None`(silence) + the rest of the text as a correction; words from the language packs (`robot_agent/core/planning/lang/en.json:146-163`, and the other full packs) | ladder help, coverage, new task, bt `confirm` |
 | 2 yes/no, four-way | `read_yes_no`, `ask_yes_no` (`robot_agent/interact/dialog.py:187-217`) | yes / no / correction / unclear (re-asked `yes_no_reasks` times with the robot's `yes_or_no` phrase) / silence | read-back, did-you-mean |
 | 3 place grounding | `Places.ground`, `persons.place_in_answer`, `understand.fuzzy_place`, `fuzzy_room`, option services `ground_place`, `room_places`, `confirm_near` | an ENV key (or a room's keys) | where is it, delivery, source questions |
 | 4 pack word lists | `names.says`, `ask_next.says`, `bt_goal.read_menu`, `pack_words` (`robot_agent/options/bt_goal.py:136-143`) | a named choice (retry, elsewhere, stop, ...) | declared trees, ask_next |
@@ -533,7 +533,7 @@ positions", an arm) has no route: the loop has no slot to put it into (framework
 
 ### C. Languages
 
-- Packs: `robot_agent/core/planning/lang/{en,ko,vi}.json` (365, 376, 308 lines: dialogue words, patterns, speech phrases, particles, script) and `ja.json`, `zh.json` (6 lines each: name, register, detection marks only). The prompt language is `en`
+- Packs: `robot_agent/core/planning/lang/*.json`, the three full packs (365, 376, 308 lines: dialogue words, patterns, speech phrases, particles, script) and `ja.json`, `zh.json` (6 lines each: name, register, detection marks only). The prompt language is `en`
   unless the manifest sets `planner.prompt_lang` (`robot_agent/core/planning/langdata.py:44-64`).
 - Say: a `LocalText` is rendered from the robot's own phrase for the key (pack i18n, then the language pack `speech` block, then English from `CORE_PHRASES`; `robot_agent/core/planning/speech.py:235-246`, `render` :259); anything else is English text
   translated by a model call (`robot_agent/core/planning/language.py:430`), with the place and person names kept (`glossary`, :256); a failed translation is `say_untranslated` (`robot_agent/core/planning/speech.py:85`, `CORE_PHRASES`).

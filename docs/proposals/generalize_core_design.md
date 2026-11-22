@@ -1461,12 +1461,3 @@ Where I am least sure:
   cassettes and their counts of model and robot calls (two scripts). I did not read a cassette's events and did not run the replay or the mutation check.
 - No code was run except those two scripts. No line count in this document was measured by me: the sizes are the inventory's, and the
   per-step sizes are estimates from its phase map.
-
-## Tóm tắt dễ hiểu
-
-Tài liệu này là bản thiết kế mức B: mọi từ vựng và luật riêng của robot (loại mục tiêu, điều kiện, hành động có tham số, kiểm tra, phục hồi,
-câu hỏi và câu trả lời, câu nói) trở thành dữ liệu khai báo của gói robot, còn hành vi "nhà ở" hiện nay được tách ra thành gói chuẩn
-`household` nằm ngay trong repo và phải cho kết quả giống hệt hôm nay. Vòng lặp `assist_loop.py` sẽ co từ 4081 dòng xuống khoảng 300 dòng
-qua 28 bước nhỏ, mỗi bước đều được chứng minh bằng golden trace; bước 1 là bổ sung golden vì bộ hiện tại chưa phủ đủ. Chưa có dòng mã sản
-phẩm nào được viết; chủ dự án cần quyết định làm đủ 28 bước hay chỉ bản rút gọn 13 bước (đã liệt kê các phần nên hoãn), và có sửa lỗi tùy
-chọn chuỗi "0" hay không.
