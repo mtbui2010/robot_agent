@@ -55,8 +55,20 @@ class LanguagesIn(_Open):
     languages: list[str]          # the languages to switch on: a non-empty subset of `supported`
 
 
+def _pack_keys_in_schema(schema: dict) -> None:
+    """Document the keys ``core/pack/report.py`` adds (Step S27a) in the OpenAPI schema. They are not model fields: the model's
+    fields stay the six old keys (tests/test_manifest_snapshot.py), and an extra key of the answer passes through (extra='allow')."""
+    schema.setdefault('properties', {}).update({
+        'pack': {'type': 'object', 'title': 'Pack', 'description': "the robot's pack header: schema, name, version, extends"},
+        'goal_kinds': {'type': 'object', 'title': 'Goal Kinds', 'description': 'kind -> {feasible, needs, slots}'},
+        'question_kinds': {'type': 'array', 'items': {'type': 'string'}, 'title': 'Question Kinds',
+                           'description': 'the kinds the robot\'s questions carry'}})
+
+
 class RobotManifest(_Open):
-    """``GET /robot/manifest``: what a fleet manager needs to know of this robot (docs/fleet_seams.md); read-only."""
+    """``GET /robot/manifest``: what a fleet manager needs to know of this robot (docs/fleet_seams.md); read-only.
+    When the robot's pack can be read the answer also has ``pack``, ``goal_kinds`` and ``question_kinds`` (core/pack/report.py)."""
+    model_config = ConfigDict(extra='allow', json_schema_extra=_pack_keys_in_schema)
     robot: str                    # the manifest's `robot`
     version: str                  # the manifest's `version`
     plan_actions: list[str] = []  # the abstract actions a plan may use on this robot (sorted)
