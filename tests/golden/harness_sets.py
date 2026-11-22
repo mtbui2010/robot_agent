@@ -15,6 +15,8 @@ changing it. What it adds, each opt-in per scenario:
 * ``environ``: ROBOT_AGENT_* variables for the run (every ROBOT_AGENT_* variable is cleared before every run of a set)
 * ``pack`` (``RobotView.use_pack``, Step S02), ``pause_after`` ({skill, nth}: paused and resumed at once)
 * robot keys ``skills`` (results of skills the FakeRobot lacks), ``answers_in_order``, ``drops`` ([{nth, to}])
+* planner key ``takes_subgoals``: the planner takes ``subgoals`` (as SAGE does), so the loop passes them; each planner call
+  records the list it got (``planner_calls[i].subgoals``)
 
 A new cassette carries the ``commit`` it was recorded on (tests/golden/commits/<step>.json lists the allowed ones).
 """
@@ -58,6 +60,20 @@ class RecordingPlanner(H.RecordingPlanner):
         out = super().replan(task, completed, failed_step, failure_reason, obs, visible_objects)
         if self.io is not None:
             self.io.append(_planner_inputs("replan", obs, visible_objects))
+        return out
+
+
+class SubgoalPlanner(RecordingPlanner):
+    """``planner.takes_subgoals``: ``generate_plan`` / ``replan`` take the keyword ``subgoals`` (base.accepts looks for it)."""
+
+    def generate_plan(self, task, obs, visible_objects, subgoals=None):
+        out = super().generate_plan(task, obs, visible_objects)
+        self.calls[-1] = dict(self.calls[-1], subgoals=None if subgoals is None else list(subgoals))
+        return out
+
+    def replan(self, task, completed, failed_step, failure_reason, obs, visible_objects, subgoals=None):
+        out = super().replan(task, completed, failed_step, failure_reason, obs, visible_objects)
+        self.calls[-1] = dict(self.calls[-1], subgoals=None if subgoals is None else list(subgoals))
         return out
 
 
@@ -147,7 +163,9 @@ def _install(mp, sc, env, tmp):
 def _stubs(sc, env, recorded):
     """harness.py's stubs as the set classes (they add only defaults and methods), with the set robot keys."""
     robot, llm, planner = H._stubs(sc, env, recorded)
-    robot.__class__, llm.__class__, planner.__class__ = ScenarioRobot, CassetteLLM, RecordingPlanner
+    takes = bool((sc.get("planner") or {}).get("takes_subgoals"))
+    robot.__class__, llm.__class__ = ScenarioRobot, CassetteLLM
+    planner.__class__ = SubgoalPlanner if takes else RecordingPlanner
     rb = sc.get("robot") or {}
     if rb.get("skills"):
         robot.skills = json.loads(json.dumps(rb["skills"]))

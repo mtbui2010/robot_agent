@@ -108,7 +108,7 @@
      "assist_loop_lines_after": null,
      "risk": "medium; the one hard-to-undo decision (the schema is a contract)",
      "golden_coverage": "all cassettes (nothing reads the pack yet: identical replay shows the loader has no side effect); manifest snapshots of S01",
-     "notes": "contract/pack.py parses and validates the WHOLE schema now (holds lists, unknown_is, remove, questions_default_kind, fleet), so no later step edits it. The loader reads one file per section (`<section>.yaml` next to pack.yaml, a missing file = an empty section) and callables/__init__.py imports every sibling module it finds: a later step adds ITS file and edits no shared one. pyproject package data covers packs/**/*.yaml and packs/**/prompts/*.txt. RobotView gains `pack` and `use_pack(raw)`. Nothing pack-derived may be cached in AssistLoop.__init__. check_manifest (contract layer) validates the section's schema only; the resolved pack is printed by `python -m robot_agent.core.pack.show`."
+     "notes": "contract/pack.py parses and validates the WHOLE schema now (holds lists, unknown_is, remove, questions_default_kind, fleet), so no later step edits it. The loader reads one file per section (`<section>.yaml` next to pack.yaml, a missing file = an empty section) and callables/__init__.py imports every sibling module it finds: a later step adds ITS file and edits no shared one. pyproject package data covers packs/**/*.yaml and packs/**/prompts/*.txt. RobotView gains `pack` and `use_pack(raw)`. Nothing pack-derived may be cached in AssistLoop.__init__. check_manifest (contract layer) validates the section's schema only; the resolved pack is printed by `python -m robot_agent.core.pack.show`. The goal-kind schema also has the field `subgoal` (the kind's sub-goal phrase for a planner that takes `subgoals`; review of S01, 2026-11-23); S07 fills the household text."
     },
     {
      "id": "S03",
@@ -127,12 +127,14 @@
       "robot_agent/core/planning/assist_loop.py",
       "tools/lint_arch.py",
       "tools/arch_baseline.json",
-      "tests/test_lint_loop_guards.py"
+      "tests/test_lint_loop_guards.py",
+      "tests/legacy_ref/places.py",
+      "tests/test_places_diff.py"
      ],
      "expected_assist_loop_delta": -191,
      "assist_loop_lines_after": 3890,
      "risk": "low for the move; the guards are what every later step relies on",
-     "golden_coverage": "all (every run builds Places); tags question, goals_only",
+     "golden_coverage": "NOT the cassettes alone (review of S01, 2026-11-23: eight source mutations of words / Places / Memory, assist_loop.py:107-291, passed every cassette and snapshot; three passed the whole suite). Proof: tests/test_places_memory_pins.py (mutations article_my_your_kept, one_word_fallback_lost, answers_window_nine) and, in S03's first commit, tests/test_places_diff.py: the moved words / Places / Memory against the reference copy tests/legacy_ref/places.py over a table of names and hints (a one-word match, a name with \"my\", nine remembered answers). The cassettes (every run builds Places; tags question, goals_only) are a smoke check only",
      "notes": "Two commits. (1) Verbatim move; assist_loop.py re-exports Places, Memory, words; phases/__init__.py holds PHASE_MIXINS (an empty tuple, one entry per line later) and the class line becomes AssistLoop(*PHASE_MIXINS, WhichOne, ...). (2) tools/lint_arch.py: LOOP becomes the set {assist_loop.py, phases/*.py, places.py, loop_config.py, find_ladder.py, core/pack/*.py} (files that exist), the wiring ratchet counts the SUM over the set (62 keys, 59 branches today), the registered-option-key scan, a new embodiplan-internals scan and a new language-literal scan read the same set (new layers core/pack and packs: 0 rows), and a new vocabulary ratchet counts the quoted standard action names and goal kinds in the set (66 and 59 lines today). Function signatures of lint.wiring / check_wiring / run stay; no existing test is edited; the new checks get their own test file."
     }
    ]
@@ -213,12 +215,15 @@
       "robot_agent/options/bt_goal.py",
       "robot_agent/core/planning/verify.py",
       "tests/legacy_ref/predicates.py",
-      "tests/test_pack_predicates.py"
+      "tests/test_pack_predicates.py",
+      "tests/golden/scenario_sets/s06_*.py",
+      "tests/golden/set_cassettes/s06_*.cassette.json",
+      "tests/golden/commits/s06.json"
      ],
      "expected_assist_loop_delta": 0,
      "assist_loop_lines_after": null,
      "risk": "medium (the two old evaluators differ on purpose)",
-     "golden_coverage": "bt_goal (6), success, replan; S01: bt_go_tree, bt_drawer_conditions, effect_untracked_predicate, effect_on_predicate, custom_action; mutations bt_opened_inverted, bt_at_inverted, bt_placed_ignores_hand, effect_unknown_pred_fails",
+     "golden_coverage": "bt_goal (6), success, replan; S01: bt_go_tree, bt_drawer_conditions, effect_untracked_predicate, effect_on_predicate, custom_action; mutations bt_opened_inverted, bt_at_inverted, bt_placed_ignores_hand, effect_unknown_pred_fails; review of S01 (2026-11-23): tests/test_tree_condition_pins.py, mutations hand_free_always_true, holding_any_object (only these pins catch them today: no tree run evaluates hand_free with a full hand or holding o while another object is held). S06's own scenario set adds those two tree runs, with these two mutations as kill criteria",
      "notes": "Each consumer keeps its own rule for a wrong arity and for 'cannot tell'. bt_goal.py is 367 lines of 400: it must not grow past its limit (helpers go to core/pack/predicates.py)."
     }
    ]
@@ -249,8 +254,8 @@
      "expected_assist_loop_delta": -6,
      "assist_loop_lines_after": 3790,
      "risk": "high for the prompt (kind lines and their order are in every understand prompt)",
-     "golden_coverage": "every cassette with an understand call (prompt hash), goals_only, refused, plan_only; S01: template_go, template_say_deliver (the say / deliver lines appear only for fakeline), given_goals_unknown_kind, two_destinations; mutations in_needs_no_pick, deliver_prompt_changed",
-     "notes": "needs_when (say + MoveTo), canonical (give -> on), the optional kind `give`, compile_steps and the conflict validator STAY code in goals.py (one user each); the only new switch is `conflicts: none` per kind. goal_fix.py and plan_repair.py are not touched."
+     "golden_coverage": "every cassette with an understand call (prompt hash), goals_only, refused, plan_only; S01: template_go, template_say_deliver (the say / deliver lines appear only for fakeline), given_goals_unknown_kind, two_destinations; mutations in_needs_no_pick, deliver_prompt_changed; S01b: subgoals_in_on_go, subgoals_close_replan (the sub-goal list a planner that takes `subgoals` gets), tests/test_subgoal_phrases.py; mutation subgoal_into_in",
+     "notes": "needs_when (say + MoveTo), canonical (give -> on), the optional kind `give`, compile_steps and the conflict validator STAY code in goals.py (one user each); the only new switch is `conflicts: none` per kind. goal_fix.py and plan_repair.py are not touched. The per-kind sub-goal phrase (`goals.subgoal_text`, goals.py:174-190: on, in, open / close, go, say, deliver; describe() for any other kind) becomes the kind's `subgoal` field, the household text character for character; an equality test over tests/test_subgoal_phrases.py's rows is committed before the if-chain goes."
     },
     {
      "id": "S25a",
@@ -398,8 +403,8 @@
      "expected_assist_loop_delta": 0,
      "assist_loop_lines_after": null,
      "risk": "low (additive fields)",
-     "golden_coverage": "no loop cassette reaches the endpoint; S01: the full manifest snapshots of fakebot, fakehome, fakeline (old keys unchanged)",
-     "notes": "New keys only: pack, goal_kinds {feasible, needs, slots}, question_kinds. The old snapshot keys and values must be equal."
+     "golden_coverage": "no loop cassette reaches the endpoint; S01: the manifest snapshots of fakebot, fakehome, fakeline: tests/test_manifest_snapshot.py compares the recorded top-level keys only (old keys and values unchanged, an added key passes); S27a pins its added keys in its own snapshot set",
+     "notes": "New keys only: pack, goal_kinds {feasible, needs, slots}, question_kinds. The old snapshot keys and values must be equal. The added keys are pinned by `python tools/golden_record.py --snapshots --prefix s27a` (tests/golden/snapshots.py writes `<kind>_snapshots/s27a_<pack>.json`, never overwriting) and a new test tests/test_robot_info_pack.py compares them; tests/test_manifest_snapshot.py is not edited."
     }
    ]
   },
