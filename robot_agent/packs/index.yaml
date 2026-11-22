@@ -1,0 +1,25 @@
+# The packs that ship with robot_agent, by name (docs/proposals/generalize_core_design.md, "Where a pack file lives").
+# Data, not code: the engine reads every pack name from this file and names no pack itself.
+source: "owner decision 2 of 2026-11-22 (the standard pack lives inside this repository) and the design's section 'Compatibility'"
+
+root: core                        # always first in the chain of every robot
+packs:                            # name -> the folder next to this file (pack.yaml, <section>.yaml, callables/)
+  core: {dir: core}
+  household: {dir: household}
+
+# A manifest with no `pack:` section is schema 1: every pack of robot_agent 8002347 is a household robot, so it gets this base.
+schema_1_base: household
+# Where a schema-1 manifest declares today what a pack table holds: table <- path (`adapter.` = an attribute of the robot's
+# adapter, anything else a key path of the manifest). The values are taken as written: nothing is added, labelled or guessed.
+schema_1_lift:
+  options: planner.options
+  trees: planner.options.bt_goal.trees
+  recovery.codes: adapter.recovery_overrides
+# Manifest data of schema 1 that has no pack table yet: kept as written under these paths (read by nothing new).
+schema_1_keep:
+  - planner.action_roles
+  - planner.options.bt_goal.menu
+  - planner.recovery
+  - planner.end_state
+  - limits
+  - geometry
