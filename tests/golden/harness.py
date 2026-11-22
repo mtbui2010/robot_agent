@@ -83,7 +83,6 @@ class CassetteLLM:
         self.script = FakeLLM(*[tuple(s) if isinstance(s, list) else s for s in script], default=default)
         self.recorded = [dict(c) for c in (recorded or [])]
         self.calls: list = []
-        self.kw_calls = None                                      # capture ``llm_kw``: [{role, kw}] per call (S01)
 
     def _recorded_answer(self, h):
         i = len(self.calls)
@@ -92,9 +91,6 @@ class CassetteLLM:
         return next((c["answer"] for c in self.recorded if c["prompt"] == h), None)
 
     def chat(self, prompt="", format=None, **kw):
-        role = kw.pop("_golden_role", None)
-        if self.kw_calls is not None:
-            self.kw_calls.append({"role": role, "keys": sorted(kw), "kw": sha(kw) if kw else None})
         h = sha(prompt)
         ans = self._recorded_answer(h)
         if ans is None:
@@ -109,39 +105,28 @@ class CassetteLLM:
 
 class RecordingPlanner(ScriptedPlanner):
     """ScriptedPlanner whose calls are kept as data."""
-    io = None                                                    # capture ``planner_io``: the inputs of every call (S01)
 
     def generate_plan(self, task, obs, visible_objects):
         out = super().generate_plan(task, obs, visible_objects)
         self.calls[-1] = {"call": "generate_plan", "task": task}
-        if self.io is not None:
-            self.io.append(_planner_inputs("generate_plan", obs, visible_objects))
         return out
 
     def replan(self, task, completed, failed_step, failure_reason, obs, visible_objects):
         out = super().replan(task, completed, failed_step, failure_reason, obs, visible_objects)
         self.calls[-1] = {"call": "replan", "failed": dict(failed_step), "reason": failure_reason,
                           "completed": [f"{s.get('action')} {s.get('object')}" for s in completed or ()]}
-        if self.io is not None:
-            self.io.append(_planner_inputs("replan", obs, visible_objects))
         return out
 
 
 class ScenarioRobot(FakeRobot):
     """FakeRobot that keeps every call with its result, and can stop the run or say something into it after the n-th call
     of a skill (``cancel_after`` / ``say_after``: ``{"skill", "nth", "text"}``)."""
-    skills: dict = {}                                            # scenario ``robot.skills``: skill -> result(s) the FakeRobot lacks (S01)
-    in_order = False                                             # scenario ``robot.answers_in_order``: no automatic yes to a read-back
-    drops = ()                                                   # scenario ``robot.drops``: [{nth, to}] the held object falls to ``to``
-    pause_after = None
 
     def __init__(self, env, *a, cancel_after=None, say_after=None, **kw):
         super().__init__(env, *a, **kw)
         self.calls, self.cancel_after, self.say_after, self.n = [], cancel_after, say_after, {}
 
     def execute(self, skill, params, node=None, log_fn=None):
-        if skill in self.skills:
-            return self._scripted(skill, params)
         try:
             out = super().execute(skill, params, node, log_fn)
         except Exception as e:
@@ -159,45 +144,7 @@ class ScenarioRobot(FakeRobot):
             run_control.request_cancel()
         if s and s["skill"] == skill and self.n[skill] == s.get("nth", 1):
             run_control.manager().inject(run_control.current_run().run_id, s["text"], role="member")
-        p = self.pause_after                                     # scenario ``pause_after``: paused and resumed at once (S01)
-        if p and p["skill"] == skill and self.n[skill] == p.get("nth", 1):
-            rid = run_control.current_run().run_id
-            run_control.manager().pause(rid)
-            run_control.manager().resume(rid)
 
-    def _exec(self, skill, o, params):
-        if skill == "grasp_succeed" and self.holding:            # ``drops``: at the nth hand check the object is on ``to``
-            k = self.n.get("_hand", 0) + 1
-            self.n["_hand"] = k
-            hit = next((d for d in self.drops if d.get("nth") == k), None)
-            if hit:
-                self.obj[self.holding], self.holding = hit["to"], None
-        if skill == "ask" and self.in_order:                     # every question takes the next answer ("" when none is left)
-            self.asked.append(o)
-            a = self.answers.pop(0) if self.answers else ""
-            return {"isdone": bool(a), "text": a}
-        return super()._exec(skill, o, params)
-
-    def _scripted(self, skill, params):
-        """A skill the FakeRobot does not have (``robot.skills``): one result, or a list used in turn (the last one repeats)."""
-        f = self._fault(skill, (params or {}).get("inputs", ""))   # the scenario's faults apply to these skills too
-        if f and f["kind"] == "fail":
-            out = {"isdone": False, "msg": f.get("msg", f"{skill} failed")}
-            self.calls.append({"skill": skill, "params": params, "result": out})
-            self.n[skill] = self.n.get(skill, 0) + 1
-            return out
-        res = self.skills[skill]
-        if isinstance(res, list):
-            k = self.n.get(skill, 0)
-            res = res[min(k, len(res) - 1)] if res else {"isdone": True}
-        out = dict(res)
-        dest = out.pop("release_to", None)                       # a hand-over: the held object goes to ``dest``
-        if dest and self.holding:
-            self.obj[self.holding], self.holding = dest, None
-        self.calls.append({"skill": skill, "params": params, "result": out})
-        self.n[skill] = self.n.get(skill, 0) + 1
-        self._after(skill)
-        return out
 
 # ── one run ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 def _no_network(mp):
@@ -241,8 +188,6 @@ def _install(mp, sc, env, tmp):
         mp.setattr(m, "host_id", lambda: "test")
     mp.setattr(skill_configs, "ENV", env)
     mp.setattr(AL, "reconcile_world", lambda node, world, threshold=0.8: world)
-    if "reconcile" in capture_of(sc):
-        mp.setattr(AL, "reconcile_world", LP.reconcile_world)     # capture ``reconcile``: the run-start reconcile runs (S01)
     if sc.get("health") is not None:
         from robot_agent.core.planning.robot import RobotView
         mp.setattr(RobotView, "health", lambda self, node=None: {"ok": sc["health"]})
@@ -269,14 +214,6 @@ def _stubs(sc, env, recorded):
     robot = ScenarioRobot(env, rb.get("objects") or {}, answers=rb.get("answers") or (), faults=rb.get("faults") or (),
                           opened=rb.get("opened") or (), start=rb.get("start", "entrance"), reply_rules=rb.get("reply_rules"),
                           cancel_after=sc.get("cancel_after"), say_after=sc.get("say_after"))
-    if rb.get("skills"):
-        robot.skills = json.loads(json.dumps(rb["skills"]))
-    if rb.get("answers_in_order"):
-        robot.in_order = True
-    if rb.get("drops"):
-        robot.drops = [dict(d) for d in rb["drops"]]
-    if sc.get("pause_after"):
-        robot.pause_after = dict(sc["pause_after"])
     m = sc.get("llm") or {}
     llm = CassetteLLM(m.get("script") or [], m.get("default"), (recorded or {}).get("llm_calls"))
     p = sc.get("planner") or {}
@@ -324,20 +261,14 @@ def run_scenario(sc: dict, recorded: dict = None, max_events: int = 3000) -> dic
     env = load_env() if sc.get("env") == "sim_house" else dict(sc["env"])
     with tempfile.TemporaryDirectory(prefix="golden_") as tmp, pytest.MonkeyPatch.context() as mp:
         _no_network(mp)
-        _environ(mp, sc)
         st = _install(mp, sc, env, tmp)
         _fresh_run_state(sc["task"] if sc.get("managed") else None)
         try:
             robot, llm, planner = _stubs(sc, env, recorded)
-            _arm_capture(mp, sc, llm, planner)
             loop = _loop(sc, robot, llm, planner, tmp)
-            if sc.get("pack") is not None:
-                loop.robot.use_pack(json.loads(json.dumps(sc["pack"])))   # scenario key ``pack`` (RobotView.use_pack: Step S02)
             evs = _drain(loop, sc, max_events)
             got = {"llm_calls": llm.calls, "planner_calls": planner.calls, "robot_calls": robot.calls, "events": evs,
                    "final": _final(robot, st, loop, tmp)}
-            got.update(_captured(sc, llm, planner, loop, tmp))
-            got = _run_dirs(sc, got, tmp)
             return normal(got, tmp)
         finally:
             _fresh_run_state()
@@ -372,7 +303,6 @@ def record(sc: dict, tags, about: str) -> Path:
     if first != second:
         raise RuntimeError(f"{sc['name']}: two runs differ, the scenario is not deterministic:\n" + diff(first, second))
     cas = {"format": FORMAT, "name": sc["name"], "tags": list(tags), "about": about, "scenario": sc, "recorded": first}
-    cas["commit"] = record_commit()                              # the code it was recorded on (tests/golden/base_commits.json)
     CASSETTES.mkdir(parents=True, exist_ok=True)
     with open(path, "x", encoding="utf-8") as f:                 # "x": fails if the file appeared meanwhile
         f.write(dump(cas))
@@ -397,11 +327,6 @@ def diff(want: dict, got: dict, limit: int = 120) -> str:
             out.append(f"== {s}")
         lines = difflib.unified_diff(_lines(a), _lines(b), "cassette", "replay", n=2, lineterm="")
         out += list(lines)[2:limit]
-    for s in CAPTURE_SECTIONS:
-        a, b = want.get(s), got.get(s)
-        if a != b:
-            out.append(f"== {s}")
-            out += list(difflib.unified_diff(_lines(a), _lines(b), "cassette", "replay", n=2, lineterm=""))[2:limit]
     return "\n".join(out)
 
 
@@ -419,115 +344,3 @@ def check(path) -> str:
     """'' when the cassette at ``path`` replays identically, else the diff."""
     cas = load(path)
     return diff(cas["recorded"], replay(cas))
-
-
-# ── S01: capture sections, environment, commit (opt-in per scenario: the old cassettes replay as they are) ────────────────
-# A scenario key ``capture`` (a list) adds sections to a NEW cassette; ``FORMAT`` stays 1.
-#   planner_io  the hash and head of the observation and of the visible list of every planner call
-#   llm_kw      the options (keys, hash) and the role of every model call; role clients are served by the same stub
-#   prompts     hash and head of robot_prompt.sage_prompt_kwargs(robot), of direct_prompt.build_prompt and of _planner_cfg()
-#   reconcile   the run-start reconcile is NOT stubbed (loop.reconcile_world runs against the FakeRobot)
-#   trace       the rows of option ``trace``'s file (the order of the hooks it watches), section ``trace_rows``
-# ``environ``: ROBOT_AGENT_* variables for the run (every ROBOT_AGENT_* variable is cleared before every run).
-CAPTURE_SECTIONS = ("planner_io", "llm_kw", "prompts", "trace_rows")
-CAPTURES = ("planner_io", "llm_kw", "prompts", "reconcile", "trace")
-
-
-def capture_of(sc: dict) -> tuple:
-    bad = [c for c in sc.get("capture") or () if c not in CAPTURES]
-    if bad:
-        raise ValueError(f"{sc.get('name')}: unknown capture {bad} (known: {CAPTURES})")
-    return tuple(sc.get("capture") or ())
-
-
-def _environ(mp, sc):
-    """No ROBOT_AGENT_* variable of the calling shell reaches a run; the scenario's ``environ`` is set."""
-    import os
-    for k in [k for k in os.environ if k.startswith("ROBOT_AGENT_")]:
-        mp.delenv(k)
-    for k, v in (sc.get("environ") or {}).items():
-        if not str(k).startswith("ROBOT_AGENT_"):
-            raise ValueError(f"{sc.get('name')}: environ {k!r} is not a ROBOT_AGENT_* variable")
-        mp.setenv(k, str(v))
-
-
-class _RoleClient:
-    """A client the loop builds for a role (understand model, translator, role models): the scenario's stub, the role noted."""
-
-    def __init__(self, llm, cfg):
-        self.llm, self.role = llm, str((cfg or {}).get("role") or (cfg or {}).get("model") or "")
-
-    def chat(self, prompt="", format=None, **kw):
-        return self.llm.chat(prompt=prompt, format=format, _golden_role=self.role, **kw)
-
-    def chat_guide(self, prompt, guide=None, reuse=False, **kw):
-        return self.chat(prompt=prompt, **kw)
-
-
-def _arm_capture(mp, sc, llm, planner):
-    cap = capture_of(sc)
-    if "planner_io" in cap:
-        planner.io = []
-    if "llm_kw" in cap:
-        llm.kw_calls = []
-        import robot_agent.connect.llm as connect_llm
-        mp.setattr(connect_llm, "init_llm_client", lambda cfg=None, **k: _RoleClient(llm, cfg))
-
-
-def _planner_inputs(call, obs, visible) -> dict:
-    return {"call": call, "obs": sha(str(obs)), "obs_head": " ".join(str(obs).split())[:96], "visible": sha(visible),
-            "visible_n": len(visible or ())}
-
-
-def _text_digest(x) -> dict:
-    s = x if isinstance(x, str) else json.dumps(x, sort_keys=True, ensure_ascii=False, default=str)
-    return {"sha": sha(s), "head": " ".join(s.split())[:96], "chars": len(s)}
-
-
-def prompts_of(loop, task: str, tmp: str = "") -> dict:
-    """The planner-side prompts of the loop's robot (what the harness's planner stub never sees)."""
-    from robot_agent.core.planning import direct_prompt, robot_prompt
-    out = {"sage_prompt_kwargs": {k: _text_digest(v) for k, v in sorted(robot_prompt.sage_prompt_kwargs(loop.robot).items())}}
-    try:
-        out["direct_prompt"] = _text_digest(direct_prompt.build_prompt(loop.robot, task))
-    except Exception as e:                                       # noqa: BLE001 - recorded as data: a change shows
-        out["direct_prompt"] = {"raised": type(e).__name__}
-    out["planner_cfg"] = _text_digest(normal(loop._planner_cfg(), tmp))
-    return out
-
-
-def _trace_rows(tmp) -> list:
-    rows = []
-    for f in sorted(Path(tmp).rglob("trace.jsonl")):
-        rows += [json.loads(x) for x in f.read_text().splitlines() if x.strip()]
-    return rows
-
-
-def _captured(sc, llm, planner, loop, tmp) -> dict:
-    cap, out = capture_of(sc), {}
-    if "planner_io" in cap:
-        out["planner_io"] = planner.io
-    if "llm_kw" in cap:
-        out["llm_kw"] = llm.kw_calls
-    if "prompts" in cap:
-        out["prompts"] = prompts_of(loop, sc["task"], tmp)
-    if "trace" in cap:
-        out["trace_rows"] = _trace_rows(tmp)                  # not "trace": a VOLATILE key
-    return out
-
-
-def _run_dirs(sc, got, tmp):
-    """Capture ``trace``: the trace file's folder is named by the run id (a clock), replaced by ``<run>``."""
-    if "trace" not in capture_of(sc):
-        return got
-    return json.loads(re.sub(r"\d{8}-\d{6}-\d{3}", "<run>", json.dumps(normal(got, tmp), ensure_ascii=False)))
-
-
-def record_commit() -> str:
-    """The commit a new cassette is recorded on; refuses when robot_agent/ has changes not committed (the cassette would
-    name a commit whose code it was not recorded on)."""
-    import subprocess
-    dirty = subprocess.run(["git", "status", "--porcelain", "--", "robot_agent"], cwd=ROOT, capture_output=True, text=True).stdout
-    if dirty.strip():
-        raise RuntimeError("refuse to record: robot_agent/ has uncommitted changes\n" + dirty)
-    return subprocess.run(["git", "rev-parse", "--short=7", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()

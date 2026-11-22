@@ -1,7 +1,9 @@
 """The golden sets stay in order (Step S01): the scenarios of scenarios.py first, then the scenario sets by file name; every
-scenario has its cassette; a cassette of a set carries the commit it was recorded on, listed in base_commits.json, whose
-robot_agent/ tree is the old code's; the mutations of tools/golden_mutation_check.py keep the first ten first; nothing in
-robot_agent imports the reference copies of tests/legacy_ref. These tests never write a golden."""
+scenario of a set has its cassette in tests/golden/set_cassettes (replayed by harness_sets.py, the round-A harness.py is never
+edited); a set cassette carries the commit it was recorded on, listed in one file per step tests/golden/commits/<step>.json
+(kind ``equivalence``: the listed commits have the robot_agent/ tree of its ``old_code``; kind ``feature``: no tree check, a
+cassette recorded after a production commit of its step); the mutations of tools/golden_mutation_check.py keep the first ten
+first; nothing in robot_agent imports the reference copies of tests/legacy_ref. These tests never write a golden."""
 
 import importlib.util
 import json
@@ -11,11 +13,22 @@ import subprocess
 import pytest
 
 import harness
+import harness_sets
 import scenario_sets
 import scenarios
 
-BASE = json.loads((harness.GOLDEN / "base_commits.json").read_text())
+KINDS = ("equivalence", "feature")
 OLD = [sc["name"] for sc, _t, _a in scenarios.SCENARIOS]
+
+
+def commit_files() -> dict:
+    """step -> its commits file (tests/golden/commits/<step>.json)."""
+    return {p.stem: json.loads(p.read_text()) for p in sorted((harness.GOLDEN / "commits").glob("*.json"))}
+
+
+def listed_commits() -> dict:
+    """commit -> (step, kind) over every commits file."""
+    return {c: (step, d["kind"]) for step, d in commit_files().items() for c in d["commits"]}
 
 
 def _mutation_tool():
@@ -33,31 +46,55 @@ def test_the_scenarios_of_scenarios_py_come_first_and_every_name_is_unique():
 
 
 def test_every_scenario_of_a_set_has_its_cassette_and_its_tags():
-    missing = [sc["name"] for sc, _t, _a in scenario_sets.set_scenarios() if not harness.cassette_path(sc["name"]).exists()]
+    missing = [sc["name"] for sc, _t, _a in scenario_sets.set_scenarios()
+               if not harness_sets.cassette_path(sc["name"]).exists()]
     assert not missing, f"no cassette for {missing}: run tools/golden_record.py with its record flag"
     for sc, tags, _a in scenario_sets.set_scenarios():
-        assert tags and harness.load(harness.cassette_path(sc["name"]))["tags"] == list(tags), sc["name"]
+        assert tags and harness.load(harness_sets.cassette_path(sc["name"]))["tags"] == list(tags), sc["name"]
 
 
-def test_every_new_cassette_names_a_listed_commit_and_the_old_ones_none():
+def test_the_round_a_cassettes_stay_in_cassettes_and_the_set_cassettes_in_set_cassettes():
+    old = sorted(p.name.split(".")[0] for p in harness.cassettes())
+    new = [p.name.split(".")[0] for p in harness_sets.cassettes()]
+    assert old == sorted(OLD), "tests/golden/cassettes holds the round-A cassettes only (scenarios.py)"
+    assert not set(old) & set(new), sorted(set(old) & set(new))
+
+
+def test_every_commits_file_has_a_kind_and_its_commits():
+    files = commit_files()
+    assert "s01" in files
+    for step, d in files.items():
+        assert re.fullmatch(r"s\d+[a-z]?", step), step
+        assert d.get("kind") in KINDS and d.get("commits") and d.get("about"), step
+        assert (d["kind"] == "equivalence") == bool(d.get("old_code")), f"{step}: old_code is for kind equivalence only"
+    flat = [c for d in files.values() for c in d["commits"]]
+    assert len(flat) == len(set(flat)), "a commit is listed by two steps"
+
+
+def test_every_set_cassette_names_a_listed_commit_and_the_round_a_ones_none():
+    listed = listed_commits()
     for p in harness.cassettes():
+        assert "commit" not in harness.load(p), p.name
+    for p in harness_sets.cassettes():
         cas = harness.load(p)
-        if cas["name"] in OLD:
-            assert "commit" not in cas, p.name
-        else:
-            assert cas.get("commit") in BASE["equivalence"], (p.name, cas.get("commit"))
+        assert cas.get("commit") in listed, (p.name, cas.get("commit"))
 
 
 def _git(*args):
     return subprocess.run(["git", *args], cwd=harness.ROOT, capture_output=True, text=True)
 
 
-def test_the_listed_commits_have_the_old_code():
-    if _git("rev-parse", "--git-dir").returncode != 0 or _git("cat-file", "-e", BASE["old_code"]).returncode != 0:
+def test_the_commits_of_an_equivalence_step_have_the_old_code():
+    if _git("rev-parse", "--git-dir").returncode != 0:
         pytest.skip("no git history here")
-    for c in BASE["equivalence"]:
-        d = _git("diff", "--stat", BASE["old_code"], c, "--", "robot_agent")
-        assert d.returncode == 0 and d.stdout.strip() == "", f"{c}: robot_agent/ differs from {BASE['old_code']}\n{d.stdout}"
+    for step, d in commit_files().items():
+        if d["kind"] != "equivalence":
+            continue                                             # a feature cassette is recorded on its step's new code
+        if _git("cat-file", "-e", d["old_code"]).returncode != 0:
+            pytest.skip("no git history here")
+        for c in d["commits"]:
+            r = _git("diff", "--stat", d["old_code"], c, "--", "robot_agent")
+            assert r.returncode == 0 and r.stdout.strip() == "", f"{step} {c}: robot_agent/ differs from {d['old_code']}\n{r.stdout}"
 
 
 def test_the_scenario_keys_of_the_sets_are_known():
@@ -65,7 +102,7 @@ def test_the_scenario_keys_of_the_sets_are_known():
              "plan_only", "managed", "cancel_after", "say_after", "pause_after", "health", "capture", "environ", "pack"}
     for sc, _t, _a in scenario_sets.set_scenarios():
         assert set(sc) <= known, (sc["name"], set(sc) - known)
-        harness.capture_of(sc)                                  # raises on an unknown capture
+        harness_sets.capture_of(sc)                             # raises on an unknown capture
 
 
 def test_the_mutation_tool_keeps_its_first_ten_and_loads_the_sets_after():

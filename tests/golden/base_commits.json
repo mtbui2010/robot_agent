@@ -1,6 +1,0 @@
-{
- "about": "The commits a cassette of the core generalization's equivalence goldens may be recorded on (Step S01 of docs/proposals/generalize_core_design.md): the old code, before any production commit of round B. A cassette carries the commit it was recorded on (key `commit`, written by tools/golden_record.py); tests/golden/test_golden_order.py checks it is listed here and that the listed commits have the same robot_agent/ tree as `old_code`.",
- "old_code": "65124d0",
- "equivalence": ["65124d0", "4d584ba"],
- "notes": {"4d584ba": "generalize-core tip when S01 was recorded: 65124d0 plus docs/proposals only (the design, the plan, the ratchet); robot_agent/ identical"}
-}

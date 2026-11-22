@@ -131,15 +131,15 @@ _load_sets()
 # ── one child: apply a mutation, replay every cassette ───────────────────────────────────────────────────────────────
 def run_one(name: str) -> dict:
     import pytest
-    import harness
+    import harness_sets
     failed, why = [], {}
     with pytest.MonkeyPatch.context() as mp:
         if name != "none":
             MUTATIONS[name][1](mp)
-        for p in harness.cassettes():
+        for p, h in harness_sets.all_cassettes():               # round A with harness.py, the sets with harness_sets.py
             cname = p.name.split(".")[0]
             try:
-                d = harness.check(p)
+                d = h.check(p)
             except Exception as e:                               # a crash under the mutation is a catch too
                 d = f"raised {type(e).__name__}: {e}"
             if d:

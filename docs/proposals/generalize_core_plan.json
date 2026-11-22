@@ -37,12 +37,13 @@
      "needs": [],
      "parallel_with": [],
      "files": [
-      "tests/golden/harness.py",
-      "tests/golden/scenarios.py",
+      "tests/golden/harness_sets.py",
       "tests/golden/scenario_sets/__init__.py",
       "tests/golden/scenario_sets/s01_*.py",
-      "tests/golden/cassettes/*.cassette.json",
-      "tests/golden/base_commits.json",
+      "tests/golden/set_cassettes/*.cassette.json",
+      "tests/golden/test_golden_set_cassettes.py",
+      "tests/golden/commits/s01.json",
+      "tests/golden/snapshots.py",
       "tests/golden/test_golden_order.py",
       "tests/golden/test_planner_prompt_golden.py",
       "tests/golden/prompt_snapshots/s01_*.json",
@@ -65,7 +66,7 @@
      "assist_loop_lines_after": null,
      "risk": "low for the product, real for the schedule",
      "golden_coverage": "the step IS the coverage",
-     "notes": "Wave 0, alone. Cassettes: NEW files only, the 21 that exist are never touched. Every equivalence cassette is recorded on generalize-core at 65124d0 (no production commit merged) and carries that commit; tests/golden/base_commits.json lists it and a new test checks it. harness.py and scenarios.py change by ADDED code only (FORMAT stays 1: tests/golden/test_golden_cassettes.py:24 compares every cassette with harness.FORMAT): a scenario key `capture` (planner_io, llm_kw, prompts, reconcile), a key `env`, a key `pack` (calls robot.use_pack, which Step S02 adds), ROBOT_AGENT_* cleared before every run, scenario sets and mutation sets loaded from one file per step. Order inside the step: harness, fakeline, the cassettes in the order of the waves that need them, the mutations. Done only when the 21 old cassettes replay identically, every new mutation is CAUGHT and the full suite is green. A path the fakes cannot play is listed in the report and the step that needs it is not started."
+     "notes": "Wave 0, alone. Cassettes: NEW files only, the 21 that exist are never touched. Every equivalence cassette is recorded on generalize-core at 65124d0 (no production commit merged) and carries that commit; tests/golden/commits/s01.json lists it (kind equivalence) and a new test checks it. harness.py and the 21 round-A cassettes stay byte-identical to 65124d0 (fix round 1, 2026-11-23: the first S01 merge had added code to harness.py, which broke the rule that no existing test is modified); the additions live in tests/golden/harness_sets.py, which wraps harness.py, and the set cassettes live in tests/golden/set_cassettes, replayed by tests/golden/test_golden_set_cassettes.py (FORMAT stays 1: tests/golden/test_golden_cassettes.py:24 compares every round-A cassette with harness.FORMAT): a scenario key `capture` (planner_io, llm_kw, prompts, reconcile, trace), a key `environ`, a key `pack` (calls robot.use_pack, which Step S02 adds), ROBOT_AGENT_* cleared before every run of a set, scenario sets and mutation sets loaded from one file per step. Order inside the step: harness, fakeline, the cassettes in the order of the waves that need them, the mutations. Done only when the 21 old cassettes replay identically, every new mutation is CAUGHT and the full suite is green. A path the fakes cannot play is listed in the report and the step that needs it is not started."
     }
    ]
   },
@@ -270,7 +271,8 @@
       "docs/bt_goal.md",
       "tests/test_option_bt_goal_seams.py",
       "tests/golden/scenario_sets/s25a_*.py",
-      "tests/golden/cassettes/s25a_*.cassette.json",
+      "tests/golden/set_cassettes/s25a_*.cassette.json",
+      "tests/golden/commits/s25a.json",
       "tools/golden_mutations/s25a_*.py"
      ],
      "expected_assist_loop_delta": 0,
@@ -296,7 +298,8 @@
       "robot_agent/core/pack/questions.py",
       "tests/test_pack_question_kinds.py",
       "tests/golden/scenario_sets/s31_*.py",
-      "tests/golden/cassettes/s31_*.cassette.json",
+      "tests/golden/set_cassettes/s31_*.cassette.json",
+      "tests/golden/commits/s31.json",
       "tools/golden_mutations/s31_*.py"
      ],
      "expected_assist_loop_delta": 0,
@@ -361,7 +364,8 @@
       "robot_agent/core/pack/loader.py",
       "tests/test_pack_merge.py",
       "tests/golden/scenario_sets/s30_*.py",
-      "tests/golden/cassettes/s30_*.cassette.json",
+      "tests/golden/set_cassettes/s30_*.cassette.json",
+      "tests/golden/commits/s30.json",
       "tools/golden_mutations/s30_*.py"
      ],
      "expected_assist_loop_delta": 0,
@@ -509,7 +513,8 @@
       "tests/test_pack_action_rules.py",
       "tests/test_world_facts.py",
       "tests/golden/scenario_sets/s26_*.py",
-      "tests/golden/cassettes/s26_*.cassette.json",
+      "tests/golden/set_cassettes/s26_*.cassette.json",
+      "tests/golden/commits/s26.json",
       "tools/golden_mutations/s26_*.py"
      ],
      "expected_assist_loop_delta": 0,
@@ -595,7 +600,8 @@
       "docs/bt_goal.md",
       "tests/test_option_bt_goal_typed.py",
       "tests/golden/scenario_sets/s25_*.py",
-      "tests/golden/cassettes/s25_*.cassette.json",
+      "tests/golden/set_cassettes/s25_*.cassette.json",
+      "tests/golden/commits/s25.json",
       "tools/golden_mutations/s25_*.py"
      ],
      "expected_assist_loop_delta": 0,
@@ -656,7 +662,8 @@
       "robot_agent/core/planning/phases/verify_goals.py",
       "tests/test_pack_declared_kinds.py",
       "tests/golden/scenario_sets/s29_*.py",
-      "tests/golden/cassettes/s29_*.cassette.json",
+      "tests/golden/set_cassettes/s29_*.cassette.json",
+      "tests/golden/commits/s29.json",
       "tools/golden_mutations/s29_*.py"
      ],
      "expected_assist_loop_delta": 0,
@@ -691,7 +698,8 @@
       "tests/test_pack_recovery.py",
       "tools/arch_baseline.json",
       "tests/golden/scenario_sets/s14_*.py",
-      "tests/golden/cassettes/s14_*.cassette.json",
+      "tests/golden/set_cassettes/s14_*.cassette.json",
+      "tests/golden/commits/s14.json",
       "tools/golden_mutations/s14_*.py"
      ],
      "expected_assist_loop_delta": -170,

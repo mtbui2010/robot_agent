@@ -1,7 +1,9 @@
-"""GET /robot/manifest of the made-up packs is frozen (Step S01 of docs/proposals/generalize_core_design.md): ``manifest_of``'s
-answer and the whole parsed manifest of fakebot, fakehome and fakeline equal the snapshots recorded on the old code
-(tests/golden/manifest_snapshots). A later step may only ADD keys (owner's decision 5): this test then fails and the step adds
-its own snapshot, it never edits these. Never writes a snapshot (tools/golden_record.py --snapshots does, refusing to overwrite)."""
+"""GET /robot/manifest of the made-up packs is frozen (Step S01 of docs/proposals/generalize_core_design.md): every key that
+``manifest_of``'s answer and the parsed manifest of fakebot, fakehome and fakeline had on the old code (tests/golden/
+manifest_snapshots) is still there with the same value. A later step may only ADD top-level keys (owner's decision 5, Step
+S27a: pack, goal_kinds, question_kinds): an added key passes here, a dropped or changed one fails; the step pins its added
+keys in its own snapshot (``tools/golden_record.py --snapshots --prefix <step>``) and edits nothing here. Never writes a
+snapshot (tools/golden_record.py --snapshots does, refusing to overwrite)."""
 
 import sys
 from pathlib import Path
@@ -17,8 +19,16 @@ import snapshots  # noqa: E402
 def test_the_manifest_answer_and_the_parsed_manifest_equal_the_snapshot(pkg):
     want = snapshots.load(snapshots.GOLDEN / "manifest_snapshots" / f"s01_{pkg}.json")
     got = snapshots.manifest_snapshot(pkg)
-    assert got["manifest_of"] == want["manifest_of"], pkg
-    assert got["manifest"] == want["manifest"], pkg
+    for part in ("manifest_of", "manifest"):
+        assert snapshots.recorded_keys(got[part], want[part]) == want[part], (pkg, part)
+
+
+def test_an_added_key_passes_and_a_dropped_or_changed_key_fails():
+    want = snapshots.load(snapshots.GOLDEN / "manifest_snapshots" / "s01_fakebot.json")["manifest_of"]
+    key = sorted(want)[0]
+    assert snapshots.recorded_keys(dict(want, goal_kinds=["on"]), want) == want
+    assert snapshots.recorded_keys({k: v for k, v in want.items() if k != key}, want) != want
+    assert snapshots.recorded_keys(dict(want, **{key: "changed"}), want) != want
 
 
 def test_the_answer_has_the_keys_of_the_response_model():

@@ -105,8 +105,8 @@ def test_the_option_table_is_unchanged():
 
 
 def test_the_hooks_order_cassette_records_the_trace_rows():
-    import harness
-    cas = harness.load(harness.cassette_path("hooks_order"))
+    import harness_sets
+    cas = harness_sets.load(harness_sets.cassette_path("hooks_order"))
     rows = cas["recorded"].get("trace_rows") or []
     assert rows and rows[0].get("k") == "header"
     assert {r.get("k") for r in rows} >= {"header", "event"}

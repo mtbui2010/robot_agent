@@ -1146,8 +1146,11 @@ The first version named five streams and called steps of different streams paral
 - The schema (`robot_agent/contract/pack.py`) is written whole in S02, also the fields that later opt-in steps start to READ. No later
   step edits it.
 - Every step that adds scenarios, cassettes or mutations writes its own files: `tests/golden/scenario_sets/<step>_*.py`,
-  `tests/golden/cassettes/<step>_*.cassette.json`, `tools/golden_mutations/<step>_*.py` (S01 makes `scenarios.py` and the mutation tool load
-  these folders; the entries that exist keep their order).
+  `tests/golden/set_cassettes/<step>_*.cassette.json`, `tests/golden/commits/<step>.json`, `tools/golden_mutations/<step>_*.py` (S01 makes
+  the record tool and the mutation tool load these folders; the entries that exist keep their order). The commits file names the commits
+  the step's cassettes were recorded on and their `kind`: `equivalence` (the old `robot_agent/` tree, checked against its `old_code`) or
+  `feature` (recorded after a production commit of the step: no tree check). `tests/golden/harness.py` and the 21 round-A cassettes in
+  `tests/golden/cassettes` are never edited; a set cassette replays through `tests/golden/harness_sets.py`.
 - A schema-2 test pack is NOT a shared folder: a scenario carries its own `pack:` section (the scenario key `pack`), so one feature's
   cassette cannot change when another feature is added.
 - A file that several steps must touch is touched in different waves, in the order of the table below.
@@ -1217,8 +1220,8 @@ touched by every LOOP step and are left out of the table):
 
 ### What Step S01 must record (wave W0, on the old code)
 
-The 21 cassettes of today use one made-up robot (`fakebot`), English, `on` and `in` goals. S01 extends the harness by ADDED code and
-records, on `generalize-core` at `65124d0` before any production commit:
+The 21 cassettes of today use one made-up robot (`fakebot`), English, `on` and `in` goals. S01 extends the harness by a module that wraps
+it (`tests/golden/harness_sets.py`; `harness.py` itself is never edited) and records, on `generalize-core` at `65124d0` before any production commit:
 
 | needed by | new cassettes (equivalence, old code) | what they reach |
 |---|---|---|
@@ -1238,8 +1241,9 @@ New recorded data, opt-in per scenario (`capture`), so that the old cassettes re
   today the harness replaces the planner, so `ORDER` and `ACTION_TEXT` are in no golden.
 - `planner_io`: the hash of the observation and the visible list in every planner call. `llm_kw`: the hash of the call's options and the
   role of the client. `reconcile`: the run-start reconcile is not stubbed.
-- The harness clears every `ROBOT_AGENT_*` variable before a run and applies the scenario's `env`; a new cassette carries the commit it was
-  recorded on, `tests/golden/base_commits.json` lists the commits allowed for equivalence cassettes, and a new test compares them.
+- The set harness clears every `ROBOT_AGENT_*` variable before a run of a set and applies the scenario's `environ`; a set cassette
+  carries the commit it was recorded on, `tests/golden/commits/<step>.json` lists the commits of each step with their kind, and a new
+  test compares them (the `robot_agent/` tree of an `equivalence` commit equals its `old_code`).
 
 Goldens that are not cassettes, also recorded on the old code:
 
@@ -1266,10 +1270,10 @@ of moved functions (never imported by `robot_agent`).
 #### Step S01: Extend the goldens on the old code (harness capture sections, made-up pack fakeline, cassettes, mutations, snapshots)
 
 - Stream and model: GOLD, opus. Needs: nothing. Parallel with (same wave, no common file): none.
-- Files: `tests/golden/harness.py`, `tests/golden/scenarios.py`, `tests/golden/scenario_sets/__init__.py`, `tests/golden/scenario_sets/s01_*.py`, `tests/golden/cassettes/*.cassette.json`, `tests/golden/base_commits.json`, `tests/golden/test_golden_order.py`, `tests/golden/test_planner_prompt_golden.py`, `tests/golden/prompt_snapshots/s01_*.json`, `tests/golden/manifest_snapshots/s01_*.json`, `tests/test_manifest_snapshot.py`, `tests/golden/config_snapshots/s01_*.json`, `tests/test_loop_config_snapshot.py`, `tests/golden/replay_runs/s01_*`, `tests/test_replay_smoke.py`, `tests/test_hooks_frozen.py`, `tests/fakeline/**`, `tests/legacy_ref/__init__.py`, `tests/legacy_ref/README.md`, `tools/golden_mutation_check.py`, `tools/golden_mutations/s01_*.py`, `tools/golden_record.py`, `docs/testing.md`.
+- Files: `tests/golden/harness_sets.py` (`tests/golden/harness.py` is NOT edited), `tests/golden/scenario_sets/__init__.py`, `tests/golden/scenario_sets/s01_*.py`, `tests/golden/set_cassettes/*.cassette.json`, `tests/golden/test_golden_set_cassettes.py`, `tests/golden/commits/s01.json`, `tests/golden/snapshots.py`, `tests/golden/test_golden_order.py`, `tests/golden/test_planner_prompt_golden.py`, `tests/golden/prompt_snapshots/s01_*.json`, `tests/golden/manifest_snapshots/s01_*.json`, `tests/test_manifest_snapshot.py`, `tests/golden/config_snapshots/s01_*.json`, `tests/test_loop_config_snapshot.py`, `tests/golden/replay_runs/s01_*`, `tests/test_replay_smoke.py`, `tests/test_hooks_frozen.py`, `tests/fakeline/**`, `tests/legacy_ref/__init__.py`, `tests/legacy_ref/README.md`, `tools/golden_mutation_check.py`, `tools/golden_mutations/s01_*.py`, `tools/golden_record.py`, `docs/testing.md`.
 - Golden coverage: the step IS the coverage.
 - Effect on `assist_loop.py`: 0 lines (the file is not touched). Risk: low for the product, real for the schedule.
-- Notes: Wave 0, alone. Cassettes: NEW files only, the 21 that exist are never touched. Every equivalence cassette is recorded on generalize-core at 65124d0 (no production commit merged) and carries that commit; tests/golden/base_commits.json lists it and a new test checks it. harness.py and scenarios.py change by ADDED code only (FORMAT stays 1: tests/golden/test_golden_cassettes.py:24 compares every cassette with harness.FORMAT): a scenario key `capture` (planner_io, llm_kw, prompts, reconcile), a key `env`, a key `pack` (calls robot.use_pack, which Step S02 adds), ROBOT_AGENT_* cleared before every run, scenario sets and mutation sets loaded from one file per step. Order inside the step: harness, fakeline, the cassettes in the order of the waves that need them, the mutations. Done only when the 21 old cassettes replay identically, every new mutation is CAUGHT and the full suite is green. A path the fakes cannot play is listed in the report and the step that needs it is not started.
+- Notes: Wave 0, alone. Cassettes: NEW files only, the 21 that exist are never touched. Every equivalence cassette is recorded on generalize-core at 65124d0 (no production commit merged) and carries that commit; tests/golden/commits/s01.json lists it (kind equivalence) and a new test checks it. harness.py and the 21 round-A cassettes stay byte-identical to 65124d0 (fix round 1, 2026-11-23: the first S01 merge had added code to harness.py, which broke the rule that no existing test is modified); the additions live in tests/golden/harness_sets.py, which wraps harness.py, and the set cassettes live in tests/golden/set_cassettes, replayed by tests/golden/test_golden_set_cassettes.py (FORMAT stays 1: tests/golden/test_golden_cassettes.py:24 compares every round-A cassette with harness.FORMAT): a scenario key `capture` (planner_io, llm_kw, prompts, reconcile, trace), a key `environ`, a key `pack` (calls robot.use_pack, which Step S02 adds), ROBOT_AGENT_* cleared before every run of a set, scenario sets and mutation sets loaded from one file per step. Order inside the step: harness, fakeline, the cassettes in the order of the waves that need them, the mutations. Done only when the 21 old cassettes replay identically, every new mutation is CAUGHT and the full suite is green. A path the fakes cannot play is listed in the report and the step that needs it is not started.
 
 ### Wave W1: S02, S03
 
@@ -1328,7 +1332,7 @@ of moved functions (never imported by `robot_agent`).
 #### Step S25a: bt_goal uses the seams that exist: tree keys `ladder: false` and `events: true`, word lists from the pack
 
 - Stream and model: OPT, sonnet. Needs: S02, S06. Parallel with (same wave, no common file): S07, S31.
-- Files: `robot_agent/options/bt_goal.py`, `robot_agent/core/planning/tree_host.py`, `docs/bt_goal.md`, `tests/test_option_bt_goal_seams.py`, `tests/golden/scenario_sets/s25a_*.py`, `tests/golden/cassettes/s25a_*.cassette.json`, `tools/golden_mutations/s25a_*.py`.
+- Files: `robot_agent/options/bt_goal.py`, `robot_agent/core/planning/tree_host.py`, `docs/bt_goal.md`, `tests/test_option_bt_goal_seams.py`, `tests/golden/scenario_sets/s25a_*.py`, `tests/golden/set_cassettes/s25a_*.cassette.json`, `tests/golden/commits/s25a.json`, `tools/golden_mutations/s25a_*.py`.
 - Golden coverage: bt_goal (6 cassettes: today's trees run the same); S01: menu_retry_place.
 - Effect on `assist_loop.py`: 0 lines (the file is not touched). Risk: low (opt-in keys of a tree entry).
 - Notes: `ladder: false` calls try_step(ladder=False) (option_services.py:74-79); `events: true` sends each node through svc.emit as a `tree_node` event (services.py:19); pack_words also reads the choice words of a pack question. Feature cassettes (fakeline with a scenario `pack`): a tree whose failed step does not run the engine's ladder, a tree with node events, a tree that branches on a choice answer. A tree with none of the keys runs as today.
@@ -1336,7 +1340,7 @@ of moved functions (never imported by `robot_agent`).
 #### Step S31: Opt-in: questions_default_kind gives a kind-less clarify event the declared kind
 
 - Stream and model: PACK, sonnet. Needs: S02. Parallel with (same wave, no common file): S07, S25a.
-- Files: `robot_agent/core/planning/loop.py`, `robot_agent/core/pack/questions.py`, `tests/test_pack_question_kinds.py`, `tests/golden/scenario_sets/s31_*.py`, `tests/golden/cassettes/s31_*.cassette.json`, `tools/golden_mutations/s31_*.py`.
+- Files: `robot_agent/core/planning/loop.py`, `robot_agent/core/pack/questions.py`, `tests/test_pack_question_kinds.py`, `tests/golden/scenario_sets/s31_*.py`, `tests/golden/set_cassettes/s31_*.cassette.json`, `tests/golden/commits/s31.json`, `tools/golden_mutations/s31_*.py`.
 - Golden coverage: all (no schema-1 pack sets the key: every replay identical); S01: two_destinations, search_legs (kind-less questions).
 - Effect on `assist_loop.py`: 0 lines (the file is not touched). Risk: low (one place: RunContext.ev).
 - Notes: Applied where every event is built (loop.py RunContext.ev): a `clarify` with no `kind` gets the pack's literal value. The value `name` (each question its own name) needs the 28-row question table and is deferred. Feature cassette: fakeline with the key set, the two-destinations question carries the kind.
@@ -1354,7 +1358,7 @@ of moved functions (never imported by `robot_agent`).
 #### Step S30: Opt-in: the merge semantics of `extends` and `remove` take effect in a run
 
 - Stream and model: PACK, sonnet. Needs: S07. Parallel with (same wave, no common file): S10, S27a.
-- Files: `robot_agent/core/pack/loader.py`, `tests/test_pack_merge.py`, `tests/golden/scenario_sets/s30_*.py`, `tests/golden/cassettes/s30_*.cassette.json`, `tools/golden_mutations/s30_*.py`.
+- Files: `robot_agent/core/pack/loader.py`, `tests/test_pack_merge.py`, `tests/golden/scenario_sets/s30_*.py`, `tests/golden/set_cassettes/s30_*.cassette.json`, `tests/golden/commits/s30.json`, `tools/golden_mutations/s30_*.py`.
 - Golden coverage: all (schema 1 has no chain of its own); manifest snapshots of S01.
 - Effect on `assist_loop.py`: 0 lines (the file is not touched). Risk: low.
 - Notes: An entry of a later pack replaces the base entry whole; `remove` deletes names; a removed kind leaves the understand prompt and the schema enum. Feature cassette: fakeline with `remove: {goal_kinds: [open, close]}` and one replaced kind: the prompt hash differs from the base cassette exactly by those lines (the cassette keeps the prompt head).
@@ -1398,7 +1402,7 @@ of moved functions (never imported by `robot_agent`).
 #### Step S26: Opt-in: declared preconditions and effects of pack actions, the fact store, typed arguments at bind
 
 - Stream and model: PACK, opus. Needs: S06, S10, S23a, S31. Parallel with (same wave, no common file): S12, S27b.
-- Files: `robot_agent/core/pack/action_rules.py`, `robot_agent/core/planning/action_model.py`, `robot_agent/core/planning/base.py`, `robot_agent/core/planning/phases/exec_helpers.py`, `robot_agent/core/planning/loop.py`, `tests/test_pack_action_rules.py`, `tests/test_world_facts.py`, `tests/golden/scenario_sets/s26_*.py`, `tests/golden/cassettes/s26_*.cassette.json`, `tools/golden_mutations/s26_*.py`.
+- Files: `robot_agent/core/pack/action_rules.py`, `robot_agent/core/planning/action_model.py`, `robot_agent/core/planning/base.py`, `robot_agent/core/planning/phases/exec_helpers.py`, `robot_agent/core/planning/loop.py`, `tests/test_pack_action_rules.py`, `tests/test_world_facts.py`, `tests/golden/scenario_sets/s26_*.py`, `tests/golden/set_cassettes/s26_*.cassette.json`, `tests/golden/commits/s26.json`, `tools/golden_mutations/s26_*.py`.
 - Golden coverage: all (no schema-1 pack declares rules: identical replay, and no event's `world` has a new key).
 - Effect on `assist_loop.py`: 0 lines (the file is not touched). Risk: high (the belief is in every event).
 - Notes: Facts: reset at run start (a `persistent` flag is deferred), written into to_dict() only when not empty, accepted by update_from_dict (PUT /agent/world {facts: {}} clears them), not in as_text(). Feature cassettes (fakeline): a custom action whose precondition fails at the gate and at the guard; an effect that makes a fact true; typed args reach the skill.
@@ -1424,7 +1428,7 @@ of moved functions (never imported by `robot_agent`).
 #### Step S25: Opt-in: typed `act` arguments in a tree, `[ask, <pack question>]`, the answer as a fact
 
 - Stream and model: OPT, sonnet. Needs: S25a, S26. Parallel with (same wave, no common file): S08.
-- Files: `robot_agent/options/bt_goal.py`, `robot_agent/core/planning/behavior_tree.py`, `robot_agent/core/planning/tree_host.py`, `docs/bt_goal.md`, `tests/test_option_bt_goal_typed.py`, `tests/golden/scenario_sets/s25_*.py`, `tests/golden/cassettes/s25_*.cassette.json`, `tools/golden_mutations/s25_*.py`.
+- Files: `robot_agent/options/bt_goal.py`, `robot_agent/core/planning/behavior_tree.py`, `robot_agent/core/planning/tree_host.py`, `docs/bt_goal.md`, `tests/test_option_bt_goal_typed.py`, `tests/golden/scenario_sets/s25_*.py`, `tests/golden/set_cassettes/s25_*.cassette.json`, `tests/golden/commits/s25.json`, `tools/golden_mutations/s25_*.py`.
 - Golden coverage: bt_goal (6) and the S25a cassettes: unchanged.
 - Effect on `assist_loop.py`: 0 lines (the file is not touched). Risk: medium (bt_goal.py is near its size limit).
 - Notes: An optional mapping as the last argument of `act`; the answer of a pack question is kept as answered(<question>, <choice>) and its raw text with keep_text. Feature cassettes (fakeline): a typed argument reaches the skill; a tree branches on the content of an answer.
@@ -1442,7 +1446,7 @@ of moved functions (never imported by `robot_agent`).
 #### Step S29: Opt-in: a declared goal kind without a rules callable: holds list, reached by simulation, unknown_is, phrase key, planned_by tree
 
 - Stream and model: PACK, opus. Needs: S04, S05, S06, S07, S08, S12, S25a, S26. Parallel with (same wave, no common file): S13.
-- Files: `robot_agent/core/pack/goal_semantics.py`, `robot_agent/core/pack/verifiers.py`, `robot_agent/core/planning/phases/verify_goals.py`, `tests/test_pack_declared_kinds.py`, `tests/golden/scenario_sets/s29_*.py`, `tests/golden/cassettes/s29_*.cassette.json`, `tools/golden_mutations/s29_*.py`.
+- Files: `robot_agent/core/pack/goal_semantics.py`, `robot_agent/core/pack/verifiers.py`, `robot_agent/core/planning/phases/verify_goals.py`, `tests/test_pack_declared_kinds.py`, `tests/golden/scenario_sets/s29_*.py`, `tests/golden/set_cassettes/s29_*.cassette.json`, `tests/golden/commits/s29.json`, `tools/golden_mutations/s29_*.py`.
 - Golden coverage: all (schema 1: an unknown kind stays vacuously done, cassette given_goals_unknown_kind of S01).
 - Effect on `assist_loop.py`: 0 lines (the file is not touched). Risk: high (it defines 'done' for a kind the core never saw).
 - Notes: For a schema-2 kind: holds = every predicate of the list is True in the belief (cannot tell = not holding); reached = the list evaluated after the steps' rules and declared effects are applied (cannot tell = not refuted); missing = one line per predicate not reached; unknown_is: failure turns a verifier's 'cannot tell' into an unmet goal with the code perception_unavailable; a kind with neither rules nor holds, or with observe null and unknown_is failure, is a load error; a planned_by tree kind never goes to the planner (its tree exhausted = ask or stop). Feature cassettes (fakeline): done by holds and verifier; verifier cannot tell -> failed; the read-back from a phrase key.
@@ -1452,7 +1456,7 @@ of moved functions (never imported by `robot_agent`).
 #### Step S14: Recovery policies are selected by name (by action, by goal kind)
 
 - Stream and model: LOOP, opus. Needs: S13, S23a. Parallel with (same wave, no common file): none.
-- Files: `robot_agent/core/planning/phases/recover.py`, `robot_agent/core/pack/recovery.py`, `robot_agent/packs/household/callables/recover.py`, `robot_agent/packs/household/recovery.yaml`, `robot_agent/core/planning/step_ladder.py`, `robot_agent/core/planning/phases/__init__.py`, `robot_agent/core/planning/assist_loop.py`, `tests/test_pack_recovery.py`, `tools/arch_baseline.json`, `tests/golden/scenario_sets/s14_*.py`, `tests/golden/cassettes/s14_*.cassette.json`, `tools/golden_mutations/s14_*.py`.
+- Files: `robot_agent/core/planning/phases/recover.py`, `robot_agent/core/pack/recovery.py`, `robot_agent/packs/household/callables/recover.py`, `robot_agent/packs/household/recovery.yaml`, `robot_agent/core/planning/step_ladder.py`, `robot_agent/core/planning/phases/__init__.py`, `robot_agent/core/planning/assist_loop.py`, `tests/test_pack_recovery.py`, `tools/arch_baseline.json`, `tests/golden/scenario_sets/s14_*.py`, `tests/golden/set_cassettes/s14_*.cassette.json`, `tests/golden/commits/s14.json`, `tools/golden_mutations/s14_*.py`.
 - Golden coverage: replan (pick_fails_twice_replan), failure (skill_bug_failure, bt_goal_hw_fault), bt_goal (blocked_move, grasp_help), question; S01: move_help, drop_refind, custom_action; mutations ladder_choice, help_move_changed.
 - Effect on `assist_loop.py`: -170 lines (to about 3069). Risk: high (the order of the ten steps of _step_failed).
 - Notes: by_action equals the six names of the dict at assist_loop.py:3701-3703 and STEP_LADDER (equality test first); an action not listed goes to the planner; by_kind is empty. Builtins planner, stop, tree. The declared ladder executor with `with:` overrides is deferred. Feature cassette (fakeline): a custom action with a registered policy.

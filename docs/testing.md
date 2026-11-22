@@ -20,15 +20,20 @@
   events, recovery count, yes/no reading, behaviour-tree fallback, replan budget, goals_only, plan_only, stop, menu stop
   word) and exits 0 only if every one is caught by at least one cassette (about 5 s).
 - Golden extension for the core generalization (Step S01 of `docs/proposals/generalize_core_design.md`, recorded on the old
-  code): scenario sets `tests/golden/scenario_sets/<step>_<topic>.py` (one file per step, loaded after `scenarios.py` in
-  file-name order), mutation sets `tools/golden_mutations/<step>_<topic>.py` (loaded after the first ten; an entry may name
+  code): `tests/golden/harness.py` stays as round A left it (an existing test file is never edited); `tests/golden/harness_sets.py`
+  wraps it with the keys below, and the set cassettes live in `tests/golden/set_cassettes/` (`test_golden_set_cassettes.py`
+  replays them; the 21 round-A cassettes stay in `tests/golden/cassettes/` with `harness.py` alone). Scenario sets
+  `tests/golden/scenario_sets/<step>_<topic>.py` (one file per step, loaded after `scenarios.py` in file-name order), mutation sets `tools/golden_mutations/<step>_<topic>.py` (loaded after the first ten; an entry may name
   snapshot tests as a third element for a table no run reads), the made-up line cart `tests/fakeline` (NOT household: Say,
   WaitForUnload, Inspect, Fasten; `fakeline.cart` has no arm). Opt-in scenario keys: `capture` (`planner_io`, `llm_kw`,
   `prompts`, `reconcile`, `trace`: extra sections of a NEW cassette, `FORMAT` stays 1), `environ` (ROBOT_AGENT_* variables;
-  every ROBOT_AGENT_* variable is cleared before every run), `pack` (Step S02's `RobotView.use_pack`), `pause_after`; robot
+  every ROBOT_AGENT_* variable is cleared before every run of a set), `pack` (Step S02's `RobotView.use_pack`), `pause_after`; robot
   keys `skills` (scripted results of skills the FakeRobot lacks), `answers_in_order`, `drops`. A new cassette carries the
-  `commit` it was recorded on (refused with uncommitted `robot_agent/` changes); `tests/golden/base_commits.json` lists the
-  allowed ones and `tests/golden/test_golden_order.py` checks them. Non-cassette goldens (`tests/golden/snapshots.py`,
+  `commit` it was recorded on (refused with uncommitted `robot_agent/` changes); each step lists its commits in its own
+  `tests/golden/commits/<step>.json` (kind `equivalence`: same `robot_agent/` tree as its `old_code`; kind `feature`: recorded
+  after a production commit of the step, no tree check) and `tests/golden/test_golden_order.py` checks them; a later step adds
+  a file and edits none. The manifest snapshot test compares the recorded top-level keys only (an added key passes, owner's
+  decision 5); a step pins its added keys with `tools/golden_record.py --snapshots --prefix <step>`. Non-cassette goldens (`tests/golden/snapshots.py`,
   written only by `python tools/golden_record.py --snapshots`, never overwritten): manifest, loop-config and planner-prompt
   snapshots of the three made-up packs, the core phrase table, one recorded run for `observe/replay.py`
   (`tests/test_manifest_snapshot.py`, `tests/test_loop_config_snapshot.py`, `tests/golden/test_planner_prompt_golden.py`,

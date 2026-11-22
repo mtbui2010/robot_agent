@@ -10,7 +10,9 @@
 * ``replay_runs/s01_fetch/record.jsonl``  one recorded assist run of fakebot for ``robot_agent/observe/replay.py`` (Step S24)
 
 The tests compare the files with what the code gives now; they never write. ``python tools/golden_record.py --snapshots`` writes
-the files that do not exist yet and refuses to overwrite one (as for cassettes). Switch off: delete a file and its test.
+the files that do not exist yet and refuses to overwrite one (as for cassettes); ``--prefix <step>`` writes a later step's own
+set (``<step>_<pack>.json``, e.g. S27a's manifest with its added keys) next to the s01 files, which stay. Switch off: delete a
+file and its test.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ import tempfile
 from pathlib import Path
 
 import harness
+import harness_sets as HS
 
 GOLDEN = harness.GOLDEN
 PACKS = ("fakebot", "fakehome", "fakeline")
@@ -46,11 +49,11 @@ def _with_loop(pkg: str, fn):
     import pytest
     sc = {"name": f"snapshot_{pkg}", "robot_pkg": pkg, "env": _env(pkg), "task": "", "options": {}}
     with tempfile.TemporaryDirectory(prefix="golden_") as tmp, pytest.MonkeyPatch.context() as mp:
-        harness._no_network(mp)
-        harness._environ(mp, sc)
-        harness._install(mp, sc, sc["env"], tmp)
-        robot, llm, planner = harness._stubs(sc, sc["env"], None)
-        return fn(harness._loop(sc, robot, llm, planner, tmp), tmp)
+        HS._no_network(mp)
+        HS._environ(mp, sc)
+        HS._install(mp, sc, sc["env"], tmp)
+        robot, llm, planner = HS._stubs(sc, sc["env"], None)
+        return fn(HS._loop(sc, robot, llm, planner, tmp), tmp)
 
 
 def config_snapshot(pkg: str) -> dict:
@@ -72,25 +75,37 @@ def core_phrases() -> dict:
     return {"CORE_PHRASES": dict(speech.CORE_PHRASES), "HELP_MOVE": speech.HELP_MOVE, "HELP_PICK": speech.HELP_PICK}
 
 
-def snapshot_files() -> dict:
-    """path -> the function that gives its content now."""
+def snapshot_path(kind: str, name: str, prefix: str = "s01") -> Path:
+    """``<kind>_snapshots/<prefix>_<name>.json`` (kind: manifest, config, prompt; name: a pack or ``core_phrases``)."""
+    return GOLDEN / f"{kind}_snapshots" / f"{prefix}_{name}.json"
+
+
+def snapshot_files(prefix: str = "s01") -> dict:
+    """path -> the function that gives its content now, for the snapshot set of step ``prefix``."""
     out = {}
     for pkg in PACKS:
-        out[GOLDEN / "manifest_snapshots" / f"s01_{pkg}.json"] = (lambda p=pkg: manifest_snapshot(p))
-        out[GOLDEN / "config_snapshots" / f"s01_{pkg}.json"] = (lambda p=pkg: config_snapshot(p))
-        out[GOLDEN / "prompt_snapshots" / f"s01_{pkg}.json"] = (lambda p=pkg: prompt_snapshot(p))
-    out[GOLDEN / "prompt_snapshots" / "s01_core_phrases.json"] = core_phrases
+        out[snapshot_path("manifest", pkg, prefix)] = (lambda p=pkg: manifest_snapshot(p))
+        out[snapshot_path("config", pkg, prefix)] = (lambda p=pkg: config_snapshot(p))
+        out[snapshot_path("prompt", pkg, prefix)] = (lambda p=pkg: prompt_snapshot(p))
+    out[snapshot_path("prompt", "core_phrases", prefix)] = core_phrases
     return out
+
+
+def recorded_keys(got: dict, want: dict) -> dict:
+    """The part of ``got`` under the top-level keys ``want`` recorded (a missing key stays missing): an additive change of the
+    answer compares equal, a dropped or changed key does not (owner's decision 5)."""
+    return {k: got[k] for k in want if k in got}
 
 
 def load(path) -> dict:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
-def write_missing() -> list:
-    """Write every snapshot file that does not exist yet (never one that exists); the paths written."""
+def write_missing(prefix: str = "s01") -> list:
+    """Write every snapshot file of step ``prefix`` that does not exist yet (never one that exists); the paths written. The
+    recorded run for observe/replay.py belongs to the s01 set only."""
     done = []
-    for path, fn in snapshot_files().items():
+    for path, fn in snapshot_files(prefix).items():
         if path.exists():
             continue
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -98,7 +113,7 @@ def write_missing() -> list:
             f.write(json.dumps(fn(), indent=1, ensure_ascii=False, sort_keys=True) + "\n")
         done.append(path)
     rec = REPLAY_RUN / "record.jsonl"
-    if not rec.exists():
+    if prefix == "s01" and not rec.exists():
         record_replay_run(rec)
         done.append(rec)
     return done
@@ -119,15 +134,15 @@ def record_replay_run(dest: Path) -> None:
     sc = json.loads(json.dumps(harness.load(harness.cassette_path("fetch_success"))["scenario"]))
     env = harness.load_env()
     with tempfile.TemporaryDirectory(prefix="golden_") as tmp, pytest.MonkeyPatch.context() as mp:
-        harness._no_network(mp)
-        harness._environ(mp, sc)
+        HS._no_network(mp)
+        HS._environ(mp, sc)
         mp.setenv("ROBOT_AGENT_DATA_DIR", str(Path(tmp) / "data"))
         mp.setenv("ROBOT_AGENT_HOST", "test")
-        harness._install(mp, sc, env, tmp)
+        HS._install(mp, sc, env, tmp)
         reset_manager()
         try:
-            robot, llm, planner = harness._stubs(sc, env, None)
-            loop = harness._loop(sc, robot, llm, planner, tmp)
+            robot, llm, planner = HS._stubs(sc, env, None)
+            loop = HS._loop(sc, robot, llm, planner, tmp)
             mgr = run_control.manager()
             run = mgr.start(goal=sc["task"], user_id="golden", role="owner").run
             run_control.begin_run()
