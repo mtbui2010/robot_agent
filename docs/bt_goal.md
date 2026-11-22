@@ -40,7 +40,7 @@ call; the Act fails and the tree's Fallback / Retry go on.
 - `sage_once` (policy B): where A stops (not after a person's stop word), the REMAINING goals and the facts (code, step, reason, what was done)
   go to the SAGE planner once (`replan_or_fail`); its plan then runs on the engine's normal path; no plan from it: the run stops.
 
-**Data.** `planner.options.bt_goal`: `trees` `{<goal type>: {"tree": [...], "skip_if": [goal fields], "source" | "assumed"}}` or a LIST of such
+**Data.** `planner.options.bt_goal`: `trees` `{<goal type>: {"tree": [...], "skip_if": [goal fields], "ladder": false, "events": true, "source" | "assumed"}}` or a LIST of such
 entries (the first one the goal fills and the robot can run: a `say` with a place, then one without; a `deliver` with the robot's `{delivery}`
 phrase, then one without, as `goals.compile_steps`; an entry with `"needs_openable": [slots]` only when each slot names a place the robot
 declares openable, i.e. an ENV entry with an `openable` field the robot's rule (`Places.openable`) says yes to; a surface, no field, not an
@@ -48,6 +48,20 @@ ENV key: the next entry. E.g. `Open {from}` behind `cond opened {from}` before t
 "assumed"}` (none: no question, A stops); `exhausted` (`ask_or_stop` | `sage_once`). Trees are pack data of a robot (the bench declares `on`,
 `in`, `open`, `close`, `go`, `say` from its mock robot's skills); a `say` / `deliver` tree is a data view of the engine's template (same robot
 calls when nothing fails) and has no entry condition (no belief predicate reads "said" / "handed over": the engine's end check does).
+
+**Tree keys (Step S25a; opt-in, per entry, next to `tree`).** An entry with none of them runs as before.
+- `ladder: false`: each `act` of this tree calls `try_step(run, step, ladder=False)` (the recovery is the tree's: a failed step is one
+  failed `act`, and the tree's `retry` / `fallback` decide; the engine's retry, wait schedule, search legs, refind and help question do not
+  run for it). Default `ladder: true` = the section "Act = the engine's own step AND its own recovery". Only a literal `false` counts.
+- `events: true`: each node, as the runner reports it, is also sent through the service `emit` as the public event `tree_node`
+  `{goal, path, node, status}` (`goal` = the goal's number, `path` = the node's place "0.1.2", `node` = the label the lab record uses), so a
+  dashboard or a fleet manager sees the tree node by node. Default off: only the lab record `bt_goal` exists. Only a literal `true` counts.
+- The `ask` leaf reads its choice words from the language pack (`block.key`, e.g. `ask_next.retry`) as before; a ref the language pack has no
+  list for is read as `<question>.<choice>` of the robot pack's `questions` table (`answer.choices.<choice>.words[<language>]` and its
+  `lists`), so a tree branches on the CONTENT of a free answer: `[ask, q_phrase, pex_clip_far.use_measured]`, then the next leaf runs only
+  when the answer holds one of those words. A ref no pack question names gives no words, as an unknown language list does.
+- Trees from the pack: when `planner.options.bt_goal.trees` (run option or manifest) holds none, the pack's `trees` table is used (a manifest of
+  schema 1 has the same data there, so nothing changes for it). The pure helpers are in `core/planning/tree_host.py`.
 
 **Engine touch (core).** Service `runs_goals` (asked once in `_plan_phase`), hook `on_run_goals` (start of `_execute_phase`), service `try_step`
 (key `ladder`: drain the ladder's spliced steps), `changes_waiting` and service `no_replan` (asked at the top of `_sage_replan`; nobody answers it by default).
