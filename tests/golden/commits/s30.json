@@ -1,0 +1,6 @@
+{
+ "about": "Step S30 (the merge semantics of extends and remove in a run): the commit the S30 set cassette (s30_remove_replace, tests/golden/scenario_sets/s30_merge.py) was recorded on. kind feature: the cassette shows a pack that removes two kinds and replaces one at work (the understand prompt and the schema enum differ from the base cassette template_say_deliver, the run log does not). The step makes no production change: core/pack/loader.py already merges as designed since S02 and the goal-kind table reads the merged pack since S07.",
+ "kind": "feature",
+ "commits": ["c04e6ee"],
+ "notes": {"c04e6ee": "generalize-core tip after wave W3 (S07, S25a, S31); robot_agent/ is the code of this step, which does not edit it"}
+}
