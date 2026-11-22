@@ -1,0 +1,323 @@
+{
+ "format": 1,
+ "name": "s30_removed_kind_refused",
+ "tags": [
+  "refused",
+  "failure"
+ ],
+ "about": "an open goal with a pack that removed the kinds open and close: the goal needs an action nobody has, the run is refused before any plan",
+ "scenario": {
+  "name": "s30_removed_kind_refused",
+  "env": "sim_house",
+  "robot_pkg": "fakebot",
+  "task": "Open the kitchen drawer.",
+  "robot": {
+   "objects": {
+    "apple": "desk@study room",
+    "mug": "desk@study room",
+    "banana": "dining table@kitchen",
+    "orange": "dining table@kitchen",
+    "sponge": "counter@kitchen",
+    "spoon": "drawer@kitchen/in",
+    "tennis ball": "stool@bedroom"
+   }
+  },
+  "llm": {
+   "script": [],
+   "default": {
+    "status": "clear",
+    "reason": "",
+    "question": "",
+    "goals": [
+     {
+      "type": "open",
+      "object": "kitchen drawer",
+      "from": "",
+      "to": ""
+     }
+    ]
+   }
+  },
+  "planner": {
+   "plan": [
+    "MoveTo drawer@kitchen",
+    "Open drawer@kitchen"
+   ],
+   "replans": []
+  },
+  "options": {
+   "input_pivot": "none",
+   "look_then_ask": "0",
+   "bring_ask": "0",
+   "bt_goal": "0",
+   "fetch_guard": "0"
+  },
+  "pack": {
+   "schema": 2,
+   "name": "s30_remove",
+   "extends": "household",
+   "assumed": true,
+   "remove": {
+    "goal_kinds": [
+     "open",
+     "close"
+    ]
+   }
+  }
+ },
+ "recorded": {
+  "llm_calls": [
+   {
+    "prompt": "8432eae752fa8b91",
+    "format": "e50d7329d8a4611c",
+    "head": "You turn a household robot task into goals. The robot is a mobile manipu",
+    "answer": "{\"status\": \"clear\", \"reason\": \"\", \"question\": \"\", \"goals\": [{\"type\": \"open\", \"object\": \"kitchen drawer\", \"from\": \"\", \"to\": \"\"}]}"
+   }
+  ],
+  "planner_calls": [],
+  "robot_calls": [
+   {
+    "skill": "mobile_pose",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "pose": [
+      0.25,
+      2.1,
+      90.0
+     ]
+    }
+   }
+  ],
+  "events": [
+   {
+    "event": "task_start",
+    "task": "Open the kitchen drawer.",
+    "world": {
+     "arrived": "entrance",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from entrance"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Starting the task"
+   },
+   {
+    "event": "reconcile",
+    "when": "start",
+    "changed": {
+     "arrived": [
+      null,
+      "entrance"
+     ]
+    },
+    "sensors": {
+     "arrived": {
+      "pose": [
+       0.25,
+       2.1
+      ],
+      "detail": "0.00 m from entrance",
+      "source": "mobile_pose"
+     },
+     "containers": {},
+     "unconfirmed": []
+    },
+    "provenance": {
+     "arrived": {
+      "source": "sensor",
+      "detail": "0.00 m from entrance"
+     },
+     "found": {
+      "source": "belief"
+     },
+     "holding": {
+      "source": "belief"
+     },
+     "opened": {
+      "source": "sensor",
+      "containers": {},
+      "unconfirmed": []
+     },
+     "on": {
+      "source": "belief"
+     }
+    },
+    "world": {
+     "arrived": "entrance",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from entrance"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    }
+   },
+   {
+    "event": "status",
+    "msg": "Understanding the task..."
+   },
+   {
+    "event": "understand",
+    "status": "clear",
+    "reason": "",
+    "goals": [
+     {
+      "type": "open",
+      "object": "drawer@kitchen",
+      "from": "",
+      "to": "drawer@kitchen"
+     }
+    ],
+    "question": null
+   },
+   {
+    "event": "done",
+    "status": "refused",
+    "msg": "this robot has no open skill, needed for: open drawer@kitchen to drawer@kitchen",
+    "world": {
+     "arrived": "entrance",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from entrance"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "refusal": "capability",
+    "say": "I can't do that: I have no open skill."
+   }
+  ],
+  "final": {
+   "robot": {
+    "at": "entrance",
+    "holding": null,
+    "objects": {
+     "apple": "desk@study room",
+     "mug": "desk@study room",
+     "banana": "dining table@kitchen",
+     "orange": "dining table@kitchen",
+     "sponge": "counter@kitchen",
+     "spoon": "drawer@kitchen/in",
+     "tennis ball": "stool@bedroom"
+    },
+    "opened": [],
+    "asked": []
+   },
+   "belief": {
+    "arrived": "entrance",
+    "found": null,
+    "holding": null,
+    "opened": [],
+    "on": [],
+    "found_pose": null,
+    "holding_pose": null,
+    "provenance": {
+     "arrived": {
+      "source": "sensor",
+      "detail": "0.00 m from entrance"
+     },
+     "found": {
+      "source": "belief"
+     },
+     "holding": {
+      "source": "belief"
+     },
+     "opened": {
+      "source": "sensor",
+      "containers": {},
+      "unconfirmed": []
+     },
+     "on": {
+      "source": "belief"
+     }
+    }
+   },
+   "lab_log": [],
+   "record": {
+    "task": "Open the kitchen drawer.",
+    "lang": "en",
+    "obs": "",
+    "visible": [],
+    "planner": "sage+assist",
+    "plan_meta": {},
+    "warnings": [],
+    "steps": [],
+    "replans": [],
+    "status": "refused",
+    "failure": {}
+   },
+   "log_kinds": [
+    "reconcile",
+    "task_start",
+    "status",
+    "understand",
+    "done",
+    "snapshot"
+   ]
+  }
+ },
+ "commit": "c04e6ee"
+}

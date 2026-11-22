@@ -1,0 +1,6 @@
+{
+ "about": "Step S30 (the merge of extends and remove takes effect in a run): the commit the two feature cassettes of tests/golden/scenario_sets/s30_merge.py (s30_remove_replace, s30_removed_kind_refused) were recorded on. The step adds no production code (the merge existed since S02), so the commit is the tip of generalize-core the step started from; the cassettes show the existing merge at work: the understand prompt differs from the base cassette by the replaced say line, the format by the removed enum values, and nothing else.",
+ "kind": "feature",
+ "commits": ["c04e6ee"],
+ "notes": {"c04e6ee": "generalize-core after wave W3 (S07, S25a, S31): the code the cassettes were recorded on; robot_agent/ is unchanged by S30"}
+}
