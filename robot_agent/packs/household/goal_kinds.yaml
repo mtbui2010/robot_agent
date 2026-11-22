@@ -1,27 +1,69 @@
-# The goal kinds of the standard (household) pack. Step S05 gives each kind its rules object only (reached / holds / missing:
-# robot_agent/packs/household/callables/goals.py); Step S07 adds needs, prompt, understood, planned_by and conflicts.
-# The order is the order of core/planning/goals.py GOAL_KINDS (on, in, open, close, go, say, deliver). `give` is not a kind
-# here: it is the optional kind of goals.py OPTIONAL_KINDS, mapped to `on` before any rule reads it.
-# "on" and "in" are quoted: YAML 1.1 reads a bare `on` as true.
+# The goal kinds of the standard (household) pack. Step S05 gave each kind its rules object (reached / holds / missing:
+# robot_agent/packs/household/callables/goals.py); Step S07 adds needs, prompt, understood, planned_by, conflicts and subgoal,
+# moved from robot_agent/core/planning/goals.py at 814d212 (GOAL_KINDS :33-46, MANIPULATION :32, TEMPLATE_KINDS :47, the
+# if-chain of subgoal_text :174-194), text for text (tests/test_pack_goal_kinds.py compares them with tests/legacy_ref).
+# The order is the old order of GOAL_KINDS (on, in, open, close, go, say, deliver): it is the order of the understand
+# prompt's lines and of the schema enum. `give` is not a kind here: it is the optional kind of goals.py OPTIONAL_KINDS,
+# mapped to `on` before any rule reads it.
+# "on" and "in" are quoted: YAML 1.1 reads a bare `on` as true. Every template is single-quoted (it holds `{`, `:` and `"`).
+# subgoal: the sub-goal phrase a planner that takes `subgoals` gets (robot_agent/core/pack/kinds.py render: {slot}, [optional],
+# `A || B` alternatives, `?<slot>: ` a guard). Slots (goals.subgoal_text): the goal's own fields, `object` ("" when empty),
+# `src` (" (it is at <from>)" / " (look for it at <a or b>)" / ""), `who` (to, else person, else ""), `recipient` (`to`,
+# which a hand-over must have).
 goal_kinds:
   "on":
     rules: std.on
-    source: "robot_agent/core/planning/assist_loop.py:1279-1349 at 2d57c99 (_on_reached and the on branches of _missing, _reaches, _goals_hold)"
+    needs: [Pick, Place]
+    understood: always
+    planned_by: planner
+    conflicts: default
+    subgoal: '?hand: hand the {object}{src} to {recipient} || put the {object}{src} on {to}'
+    source: "robot_agent/core/planning/assist_loop.py:1279-1349 at 2d57c99 (_on_reached and the on branches of _missing, _reaches, _goals_hold); goals.py:32-34, :180-182 at 814d212"
   "in":
     rules: std.in
-    source: "robot_agent/core/planning/assist_loop.py:1290-1349 at 2d57c99 (the in branches of _missing, _reaches, _goals_hold)"
+    needs: [Pick, [PutIn, Place]]
+    understood: always
+    planned_by: planner
+    conflicts: default
+    subgoal: 'put the {object}{src} into {to}'
+    source: "robot_agent/core/planning/assist_loop.py:1290-1349 at 2d57c99 (the in branches of _missing, _reaches, _goals_hold); goals.py:32, :35, :183-184 at 814d212"
   open:
     rules: std.open
-    source: "robot_agent/core/planning/assist_loop.py:1290-1349 at 2d57c99 (the open branches of _missing, _reaches, _goals_hold)"
+    needs: [Open]
+    understood: always
+    planned_by: planner
+    conflicts: default
+    subgoal: 'open {object}'
+    source: "robot_agent/core/planning/assist_loop.py:1290-1349 at 2d57c99 (the open branches of _missing, _reaches, _goals_hold); goals.py:32, :36, :185-186 at 814d212"
   close:
     rules: std.close
-    source: "robot_agent/core/planning/assist_loop.py:1290-1349 at 2d57c99 (the close branches of _missing, _reaches, _goals_hold)"
+    needs: [Close]
+    understood: always
+    planned_by: planner
+    conflicts: default
+    subgoal: 'close {object}'
+    source: "robot_agent/core/planning/assist_loop.py:1290-1349 at 2d57c99 (the close branches of _missing, _reaches, _goals_hold); goals.py:32, :37, :185-186 at 814d212"
   go:
     rules: std.go
-    source: "robot_agent/core/planning/goals.py:47 TEMPLATE_KINDS and the template branches of assist_loop.py:1290-1349 at 2d57c99"
+    needs: [MoveTo]
+    understood: capable
+    planned_by: template
+    prompt: '"go" = only go somewhere, nothing to move: object "", from "", to = the place.'
+    subgoal: 'go to {to}'
+    source: "robot_agent/core/planning/goals.py:47 TEMPLATE_KINDS and the template branches of assist_loop.py:1290-1349 at 2d57c99; goals.py:38-39, :187-188 at 814d212"
   say:
     rules: std.say
-    source: "robot_agent/core/planning/goals.py:47 TEMPLATE_KINDS and the template branches of assist_loop.py:1290-1349 at 2d57c99"
+    needs: [Say]
+    understood: capable
+    planned_by: template
+    prompt: '"say" = tell someone something: object = the sentence to say, as the robot should say it; from ""; to = the place to say it at, or the person, or "".'
+    subgoal: 'say "{object}"[ at {who}]'
+    source: "robot_agent/core/planning/goals.py:47 TEMPLATE_KINDS and the template branches of assist_loop.py:1290-1349 at 2d57c99; goals.py:40-42, :189-191 at 814d212"
   deliver:
     rules: std.deliver
-    source: "robot_agent/core/planning/goals.py:47 TEMPLATE_KINDS and the template branches of assist_loop.py:1290-1349 at 2d57c99"
+    needs: [MoveTo, WaitForUnload]
+    understood: capable
+    planned_by: template
+    prompt: '"deliver" = take what the robot carries to a place and hand it over: object = the item (or ""), from "", to = the place.'
+    subgoal: '?object: deliver the {object} to {to} || deliver what the robot carries to {to}'
+    source: "robot_agent/core/planning/goals.py:47 TEMPLATE_KINDS and the template branches of assist_loop.py:1290-1349 at 2d57c99; goals.py:43-45, :192-193 at 814d212"
