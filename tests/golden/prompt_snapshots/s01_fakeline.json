@@ -1,0 +1,53 @@
+{
+ "direct_prompt": "You plan tasks for this robot: fakeline: a robot that has 1 arm with a hand (right), so it holds one object at a time, drives on a mobile base, can speak and listen and carries items on a tray.\n\nSkills (write a step as skill::input):\n- move::<place> (MoveTo): move to a place\n- find::<object> (Find): look for an object where the robot is\n- pick::<object> (Pick): pick up the found object\n- place::<place> (Place): put the held object on a place the robot is at\n- say::<text> (Say): say a sentence to the person\n- wait_for_unload::<item> (WaitForUnload): wait until a person takes the carried item\n- fasten::<inputs> (Fasten): the part\n- inspect::<inputs> (Inspect): the part\n\nPlaces:\n- bin@cell a (also: bin)\n- jig@cell a (also: jig)\n- outfeed@cell b (also: outfeed)\n\nAnswer with the program only: one step per line, written skill::input, using only the skills above and the place names exactly as listed. No explanation, no notes, no numbering.\n\nCommand: Bring the part to the station.\nProgram:\n",
+ "planner_cfg": {
+  "actions": [
+   "Fasten",
+   "Find",
+   "Inspect",
+   "MoveTo",
+   "Pick",
+   "Place",
+   "Say",
+   "WaitForUnload"
+  ],
+  "capabilities": {
+   "arms": 1,
+   "base": true,
+   "drawer": false,
+   "find_reaches": false,
+   "hands": [
+    "right"
+   ],
+   "head": false,
+   "lift": false,
+   "release_actions": [],
+   "tray": true,
+   "vlm_verify": false,
+   "voice": true
+  },
+  "host": null,
+  "live_path": "<tmp>/live.jsonl",
+  "llm_cfg": {
+   "model": "scripted",
+   "name": "fake",
+   "url": null
+  },
+  "model": "scripted",
+  "robot_description": "fakeline: a robot that has 1 arm with a hand (right), so it holds one object at a time, drives on a mobile base, can speak and listen and carries items on a tray.",
+  "robot_pkg": "fakeline"
+ },
+ "sage_prompt_kwargs": {
+  "actions": [
+   "MoveTo <place>: move to a place",
+   "Find <object>: look for an object where the robot is",
+   "Pick <object>: pick up the found object",
+   "Place <place>: put the held object on a place the robot is at",
+   "Say <text>: say a sentence to the person",
+   "WaitForUnload <item>: wait until a person takes the carried item",
+   "Fasten: the part",
+   "Inspect: the part"
+  ],
+  "robot_description": "fakeline: a robot that has 1 arm with a hand (right), so it holds one object at a time, drives on a mobile base, can speak and listen and carries items on a tray."
+ }
+}

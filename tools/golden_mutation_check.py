@@ -6,6 +6,10 @@ one cassette differs (or its run raises). Exit 0 only when the unmutated replay 
     python tools/golden_mutation_check.py            # all mutations, in parallel child processes
     python tools/golden_mutation_check.py --list     # the mutations and what each changes
     python tools/golden_mutation_check.py --one NAME # one mutation in this process (what the children run); prints JSON
+    python tools/golden_mutation_check.py --only A,B # only these mutations (and the unmutated replay)
+
+The mutations of later steps live in tools/golden_mutations/<step>_*.py (``MUTATIONS``: name -> (what it changes, patch(mp))),
+loaded after the ones in this file, in file-name order.
 """
 
 from __future__ import annotations
@@ -106,6 +110,24 @@ MUTATIONS = {
 }
 
 
+
+def _load_sets() -> None:
+    """Add the mutations of every set file ``tools/golden_mutations/<step>_*.py`` (its ``MUTATIONS``: name -> (what, patch)),
+    in file-name order, after the ones above. One file per step: parallel steps add mutations without a common file."""
+    import glob
+    import importlib.util
+    for path in sorted(glob.glob(os.path.join(ROOT, "tools", "golden_mutations", "s[0-9]*_*.py"))):
+        spec = importlib.util.spec_from_file_location("golden_mutations_" + os.path.basename(path)[:-3], path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        for name, entry in getattr(mod, "MUTATIONS", {}).items():
+            if name in MUTATIONS:
+                raise ValueError(f"{path}: mutation {name} is defined twice")
+            MUTATIONS[name] = entry
+
+
+_load_sets()
+
 # ── one child: apply a mutation, replay every cassette ───────────────────────────────────────────────────────────────
 def run_one(name: str) -> dict:
     import pytest
@@ -123,7 +145,20 @@ def run_one(name: str) -> dict:
             if d:
                 failed.append(cname)
                 why[cname] = d.splitlines()[0][:160]
+        if name != "none":
+            _snapshot_tests(MUTATIONS[name], failed, why)
     return {"mutation": name, "caught_by": failed, "first_diff": why}
+
+
+def _snapshot_tests(entry, failed, why) -> None:
+    """A mutation of a table no run reads (only a snapshot test pins it) names its tests as a third element: ``(what, patch,
+    [pytest node ids])``; each test that fails under the mutation counts as a catch (``test:<id>``)."""
+    import pytest
+    for node in (entry[2] if len(entry) > 2 else ()):
+        code = pytest.main([os.path.join(ROOT, node), "-q", "-x", "--no-header", "-p", "no:cacheprovider", "-p", "no:warnings"])
+        if code != 0:
+            failed.append("test:" + node)
+            why["test:" + node] = f"pytest exit {int(code)}"
 
 
 def _child(name: str) -> dict:
@@ -141,6 +176,7 @@ def main(argv=None) -> int:
     ap.add_argument("--one", help="run one mutation (or 'none') in this process and print the result as JSON")
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--jobs", type=int, default=min(len(MUTATIONS) + 1, os.cpu_count() or 2))
+    ap.add_argument("--only", default="", help="comma-separated mutation names (default: all)")
     a = ap.parse_args(argv)
     if a.list:
         for n, (what, _f) in MUTATIONS.items():
@@ -149,7 +185,7 @@ def main(argv=None) -> int:
     if a.one:
         print(json.dumps(run_one(a.one)))
         return 0
-    names = ["none", *MUTATIONS]
+    names = ["none", *([n for n in a.only.split(",") if n] if a.only else MUTATIONS)]
     with ThreadPoolExecutor(max_workers=max(1, a.jobs)) as ex:
         results = dict(zip(names, ex.map(_child, names)))
     return report(results)

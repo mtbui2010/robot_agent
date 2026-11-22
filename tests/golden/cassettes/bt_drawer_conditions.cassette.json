@@ -1,0 +1,2097 @@
+{
+ "format": 1,
+ "name": "bt_drawer_conditions",
+ "tags": [
+  "bt_goal",
+  "success"
+ ],
+ "about": "an in goal and a close goal through trees: the conditions opened, closed, at, placed, hand_free",
+ "scenario": {
+  "name": "bt_drawer_conditions",
+  "env": {
+   "shelf@loft": {
+    "aliases": [
+     "shelf"
+    ],
+    "loc": {
+     "x": 1.0,
+     "y": 1.0
+    },
+    "surface": true
+   },
+   "bench@den": {
+    "aliases": [
+     "bench"
+    ],
+    "loc": {
+     "x": 6.0,
+     "y": 1.0
+    },
+    "surface": true
+   },
+   "crate@den": {
+    "aliases": [
+     "crate"
+    ],
+    "loc": {
+     "x": 6.5,
+     "y": 2.0
+    },
+    "surface": true
+   },
+   "drawer@den": {
+    "aliases": [
+     "drawer"
+    ],
+    "loc": {
+     "x": 5.0,
+     "y": 2.0
+    },
+    "surface": true,
+    "openable": true
+   }
+  },
+  "robot_pkg": "fakebot",
+  "task": "Take the gizmo from the shelf, put it in the drawer and close the drawer.",
+  "robot": {
+   "objects": {
+    "gizmo": "shelf@loft"
+   },
+   "answers": [],
+   "faults": [],
+   "start": "crate@den"
+  },
+  "llm": {
+   "script": [],
+   "default": {
+    "status": "clear",
+    "reason": "",
+    "question": "",
+    "goals": [
+     {
+      "type": "in",
+      "object": "gizmo",
+      "from": "shelf@loft",
+      "to": "drawer@den"
+     },
+     {
+      "type": "close",
+      "object": "drawer@den",
+      "from": "",
+      "to": ""
+     }
+    ]
+   }
+  },
+  "planner": {
+   "plan": [
+    "MoveTo drawer@den",
+    "Open drawer@den",
+    "MoveTo shelf@loft",
+    "Find gizmo",
+    "Pick gizmo",
+    "MoveTo drawer@den",
+    "PutIn drawer@den",
+    "Close drawer@den"
+   ],
+   "replans": []
+  },
+  "options": {
+   "input_pivot": "none",
+   "look_then_ask": "0",
+   "bring_ask": "0",
+   "bt_goal": "1",
+   "fetch_guard": "0",
+   "detector_miss_rate": 0,
+   "search_legs": 1,
+   "health_wait_s": 0
+  },
+  "pack_options": {
+   "bt_goal": {
+    "trees": {
+     "on": {
+      "tree": [
+       "fallback",
+       [
+        "cond",
+        "placed",
+        "{object}",
+        "{to}"
+       ],
+       [
+        "sequence",
+        [
+         "fallback",
+         [
+          "cond",
+          "holding",
+          "{object}"
+         ],
+         [
+          "sequence",
+          [
+           "cond",
+           "hand_free"
+          ],
+          [
+           "act",
+           "MoveTo",
+           "{from}"
+          ],
+          [
+           "act",
+           "Find",
+           "{object}"
+          ],
+          [
+           "act",
+           "Pick",
+           "{object}"
+          ],
+          [
+           "cond",
+           "holding",
+           "{object}"
+          ]
+         ]
+        ],
+        [
+         "act",
+         "MoveTo",
+         "{to}"
+        ],
+        [
+         "act",
+         "Place",
+         "{to}"
+        ],
+        [
+         "cond",
+         "placed",
+         "{object}",
+         "{to}"
+        ],
+        [
+         "cond",
+         "hand_free"
+        ]
+       ]
+      ],
+      "skip_if": [
+       "hand"
+      ],
+      "assumed": true
+     },
+     "go": {
+      "tree": [
+       "fallback",
+       [
+        "cond",
+        "at",
+        "{to}"
+       ],
+       [
+        "act",
+        "MoveTo",
+        "{to}"
+       ]
+      ],
+      "assumed": true
+     },
+     "in": {
+      "tree": [
+       "fallback",
+       [
+        "cond",
+        "placed",
+        "{object}",
+        "{to}"
+       ],
+       [
+        "sequence",
+        [
+         "fallback",
+         [
+          "cond",
+          "opened",
+          "{to}"
+         ],
+         [
+          "sequence",
+          [
+           "cond",
+           "hand_free"
+          ],
+          [
+           "fallback",
+           [
+            "cond",
+            "at",
+            "{to}"
+           ],
+           [
+            "act",
+            "MoveTo",
+            "{to}"
+           ]
+          ],
+          [
+           "act",
+           "Open",
+           "{to}"
+          ],
+          [
+           "cond",
+           "opened",
+           "{to}"
+          ]
+         ]
+        ],
+        [
+         "fallback",
+         [
+          "cond",
+          "holding",
+          "{object}"
+         ],
+         [
+          "sequence",
+          [
+           "cond",
+           "hand_free"
+          ],
+          [
+           "act",
+           "MoveTo",
+           "{from}"
+          ],
+          [
+           "act",
+           "Find",
+           "{object}"
+          ],
+          [
+           "act",
+           "Pick",
+           "{object}"
+          ],
+          [
+           "cond",
+           "holding",
+           "{object}"
+          ]
+         ]
+        ],
+        [
+         "fallback",
+         [
+          "cond",
+          "at",
+          "{to}"
+         ],
+         [
+          "act",
+          "MoveTo",
+          "{to}"
+         ]
+        ],
+        [
+         "act",
+         "PutIn",
+         "{to}"
+        ],
+        [
+         "cond",
+         "placed",
+         "{object}",
+         "{to}"
+        ],
+        [
+         "cond",
+         "hand_free"
+        ]
+       ]
+      ],
+      "assumed": true
+     },
+     "close": {
+      "tree": [
+       "fallback",
+       [
+        "cond",
+        "closed",
+        "{object}"
+       ],
+       [
+        "sequence",
+        [
+         "cond",
+         "hand_free"
+        ],
+        [
+         "fallback",
+         [
+          "cond",
+          "at",
+          "{object}"
+         ],
+         [
+          "act",
+          "MoveTo",
+          "{object}"
+         ]
+        ],
+        [
+         "act",
+         "Close",
+         "{object}"
+        ],
+        [
+         "cond",
+         "closed",
+         "{object}"
+        ]
+       ]
+      ],
+      "assumed": true
+     }
+    },
+    "menu": {
+     "phrases": {
+      "Find": "q_ask_next_find",
+      "Pick": "q_ask_next_pick",
+      "MoveTo": "q_ask_next_move"
+     },
+     "retry": [
+      "ask_next.retry",
+      "ask_next.elsewhere",
+      "dialogue.yes"
+     ],
+     "stop": [
+      "ask_next.stop",
+      "dialogue.stop"
+     ],
+     "assumed": true
+    }
+   }
+  }
+ },
+ "recorded": {
+  "llm_calls": [
+   {
+    "prompt": "d422c2f9f7462805",
+    "format": "b69b437228696e32",
+    "head": "You turn a household robot task into goals. The robot is a mobile manipu",
+    "answer": "{\"status\": \"clear\", \"reason\": \"\", \"question\": \"\", \"goals\": [{\"type\": \"in\", \"object\": \"gizmo\", \"from\": \"shelf@loft\", \"to\": \"drawer@den\"}, {\"type\": \"close\", \"object\": \"drawer@den\", \"from\": \"\", \"to\": \"\"}]}"
+   }
+  ],
+  "planner_calls": [],
+  "robot_calls": [
+   {
+    "skill": "mobile_pose",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "pose": [
+      6.5,
+      2.0,
+      0
+     ]
+    }
+   },
+   {
+    "skill": "move",
+    "params": {
+     "inputs": "drawer@den"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "arrived at drawer@den"
+    }
+   },
+   {
+    "skill": "mobile_pose",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "pose": [
+      5.0,
+      2.0,
+      0
+     ]
+    }
+   },
+   {
+    "skill": "open_drawer",
+    "params": {
+     "inputs": "drawer@den"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "opened"
+    }
+   },
+   {
+    "skill": "move",
+    "params": {
+     "inputs": "shelf@loft"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "arrived at shelf@loft"
+    }
+   },
+   {
+    "skill": "mobile_pose",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "pose": [
+      1.0,
+      1.0,
+      0
+     ]
+    }
+   },
+   {
+    "skill": "find",
+    "params": {
+     "inputs": "gizmo",
+     "min_conf": 0.55
+    },
+    "result": {
+     "isdone": true,
+     "ins": {
+      "gizmo": {
+       "pose_3d": [
+        0.6,
+        0.05,
+        0.8
+       ]
+      }
+     }
+    }
+   },
+   {
+    "skill": "pick",
+    "params": {
+     "inputs": "gizmo",
+     "type": "fine_move"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "grasped"
+    }
+   },
+   {
+    "skill": "grasp_succeed",
+    "params": {},
+    "result": {
+     "isdone": true
+    }
+   },
+   {
+    "skill": "move",
+    "params": {
+     "inputs": "drawer@den"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "arrived at drawer@den"
+    }
+   },
+   {
+    "skill": "mobile_pose",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "pose": [
+      5.0,
+      2.0,
+      0
+     ]
+    }
+   },
+   {
+    "skill": "grasp_succeed",
+    "params": {},
+    "result": {
+     "isdone": true
+    }
+   },
+   {
+    "skill": "place",
+    "params": {
+     "inputs": "drawer@den"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "placed"
+    }
+   },
+   {
+    "skill": "grasp_succeed",
+    "params": {},
+    "result": {
+     "isdone": false
+    }
+   },
+   {
+    "skill": "close_drawer",
+    "params": {
+     "inputs": "drawer@den"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "closed"
+    }
+   }
+  ],
+  "events": [
+   {
+    "event": "task_start",
+    "task": "Take the gizmo from the shelf, put it in the drawer and close the drawer.",
+    "world": {
+     "arrived": "crate@den",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from crate@den"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Starting the task"
+   },
+   {
+    "event": "reconcile",
+    "when": "start",
+    "changed": {
+     "arrived": [
+      null,
+      "crate@den"
+     ]
+    },
+    "sensors": {
+     "arrived": {
+      "pose": [
+       6.5,
+       2.0
+      ],
+      "detail": "0.00 m from crate@den",
+      "source": "mobile_pose"
+     },
+     "containers": {},
+     "unconfirmed": []
+    },
+    "provenance": {
+     "arrived": {
+      "source": "sensor",
+      "detail": "0.00 m from crate@den"
+     },
+     "found": {
+      "source": "belief"
+     },
+     "holding": {
+      "source": "belief"
+     },
+     "opened": {
+      "source": "sensor",
+      "containers": {},
+      "unconfirmed": []
+     },
+     "on": {
+      "source": "belief"
+     }
+    },
+    "world": {
+     "arrived": "crate@den",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from crate@den"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    }
+   },
+   {
+    "event": "status",
+    "msg": "Understanding the task..."
+   },
+   {
+    "event": "understand",
+    "status": "clear",
+    "reason": "",
+    "goals": [
+     {
+      "type": "in",
+      "object": "gizmo",
+      "from": "shelf@loft",
+      "to": "drawer@den"
+     },
+     {
+      "type": "close",
+      "object": "drawer@den",
+      "from": "",
+      "to": "drawer@den"
+     }
+    ],
+    "question": null
+   },
+   {
+    "event": "status",
+    "msg": "Generating task plan..."
+   },
+   {
+    "event": "step_start",
+    "index": 0,
+    "action": "MoveTo",
+    "object": "drawer@den",
+    "skill": "move",
+    "say": "I will move to drawer in the den"
+   },
+   {
+    "event": "step_verify",
+    "index": 0,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "arrived at drawer@den",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "localization",
+      "ok": true,
+      "detail": "0.00 m from drawer@den",
+      "confidence": null,
+      "unknown": false
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 0,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "arrived at drawer@den"
+    },
+    "world": {
+     "arrived": "drawer@den",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: move to drawer in the den"
+   },
+   {
+    "event": "step_start",
+    "index": 1,
+    "action": "Open",
+    "object": "drawer@den",
+    "skill": "open_drawer",
+    "say": "I will open drawer in the den"
+   },
+   {
+    "event": "step_verify",
+    "index": 1,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "opened",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "sensor",
+      "ok": true,
+      "detail": "unknown: open_drawer declares no sensor that checks it",
+      "confidence": null,
+      "unknown": true
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 1,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "opened"
+    },
+    "world": {
+     "arrived": "drawer@den",
+     "found": null,
+     "holding": null,
+     "opened": [
+      "drawer@den"
+     ],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {
+        "drawer@den": {
+         "source": "belief",
+         "open": true
+        }
+       },
+       "unconfirmed": [
+        "drawer@den"
+       ]
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: open drawer in the den"
+   },
+   {
+    "event": "step_start",
+    "index": 2,
+    "action": "MoveTo",
+    "object": "shelf@loft",
+    "skill": "move",
+    "say": "I will move to shelf in the loft"
+   },
+   {
+    "event": "step_verify",
+    "index": 2,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "arrived at shelf@loft",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "localization",
+      "ok": true,
+      "detail": "0.00 m from shelf@loft",
+      "confidence": null,
+      "unknown": false
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 2,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "arrived at shelf@loft"
+    },
+    "world": {
+     "arrived": "shelf@loft",
+     "found": null,
+     "holding": null,
+     "opened": [
+      "drawer@den"
+     ],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {
+        "drawer@den": {
+         "source": "belief",
+         "open": true
+        }
+       },
+       "unconfirmed": [
+        "drawer@den"
+       ]
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: move to shelf in the loft"
+   },
+   {
+    "event": "step_start",
+    "index": 3,
+    "action": "Find",
+    "object": "gizmo",
+    "skill": "find",
+    "say": "I will find gizmo"
+   },
+   {
+    "event": "step_verify",
+    "index": 3,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "sensor",
+      "ok": true,
+      "detail": "unknown: find declares no sensor that checks it",
+      "confidence": null,
+      "unknown": true
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 3,
+    "status": "success",
+    "result": {
+     "ins": {
+      "gizmo": {
+       "pose_3d": [
+        0.6,
+        0.05,
+        0.8
+       ]
+      }
+     },
+     "isdone": true,
+     "msg": ""
+    },
+    "world": {
+     "arrived": "shelf@loft",
+     "found": "gizmo",
+     "holding": null,
+     "opened": [
+      "drawer@den"
+     ],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {
+        "drawer@den": {
+         "source": "belief",
+         "open": true
+        }
+       },
+       "unconfirmed": [
+        "drawer@den"
+       ]
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: find gizmo"
+   },
+   {
+    "event": "step_start",
+    "index": 4,
+    "action": "Pick",
+    "object": "gizmo",
+    "skill": "pick",
+    "say": "I will pick gizmo"
+   },
+   {
+    "event": "step_verify",
+    "index": 4,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "grasped",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "sensor",
+      "ok": true,
+      "detail": "grasp_succeed: ok",
+      "confidence": null,
+      "unknown": false
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 4,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "grasped"
+    },
+    "world": {
+     "arrived": "shelf@loft",
+     "found": null,
+     "holding": "gizmo",
+     "opened": [
+      "drawer@den"
+     ],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {
+        "drawer@den": {
+         "source": "belief",
+         "open": true
+        }
+       },
+       "unconfirmed": [
+        "drawer@den"
+       ]
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: pick gizmo"
+   },
+   {
+    "event": "step_start",
+    "index": 5,
+    "action": "MoveTo",
+    "object": "drawer@den",
+    "skill": "move",
+    "say": "I will move to drawer in the den"
+   },
+   {
+    "event": "step_verify",
+    "index": 5,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "arrived at drawer@den",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "localization",
+      "ok": true,
+      "detail": "0.00 m from drawer@den",
+      "confidence": null,
+      "unknown": false
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 5,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "arrived at drawer@den"
+    },
+    "world": {
+     "arrived": "drawer@den",
+     "found": null,
+     "holding": "gizmo",
+     "opened": [
+      "drawer@den"
+     ],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {
+        "drawer@den": {
+         "source": "belief",
+         "open": true
+        }
+       },
+       "unconfirmed": [
+        "drawer@den"
+       ]
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: move to drawer in the den"
+   },
+   {
+    "event": "step_start",
+    "index": 6,
+    "action": "PutIn",
+    "object": "drawer@den",
+    "skill": "place",
+    "say": "I will place drawer in the den"
+   },
+   {
+    "event": "step_verify",
+    "index": 6,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "placed",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "sensor",
+      "ok": true,
+      "detail": "grasp_succeed: ok",
+      "confidence": null,
+      "unknown": false
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 6,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "placed"
+    },
+    "world": {
+     "arrived": "drawer@den",
+     "found": null,
+     "holding": null,
+     "opened": [
+      "drawer@den"
+     ],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {
+        "drawer@den": {
+         "source": "belief",
+         "open": true
+        }
+       },
+       "unconfirmed": [
+        "drawer@den"
+       ]
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: place drawer in the den"
+   },
+   {
+    "event": "step_start",
+    "index": 7,
+    "action": "Close",
+    "object": "drawer@den",
+    "skill": "close_drawer",
+    "say": "I will close drawer in the den"
+   },
+   {
+    "event": "step_verify",
+    "index": 7,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "closed",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "sensor",
+      "ok": true,
+      "detail": "unknown: close_drawer declares no sensor that checks it",
+      "confidence": null,
+      "unknown": true
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 7,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "closed"
+    },
+    "world": {
+     "arrived": "drawer@den",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: close drawer in the den"
+   },
+   {
+    "event": "status",
+    "msg": "Checking the goals..."
+   },
+   {
+    "event": "goal_check",
+    "goal": {
+     "type": "in",
+     "object": "gizmo",
+     "from": "shelf@loft",
+     "to": "drawer@den"
+    },
+    "ok": null,
+    "evidence": "the gizmo is inside the closed drawer in the den: not visible (belief)",
+    "world": {
+     "arrived": "drawer@den",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    }
+   },
+   {
+    "event": "goal_check",
+    "goal": {
+     "type": "close",
+     "object": "drawer@den",
+     "from": "",
+     "to": "drawer@den"
+    },
+    "ok": null,
+    "evidence": "close drawer@den: no sensor declared for it (belief)",
+    "world": {
+     "arrived": "drawer@den",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    }
+   },
+   {
+    "event": "done",
+    "status": "success",
+    "msg": "",
+    "world": {
+     "arrived": "drawer@den",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Task completed"
+   }
+  ],
+  "final": {
+   "robot": {
+    "at": "drawer@den",
+    "holding": null,
+    "objects": {
+     "gizmo": "drawer@den/in"
+    },
+    "opened": [],
+    "asked": []
+   },
+   "belief": {
+    "arrived": "drawer@den",
+    "found": null,
+    "holding": null,
+    "opened": [],
+    "on": [],
+    "found_pose": null,
+    "holding_pose": null,
+    "provenance": {
+     "arrived": {
+      "source": "sensor",
+      "detail": "MoveTo localization check"
+     },
+     "found": {
+      "source": "belief"
+     },
+     "holding": {
+      "source": "belief"
+     },
+     "opened": {
+      "source": "sensor",
+      "containers": {},
+      "unconfirmed": []
+     },
+     "on": {
+      "source": "belief"
+     }
+    }
+   },
+   "lab_log": [
+    {
+     "flag": "bt_goal",
+     "goal": 2,
+     "status": "claimed"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.0 cond placed gizmo drawer@den",
+     "status": "failure"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.0.0 cond opened drawer@den",
+     "status": "failure"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.0.1.0 cond hand_free",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.0.1.1.0 cond at drawer@den",
+     "status": "failure"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.0.1.1.1 act MoveTo drawer@den",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.0.1.1 fallback",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.0.1.2 act Open drawer@den",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.0.1.3 cond opened drawer@den",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.0.1 sequence",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.0 fallback",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.1.0 cond holding gizmo",
+     "status": "failure"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.1.1.0 cond hand_free",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.1.1.1 act MoveTo shelf@loft",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.1.1.2 act Find gizmo",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.1.1.3 act Pick gizmo",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.1.1.4 cond holding gizmo",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.1.1 sequence",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.1 fallback",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.2.0 cond at drawer@den",
+     "status": "failure"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.2.1 act MoveTo drawer@den",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.2 fallback",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.3 act PutIn drawer@den",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.4 cond placed gizmo drawer@den",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.5 cond hand_free",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1 sequence",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0 fallback",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": "in gizmo drawer@den",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 1,
+     "node": "0.0 cond closed drawer@den",
+     "status": "failure"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 1,
+     "node": "0.1.0 cond hand_free",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 1,
+     "node": "0.1.1.0 cond at drawer@den",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 1,
+     "node": "0.1.1 fallback",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 1,
+     "node": "0.1.2 act Close drawer@den",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 1,
+     "node": "0.1.3 cond closed drawer@den",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 1,
+     "node": "0.1 sequence",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 1,
+     "node": "0 fallback",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": "close drawer@den drawer@den",
+     "status": "success"
+    }
+   ],
+   "record": {
+    "task": "Take the gizmo from the shelf, put it in the drawer and close the drawer.",
+    "lang": "en",
+    "obs": "goals: [{\"type\": \"in\", \"object\": \"gizmo\", \"from\": \"shelf@loft\", \"to\": \"drawer@den\"}, {\"type\": \"close\", \"object\": \"drawer@den\", \"from\": \"\", \"to\": \"drawer@den\"}]",
+    "visible": [],
+    "planner": "sage+assist",
+    "plan_meta": {
+     "method": "option"
+    },
+    "warnings": [],
+    "steps": [
+     {
+      "index": 0,
+      "action": "MoveTo",
+      "object": "drawer@den",
+      "skill": "move",
+      "params": {
+       "inputs": "drawer@den"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "arrived at drawer@den"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "arrived at drawer@den",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "localization",
+        "ok": true,
+        "detail": "0.00 m from drawer@den",
+        "confidence": null,
+        "unknown": false
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 1,
+      "action": "Open",
+      "object": "drawer@den",
+      "skill": "open_drawer",
+      "params": {
+       "inputs": "drawer@den"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "opened"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "opened",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "sensor",
+        "ok": true,
+        "detail": "unknown: open_drawer declares no sensor that checks it",
+        "confidence": null,
+        "unknown": true
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 2,
+      "action": "MoveTo",
+      "object": "shelf@loft",
+      "skill": "move",
+      "params": {
+       "inputs": "shelf@loft"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "arrived at shelf@loft"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "arrived at shelf@loft",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "localization",
+        "ok": true,
+        "detail": "0.00 m from shelf@loft",
+        "confidence": null,
+        "unknown": false
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 3,
+      "action": "Find",
+      "object": "gizmo",
+      "skill": "find",
+      "params": {
+       "inputs": "gizmo",
+       "min_conf": 0.55
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "ins": {
+        "gizmo": {
+         "pose_3d": [
+          0.6,
+          0.05,
+          0.8
+         ]
+        }
+       },
+       "isdone": true,
+       "msg": ""
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "sensor",
+        "ok": true,
+        "detail": "unknown: find declares no sensor that checks it",
+        "confidence": null,
+        "unknown": true
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 4,
+      "action": "Pick",
+      "object": "gizmo",
+      "skill": "pick",
+      "params": {
+       "inputs": "gizmo",
+       "type": "fine_move"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "grasped"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "grasped",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "sensor",
+        "ok": true,
+        "detail": "grasp_succeed: ok",
+        "confidence": null,
+        "unknown": false
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 5,
+      "action": "MoveTo",
+      "object": "drawer@den",
+      "skill": "move",
+      "params": {
+       "inputs": "drawer@den"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "arrived at drawer@den"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "arrived at drawer@den",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "localization",
+        "ok": true,
+        "detail": "0.00 m from drawer@den",
+        "confidence": null,
+        "unknown": false
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 6,
+      "action": "PutIn",
+      "object": "drawer@den",
+      "skill": "place",
+      "params": {
+       "inputs": "drawer@den"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "placed"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "placed",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "sensor",
+        "ok": true,
+        "detail": "grasp_succeed: ok",
+        "confidence": null,
+        "unknown": false
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 7,
+      "action": "Close",
+      "object": "drawer@den",
+      "skill": "close_drawer",
+      "params": {
+       "inputs": "drawer@den"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "closed"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "closed",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "sensor",
+        "ok": true,
+        "detail": "unknown: close_drawer declares no sensor that checks it",
+        "confidence": null,
+        "unknown": true
+       }
+      ],
+      "logs": []
+     }
+    ],
+    "replans": [],
+    "status": "success",
+    "failure": {}
+   },
+   "log_kinds": [
+    "reconcile",
+    "task_start",
+    "status",
+    "understand",
+    "status",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "status",
+    "goal_check",
+    "goal_check",
+    "done",
+    "snapshot"
+   ]
+  }
+ },
+ "commit": "4d584ba"
+}

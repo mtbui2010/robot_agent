@@ -1,0 +1,1127 @@
+{
+ "format": 1,
+ "name": "menu_retry_word",
+ "tags": [
+  "bt_goal",
+  "question",
+  "failure"
+ ],
+ "about": "the bt_goal menu question answered with a retry word: the tree runs again, fails, stops",
+ "scenario": {
+  "name": "menu_retry_word",
+  "env": {
+   "shelf@loft": {
+    "aliases": [
+     "shelf"
+    ],
+    "loc": {
+     "x": 1.0,
+     "y": 1.0
+    },
+    "surface": true
+   },
+   "bench@den": {
+    "aliases": [
+     "bench"
+    ],
+    "loc": {
+     "x": 6.0,
+     "y": 1.0
+    },
+    "surface": true
+   },
+   "crate@den": {
+    "aliases": [
+     "crate"
+    ],
+    "loc": {
+     "x": 6.5,
+     "y": 2.0
+    },
+    "surface": true
+   }
+  },
+  "robot_pkg": "fakebot",
+  "task": "Take the gizmo from the shelf and put it on the bench.",
+  "robot": {
+   "objects": {
+    "gizmo": "crate@den"
+   },
+   "answers": [
+    "try again"
+   ],
+   "faults": [],
+   "start": "crate@den"
+  },
+  "llm": {
+   "script": [],
+   "default": {
+    "status": "clear",
+    "reason": "",
+    "question": "",
+    "goals": [
+     {
+      "type": "on",
+      "object": "gizmo",
+      "from": "shelf@loft",
+      "to": "bench@den"
+     }
+    ]
+   }
+  },
+  "planner": {
+   "plan": [
+    "MoveTo shelf@loft",
+    "Find gizmo",
+    "Pick gizmo",
+    "MoveTo bench@den",
+    "Place bench@den"
+   ],
+   "replans": []
+  },
+  "options": {
+   "input_pivot": "none",
+   "look_then_ask": "0",
+   "bring_ask": "0",
+   "bt_goal": "1",
+   "fetch_guard": "0",
+   "detector_miss_rate": 0,
+   "search_legs": 0,
+   "health_wait_s": 0
+  },
+  "pack_options": {
+   "bt_goal": {
+    "trees": {
+     "on": {
+      "tree": [
+       "fallback",
+       [
+        "cond",
+        "placed",
+        "{object}",
+        "{to}"
+       ],
+       [
+        "sequence",
+        [
+         "fallback",
+         [
+          "cond",
+          "holding",
+          "{object}"
+         ],
+         [
+          "sequence",
+          [
+           "cond",
+           "hand_free"
+          ],
+          [
+           "act",
+           "MoveTo",
+           "{from}"
+          ],
+          [
+           "act",
+           "Find",
+           "{object}"
+          ],
+          [
+           "act",
+           "Pick",
+           "{object}"
+          ],
+          [
+           "cond",
+           "holding",
+           "{object}"
+          ]
+         ]
+        ],
+        [
+         "act",
+         "MoveTo",
+         "{to}"
+        ],
+        [
+         "act",
+         "Place",
+         "{to}"
+        ],
+        [
+         "cond",
+         "placed",
+         "{object}",
+         "{to}"
+        ],
+        [
+         "cond",
+         "hand_free"
+        ]
+       ]
+      ],
+      "skip_if": [
+       "hand"
+      ],
+      "assumed": true
+     },
+     "go": {
+      "tree": [
+       "fallback",
+       [
+        "cond",
+        "at",
+        "{to}"
+       ],
+       [
+        "act",
+        "MoveTo",
+        "{to}"
+       ]
+      ],
+      "assumed": true
+     }
+    },
+    "menu": {
+     "phrases": {
+      "Find": "q_ask_next_find",
+      "Pick": "q_ask_next_pick",
+      "MoveTo": "q_ask_next_move"
+     },
+     "retry": [
+      "ask_next.retry",
+      "ask_next.elsewhere",
+      "dialogue.yes"
+     ],
+     "stop": [
+      "ask_next.stop",
+      "dialogue.stop"
+     ],
+     "assumed": true
+    }
+   }
+  }
+ },
+ "recorded": {
+  "llm_calls": [
+   {
+    "prompt": "be3fde09a8adddb3",
+    "format": "b69b437228696e32",
+    "head": "You turn a household robot task into goals. The robot is a mobile manipu",
+    "answer": "{\"status\": \"clear\", \"reason\": \"\", \"question\": \"\", \"goals\": [{\"type\": \"on\", \"object\": \"gizmo\", \"from\": \"shelf@loft\", \"to\": \"bench@den\"}]}"
+   },
+   {
+    "prompt": "5a9e6797f0bd79b0",
+    "format": "48a936b020029162",
+    "head": "A household robot is looking for the gizmo. First think of the room or r",
+    "answer": "{\"status\": \"clear\", \"reason\": \"\", \"question\": \"\", \"goals\": [{\"type\": \"on\", \"object\": \"gizmo\", \"from\": \"shelf@loft\", \"to\": \"bench@den\"}]}"
+   }
+  ],
+  "planner_calls": [],
+  "robot_calls": [
+   {
+    "skill": "mobile_pose",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "pose": [
+      6.5,
+      2.0,
+      0
+     ]
+    }
+   },
+   {
+    "skill": "move",
+    "params": {
+     "inputs": "shelf@loft"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "arrived at shelf@loft"
+    }
+   },
+   {
+    "skill": "mobile_pose",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "pose": [
+      1.0,
+      1.0,
+      0
+     ]
+    }
+   },
+   {
+    "skill": "find",
+    "params": {
+     "inputs": "gizmo",
+     "min_conf": 0.55
+    },
+    "result": {
+     "isdone": false,
+     "msg": "gizmo not found"
+    }
+   },
+   {
+    "skill": "ask",
+    "params": {
+     "inputs": "I couldn't find the gizmo. Shall I look again here, look somewhere else, or stop?",
+     "retries": 0,
+     "lang": "en"
+    },
+    "result": {
+     "isdone": true,
+     "text": "try again"
+    }
+   },
+   {
+    "skill": "move",
+    "params": {
+     "inputs": "shelf@loft"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "arrived at shelf@loft"
+    }
+   },
+   {
+    "skill": "mobile_pose",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "pose": [
+      1.0,
+      1.0,
+      0
+     ]
+    }
+   },
+   {
+    "skill": "find",
+    "params": {
+     "inputs": "gizmo",
+     "min_conf": 0.55
+    },
+    "result": {
+     "isdone": false,
+     "msg": "gizmo not found"
+    }
+   }
+  ],
+  "events": [
+   {
+    "event": "task_start",
+    "task": "Take the gizmo from the shelf and put it on the bench.",
+    "world": {
+     "arrived": "crate@den",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from crate@den"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Starting the task"
+   },
+   {
+    "event": "reconcile",
+    "when": "start",
+    "changed": {
+     "arrived": [
+      null,
+      "crate@den"
+     ]
+    },
+    "sensors": {
+     "arrived": {
+      "pose": [
+       6.5,
+       2.0
+      ],
+      "detail": "0.00 m from crate@den",
+      "source": "mobile_pose"
+     },
+     "containers": {},
+     "unconfirmed": []
+    },
+    "provenance": {
+     "arrived": {
+      "source": "sensor",
+      "detail": "0.00 m from crate@den"
+     },
+     "found": {
+      "source": "belief"
+     },
+     "holding": {
+      "source": "belief"
+     },
+     "opened": {
+      "source": "sensor",
+      "containers": {},
+      "unconfirmed": []
+     },
+     "on": {
+      "source": "belief"
+     }
+    },
+    "world": {
+     "arrived": "crate@den",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from crate@den"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    }
+   },
+   {
+    "event": "status",
+    "msg": "Understanding the task..."
+   },
+   {
+    "event": "understand",
+    "status": "clear",
+    "reason": "",
+    "goals": [
+     {
+      "type": "on",
+      "object": "gizmo",
+      "from": "shelf@loft",
+      "to": "bench@den"
+     }
+    ],
+    "question": null
+   },
+   {
+    "event": "status",
+    "msg": "Generating task plan..."
+   },
+   {
+    "event": "step_start",
+    "index": 0,
+    "action": "MoveTo",
+    "object": "shelf@loft",
+    "skill": "move",
+    "say": "I will move to shelf in the loft"
+   },
+   {
+    "event": "step_verify",
+    "index": 0,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "arrived at shelf@loft",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "localization",
+      "ok": true,
+      "detail": "0.00 m from shelf@loft",
+      "confidence": null,
+      "unknown": false
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 0,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "arrived at shelf@loft"
+    },
+    "world": {
+     "arrived": "shelf@loft",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: move to shelf in the loft"
+   },
+   {
+    "event": "step_start",
+    "index": 1,
+    "action": "Find",
+    "object": "gizmo",
+    "skill": "find",
+    "say": "I will find gizmo"
+   },
+   {
+    "event": "step_verify",
+    "index": 1,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": false,
+      "detail": "gizmo not found",
+      "confidence": null,
+      "unknown": false
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 1,
+    "status": "failed",
+    "result": {
+     "isdone": false,
+     "msg": "gizmo not found",
+     "code": "absent"
+    },
+    "reason": "gizmo not found",
+    "world": {
+     "arrived": "shelf@loft",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Failed to find gizmo. gizmo not found"
+   },
+   {
+    "event": "search",
+    "object": "gizmo",
+    "ranked": [],
+    "prior": {},
+    "order": [
+     "shelf@loft",
+     "bench@den",
+     "crate@den"
+    ]
+   },
+   {
+    "event": "status",
+    "msg": "Find gizmo failed, not replanned: gizmo not found; it is not at shelf@loft. Look next at bench@den"
+   },
+   {
+    "event": "clarify",
+    "question": "I couldn't find the gizmo. Shall I look again here, look somewhere else, or stop?",
+    "round": 0,
+    "kind": "bt_goal"
+   },
+   {
+    "event": "step_start",
+    "index": 2,
+    "action": "MoveTo",
+    "object": "shelf@loft",
+    "skill": "move",
+    "say": "I will move to shelf in the loft"
+   },
+   {
+    "event": "step_verify",
+    "index": 2,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "arrived at shelf@loft",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "localization",
+      "ok": true,
+      "detail": "0.00 m from shelf@loft",
+      "confidence": null,
+      "unknown": false
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 2,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "arrived at shelf@loft"
+    },
+    "world": {
+     "arrived": "shelf@loft",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: move to shelf in the loft"
+   },
+   {
+    "event": "step_start",
+    "index": 3,
+    "action": "Find",
+    "object": "gizmo",
+    "skill": "find",
+    "say": "I will find gizmo"
+   },
+   {
+    "event": "step_verify",
+    "index": 3,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": false,
+      "detail": "gizmo not found",
+      "confidence": null,
+      "unknown": false
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 3,
+    "status": "failed",
+    "result": {
+     "isdone": false,
+     "msg": "gizmo not found",
+     "code": "absent"
+    },
+    "reason": "gizmo not found",
+    "world": {
+     "arrived": "shelf@loft",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Failed to find gizmo. gizmo not found"
+   },
+   {
+    "event": "status",
+    "msg": "Find gizmo failed, not replanned: gizmo not found; it is not at shelf@loft. Look next at bench@den"
+   },
+   {
+    "event": "done",
+    "status": "failed",
+    "msg": "Find gizmo failed (bt_goal: no way left): gizmo not found",
+    "world": {
+     "arrived": "shelf@loft",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "code": "absent",
+    "say": "Sorry, I could not finish the task."
+   }
+  ],
+  "final": {
+   "robot": {
+    "at": "shelf@loft",
+    "holding": null,
+    "objects": {
+     "gizmo": "crate@den"
+    },
+    "opened": [],
+    "asked": [
+     "I couldn't find the gizmo. Shall I look again here, look somewhere else, or stop?"
+    ]
+   },
+   "belief": {
+    "arrived": "shelf@loft",
+    "found": null,
+    "holding": null,
+    "opened": [],
+    "on": [],
+    "found_pose": null,
+    "holding_pose": null,
+    "provenance": {
+     "arrived": {
+      "source": "sensor",
+      "detail": "MoveTo localization check"
+     },
+     "found": {
+      "source": "belief"
+     },
+     "holding": {
+      "source": "belief"
+     },
+     "opened": {
+      "source": "sensor",
+      "containers": {},
+      "unconfirmed": []
+     },
+     "on": {
+      "source": "belief"
+     }
+    }
+   },
+   "lab_log": [
+    {
+     "flag": "bt_goal",
+     "goal": 1,
+     "status": "claimed"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.0 cond placed gizmo bench@den",
+     "status": "failure"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.0.0 cond holding gizmo",
+     "status": "failure"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.0.1.0 cond hand_free",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.0.1.1 act MoveTo shelf@loft",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.0.1.2 act Find gizmo",
+     "status": "failure"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.0.1 sequence",
+     "status": "failure"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.0 fallback",
+     "status": "failure"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1 sequence",
+     "status": "failure"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0 fallback",
+     "status": "failure"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "status": "exhausted",
+     "action": "retry",
+     "code": "absent",
+     "rung": "planner"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.0 cond placed gizmo bench@den",
+     "status": "failure"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.0.0 cond holding gizmo",
+     "status": "failure"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.0.1.0 cond hand_free",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.0.1.1 act MoveTo shelf@loft",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.0.1.2 act Find gizmo",
+     "status": "failure"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.0.1 sequence",
+     "status": "failure"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1.0 fallback",
+     "status": "failure"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1 sequence",
+     "status": "failure"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0 fallback",
+     "status": "failure"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "status": "exhausted",
+     "action": "stop"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": "on gizmo bench@den",
+     "status": "stop"
+    }
+   ],
+   "record": {
+    "task": "Take the gizmo from the shelf and put it on the bench.",
+    "lang": "en",
+    "obs": "goals: [{\"type\": \"on\", \"object\": \"gizmo\", \"from\": \"shelf@loft\", \"to\": \"bench@den\"}]",
+    "visible": [],
+    "planner": "sage+assist",
+    "plan_meta": {
+     "method": "option"
+    },
+    "warnings": [],
+    "steps": [
+     {
+      "index": 0,
+      "action": "MoveTo",
+      "object": "shelf@loft",
+      "skill": "move",
+      "params": {
+       "inputs": "shelf@loft"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "arrived at shelf@loft"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "arrived at shelf@loft",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "localization",
+        "ok": true,
+        "detail": "0.00 m from shelf@loft",
+        "confidence": null,
+        "unknown": false
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 1,
+      "action": "Find",
+      "object": "gizmo",
+      "skill": "find",
+      "params": {
+       "inputs": "gizmo",
+       "min_conf": 0.55
+      },
+      "status": "failed",
+      "attempt": 1,
+      "result": {
+       "isdone": false,
+       "msg": "gizmo not found",
+       "code": "absent"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": false,
+        "detail": "gizmo not found",
+        "confidence": null,
+        "unknown": false
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 2,
+      "action": "MoveTo",
+      "object": "shelf@loft",
+      "skill": "move",
+      "params": {
+       "inputs": "shelf@loft"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "arrived at shelf@loft"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "arrived at shelf@loft",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "localization",
+        "ok": true,
+        "detail": "0.00 m from shelf@loft",
+        "confidence": null,
+        "unknown": false
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 3,
+      "action": "Find",
+      "object": "gizmo",
+      "skill": "find",
+      "params": {
+       "inputs": "gizmo",
+       "min_conf": 0.55
+      },
+      "status": "failed",
+      "attempt": 1,
+      "result": {
+       "isdone": false,
+       "msg": "gizmo not found",
+       "code": "absent"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": false,
+        "detail": "gizmo not found",
+        "confidence": null,
+        "unknown": false
+       }
+      ],
+      "logs": []
+     }
+    ],
+    "replans": [],
+    "status": "failed",
+    "failure": {
+     "code": "absent"
+    }
+   },
+   "log_kinds": [
+    "reconcile",
+    "task_start",
+    "status",
+    "understand",
+    "status",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "search",
+    "status",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "status",
+    "done",
+    "snapshot"
+   ]
+  }
+ },
+ "commit": "4d584ba"
+}
