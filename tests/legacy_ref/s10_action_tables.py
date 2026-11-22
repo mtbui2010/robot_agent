@@ -48,7 +48,6 @@ VERBS: dict[str, dict[str, str]] = {
     },
 }
 
-
 ACTION_TEXT = {
     "MoveTo": ("place", "move to a place"),
     "Find": ("object", "look for an object where the robot is"),
