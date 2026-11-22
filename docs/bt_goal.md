@@ -52,8 +52,15 @@ calls when nothing fails) and has no entry condition (no belief predicate reads 
 **Engine touch (core).** Service `runs_goals` (asked once in `_plan_phase`), hook `on_run_goals` (start of `_execute_phase`), service `try_step`
 (key `ladder`: drain the ladder's spliced steps), `changes_waiting` and service `no_replan` (asked at the top of `_sage_replan`; nobody answers it by default).
 
+**Tree keys (Step S25a).** Two opt-in keys sit next to `tree:` in a tree entry (the entry that is used; a kind with a list of entries has them per entry). None set: nothing below applies and the entry runs as before.
+- `ladder: false`: every `act` of the tree calls `try_step(run, step, ladder=False)` ("the recovery is the caller's", `core/planning/option_services.py`): a failed step is not retried, searched or asked about by the engine; the tree's own `retry` / `fallback` decide, and `exhausted` applies when the tree has no way left. Only a literal `false` counts; the default is `true` (the ladder runs, as above). Steps run by SAGE for a kind with no tree (`mixed`) always run the ladder.
+- `events: true`: every node, after it ends, is sent through the service `emit` as the public event `tree_node` `{goal, path, node, status}` (`goal`: the goal's number in the run, `path`: the node's place in its tree, "0.1.2", `node`: what it is, `status`: success / failure / stopped). It comes with the lab row `bt_goal`, which is written either way. Only a literal `true` counts; the default is `false` (no event).
+- The `ask` leaf reads its choice words from the language pack (`ask_next.retry`, as above) and, for a ref that has no such list, from the robot pack's `questions` table: the ref `<question>.<choice>` names `answer.choices.<choice>` of that question, its `words` for the language of the run and the language-pack lists in its `lists`. A ref that names neither gives no word (the answer is "no"). A robot with no pack question is read as before. Code: `core/planning/tree_host.py` (pure).
+Example (a made-up pack): `questions: {route: {phrase: q_ask_next_move, answer: {type: choice, choices: {shortcut: {words: {en: [shortcut, direct]}}}}}}` and the tree `[fallback, [ask, q_ask_next_move, route.shortcut], [act, MoveTo, "{to}"]]`.
+Goldens: tests/golden/scenario_sets/s25a_tree_keys.py (`bt_ladder_off`, `bt_ladder_on_retry`, `bt_node_events`, `bt_choice_answer`, `bt_choice_other_answer`); unit tests: tests/test_option_bt_goal_seams.py.
+
 **Switch off:** key `enabled` (run option `bt_goal=0`), default ON (it does nothing for a robot that declares no `trees`). **Event:** lab flag `bt_goal`: `{goal, status}` ("claimed" once, per goal its
-end, `exhausted` with the action taken) and `{goal, node, status}` per node.
+end, `exhausted` with the action taken) and `{goal, node, status}` per node (with the tree key `events`, also the event `tree_node`).
 **Goal changes.** A correction said while a tree runs ends the trees before the next Act (status `changed`, service `changes_waiting`); the
 engine applies it at its step boundary as for a plan (its repair, a SAGE replan for the new goals).
 **Limits.** Goals run in the reader's order; the menu answer is read with the pack's words only (a person who does not understand a menu
