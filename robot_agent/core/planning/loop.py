@@ -34,6 +34,7 @@ from robot_agent.observe.paths import data_dir
 from robot_agent.contract import FailureCode, classify_legacy_failure
 from robot_agent.state import current, host_id
 from ..options.spec import NEXT as _OPT_NEXT, STOP as _OPT_STOP
+from ..pack import questions as pack_questions
 from . import episode_memory, robot_prompt
 from .announcer import Announcer
 from .base import WorldState
@@ -58,7 +59,6 @@ def _robot_namemap():
     from both the closed loop and the open-loop / direct paths.
     """
     try:
-        import importlib
         from robot_agent.contract.legacy_adapter import namemap_module_name
         from robot_agent.state import current
         return importlib.import_module(namemap_module_name(current().robot_pkg))
@@ -240,7 +240,7 @@ class RunContext:
             self.logger.event(event, t=time.time(), **{k: v for k, v in d.items() if k != "event"})
         except Exception:
             pass
-        return d
+        return pack_questions.tag(d, self.robot)   # the streamed event only: a pack may give a kind-less clarify a kind (S31)
 
 
 class ClosedLoop:
