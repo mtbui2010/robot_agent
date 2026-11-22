@@ -1,0 +1,13 @@
+# The standard pack's `fleet:` section: the footprint of a goal kind, that is which slots of a goal are objects and which are places
+# for a fleet manager that decides which goals may run together. Only what cannot be derived is here; needs and slots come from
+# goal_kinds.yaml. A kind not named here takes the default footprint (core/pack/fleet.py DEFAULT: objects = [object],
+# places = [from, to]).
+# `open` and `close` act on a container: the object is also a place (robot_fleet/graph.py _CONTAINER_KINDS at d74f326).
+fleet:
+  kinds:
+    open:
+      footprint: {objects: [object], places: [from, to, object]}
+      source: "robot_fleet/graph.py:35-49 at d74f326 (footprint(): the container kinds add the goal's object to the places)"
+    close:
+      footprint: {objects: [object], places: [from, to, object]}
+      source: "robot_fleet/graph.py:35-49 at d74f326 (footprint(): the container kinds add the goal's object to the places)"
