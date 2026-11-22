@@ -14,37 +14,22 @@ it has no skill for, and how the goal is reached by a plan / holds after a run:
 The manipulation kinds are planned by the planner (SAGE or a plug-in); the others (``TEMPLATE_KINDS``) are a fixed
 sequence of steps, compiled here without an LLM (``compile_steps``). Nothing in this module
 knows a robot: the actions a robot has come from its manifest (``RobotView.plan_actions``).
+The table itself is pack data (``goal_kinds`` of the robot's pack, ``core/pack/kind_table.py``): every function that reads
+it takes a ``table`` ({name: GoalKind}, ``table_of(loop)``); None = ``GOAL_KINDS``, the standard pack's kinds.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Iterable, Optional
 
+from ..pack import goal_semantics, kind_table
+from ..pack.kind_table import GoalKind
 
-@dataclass(frozen=True)
-class GoalKind:
-    name: str
-    needs: tuple            # the actions the kind needs; a tuple inside = any one of them
-    prompt: str = ""        # the understand prompt's line for it ('' = described in the base prompt)
-
-
-MANIPULATION = ("on", "in", "open", "close")
-GOAL_KINDS: dict = {
-    "on": GoalKind("on", ("Pick", "Place")),
-    "in": GoalKind("in", ("Pick", ("PutIn", "Place"))),
-    "open": GoalKind("open", ("Open",)),
-    "close": GoalKind("close", ("Close",)),
-    "go": GoalKind("go", ("MoveTo",),
-                   '"go" = only go somewhere, nothing to move: object "", from "", to = the place.'),
-    "say": GoalKind("say", ("Say",),
-                    '"say" = tell someone something: object = the sentence to say, as the robot should say it; '
-                    'from ""; to = the place to say it at, or the person, or "".'),
-    "deliver": GoalKind("deliver", ("MoveTo", "WaitForUnload"),
-                        '"deliver" = take what the robot carries to a place and hand it over: object = the item '
-                        '(or ""), from "", to = the place.'),
-}
-TEMPLATE_KINDS = ("go", "say", "deliver")
+# Views of the standard pack's kinds (robot_agent/packs/household/goal_kinds.yaml), built once: the table a function reads
+# when it is given none, and the one a robot whose pack declares the standard kinds unchanged gets (tests patch it).
+GOAL_KINDS: dict = kind_table.table(kind_table.default_entries())
+MANIPULATION = tuple(k for k, v in GOAL_KINDS.items() if v.understood == "always")
+TEMPLATE_KINDS = tuple(k for k, v in GOAL_KINDS.items() if v.planned_by == "template")
 # Optional kinds of the understand schema (option ``understand_give_kind``): not part of the table above, so the default
 # schema and prompt do not change. A ``give`` goal is an ``on`` goal whose destination is a person (``canonical``).
 OPTIONAL_KINDS: dict = {
@@ -54,11 +39,22 @@ OPTIONAL_KINDS: dict = {
 }
 
 
-def missing_actions(goal: dict, actions: Iterable[str]) -> list:
+def _table(table: Optional[dict]) -> dict:
+    return GOAL_KINDS if table is None else table
+
+
+def table_of(loop) -> dict:
+    """The goal-kind table of the loop's robot: ``GOAL_KINDS`` when its pack declares the standard kinds unchanged (every
+    robot without a ``pack:`` section), else the kinds of its own pack (``goal_semantics.pack_of``)."""
+    entries = goal_semantics.pack_of(loop).table(kind_table.TABLE)
+    return GOAL_KINDS if kind_table.is_default(entries) else kind_table.table(entries)
+
+
+def missing_actions(goal: dict, actions: Iterable[str], table: Optional[dict] = None) -> list:
     """The actions `goal` needs that are not in `actions` (an any-of group by its first name).
     An unknown kind needs an action nobody has: [its type]."""
     acts = set(actions)
-    kind = GOAL_KINDS.get(goal.get("type"))
+    kind = _table(table).get(goal.get("type"))
     if kind is None:
         return [str(goal.get("type"))]
     out = []
@@ -71,23 +67,36 @@ def missing_actions(goal: dict, actions: Iterable[str]) -> list:
     return out
 
 
-def kinds_for(actions: Iterable[str], optional: Iterable[str] = ()) -> list:
-    """The goal kinds the understand step may use for a robot with `actions`: the manipulation
-    kinds always (so a request the robot cannot do is understood, then refused with a reason),
-    the others only when the robot has their actions. ``optional``: names from ``OPTIONAL_KINDS`` the caller switched on,
-    added (as the manipulation kinds are) at the end."""
-    acts = set(actions)
-    return list(MANIPULATION) + [k for k in TEMPLATE_KINDS if not missing_actions({"type": k}, acts)] \
+def kinds_for(actions: Iterable[str], optional: Iterable[str] = (), table: Optional[dict] = None) -> list:
+    """The goal kinds the understand step may use for a robot with `actions`: the kinds ``understood: always`` first
+    (so a request the robot cannot do is understood, then refused with a reason), then the others, each only when the
+    robot has their actions, in table order. ``optional``: names from ``OPTIONAL_KINDS`` the caller switched on,
+    added (as the always-understood kinds are) at the end."""
+    acts, t = set(actions), _table(table)
+    return [k for k, v in t.items() if v.understood == "always"] \
+        + [k for k, v in t.items() if v.understood != "always" and not missing_actions({"type": k}, acts, t)] \
         + [k for k in optional if k in OPTIONAL_KINDS]
 
 
-def domain_actions() -> list:
+def domain_actions(table: Optional[dict] = None) -> list:
     """Every abstract action the goal tables name (sorted): the vocabulary a refusal may say a robot lacks."""
     out = set()
-    for kind in list(GOAL_KINDS.values()) + list(OPTIONAL_KINDS.values()):
+    for kind in list(_table(table).values()) + list(OPTIONAL_KINDS.values()):
         for need in kind.needs:
             out.update(need if isinstance(need, tuple) else (need,))
     return sorted(out)
+
+
+def lacking(actions, table: Optional[dict] = None) -> list:
+    """The actions of ``domain_actions`` that ``actions`` (None = none) does not hold, in that order."""
+    have = set(actions or ())
+    return [a for a in domain_actions(table) if a not in have]
+
+
+def cannot_do(goals: list, actions: Iterable[str], table: Optional[dict] = None) -> Optional[str]:
+    """The actions these goals need that ``actions`` lacks, joined with ', ' (each once, in goal order); None when none."""
+    missing = list(dict.fromkeys(a for g in goals for a in missing_actions(g, actions, table)))
+    return ", ".join(missing) if missing else None
 
 
 def canonical(goals: list) -> list:
@@ -96,14 +105,19 @@ def canonical(goals: list) -> list:
     return [{**g, "type": "on"} if g.get("type") == "give" else g for g in goals]
 
 
-def prompt_lines(kinds: Iterable[str]) -> str:
-    table = {**GOAL_KINDS, **OPTIONAL_KINDS}
+def prompt_lines(kinds: Iterable[str], table: Optional[dict] = None) -> str:
+    table = {**_table(table), **OPTIONAL_KINDS}
     lines = [table[k].prompt for k in kinds if k in table and table[k].prompt]
     return "".join(f"\n  {line}" for line in lines)
 
 
-def is_template(goals: list) -> bool:
-    return bool(goals) and all(g.get("type") in TEMPLATE_KINDS for g in goals)
+def _kind(table: Optional[dict], name) -> Optional[GoalKind]:
+    return _table(table).get(name) if isinstance(name, str) else None
+
+
+def is_template(goals: list, table: Optional[dict] = None) -> bool:
+    """Are all goals of kinds ``planned_by: template`` (a fixed sequence of steps, ``compile_steps``, no model)?"""
+    return bool(goals) and all(getattr(_kind(table, g.get("type")), "planned_by", None) == "template" for g in goals)
 
 
 def dedupe(goals: list) -> list:
@@ -119,15 +133,17 @@ def dedupe(goals: list) -> list:
     return out
 
 
-def conflicts(goals: list, name=None, declare: bool = False) -> tuple:
+def conflicts(goals: list, name=None, declare: bool = False, table: Optional[dict] = None) -> tuple:
     """(goals, question|None): the goal validator. Two destinations for one object is a question
     for the person; an open and a close of one container keep the last one (the final state). ``name``: how a
     place key is said (default: 'shelf@kitchen' -> 'shelf in the kitchen'). ``declare`` (option ``dialog_agree``): the question
     comes as a ``speech.LocalText`` with the same English text that declares a choice between the places (intent
-    ``choose_place``, the keys as options), so that the answer can settle the option not taken."""
+    ``choose_place``, the keys as options), so that the answer can settle the option not taken. A goal of a kind with
+    ``conflicts: none`` in ``table`` is not read (and is kept as it is)."""
     q, dest = None, {}
+    quiet = {k for k, v in _table(table).items() if v.conflicts == "none"}
     for g in goals:
-        if g.get("type") in ("on", "in") and g.get("object"):
+        if g.get("type") in ("on", "in") and g.get("type") not in quiet and g.get("object"):
             dest.setdefault(g["object"], [])
             if g.get("to") and g["to"] not in dest[g["object"]]:
                 dest[g["object"]].append(g["to"])
@@ -141,10 +157,10 @@ def conflicts(goals: list, name=None, declare: bool = False) -> tuple:
             break
     last = {}
     for k, g in enumerate(goals):
-        if g.get("type") in ("open", "close"):
+        if g.get("type") in ("open", "close") and g.get("type") not in quiet:
             last[g.get("object")] = k
     kept = [g for k, g in enumerate(goals)
-            if g.get("type") not in ("open", "close") or last.get(g.get("object")) == k]
+            if g.get("type") not in ("open", "close") or g.get("type") in quiet or last.get(g.get("object")) == k]
     return kept, q
 
 
@@ -171,27 +187,12 @@ def speaker_slots(goals: list) -> list:
     return out
 
 
-def subgoal_text(g: dict, places=None) -> str:
+def subgoal_text(g: dict, places=None, table: Optional[dict] = None) -> str:
     """One goal as the sub-goal phrase the planner expands (``AssistLoop._subgoals``, SAGE-v2 F1.2): what to do
-    with which object, from where (when known) to where, with the ENV keys the plan must use."""
-    t, o = g.get("type"), g.get("object") or ""
-    src = f" (it is at {g['from']})" if g.get("from") else (
-        f" (look for it at {' or '.join(g['from_any'])})" if g.get("from_any") else "")
-    if t == "on":
-        verb = "hand" if g.get("hand") else "put"
-        return f"{verb} the {o}{src} " + (f"to {g['to']}" if g.get("hand") else f"on {g.get('to')}")
-    if t == "in":
-        return f"put the {o}{src} into {g.get('to')}"
-    if t in ("open", "close"):
-        return f"{t} {o}"
-    if t == "go":
-        return f"go to {g.get('to')}"
-    if t == "say":
-        who = g.get("to") or g.get("person") or ""
-        return f"say \"{o}\"" + (f" at {who}" if who else "")
-    if t == "deliver":
-        return f"deliver the {o} to {g.get('to')}" if o else f"deliver what the robot carries to {g.get('to')}"
-    return describe(g)
+    with which object, from where (when known) to where, with the ENV keys the plan must use. The phrase is the kind's
+    ``subgoal`` template (``kind_table.render``); a kind with none, or no kind of the table, is said by ``describe``."""
+    kind = _kind(table, g.get("type"))
+    return kind_table.render(kind.subgoal, g) if kind is not None and kind.subgoal else describe(g)
 
 
 def describe(g: dict) -> str:
@@ -281,5 +282,5 @@ def _same_text(a, b) -> bool:
     return norm(a) == norm(b)
 
 
-__all__ = ["GoalKind", "GOAL_KINDS", "MANIPULATION", "TEMPLATE_KINDS", "missing_actions", "kinds_for",
-           "prompt_lines", "is_template", "dedupe", "conflicts", "SPEAKER_WORDS", "is_speaker", "speaker_slots", "describe", "goal_text", "subgoal_text", "summary", "compile_steps", "reached", "ends_at"]
+__all__ = ["GoalKind", "GOAL_KINDS", "MANIPULATION", "TEMPLATE_KINDS", "table_of", "missing_actions", "kinds_for",
+           "domain_actions", "lacking", "cannot_do", "prompt_lines", "is_template", "dedupe", "conflicts", "SPEAKER_WORDS", "is_speaker", "speaker_slots", "describe", "goal_text", "subgoal_text", "summary", "compile_steps", "reached", "ends_at"]
