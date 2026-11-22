@@ -67,6 +67,7 @@ from . import langdata
 from . import (action_roles, dialog_agree, dialog_converge, dialog_ext, dialog_unstick, exec_integrity, goal_filter, goal_fix, language, persons, plan_tidy,
                request_coverage, role_models, speech)
 from ..options import REGISTRY as _OPTIONS, Dispatcher
+from ..pack import goal_semantics
 from ..options.dispatch import NULL as _NO_OPTIONS
 from .option_services import LoopServices
 from . import reconcile as sensed
@@ -1245,108 +1246,30 @@ class AssistLoop(*PHASE_MIXINS, WhichOne, SearchHooks, StepLadder, ClosedLoop):
 
     _sage_edit = _repair_plan            # pre-v2 name
 
+    # ── goal-reach rules: asked of each goal kind's rules object in the robot's pack (core/pack/goal_semantics.py); these
+    # class attributes are the seams (tests and tools patch them), the household bodies are packs/household/callables/goals.py
     def _releases(self) -> set:
         """The robot's own actions that release the held object (RobotView.release_actions: a hand-over)."""
-        if not isinstance(self, AssistLoop):
-            return set()
-        robot = getattr(self, "robot", None)
-        try:
-            return set(robot.release_actions()) if robot is not None else set()
-        except Exception:
-            return set()
+        return goal_semantics.releases(self if isinstance(self, AssistLoop) else None)
 
-    def _simulate_goals(self, steps, world) -> tuple:  # self: the loop, or None (no release actions)
-        """(opened, on): what the steps leave open and where each object ends: on[obj] = (action, where);
-        a release action (hand-over) is ("release", the person / place the robot is at)."""
-        holding, opened, on, at = world.holding, set(world.opened), {}, world.arrived
-        rel = AssistLoop._releases(self) if self is not None else set()
-        for st in steps:
-            a, o = st.get("action"), st.get("object")
-            if a == "MoveTo":
-                at = o
-            elif a == "Pick":
-                holding = o
-            elif a in ("Place", "PutIn") and holding:
-                on[holding] = (a, o); holding = None
-            elif a in rel and holding:
-                on[holding] = ("release", o or at); holding = None
-            elif a == "Open":
-                opened.add(o)
-            elif a == "Close":
-                opened.discard(o)
-        return opened, on
+    def _simulate_goals(self, steps, world):  # self: the loop, or None (no release actions)
+        return goal_semantics.simulate(self, steps, world, AssistLoop._releases(self) if self is not None else set())
 
     def _on_reached(self, g, got) -> bool:
-        """Is the ``on`` goal ``g`` reached by ``got`` = (action, where)? A Place there; for a goal to a person
-        (F2.2) also the robot's hand-over there, and only the hand-over when the goal asks for the hand."""
-        if not got or got[1] != g.get("to"):
-            return False
-        places = getattr(self, "_env_places", None) if self is not None else None
-        to_person = places is not None and persons.is_person(places, g.get("to"))
-        if g.get("hand") and to_person:
-            return got[0] == "release"
-        return got[0] == "Place" or (got[0] == "release" and to_person)
+        return goal_semantics.reached_by(self, g, got)
 
     def _missing(self, steps, world, goals):
-        opened, on = self._simulate_goals(steps, world)
-        out = []
-        for g in goals:
-            t = g["type"]
-            if t == "on" and not self._on_reached(g, exec_integrity.lookup_object(on, g["object"])):
-                out.append(f"{'Hand over' if g.get('hand') else 'Place'} the {g['object']} "
-                           f"{'to' if g.get('hand') else 'on'} {g['to']}")
-            elif t == "in" and exec_integrity.lookup_object(on, g["object"]) != ("PutIn", g["to"]):
-                out.append(f"PutIn the {g['object']} into {g['to']}")
-            elif t == "open" and g["object"] not in opened:
-                out.append(f"Open {g['object']}")
-            elif t == "close" and g["object"] in opened:
-                out.append(f"Close {g['object']}")
-            elif t in goal_kinds.TEMPLATE_KINDS and not goal_kinds.reached(g, steps, world.arrived,
-                                                                           last=g is goals[-1]):
-                out.append(goal_kinds.summary(g))
-        return out
+        return goal_semantics.missing(self, steps, world, goals, goal_semantics.Seams(self._simulate_goals, self._on_reached))
 
     @staticmethod
     def _reaches(steps, world, goals, loop=None) -> bool:
         """Do ``steps`` from ``world`` reach ``goals``? With ``loop`` (bound calls pass it: ``self._reaches``
         is wrapped in ``__init__``) a hand-over to a person counts too (F2.2)."""
-        opened, on = AssistLoop._simulate_goals(loop, steps, world)
-        for g in goals:
-            t = g["type"]
-            if t == "on" and not AssistLoop._on_reached(loop, g, exec_integrity.lookup_object(on, g["object"])):
-                return False
-            if t == "in" and exec_integrity.lookup_object(on, g["object"]) != ("PutIn", g["to"]):
-                return False
-            if t == "open" and g["object"] not in opened:
-                return False
-            if t == "close" and g["object"] in opened:
-                return False
-            if t in goal_kinds.TEMPLATE_KINDS and not goal_kinds.reached(g, steps, world.arrived,
-                                                                         last=g is goals[-1]):
-                return False
-        return bool(goals) or bool(steps)
+        return goal_semantics.reaches(loop, steps, world, goals, goal_semantics.Seams(
+            lambda s, w: AssistLoop._simulate_goals(loop, s, w), lambda g, got: AssistLoop._on_reached(loop, g, got)))
 
     def _goals_hold(self, goals, world, placed, done=(), at=None) -> bool:
-        """Every goal holds in the belief: objects placed, containers open / closed, and the go / say /
-        deliver goals reached by the steps `done` from `at` (the run's start)."""
-        for g in goals:
-            t = g["type"]
-            if t == "go" and g is goals[-1]:
-                # the last go goal holds where the plan's steps end (not where it once passed, or started); the goal
-                # checks' own looks do not count (_observe_goals goes back there)
-                if not goal_kinds.reached(g, list(done), at, last=True) and world.arrived != g.get("to"):
-                    return False
-            elif t in goal_kinds.TEMPLATE_KINDS and not goal_kinds.reached(g, list(done), at):
-                return False
-            if t in ("on", "in") and (placed.get(g["object"]) != g["to"] or world.holding == g["object"]):
-                return False
-            if t == "on" and g.get("hand") and g["object"] not in getattr(self, "_handed", set()):
-                return False                                  # a hand delivery holds only after a hand-over
-            if t == "open" and g["object"] not in world.opened:
-                return False
-            if t == "close" and g["object"] in world.opened:
-                return False
-        return True
+        return goal_semantics.holds(self, goals, goal_semantics.Belief(world, placed, done, at))
 
     # ── execution helpers ─────────────────────────────────────────────────
     def _bind(self, st, world):
