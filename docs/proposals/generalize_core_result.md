@@ -127,6 +127,6 @@ deleted yet. Steps, in order:
 Cannot be deleted by level B: G7 (the pack's own model call), G11 (fleet never reassigns a started goal), G12 (run cancelled when
 its socket closes), G13 (cancel reaches no sim skill), S1 (string "0" option), S2, S5 to S8 (not vocabulary).
 
-## Tom tat de hieu
+## Plain summary
 
-Lan chay nay dung o dot dau tien (W0): chua gop buoc tai cau truc nao, nen ma san xuat cua robot_agent khong doi, assist_loop.py van 4081 dong. Cac bai kiem tra ghi lai (golden) va thiet ke da xong, bo test xanh (3075 dat) va lint khong co loi moi. Khong co gi can tat vi chua them hanh vi nao; Vong C (robot PEX) chua the bat dau cho den khi cac buoc W0-W10 duoc chay, va chu so huu can quyet dinh cach sua cong kiem tra "khong sua test cu" truoc.
+The run stopped in the first wave (W0): no restructuring step was merged, so the production code of robot_agent is unchanged and assist_loop.py is still 4081 lines. The recorded golden checks and the design are done, the suite is green and the lint has no new finding. Nothing needs switching off because no behaviour was added. Round C (the PEX robot) cannot start before waves W0 to W10 have run, and the "no existing test modified" gate must be fixed first.
