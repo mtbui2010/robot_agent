@@ -1,0 +1,29 @@
+# The constants of the standard (household) pack. Step S10 moves CORE_TEXT of core/planning/robot.py here, character for
+# character: what the engine says when the robot's own i18n has no phrase for a key (English, {placeholders}).
+# Entry name = `core_text.<old key>`; read by core/pack/constants.py (core_text). tests/test_pack_actions.py compares the table with
+# a verbatim copy of the old constant.
+constants:
+  core_text.verify_failed:
+    value: "{skill} reported success but the {sensor} check says otherwise"
+    source: &src "robot_agent/core/planning/robot.py:21-34 (CORE_TEXT) at 8002347"
+  core_text.verify_unknown:
+    value: "unknown: {skill} declares no sensor that checks it"
+    source: *src
+  core_text.sensor_unknown:
+    value: "unknown: the {sensor} check could not run ({why})"
+    source: *src
+  core_text.robot_description:
+    value: "The robot can: {abilities}."
+    source: *src
+  core_text.cannot_do:                  # a goal kind needs an action the robot has no skill for (the robot's i18n `cannot_do` wins)
+    value: "I can't do that: I have no {missing} skill."
+    source: *src
+  core_text.delivery:                   # what a delivering robot says when it arrives (deliver goals)
+    value: "I have a delivery for you. Please take it."
+    source: *src
+  core_text.llm_budget:                 # the run used its LLM-call budget (budget.budget_end)
+    value: "I have to stop: I could not work this task out within my limit of tries."
+    source: *src
+  core_text.yes_or_no:                  # an unclear answer to a yes / no question ("yet", noise) is asked again with this (interact.dialog)
+    value: "Sorry, I didn't catch that. Please answer yes or no."
+    source: *src

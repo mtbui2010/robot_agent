@@ -26,8 +26,9 @@ from .types import Geometry, Messages, Observation, SkillSpec
 # package used before the planner was renamed SAGE: such a package still loads)
 NAMEMAP_MODULES = ("sage_namemap", "grace_namemap")
 
-# same split as ActionMapper: these name a place, the rest an object
-_LOCATION_ACTIONS = {"MoveTo", "Place", "PutIn"}
+# same split as ActionMapper: these name a place, the rest an object. The engine passes the set its pack declares
+# (``location_actions``); this is the answer for a caller that passes none (a direct ``NamemapAdapter(...)``)
+_LOCATION_ACTIONS = frozenset({"MoveTo", "Place", "PutIn"})
 
 
 def _step_get(step, key: str) -> str:
@@ -40,10 +41,11 @@ class NamemapAdapter:
     manifest. Without a manifest one is synthesised from ``SKILL_MAP`` so
     ``adapter.manifest`` is always there."""
 
-    def __init__(self, module, manifest: Optional[Manifest] = None):
+    def __init__(self, module, manifest: Optional[Manifest] = None, location_actions=None):
         if isinstance(module, str):
             module = importlib.import_module(module)
         self.namemap: ModuleType = module
+        self.location_actions = frozenset(location_actions) if location_actions is not None else _LOCATION_ACTIONS
         self.manifest: Manifest = manifest if manifest is not None else self._manifest_from_namemap(module)
         self.geometry: Geometry = Geometry.from_dict(self.manifest.geometry)
         self.i18n: Messages = Messages(language=self.manifest.language or "en",
@@ -107,7 +109,7 @@ class NamemapAdapter:
             raise Unbindable(f"action {action!r} requires an object")
 
         nm = self.namemap
-        to = getattr(nm, "to_loc" if action in _LOCATION_ACTIONS else "to_obj", None)
+        to = getattr(nm, "to_loc" if action in self.location_actions else "to_obj", None)
         params = {"inputs": to(obj) if callable(to) else obj}
         if hasattr(nm, "build_params"):
             try:
@@ -224,10 +226,11 @@ def _from_adapter_module(mod) -> RobotAdapter:
     raise ImportError(f"{mod.__name__} defines none of ADAPTER / make_adapter() / get_adapter() / Adapter")
 
 
-def load_adapter(robot_pkg: str) -> RobotAdapter:
+def load_adapter(robot_pkg: str, location_actions=None) -> RobotAdapter:
     """The robot's adapter: ``<pkg>.configs.adapter`` if present, else
     ``configs/manifest.yaml`` (when there is one) wrapped around
-    ``<pkg>.configs.sage_namemap`` (:func:`namemap_module_name`)."""
+    ``<pkg>.configs.sage_namemap`` (:func:`namemap_module_name`). ``location_actions``: the actions whose argument names a
+    place, for the namemap adapter (None: its own default)."""
     if _has_module(f"{robot_pkg}.configs.adapter"):
         return _from_adapter_module(importlib.import_module(f"{robot_pkg}.configs.adapter"))
     manifest = None
@@ -237,4 +240,4 @@ def load_adapter(robot_pkg: str) -> RobotAdapter:
     name = namemap_module_name(robot_pkg)
     if name is None:
         raise ImportError(f"{robot_pkg}: no configs/adapter.py and no configs/{NAMEMAP_MODULES[0]}.py")
-    return NamemapAdapter(importlib.import_module(name), manifest)
+    return NamemapAdapter(importlib.import_module(name), manifest, location_actions)

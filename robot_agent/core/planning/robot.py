@@ -15,34 +15,16 @@ from typing import Any, Optional
 
 from robot_agent.contract import (FailureCode, Geometry, Messages, SkillResult, SkillSpec, Unbindable,
                                   VerifySpec, classify_legacy_failure, load_adapter, policy_for)
+from ..pack import actions as action_data, constants as constant_data
 from . import action_model, concrete
 
-# what the core says when the robot's i18n has no phrase for a key (English, {placeholders})
-CORE_TEXT = {
-    "verify_failed": "{skill} reported success but the {sensor} check says otherwise",
-    "verify_unknown": "unknown: {skill} declares no sensor that checks it",
-    "sensor_unknown": "unknown: the {sensor} check could not run ({why})",
-    "robot_description": "The robot can: {abilities}.",
-    # a goal kind needs an action the robot has no skill for (the robot's i18n `cannot_do` wins)
-    "cannot_do": "I can't do that: I have no {missing} skill.",
-    # what a delivering robot says when it arrives (deliver goals)
-    "delivery": "I have a delivery for you. Please take it.",
-    # the run used its LLM-call budget (budget.budget_end)
-    "llm_budget": "I have to stop: I could not work this task out within my limit of tries.",
-    # an unclear answer to a yes / no question ("yet", noise) is asked again with this (interact.dialog)
-    "yes_or_no": "Sorry, I didn't catch that. Please answer yes or no.",
-}
-
-# manifest actions that are not plan steps: sensors (Observe / Verify), the dialog (Ask, the core's
-# own) and queries to another model (Query)
-NOT_PLAN_STEPS = {"Observe", "Verify", "Ask", "Query"}
-
-# abstract action -> how the task-understanding prompt describes it (robots override the
-# whole sentence with the i18n key "robot_description")
-_ABILITY = {"MoveTo": "move to a place", "Find": "find an object", "Pick": "pick it up",
-            "Place": "place it on a surface", "Open": "open / close a container",
-            "PutIn": "put an object in an open container", "Say": "say something to someone",
-            "WaitForUnload": "carry an item to someone, who takes it"}
+# what the core says when the robot's i18n has no phrase for a key (English, {placeholders}); declared data of the standard
+# pack (constants.yaml). NOT_PLAN_STEPS: manifest actions that are not plan steps (sensors, the dialog, queries to another
+# model) and _ABILITY: how the task-understanding prompt describes an abstract action (robots override the whole sentence
+# with the i18n key "robot_description") are read from its actions.yaml.
+CORE_TEXT = constant_data.texts(constant_data.default_table(), "core_text.")
+NOT_PLAN_STEPS = set(action_data.names(action_data.default_table(), plan_step=False))
+_ABILITY = action_data.words(action_data.default_table(), "ability")
 
 
 class RobotView:
@@ -60,7 +42,8 @@ class RobotView:
 
     @classmethod
     def load(cls, robot_pkg: str) -> "RobotView":
-        return cls(load_adapter(robot_pkg))
+        place_args = action_data.names(action_data.default_table(), cls=("move", "release"))      # pack: actions.yaml
+        return cls(load_adapter(robot_pkg, location_actions=place_args))
 
     # ── the pack: vocabulary and rules as declared data (robot_agent/core/pack) ──
     @property
