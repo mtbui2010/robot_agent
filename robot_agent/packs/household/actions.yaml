@@ -1,0 +1,96 @@
+# The actions of the standard (household) pack (section `actions`), Step S10: what the engine reads about each abstract action, taken
+# out of five copies of "which actions name a place", out of the prompt tables and out of the progress verbs. Values are the old
+# constants of robot_agent c04e6ee, character for character (tests/test_pack_actions.py; the old values are copied verbatim in
+# tests/legacy_ref/s10_action_tables.py).
+# class   what the engine's own code needs to know about the action: move, look, grasp, release, open, close, speak, wait, sense.
+# arg     the main argument: `name` is the word of the argument in a prompt line (`MoveTo <place>`), `type` what it is.
+# plan_step: false  the action is not a step of a plan (a sensor, the dialog, a query to another model).
+# releases: true    the action puts the held object down.
+# verb    the word of the progress line ("I will place the cup"); ability: the phrase of the understand prompt's description of
+#         the robot; describe: the phrase of the planner prompt's line for the action. English only, like the phrases section.
+# The ORDER of the entries is the order of the old `_ABILITY` (the understand prompt lists the abilities in it). The prompt order of
+# the planner (`robot_prompt.ORDER`) is another order and stays in code for now.
+# The engine's call sites each keep THEIR OWN set (core/pack/actions.py USES): no set is unified, so a call site that wants the
+# three names MoveTo, Place, PutIn (class move or release) does not get Open, Close, Find or Pick.
+actions:
+  MoveTo:
+    class: move
+    arg: {name: place, type: place}
+    verb: "move to"
+    ability: "move to a place"
+    describe: "move to a place"
+    source: "robot_agent/core/planning/robot.py:42-45, robot_prompt.py:27, announcer.py:28 and :33 at c04e6ee; assist_loop.py:83, reconcile.py:31, mapper.py:45, search.py:31-33"
+  Find:
+    class: look
+    arg: {name: object, type: object}
+    verb: "find"
+    ability: "find an object"
+    describe: "look for an object where the robot is"
+    source: "robot_agent/core/planning/robot.py:42-45, robot_prompt.py:28, announcer.py:29 at c04e6ee; reconcile.py:31"
+  Pick:
+    class: grasp
+    arg: {name: object, type: object}
+    verb: "pick"
+    ability: "pick it up"
+    describe: "pick up the found object"
+    source: "robot_agent/core/planning/robot.py:42-45, robot_prompt.py:29, announcer.py:30 at c04e6ee; reconcile.py:31"
+  Place:
+    class: release
+    arg: {name: place, type: place}
+    releases: true
+    verb: "place"
+    ability: "place it on a surface"
+    describe: "put the held object on a place the robot is at"
+    source: "robot_agent/core/planning/robot.py:42-45, robot_prompt.py:30, announcer.py:31, plan_repair.py:52 at c04e6ee; assist_loop.py:83, reconcile.py:31, mapper.py:45, search.py:33"
+  Open:
+    class: open
+    arg: {name: container, type: container}
+    verb: "open"
+    ability: "open / close a container"
+    describe: "open a container the robot is at"
+    source: "robot_agent/core/planning/robot.py:42-45, robot_prompt.py:32, announcer.py:32 at c04e6ee; assist_loop.py:83, reconcile.py:31, search.py:31-33"
+  PutIn:
+    class: release
+    arg: {name: container, type: container}
+    releases: true
+    verb: "place"
+    ability: "put an object in an open container"
+    describe: "put the held object into an open container the robot is at"
+    source: "robot_agent/core/planning/robot.py:42-45, robot_prompt.py:31, announcer.py:31, plan_repair.py:52 at c04e6ee; assist_loop.py:83, reconcile.py:31, mapper.py:45, search.py:33"
+  Say:
+    class: speak
+    arg: {name: text, type: text}
+    ability: "say something to someone"
+    describe: "say a sentence to the person"
+    source: "robot_agent/core/planning/robot.py:42-45, robot_prompt.py:34 at c04e6ee"
+  WaitForUnload:
+    arg: {name: item, type: object}
+    ability: "carry an item to someone, who takes it"
+    describe: "wait until a person takes the carried item"
+    source: "robot_agent/core/planning/robot.py:42-45, robot_prompt.py:35 at c04e6ee"
+  Close:
+    class: close
+    arg: {name: container, type: container}
+    verb: "close"
+    describe: "close a container the robot is at"
+    source: "robot_agent/core/planning/robot_prompt.py:33, announcer.py:32 at c04e6ee; assist_loop.py:83, reconcile.py:31, search.py:31-33"
+  Dock:
+    arg: {name: dock, type: none}
+    describe: "drive onto the charging dock"
+    source: "robot_agent/core/planning/robot_prompt.py:36 at c04e6ee"
+  Ask:
+    class: speak
+    plan_step: false
+    source: "robot_agent/core/planning/robot.py:38 at c04e6ee (NOT_PLAN_STEPS: the dialog, the core's own)"
+  Observe:
+    class: sense
+    plan_step: false
+    source: "robot_agent/core/planning/robot.py:38 at c04e6ee (NOT_PLAN_STEPS: a sensor)"
+  Verify:
+    class: sense
+    plan_step: false
+    source: "robot_agent/core/planning/robot.py:38 at c04e6ee (NOT_PLAN_STEPS: a sensor)"
+  Query:
+    class: sense
+    plan_step: false
+    source: "robot_agent/core/planning/robot.py:38 at c04e6ee (NOT_PLAN_STEPS: a query to another model)"

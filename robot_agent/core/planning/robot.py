@@ -15,34 +15,20 @@ from typing import Any, Optional
 
 from robot_agent.contract import (FailureCode, Geometry, Messages, SkillResult, SkillSpec, Unbindable,
                                   VerifySpec, classify_legacy_failure, load_adapter, policy_for)
+from ..pack import actions as action_data
 from . import action_model, concrete
 
-# what the core says when the robot's i18n has no phrase for a key (English, {placeholders})
-CORE_TEXT = {
-    "verify_failed": "{skill} reported success but the {sensor} check says otherwise",
-    "verify_unknown": "unknown: {skill} declares no sensor that checks it",
-    "sensor_unknown": "unknown: the {sensor} check could not run ({why})",
-    "robot_description": "The robot can: {abilities}.",
-    # a goal kind needs an action the robot has no skill for (the robot's i18n `cannot_do` wins)
-    "cannot_do": "I can't do that: I have no {missing} skill.",
-    # what a delivering robot says when it arrives (deliver goals)
-    "delivery": "I have a delivery for you. Please take it.",
-    # the run used its LLM-call budget (budget.budget_end)
-    "llm_budget": "I have to stop: I could not work this task out within my limit of tries.",
-    # an unclear answer to a yes / no question ("yet", noise) is asked again with this (interact.dialog)
-    "yes_or_no": "Sorry, I didn't catch that. Please answer yes or no.",
-}
+# what the core says when the robot's i18n has no phrase for a key (English, {placeholders}): the pack's `core_text` constants
+# (keys: verify_failed, verify_unknown, sensor_unknown, robot_description, cannot_do, delivery, llm_budget, yes_or_no)
+CORE_TEXT = dict(action_data.core_text())
 
 # manifest actions that are not plan steps: sensors (Observe / Verify), the dialog (Ask, the core's
-# own) and queries to another model (Query)
-NOT_PLAN_STEPS = {"Observe", "Verify", "Ask", "Query"}
+# own) and queries to another model (Query): `plan_step: false` in the pack's `actions` section
+NOT_PLAN_STEPS = set(action_data.not_plan_steps())
 
 # abstract action -> how the task-understanding prompt describes it (robots override the
-# whole sentence with the i18n key "robot_description")
-_ABILITY = {"MoveTo": "move to a place", "Find": "find an object", "Pick": "pick it up",
-            "Place": "place it on a surface", "Open": "open / close a container",
-            "PutIn": "put an object in an open container", "Say": "say something to someone",
-            "WaitForUnload": "carry an item to someone, who takes it"}
+# whole sentence with the i18n key "robot_description"): the `ability` of the pack's `actions` section
+_ABILITY = action_data.abilities()
 
 
 class RobotView:

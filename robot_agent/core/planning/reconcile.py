@@ -23,12 +23,13 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
+from ..pack import actions as action_data
 from .sensor_health import pose_problem
 
 SENSOR, BELIEF, OPERATOR, UNKNOWN = "sensor", "belief", "operator", "unknown"
 
 # steps whose precondition is where the robot stands (the per-step guard checks a non-sensor arrived)
-AT_PLACE_ACTIONS = frozenset({"Find", "Pick", "Place", "PutIn", "Open", "Close"})
+AT_PLACE_ACTIONS = action_data.used_for("at_place")
 
 
 @dataclass

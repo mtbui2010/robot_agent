@@ -36,13 +36,14 @@ from __future__ import annotations
 
 from typing import Optional
 
+from ..pack import actions as action_data
 from . import action_model, concrete
 from .base import WorldState
 
 # SAGE param fields that name a location (vs. an object) for param building.
 # MoveTo / Place / PutIn target a place-like receptacle (uses ``to_loc``);
 # Find / Pick target a graspable object (uses ``to_obj``).
-_LOCATION_ACTIONS = {"MoveTo", "Place", "PutIn"}
+_LOCATION_ACTIONS = action_data.used_for("to_loc")
 _OBJECT_ACTIONS = {"Find", "Pick", "Open", "Close", "TurnOn", "TurnOff", "Wash"}
 
 

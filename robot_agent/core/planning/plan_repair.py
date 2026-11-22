@@ -47,9 +47,10 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
+from ..pack import actions as action_data
 from . import action_model
 
-RELEASES = ("Place", "PutIn")
+RELEASES = action_data.releasing()
 OPS = ("hoist", "dedupe", "insert", "room", "putin", "fetch", "action", "say", "unclose", "complete", "finish",
        "recipient", "unopenable")
 

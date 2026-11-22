@@ -1,0 +1,27 @@
+# The standard pack's constants (section `constants`), Step S10: the default words of the engine's run events, moved from
+# CORE_TEXT of core/planning/robot.py (robot_agent c04e6ee), character for character (tests/test_pack_actions.py; the old text is
+# copied verbatim in tests/legacy_ref/s10_action_tables.py). The ninth text of that table, `llm_budget`, is the single text
+# `text.llm_budget` of the core pack's phrases and is read from there (core/pack/actions.py core_text), not declared twice.
+# `core_text.<key>` is what the engine says when the robot's own i18n has no phrase for <key>; {placeholders} are filled by the caller.
+constants:
+  core_text.verify_failed:
+    value: "{skill} reported success but the {sensor} check says otherwise"
+    source: "robot_agent/core/planning/robot.py:22 at c04e6ee"
+  core_text.verify_unknown:
+    value: "unknown: {skill} declares no sensor that checks it"
+    source: "robot_agent/core/planning/robot.py:23 at c04e6ee"
+  core_text.sensor_unknown:
+    value: "unknown: the {sensor} check could not run ({why})"
+    source: "robot_agent/core/planning/robot.py:24 at c04e6ee"
+  core_text.robot_description:
+    value: "The robot can: {abilities}."
+    source: "robot_agent/core/planning/robot.py:25 at c04e6ee"
+  core_text.cannot_do:
+    value: "I can't do that: I have no {missing} skill."
+    source: "robot_agent/core/planning/robot.py:27 at c04e6ee (a goal kind needs an action the robot has no skill for; the robot's i18n `cannot_do` wins)"
+  core_text.delivery:
+    value: "I have a delivery for you. Please take it."
+    source: "robot_agent/core/planning/robot.py:29 at c04e6ee (what a delivering robot says when it arrives)"
+  core_text.yes_or_no:
+    value: "Sorry, I didn't catch that. Please answer yes or no."
+    source: "robot_agent/core/planning/robot.py:33 at c04e6ee (an unclear answer to a yes / no question is asked again with this)"

@@ -67,7 +67,7 @@ from . import langdata
 from . import (action_roles, dialog_agree, dialog_converge, dialog_ext, dialog_unstick, exec_integrity, goal_filter, goal_fix, language, persons, plan_tidy,
                request_coverage, role_models, speech)
 from ..options import REGISTRY as _OPTIONS, Dispatcher
-from ..pack import goal_semantics
+from ..pack import actions as action_data, goal_semantics
 from ..options.dispatch import NULL as _NO_OPTIONS
 from .option_services import LoopServices
 from . import reconcile as sensed
@@ -80,7 +80,7 @@ from .understand import (LLMBadOutput, LLMBudget, LLMBudgetExceeded, LLMUnavaila
                          describe, find_issues, vacuous_goal_issues, issue_question, misheard_question, sampling, typed_refusal, verb_lost,
                          without_places, signature)
 
-_LOC_ACTIONS = {"MoveTo", "Place", "PutIn", "Open", "Close"}
+_LOC_ACTIONS = action_data.used_for("place_arg")
 # per-run overrides accepted from /ws/agent `options`
 ASSIST_OPTIONS = {"confirm_task", "confirm_answers", "silence_retries", "clarify_rounds", "search_max",
                 "pick_retries", "ask_help", "arrive_tol", "find_min_conf", "find_verify", "reach_far", "reach_lateral",

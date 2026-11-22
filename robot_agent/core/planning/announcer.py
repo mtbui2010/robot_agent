@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import threading
 
+from ..pack import actions as action_data
+
 
 # Map run language -> gTTS voice code (a two-letter code is used as is).
 _GTTS_CODE = {'en': 'en'}
@@ -22,20 +24,18 @@ _GTTS_CODE = {'en': 'en'}
 # Per-action localized verbs (resolved into {verb} when ctx carries 'action').
 # Keys cover both SAGE actions (CamelCase) and the skill names used by the
 # direct/structured path (lowercase, e.g. ``find::apple``).
+# The verb of each action is the pack's (the standard pack's `actions` section); the names below are other names of the same
+# actions (alias -> action).
+_ACTION_VERBS = action_data.verbs()
+_VERB_ALIASES = {
+    'GoTo': 'MoveTo', 'Navigate': 'MoveTo', 'Search': 'Find', 'Detect': 'Find', 'PickUp': 'Pick', 'Grasp': 'Pick',
+    'PlaceAt': 'Place', 'PutDown': 'Place',
+    # direct-path skills
+    'navigate': 'MoveTo', 'move': 'MoveTo', 'moveto': 'MoveTo', 'find': 'Find', 'detect': 'Find', 'detect_object': 'Find',
+    'pick': 'Pick', 'grasp': 'Pick', 'place': 'Place', 'put': 'Place', 'open': 'Open', 'close': 'Close',
+}
 VERBS: dict[str, dict[str, str]] = {
-    'en': {
-        'MoveTo': 'move to', 'GoTo': 'move to', 'Navigate': 'move to',
-        'Find': 'find', 'Search': 'find', 'Detect': 'find',
-        'Pick': 'pick', 'PickUp': 'pick', 'Grasp': 'pick',
-        'Place': 'place', 'PlaceAt': 'place', 'PutDown': 'place', 'PutIn': 'place',
-        'Open': 'open', 'Close': 'close',
-        # direct-path skills
-        'navigate': 'move to', 'move': 'move to', 'moveto': 'move to',
-        'find': 'find', 'detect': 'find', 'detect_object': 'find',
-        'pick': 'pick', 'grasp': 'pick',
-        'place': 'place', 'put': 'place',
-        'open': 'open', 'close': 'close',
-    },
+    'en': {**_ACTION_VERBS, **{alias: _ACTION_VERBS[action] for alias, action in _VERB_ALIASES.items()}},
 }
 
 # Localized templates keyed by [lang][kind]. step_* use {verb} and {object}.
