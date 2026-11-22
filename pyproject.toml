@@ -87,6 +87,8 @@ include = ["robot_agent*"]
 
 [tool.setuptools.package-data]
 "robot_agent.core.planning" = ["lang/*.json"]
+# the shipped packs are data: the index, one pack.yaml and one <section>.yaml per section, and long prompt texts
+"robot_agent.packs" = ["*.yaml", "**/*.yaml", "**/prompts/*.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

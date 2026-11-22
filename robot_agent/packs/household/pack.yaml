@@ -1,0 +1,10 @@
+# The standard (household) pack: today's household behaviour, taken out of the core and given names. Nothing in it is new.
+# The header only. Each section is its own file next to this one (<section>.yaml: goal_kinds, predicates, actions, verifiers,
+# recovery, questions, phrases, trees, constants, options, fleet); the step that moves a table out of the code adds its file.
+pack:
+  schema: 2
+  name: std
+  version: "1.0"
+  extends: null                       # only the core pack below it
+  callables: robot_agent.packs.household.callables
+  source: "robot_agent 8002347: the constants of core/planning, options/bt_goal.py and contract/recovery.py, moved as data"

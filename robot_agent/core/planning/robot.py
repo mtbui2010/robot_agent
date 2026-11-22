@@ -55,10 +55,30 @@ class RobotView:
         self.i18n: Messages = getattr(adapter, "i18n", None) or Messages(language=self.manifest.language or "en")
         self.policy = policy_for(adapter)
         self.registry: Any = None               # the skill registry (loops set it): plan skills, aliases
+        if getattr(self.manifest, "pack", None):    # a declared pack (schema 2) is resolved now: a wrong one stops the load
+            self.use_pack(self.manifest.pack)
 
     @classmethod
     def load(cls, robot_pkg: str) -> "RobotView":
         return cls(load_adapter(robot_pkg))
+
+    # ── the pack: vocabulary and rules as declared data (robot_agent/core/pack) ──
+    @property
+    def pack(self):
+        """The resolved pack of this robot (``core/pack/loader.resolve``), kept once resolved: on first use for a manifest
+        with no ``pack:`` section (schema 1: the standard pack), at construction for one that declares a pack. A reader
+        takes it from here at the time it needs it and keeps no copy (``use_pack`` may replace it)."""
+        if self.__dict__.get("_pack") is None:
+            from ..pack import resolve
+            self._pack = resolve(self.manifest, self.adapter)
+        return self._pack
+
+    def use_pack(self, raw):
+        """Use ``raw`` (a ``pack:`` section as in a manifest; None = none, schema 1) as this robot's pack declaration from
+        now on, in place of the manifest's. Returns the resolved pack; raises ``PackError`` when ``raw`` is wrong."""
+        from ..pack import resolve
+        self._pack = resolve(self.manifest, self.adapter, raw=raw)
+        return self._pack
 
     # ── vocabulary ──────────────────────────────────────────────────────
     @property

@@ -35,9 +35,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from .pack import PRED_RE, PackError
 from .types import VERIFY_KINDS, FailureCode, Geometry, SkillSpec, VerifySpec
 
-_TOP_KEYS = {"robot", "version", "language", "languages", "capabilities", "geometry", "planner", "skills", "limits", "safety"}
+_TOP_KEYS = {"robot", "version", "language", "languages", "capabilities", "geometry", "planner", "skills", "limits", "safety", "pack"}
 # keys of the optional `planner:` section (planner data the robot ships; docs/env.md):
 #   seed_memory, notes; llm_budget (the run's cap on core LLM calls), translate_model / translate_url (the model
 #   that translates what the robot says into the user's language, default the planner's), translate_budget (its
@@ -107,7 +108,7 @@ NOTE_MAX_CHARS = 300
 _SKILL_KEYS = {"name", "action", "params", "pre", "hold", "effects", "verify", "interruptible", "errors", "version"}
 _ACTION_RE = re.compile(r"[A-Z][A-Za-z0-9]*$")
 # at(?obj) / holding(none) / not opened(?c) / !free(table) / hand_empty() / hand_empty / not found(*)
-_PRED_RE = re.compile(r"(not\s+|!)?[A-Za-z_]\w*(\s*\([^()]*\))?$")
+_PRED_RE = PRED_RE                     # one spelling of a predicate for the skills and for a pack (contract/pack.py)
 # numeric geometry fields (metres); any other geometry key is free-form robot data
 _GEOM_NUMERIC = {"arrive_tol_m", "reach_m", "reach_far_m"}
 # extension key: further abstract actions a skill also realises (PutIn on place)
@@ -170,6 +171,8 @@ class Manifest:
     safety_profile: object = field(default=None, compare=False, repr=False)
     extra: dict = field(default_factory=dict)
     source: Optional[str] = None                      # file it was read from
+    # the optional ``pack:`` section as written (contract/pack.py: the robot's vocabulary and rules as data); {} = schema 1
+    pack: dict = field(default_factory=dict)
 
     # ── loading ──────────────────────────────────────────────────────────
     @classmethod
@@ -221,6 +224,7 @@ class Manifest:
         planner = _planner(d.get("planner"), errs)
         limits = _limits(d.get("limits"), errs)
         safety, safety_profile = _safety(d.get("safety"), errs, Path(source).parent if source else None)
+        pack = _pack(d.get("pack"), errs, Path(source).parent if source else None)
 
         raw_skills = d.get("skills")
         if raw_skills is None:
@@ -242,7 +246,7 @@ class Manifest:
             raise ManifestError(errs, source)
         return cls(robot=robot.strip(), version=version, capabilities=dict(caps), language=language.strip(), languages=languages, language_declared=declared,
                    geometry=dict(geom), skills=skills, planner=planner, limits=limits, safety=safety, safety_profile=safety_profile,
-                   extra={k: v for k, v in d.items() if k not in _TOP_KEYS}, source=source)
+                   extra={k: v for k, v in d.items() if k not in _TOP_KEYS}, source=source, pack=pack)
 
     def to_dict(self) -> dict:
         d = {"robot": self.robot, "version": self.version, "language": self.language,
@@ -255,6 +259,8 @@ class Manifest:
             d["limits"] = dict(self.limits)
         if self.safety:
             d["safety"] = dict(self.safety)
+        if self.pack:
+            d["pack"] = dict(self.pack)
         d.update(self.extra)
         return d
 
@@ -539,6 +545,19 @@ def _safety(v, errs, base=None) -> tuple:
         prof, perrs = load(v["profile"], base, "safety.profile")
         errs.extend(perrs)
     return dict(v), prof
+
+
+def _pack(v, errs, base=None) -> dict:
+    """The ``pack:`` section as written, after its schema was checked (``contract.pack``; the files it names are read relative
+    to the manifest); errors name the field path. {} when the manifest has none: schema 1, the engine's standard pack."""
+    if v is None:
+        return {}
+    from .pack_files import read
+    try:
+        read(v, base)
+    except PackError as e:
+        errs.extend(e.errors)
+    return dict(v) if isinstance(v, dict) else {}
 
 
 def _check_caps(caps: dict, errs: list) -> None:
