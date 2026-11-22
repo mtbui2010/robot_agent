@@ -1,0 +1,27 @@
+# The goal kinds of the standard (household) pack. Step S05 gives each kind its rules object only (reached / holds / missing:
+# robot_agent/packs/household/callables/goals.py); Step S07 adds needs, prompt, understood, planned_by and conflicts.
+# The order is the order of core/planning/goals.py GOAL_KINDS (on, in, open, close, go, say, deliver). `give` is not a kind
+# here: it is the optional kind of goals.py OPTIONAL_KINDS, mapped to `on` before any rule reads it.
+# "on" and "in" are quoted: YAML 1.1 reads a bare `on` as true.
+goal_kinds:
+  "on":
+    rules: std.on
+    source: "robot_agent/core/planning/assist_loop.py:1279-1349 at 2d57c99 (_on_reached and the on branches of _missing, _reaches, _goals_hold)"
+  "in":
+    rules: std.in
+    source: "robot_agent/core/planning/assist_loop.py:1290-1349 at 2d57c99 (the in branches of _missing, _reaches, _goals_hold)"
+  open:
+    rules: std.open
+    source: "robot_agent/core/planning/assist_loop.py:1290-1349 at 2d57c99 (the open branches of _missing, _reaches, _goals_hold)"
+  close:
+    rules: std.close
+    source: "robot_agent/core/planning/assist_loop.py:1290-1349 at 2d57c99 (the close branches of _missing, _reaches, _goals_hold)"
+  go:
+    rules: std.go
+    source: "robot_agent/core/planning/goals.py:47 TEMPLATE_KINDS and the template branches of assist_loop.py:1290-1349 at 2d57c99"
+  say:
+    rules: std.say
+    source: "robot_agent/core/planning/goals.py:47 TEMPLATE_KINDS and the template branches of assist_loop.py:1290-1349 at 2d57c99"
+  deliver:
+    rules: std.deliver
+    source: "robot_agent/core/planning/goals.py:47 TEMPLATE_KINDS and the template branches of assist_loop.py:1290-1349 at 2d57c99"
