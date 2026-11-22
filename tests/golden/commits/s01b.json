@@ -1,0 +1,7 @@
+{
+ "about": "Step S01b (final review of S01, 2026-11-23, fix round 1): the commits the set cassettes of tests/golden/scenario_sets/s01b_*.py were recorded on (subgoals_in_on_go, subgoals_close_replan: the sub-goal list a planner that takes `subgoals` gets). Old code: no production commit of round B.",
+ "kind": "equivalence",
+ "old_code": "65124d0",
+ "commits": ["99eab47"],
+ "notes": {"99eab47": "generalize-core: 65124d0 plus tests, tools and docs only (S01 goldens, the harness split, the pin tests); robot_agent/ identical"}
+}

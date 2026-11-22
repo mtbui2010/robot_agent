@@ -28,7 +28,8 @@
   WaitForUnload, Inspect, Fasten; `fakeline.cart` has no arm). Opt-in scenario keys: `capture` (`planner_io`, `llm_kw`,
   `prompts`, `reconcile`, `trace`: extra sections of a NEW cassette, `FORMAT` stays 1), `environ` (ROBOT_AGENT_* variables;
   every ROBOT_AGENT_* variable is cleared before every run of a set), `pack` (Step S02's `RobotView.use_pack`), `pause_after`; robot
-  keys `skills` (scripted results of skills the FakeRobot lacks), `answers_in_order`, `drops`. A new cassette carries the
+  keys `skills` (scripted results of skills the FakeRobot lacks), `answers_in_order`, `drops`; planner key `takes_subgoals` (the
+  planner takes `subgoals`, each call records the list). A new cassette carries the
   `commit` it was recorded on (refused with uncommitted `robot_agent/` changes); each step lists its commits in its own
   `tests/golden/commits/<step>.json` (kind `equivalence`: same `robot_agent/` tree as its `old_code`; kind `feature`: recorded
   after a production commit of the step, no tree check) and `tests/golden/test_golden_order.py` checks them; a later step adds
