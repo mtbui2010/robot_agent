@@ -1,0 +1,480 @@
+{
+ "format": 1,
+ "name": "s31_question_default_kind",
+ "tags": [
+  "question",
+  "failure"
+ ],
+ "about": "two destinations for one object with questions_default_kind set: both questions (the validator's and the read-back's issue, neither has a kind of its own) carry the declared kind in the stream; the run log is as without the key",
+ "scenario": {
+  "name": "s31_question_default_kind",
+  "env": "sim_house",
+  "robot_pkg": "fakebot",
+  "task": "Put the apple on the dining table and on the counter.",
+  "robot": {
+   "objects": {
+    "apple": "desk@study room",
+    "mug": "desk@study room",
+    "banana": "dining table@kitchen",
+    "orange": "dining table@kitchen",
+    "sponge": "counter@kitchen",
+    "spoon": "drawer@kitchen/in",
+    "tennis ball": "stool@bedroom"
+   },
+   "answers": [
+    "the dining table"
+   ]
+  },
+  "llm": {
+   "script": [
+    {
+     "status": "clear",
+     "reason": "",
+     "question": "",
+     "goals": [
+      {
+       "type": "on",
+       "object": "apple",
+       "from": "desk",
+       "to": "dining table"
+      },
+      {
+       "type": "on",
+       "object": "apple",
+       "from": "desk",
+       "to": "counter"
+      }
+     ]
+    }
+   ],
+   "default": {
+    "status": "clear",
+    "reason": "",
+    "question": "",
+    "goals": [
+     {
+      "type": "on",
+      "object": "apple",
+      "from": "desk",
+      "to": "dining table"
+     }
+    ]
+   }
+  },
+  "planner": {
+   "plan": [
+    "MoveTo desk@study room",
+    "Find apple",
+    "Pick apple",
+    "MoveTo dining table@kitchen",
+    "Place dining table@kitchen"
+   ],
+   "replans": []
+  },
+  "options": {
+   "input_pivot": "none",
+   "look_then_ask": "0",
+   "bring_ask": "0",
+   "bt_goal": "0",
+   "fetch_guard": "0"
+  },
+  "pack": {
+   "schema": 2,
+   "name": "s31_kind",
+   "extends": "household",
+   "assumed": true,
+   "questions_default_kind": "line.question"
+  }
+ },
+ "recorded": {
+  "llm_calls": [
+   {
+    "prompt": "e0d576764dcaf32b",
+    "format": "b69b437228696e32",
+    "head": "You turn a household robot task into goals. The robot is a mobile manipu",
+    "answer": "{\"status\": \"clear\", \"reason\": \"\", \"question\": \"\", \"goals\": [{\"type\": \"on\", \"object\": \"apple\", \"from\": \"desk\", \"to\": \"dining table\"}, {\"type\": \"on\", \"object\": \"apple\", \"from\": \"desk\", \"to\": \"counter\"}]}"
+   },
+   {
+    "prompt": "8ab9738e89ed06c3",
+    "format": "b69b437228696e32",
+    "head": "You turn a household robot task into goals. The robot is a mobile manipu",
+    "answer": "{\"status\": \"clear\", \"reason\": \"\", \"question\": \"\", \"goals\": [{\"type\": \"on\", \"object\": \"apple\", \"from\": \"desk\", \"to\": \"dining table\"}]}"
+   },
+   {
+    "prompt": "8ab9738e89ed06c3",
+    "format": "b69b437228696e32",
+    "head": "You turn a household robot task into goals. The robot is a mobile manipu",
+    "answer": "{\"status\": \"clear\", \"reason\": \"\", \"question\": \"\", \"goals\": [{\"type\": \"on\", \"object\": \"apple\", \"from\": \"desk\", \"to\": \"dining table\"}]}"
+   },
+   {
+    "prompt": "8ab9738e89ed06c3",
+    "format": "b69b437228696e32",
+    "head": "You turn a household robot task into goals. The robot is a mobile manipu",
+    "answer": "{\"status\": \"clear\", \"reason\": \"\", \"question\": \"\", \"goals\": [{\"type\": \"on\", \"object\": \"apple\", \"from\": \"desk\", \"to\": \"dining table\"}]}"
+   }
+  ],
+  "planner_calls": [],
+  "robot_calls": [
+   {
+    "skill": "mobile_pose",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "pose": [
+      0.25,
+      2.1,
+      90.0
+     ]
+    }
+   },
+   {
+    "skill": "ask",
+    "params": {
+     "inputs": "Where should the apple go in the end: dining table in the kitchen or counter in the kitchen? It cannot be in two places.",
+     "retries": 0,
+     "lang": "en"
+    },
+    "result": {
+     "isdone": true,
+     "text": "the dining table"
+    }
+   },
+   {
+    "skill": "ask",
+    "params": {
+     "inputs": "You mentioned the counter. What should I do there?",
+     "retries": 0,
+     "lang": "en"
+    },
+    "result": {
+     "isdone": false,
+     "text": ""
+    }
+   },
+   {
+    "skill": "ask",
+    "params": {
+     "inputs": "Sorry, I didn't hear you. You mentioned the counter. What should I do there?",
+     "retries": 0,
+     "lang": "en"
+    },
+    "result": {
+     "isdone": false,
+     "text": ""
+    }
+   }
+  ],
+  "events": [
+   {
+    "event": "task_start",
+    "task": "Put the apple on the dining table and on the counter.",
+    "world": {
+     "arrived": "entrance",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from entrance"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Starting the task"
+   },
+   {
+    "event": "reconcile",
+    "when": "start",
+    "changed": {
+     "arrived": [
+      null,
+      "entrance"
+     ]
+    },
+    "sensors": {
+     "arrived": {
+      "pose": [
+       0.25,
+       2.1
+      ],
+      "detail": "0.00 m from entrance",
+      "source": "mobile_pose"
+     },
+     "containers": {},
+     "unconfirmed": []
+    },
+    "provenance": {
+     "arrived": {
+      "source": "sensor",
+      "detail": "0.00 m from entrance"
+     },
+     "found": {
+      "source": "belief"
+     },
+     "holding": {
+      "source": "belief"
+     },
+     "opened": {
+      "source": "sensor",
+      "containers": {},
+      "unconfirmed": []
+     },
+     "on": {
+      "source": "belief"
+     }
+    },
+    "world": {
+     "arrived": "entrance",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from entrance"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    }
+   },
+   {
+    "event": "status",
+    "msg": "Understanding the task..."
+   },
+   {
+    "event": "understand",
+    "status": "clear",
+    "reason": "",
+    "goals": [
+     {
+      "type": "on",
+      "object": "apple",
+      "from": "",
+      "to": "dining table@kitchen"
+     },
+     {
+      "type": "on",
+      "object": "apple",
+      "from": "",
+      "to": "counter@kitchen"
+     }
+    ],
+    "question": null
+   },
+   {
+    "event": "clarify",
+    "question": "Where should the apple go in the end: dining table in the kitchen or counter in the kitchen? It cannot be in two places.",
+    "round": 1,
+    "kind": "line.question"
+   },
+   {
+    "event": "status",
+    "msg": "Understanding the task..."
+   },
+   {
+    "event": "understand",
+    "status": "clear",
+    "reason": "",
+    "goals": [
+     {
+      "type": "on",
+      "object": "apple",
+      "from": "",
+      "to": "dining table@kitchen"
+     }
+    ],
+    "question": null
+   },
+   {
+    "event": "understand_check",
+    "issues": [
+     "the counter you mentioned is not in my plan"
+    ],
+    "samples": [
+     {
+      "goals": [
+       {
+        "type": "on",
+        "object": "apple",
+        "from": "",
+        "to": "dining table@kitchen"
+       }
+      ],
+      "issues": [
+       "the counter you mentioned is not in my plan"
+      ]
+     },
+     {
+      "goals": [
+       {
+        "type": "on",
+        "object": "apple",
+        "from": "",
+        "to": "dining table@kitchen"
+       }
+      ],
+      "issues": [
+       "the counter you mentioned is not in my plan"
+      ]
+     }
+    ],
+    "agreed": false
+   },
+   {
+    "event": "clarify",
+    "question": "You mentioned the counter. What should I do there?",
+    "round": 1,
+    "kind": "line.question"
+   },
+   {
+    "event": "done",
+    "status": "failed",
+    "msg": "no answer to: You mentioned the counter. What should I do there?",
+    "world": {
+     "arrived": "entrance",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from entrance"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "code": "unknown",
+    "say": "I did not hear an answer, so I will stop here."
+   }
+  ],
+  "final": {
+   "robot": {
+    "at": "entrance",
+    "holding": null,
+    "objects": {
+     "apple": "desk@study room",
+     "mug": "desk@study room",
+     "banana": "dining table@kitchen",
+     "orange": "dining table@kitchen",
+     "sponge": "counter@kitchen",
+     "spoon": "drawer@kitchen/in",
+     "tennis ball": "stool@bedroom"
+    },
+    "opened": [],
+    "asked": [
+     "Where should the apple go in the end: dining table in the kitchen or counter in the kitchen? It cannot be in two places.",
+     "You mentioned the counter. What should I do there?",
+     "Sorry, I didn't hear you. You mentioned the counter. What should I do there?"
+    ]
+   },
+   "belief": {
+    "arrived": "entrance",
+    "found": null,
+    "holding": null,
+    "opened": [],
+    "on": [],
+    "found_pose": null,
+    "holding_pose": null,
+    "provenance": {
+     "arrived": {
+      "source": "sensor",
+      "detail": "0.00 m from entrance"
+     },
+     "found": {
+      "source": "belief"
+     },
+     "holding": {
+      "source": "belief"
+     },
+     "opened": {
+      "source": "sensor",
+      "containers": {},
+      "unconfirmed": []
+     },
+     "on": {
+      "source": "belief"
+     }
+    }
+   },
+   "lab_log": [],
+   "record": {
+    "task": "Put the apple on the dining table and on the counter.",
+    "lang": "en",
+    "obs": "",
+    "visible": [],
+    "planner": "sage+assist",
+    "plan_meta": {},
+    "warnings": [],
+    "steps": [],
+    "replans": [],
+    "status": "failed",
+    "failure": {
+     "code": "unknown"
+    }
+   },
+   "log_kinds": [
+    "reconcile",
+    "task_start",
+    "status",
+    "understand",
+    "clarify",
+    "status",
+    "understand",
+    "understand_check",
+    "clarify",
+    "done",
+    "snapshot"
+   ]
+  }
+ },
+ "commit": "926b915"
+}

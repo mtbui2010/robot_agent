@@ -109,7 +109,7 @@ def test_with_the_key_set_a_kind_less_clarify_carries_the_declared_kind():
     assert c.ev("clarify", question="q?", kind=None)["kind"] == "line.question"
     assert c.ev("clarify", question="q?", kind="")["kind"] == "line.question"
     assert c.ev("clarify")["kind"] == "line.question"
-    assert log.rows[0][1] == {"question": "q?", "round": 0}               # the run log is written as before: the default kind is for the stream only
+    assert {k: v for k, v in log.rows[0][1].items() if k != "t"} == {"question": "q?", "round": 0}               # the run log is written as before: the default kind is for the stream only
 
 
 def test_with_the_key_set_every_other_event_and_every_kind_stays_as_it_was():

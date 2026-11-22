@@ -1,0 +1,6 @@
+{
+ "about": "Step S31 (questions_default_kind): the commit the S31 set cassette (s31_question_default_kind, tests/golden/scenario_sets/s31_questions.py) was recorded on. kind feature: it is the step's production commit, so the cassette shows the opt-in at work (the streamed clarify events carry the declared kind); the equivalence of every other cassette is proven by their replay.",
+ "kind": "feature",
+ "commits": ["926b915"],
+ "notes": {"926b915": "S31 production commit: core/pack/questions.py and RunContext.ev"}
+}
