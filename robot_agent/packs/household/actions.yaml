@@ -1,0 +1,96 @@
+# The actions of the standard (household) pack. Step S10: the facts about each action that the engine kept in several copies --
+# which actions take a place as their argument (five different sets), which are not plan steps, which release the held object,
+# and the three tables of words (understand prompt, planner prompt, progress line) -- are declared here, once.
+# Read by core/planning (reconcile, mapper, search, plan_repair, robot, robot_prompt, announcer, assist_loop) through
+# core/pack/actions.py; every set below is a query over these fields ("every action whose class is ..."), and each reader keeps
+# ITS OWN query, so the old sets are reproduced exactly and none of them is unified (tests/test_pack_actions.py).
+# Fields: class (what the engine's own code needs to know), arg {name: the word the planner prompt uses for the argument,
+# type: what it is}, plan_step: false (a sensor or the dialogue, never a plan step), releases: true (the held object is no
+# longer held after it), verb (the progress line "I will <verb> <object>"), ability (the understand prompt's wording),
+# describe (the planner prompt's wording). Sets reproduced (at 8002347): assist_loop.py:81 (_LOC_ACTIONS), reconcile.py:31
+# (AT_PLACE_ACTIONS), mapper.py:45 and legacy_adapter.py:30 (_LOCATION_ACTIONS), search.py:31-33 (_BETWEEN, _AT_PLACE),
+# plan_repair.py:52 (RELEASES). The order of the entries is the order of the old understand-prompt table.
+# `source` labels every entry (the design's rule: facts about a robot are declared data with a label).
+actions:
+  MoveTo:
+    class: move
+    arg: {name: place, type: place}
+    verb: move to
+    ability: move to a place
+    describe: move to a place
+    source: &prompt_src "robot_agent/core/planning/robot.py:42-45 (_ABILITY), robot_prompt.py:26-37 (ACTION_TEXT), announcer.py:25-39 (VERBS) at 8002347"
+  Find:
+    class: look
+    arg: {name: object, type: object}
+    verb: find
+    ability: find an object
+    describe: look for an object where the robot is
+    source: *prompt_src
+  Pick:
+    class: grasp
+    arg: {name: object, type: object}
+    verb: pick
+    ability: pick it up
+    describe: pick up the found object
+    source: *prompt_src
+  Place:
+    class: release
+    arg: {name: place, type: place}
+    releases: true
+    verb: place
+    ability: place it on a surface
+    describe: put the held object on a place the robot is at
+    source: *prompt_src
+  Open:
+    class: open
+    arg: {name: container, type: container}
+    verb: open
+    ability: open / close a container
+    describe: open a container the robot is at
+    source: *prompt_src
+  PutIn:
+    class: release
+    arg: {name: container, type: container}
+    releases: true
+    verb: place
+    ability: put an object in an open container
+    describe: put the held object into an open container the robot is at
+    source: *prompt_src
+  Close:
+    class: close
+    arg: {name: container, type: container}
+    verb: close
+    describe: close a container the robot is at
+    source: *prompt_src
+  Say:
+    class: speak
+    arg: {name: text, type: text}
+    ability: say something to someone
+    describe: say a sentence to the person
+    source: *prompt_src
+  WaitForUnload:
+    arg: {name: item, type: object}
+    ability: carry an item to someone, who takes it
+    describe: wait until a person takes the carried item
+    source: *prompt_src
+  Dock:
+    arg: {name: dock, type: object}
+    describe: drive onto the charging dock
+    source: *prompt_src
+  # not plan steps: sensors (Observe / Verify), the dialogue (Ask, the engine's own) and queries to another model (Query)
+  Observe:
+    class: sense
+    plan_step: false
+    source: "robot_agent/core/planning/robot.py:36-38 (NOT_PLAN_STEPS) at 8002347"
+  Verify:
+    class: sense
+    plan_step: false
+    source: "robot_agent/core/planning/robot.py:36-38 (NOT_PLAN_STEPS) at 8002347"
+  Ask:
+    class: speak
+    plan_step: false
+    source: "robot_agent/core/planning/robot.py:36-38 (NOT_PLAN_STEPS) at 8002347"
+  Query:
+    class: sense
+    plan_step: false
+    source: "robot_agent/core/planning/robot.py:36-38 (NOT_PLAN_STEPS) at 8002347"
