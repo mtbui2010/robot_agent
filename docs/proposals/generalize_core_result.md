@@ -130,3 +130,57 @@ its socket closes), G13 (cancel reaches no sim skill), S1 (string "0" option), S
 ## Plain summary
 
 The run stopped in the first wave (W0): no restructuring step was merged, so the production code of robot_agent is unchanged and assist_loop.py is still 4081 lines. The recorded golden checks and the design are done, the suite is green and the lint has no new finding. Nothing needs switching off because no behaviour was added. Round C (the PEX robot) cannot start before waves W0 to W10 have run, and the "no existing test modified" gate must be fixed first.
+
+## Run 2 (waves W1 onward)
+
+This section describes the second run. The text above describes run 1 and stays as written.
+
+### Steps
+
+- Done and merged on `generalize-core`: S02 (pack schema, loader with the schema-1 lift, registry, empty core and household packs),
+  S03 (move words, Places and Memory to `places.py`; the `phases` package), S04 (phrase tables become pack data; S04b finished the
+  household and core phrase files), S06 (one predicate table for tree conditions and effect checks).
+- Stopped: S05 (goal-reach rules chosen by kind, one rules object per household kind), wave W2.
+- Stop reason: in wave W2 the run could not prove equivalence for S05. The owner's stop rule is to stop at the first mismatch, so the
+  run stopped there and no step after S05 was started in this run.
+- Caveat for the reader: the S05 commit (050ec5a) is present on the branch, and the integration suite is green with it (see below),
+  because it was merged before the stop. The equivalence proof for it is still open. Until that proof is written, treat S05 as
+  merged but not accepted, and revert it (one revertible commit) if the proof fails.
+- Not touched: robot_agent's real-robot checkout, shared services, any push, the main branch.
+
+### Numbers now versus the baseline
+
+| Measure | Baseline (run 1) | Now |
+|---|---|---|
+| `robot_agent/core/planning/assist_loop.py` lines | 4081 | 3810 (271 fewer; 3887 after W1) |
+| Tests passed | 3075 | 3315 passed, 1 skipped (the ratchet floor is 3315) |
+
+The tests were added only; no existing test, golden or cassette was edited. The wave W2 integration check
+(`check.sh roundB`) was run again after two earlier red runs were fixed (each had one failing test); its result is in the reply that
+accompanies this change.
+
+### Workarounds of `pex_case/docs/framework_fit.md`: what can be deleted
+
+Nothing can be deleted yet. The workarounds depend on steps that are not built in this run (S07, S10, S12, S14, S25, S25a, S27a,
+S29, S32). The table lists what the done steps contribute.
+
+| Id | Needs | Status after run 2 |
+|---|---|---|
+| G1, P7 (kind `install`, two walls, one object) | S07 and S29 | Cannot be deleted. S02 gives the pack loader and S05 (open proof) the per-kind rules object, but the `install` kind and `conflicts: none` are not built. |
+| G2 (predicates in trees) | S06 and S25 | Cannot be deleted yet. S06 is done (one predicate table), but pack-declared predicates in trees need S25. |
+| G3 (typed action arguments) | S10 | Cannot be deleted. |
+| G4 (recovery policy per action) | S14 | Cannot be deleted. |
+| G5 (free-text answers) | S25, S27a, S32 | Cannot be deleted. S04 moved the phrases to data, which is a base for it, nothing more. |
+| G6 (public tree-node events) | S25a | Cannot be deleted. Branch gc/s25a exists but is not merged. |
+| P8 (verifier instead of Find within 4 m) | S12 | Cannot be deleted. |
+| G7 (pack's own model call) | not in level B | Stays open. |
+
+So the answer for G1..G7, P7 and P8 is: none can be deleted today; G2 is the closest (one dependency, S25, remains).
+
+### What is next
+
+1. Write the equivalence proof for S05 (run the goldens and the mutation check against 050ec5a and its parent, and report the
+   first differing cassette if any). If it holds, the S05 step is accepted. If not, revert S05 on `generalize-core`.
+2. Continue wave W3 onward from `generalize_core_plan.json`, at most 4 parallel streams per wave, stopping at the first mismatch.
+3. Round C (the PEX robot on the new framework) starts only after the steps listed in the table exist.
+4. Nothing is pushed; the owner reviews first.
