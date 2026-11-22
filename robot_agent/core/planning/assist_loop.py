@@ -471,7 +471,7 @@ class AssistLoop(*PHASE_MIXINS, WhichOne, SearchHooks, StepLadder, ClosedLoop):
             task, dialogue, lambda t, en: f"Robot: {t if en else self._heard_as(t)}", pivot=pivot)
         prompt = self.options.transform("on_understand_prompt", self._flag_prompt(UNDERSTAND_PROMPT)).format(
             abilities=self.robot.robot_description(), cannot=self._cannot_line(),
-            goal_kinds=goal_kinds.prompt_lines(self._kinds()),
+            goal_kinds=goal_kinds.prompt_lines(self._kinds(), goal_semantics.pack_of(self)),
             # no object memory here: a 7B model refused / asked about every object it did not list
             # (the memory grounds `from` after this call instead)
             places=places.describe(), answers=memory.answers_text(),
@@ -604,12 +604,7 @@ class AssistLoop(*PHASE_MIXINS, WhichOne, SearchHooks, StepLadder, ClosedLoop):
             gen.close()
 
     def _kinds(self) -> list:
-        return goal_kinds.kinds_for(self.robot.plan_actions, ("give",) if self.cfg.get("understand_give_kind") else ())
-
-    def _lacking(self) -> list:
-        """The abstract actions the goal tables name that this robot does not have (the missing_action enum)."""
-        have = set(self.robot.plan_actions or ())
-        return [a for a in goal_kinds.domain_actions() if a not in have]
+        return goal_kinds.kinds_for(self.robot.plan_actions, ("give",) if self.cfg.get("understand_give_kind") else (), goal_semantics.pack_of(self))
 
     def _flag_prompt(self, text: str) -> str:
         """UNDERSTAND_PROMPT with the lines of the switched-on schema flags (none on = the text itself)."""
@@ -636,7 +631,8 @@ class AssistLoop(*PHASE_MIXINS, WhichOne, SearchHooks, StepLadder, ClosedLoop):
         if rt == "location_unknown" and st in ("infeasible", "ambiguous"):
             d["status"], d["question"] = "clear", ""
             self._lab("understand_verify_verdict", part="location_unknown")
-        elif st == "infeasible" and str(d.get("missing_action") or "").strip() not in self._lacking():
+        elif st == "infeasible" and (str(d.get("missing_action") or "").strip()
+                                     not in goal_kinds.lacking(self.robot.plan_actions, goal_semantics.pack_of(self))):
             if not self._cannot_do(d["goals"]) and not self._over_limits(d["goals"]):
                 d["status"], d["question"] = "clear", ""
                 self._lab("understand_verify_verdict", part="dropped")
@@ -730,7 +726,7 @@ class AssistLoop(*PHASE_MIXINS, WhichOne, SearchHooks, StepLadder, ClosedLoop):
             for k, v in props.items():
                 new[k] = v
                 if k == "reason_type":
-                    new["missing_action"] = {"type": "string", "enum": [""] + self._lacking()}
+                    new["missing_action"] = {"type": "string", "enum": [""] + goal_kinds.lacking(self.robot.plan_actions, goal_semantics.pack_of(self))}
             schema["properties"] = new
             schema["required"] = list(schema["required"]) + ["missing_action"]
         if self.cfg.get("understand_goals_first"):       # the goals are written before the verdict (key order binds
@@ -743,9 +739,7 @@ class AssistLoop(*PHASE_MIXINS, WhichOne, SearchHooks, StepLadder, ClosedLoop):
     def _cannot_do(self, goals) -> Optional[str]:
         """Why the robot cannot do these goals (an action a goal kind needs is not in its manifest),
         or None. Checked before any planning or motion."""
-        acts = self.robot.plan_actions
-        missing = list(dict.fromkeys(a for g in goals for a in goal_kinds.missing_actions(g, acts)))
-        return ", ".join(missing) if missing else None
+        return goal_kinds.cannot_do(goals, self.robot.plan_actions, goal_semantics.pack_of(self))
 
     @staticmethod
     def _ground_container(g, places, task):
@@ -1625,7 +1619,7 @@ class AssistLoop(*PHASE_MIXINS, WhichOne, SearchHooks, StepLadder, ClosedLoop):
         """The goal validator (``goal_kinds.conflicts``): (goals, the question with its two-destination question first). With
         ``dialog_agree`` the question declares its place options and keeps them when another question follows."""
         on = bool(self.cfg.get("dialog_agree"))
-        r.goals, conflict = goal_kinds.conflicts(r.goals, name=lambda k: speech.say_name(r.places, k, "en"), declare=on)
+        r.goals, conflict = goal_kinds.conflicts(r.goals, lambda k: speech.say_name(r.places, k, "en"), on, goal_semantics.pack_of(self))
         if not conflict:
             return r.goals, q
         if on and getattr(conflict, "ask", None) and q:
@@ -2412,7 +2406,7 @@ class AssistLoop(*PHASE_MIXINS, WhichOne, SearchHooks, StepLadder, ClosedLoop):
         """The planner's plan, checked as written; critical findings go back to its sub-goal repair (if any)."""
         t_plan, r.plan_error = time.time(), None
         from ..run_control import call_cancellable, is_cancel
-        r.compiled = goal_kinds.is_template(r.goals)
+        r.compiled = goal_kinds.is_template(r.goals, goal_semantics.pack_of(self))
         if self.cfg.get("person_goals"):
             r.goals = goal_kinds.dedupe(r.goals)
         try:
@@ -2499,7 +2493,7 @@ class AssistLoop(*PHASE_MIXINS, WhichOne, SearchHooks, StepLadder, ClosedLoop):
             return None
         if self.cfg.get("person_goals") and getattr(r.planner, "fixed_subgoals", False):
             return self._lab_subgoals(r)
-        return [goal_kinds.subgoal_text(g, r.places) for g in r.goals]
+        return goal_kinds.subgoals(r.goals, r.places, goal_semantics.pack_of(self))
 
     def _lab_subgoals(self, r) -> list:
         """``person_goals``: in a request that mixes template goals (go / say / deliver) with moves, a template goal
@@ -2508,7 +2502,7 @@ class AssistLoop(*PHASE_MIXINS, WhichOne, SearchHooks, StepLadder, ClosedLoop):
         to say it at is the speaker's ENV entry; a place the ENV does not know is not driven to. A request of
         template goals alone is compiled whole already, one of moves alone is unchanged."""
         kinds = {g.get("type") in goal_kinds.TEMPLATE_KINDS for g in r.goals}
-        text = [goal_kinds.subgoal_text(g, r.places) for g in r.goals]
+        text = goal_kinds.subgoals(r.goals, r.places, goal_semantics.pack_of(self))
         if kinds != {True, False}:
             return text
         out, can_say = [], "Say" in r.robot.plan_actions
