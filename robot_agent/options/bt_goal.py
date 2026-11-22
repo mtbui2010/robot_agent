@@ -22,6 +22,7 @@ from typing import Optional
 
 from robot_agent.contract.recovery import Recovery
 from robot_agent.core.options import NEXT, STOP, Key, Option, OptionSpec, register
+from robot_agent.core.pack import predicates
 from robot_agent.core.planning import behavior_tree as bt
 from robot_agent.core.planning import goals as goal_kinds
 from robot_agent.core.planning import langdata, names, pack_data, speech
@@ -48,17 +49,12 @@ SPEC = OptionSpec(
 
 
 def holds(name: str, args, world, placed) -> bool:
-    """The belief predicate ``name`` (pure): holding o, hand_free, at p, placed o p (put at p and not in the hand), opened c, closed c."""
-    held, opened = getattr(world, "holding", None), set(getattr(world, "opened", None) or ())
-    preds = {"holding": lambda o: held == o, "hand_free": lambda: held is None, "at": lambda p: getattr(world, "arrived", None) == p,
-             "placed": lambda o, p: (placed or {}).get(o) == p and held != o, "opened": lambda c: c in opened, "closed": lambda c: c not in opened}
-    try:
-        return bool(preds[name](*args))
-    except (KeyError, TypeError):
-        return False
+    """The belief predicate ``name`` (pure), read from the pack's predicate table (core/pack/predicates.py; the standard pack:
+    holding o, hand_free, at p, placed o p, opened c, closed c); False for an unknown name or a wrong number of arguments."""
+    return predicates.holds_in_tree(name, args, world, placed)
 
 
-CONDITIONS = ("holding", "hand_free", "at", "placed", "opened", "closed")
+CONDITIONS = predicates.names(predicates.TREE)
 
 
 def declared_openable(env, key, rule) -> bool:
