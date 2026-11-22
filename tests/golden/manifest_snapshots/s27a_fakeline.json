@@ -1,0 +1,472 @@
+{
+ "manifest": {
+  "capabilities": {
+   "arms": 1,
+   "base": true,
+   "drawer": false,
+   "find_reaches": false,
+   "hands": [
+    "right"
+   ],
+   "head": false,
+   "lift": false,
+   "tray": true,
+   "vlm_verify": false,
+   "voice": true
+  },
+  "geometry": {
+   "arrive_tol_m": 0.3,
+   "max_reach_y_m": 0.7,
+   "reach_far_m": 1.0,
+   "reach_m": 0.7
+  },
+  "language": "en",
+  "robot": "fakeline",
+  "skills": [
+   {
+    "action": "MoveTo",
+    "effects": [
+     "arrived(?inputs)"
+    ],
+    "errors": [
+     "unreachable",
+     "blocked",
+     "timeout",
+     "hw_fault",
+     "cancelled",
+     "software"
+    ],
+    "hold": [],
+    "interruptible": true,
+    "name": "move",
+    "params": {
+     "properties": {
+      "inputs": {
+       "description": "station key",
+       "type": "string"
+      }
+     },
+     "required": [
+      "inputs"
+     ],
+     "type": "object"
+    },
+    "pre": [],
+    "verify": [
+     {
+      "kind": "symbolic"
+     },
+     {
+      "kind": "sensor",
+      "skill": "mobile_pose"
+     }
+    ],
+    "version": "1.0"
+   },
+   {
+    "action": "Find",
+    "effects": [
+     "found(?inputs)"
+    ],
+    "errors": [
+     "absent",
+     "perception_unavailable",
+     "hw_fault",
+     "timeout",
+     "cancelled",
+     "software"
+    ],
+    "hold": [],
+    "interruptible": true,
+    "name": "find",
+    "params": {
+     "properties": {
+      "inputs": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "inputs"
+     ],
+     "type": "object"
+    },
+    "pre": [],
+    "verify": [
+     {
+      "kind": "symbolic"
+     }
+    ],
+    "version": "1.0"
+   },
+   {
+    "action": "Pick",
+    "effects": [
+     "holding(?inputs)",
+     "not found(?inputs)",
+     "not hand_empty()"
+    ],
+    "errors": [
+     "absent",
+     "unreachable",
+     "grasp_failed",
+     "perception_unavailable",
+     "hw_fault",
+     "cancelled",
+     "software"
+    ],
+    "hold": [],
+    "interruptible": false,
+    "name": "pick",
+    "params": {
+     "properties": {
+      "inputs": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "inputs"
+     ],
+     "type": "object"
+    },
+    "pre": [
+     "found(?inputs)",
+     "hand_empty()"
+    ],
+    "verify": [
+     {
+      "kind": "symbolic"
+     },
+     {
+      "kind": "sensor",
+      "skill": "grasp_succeed"
+     }
+    ],
+    "version": "1.0"
+   },
+   {
+    "action": "Place",
+    "effects": [
+     "hand_empty()",
+     "not holding(*)"
+    ],
+    "errors": [
+     "dropped",
+     "grasp_failed",
+     "unreachable",
+     "blocked",
+     "perception_unavailable",
+     "hw_fault",
+     "cancelled",
+     "software"
+    ],
+    "hold": [],
+    "interruptible": false,
+    "name": "place",
+    "params": {
+     "properties": {
+      "inputs": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "inputs"
+     ],
+     "type": "object"
+    },
+    "pre": [
+     "arrived(?inputs)",
+     "not hand_empty()"
+    ],
+    "verify": [
+     {
+      "kind": "symbolic"
+     },
+     {
+      "expect": false,
+      "kind": "sensor",
+      "skill": "grasp_succeed"
+     }
+    ],
+    "version": "1.0"
+   },
+   {
+    "action": "Say",
+    "effects": [],
+    "errors": [
+     "hw_fault",
+     "software"
+    ],
+    "hold": [],
+    "interruptible": true,
+    "name": "say",
+    "params": {
+     "properties": {
+      "inputs": {
+       "description": "the sentence",
+       "type": "string"
+      }
+     },
+     "required": [
+      "inputs"
+     ],
+     "type": "object"
+    },
+    "pre": [],
+    "verify": [],
+    "version": "1.0"
+   },
+   {
+    "action": "WaitForUnload",
+    "effects": [],
+    "errors": [
+     "timeout",
+     "hw_fault",
+     "cancelled",
+     "software"
+    ],
+    "hold": [],
+    "interruptible": true,
+    "name": "wait_for_unload",
+    "params": {
+     "properties": {},
+     "required": [],
+     "type": "object"
+    },
+    "pre": [],
+    "verify": [],
+    "version": "1.0"
+   },
+   {
+    "action": "Inspect",
+    "effects": [
+     "not on(?inputs)"
+    ],
+    "errors": [
+     "absent",
+     "perception_unavailable",
+     "hw_fault",
+     "software"
+    ],
+    "hold": [],
+    "interruptible": true,
+    "name": "inspect",
+    "params": {
+     "properties": {
+      "inputs": {
+       "description": "the part",
+       "type": "string"
+      }
+     },
+     "required": [
+      "inputs"
+     ],
+     "type": "object"
+    },
+    "pre": [],
+    "verify": [
+     {
+      "kind": "symbolic"
+     }
+    ],
+    "version": "1.0"
+   },
+   {
+    "action": "Fasten",
+    "effects": [
+     "fastened(?inputs)"
+    ],
+    "errors": [
+     "unreachable",
+     "hw_fault",
+     "software"
+    ],
+    "hold": [],
+    "interruptible": false,
+    "name": "fasten",
+    "params": {
+     "properties": {
+      "inputs": {
+       "description": "the part",
+       "type": "string"
+      }
+     },
+     "required": [
+      "inputs"
+     ],
+     "type": "object"
+    },
+    "pre": [],
+    "verify": [
+     {
+      "kind": "symbolic"
+     }
+    ],
+    "version": "1.0"
+   },
+   {
+    "action": "Verify",
+    "effects": [],
+    "errors": [
+     "perception_unavailable",
+     "software"
+    ],
+    "hold": [],
+    "interruptible": true,
+    "name": "grasp_succeed",
+    "params": {
+     "properties": {},
+     "required": [],
+     "type": "object"
+    },
+    "pre": [],
+    "verify": [],
+    "version": "1.0"
+   },
+   {
+    "action": "Observe",
+    "effects": [],
+    "errors": [
+     "hw_fault",
+     "software"
+    ],
+    "hold": [],
+    "interruptible": true,
+    "name": "mobile_pose",
+    "params": {
+     "properties": {},
+     "required": [],
+     "type": "object"
+    },
+    "pre": [],
+    "verify": [],
+    "version": "1.0"
+   },
+   {
+    "action": "Ask",
+    "effects": [],
+    "errors": [
+     "timeout",
+     "cancelled",
+     "hw_fault",
+     "software"
+    ],
+    "hold": [],
+    "interruptible": true,
+    "name": "ask",
+    "params": {
+     "properties": {
+      "inputs": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "inputs"
+     ],
+     "type": "object"
+    },
+    "pre": [],
+    "verify": [],
+    "version": "1.0"
+   }
+  ],
+  "version": "1.0"
+ },
+ "manifest_of": {
+  "capabilities": {
+   "arms": 1,
+   "base": true,
+   "drawer": false,
+   "find_reaches": false,
+   "hands": [
+    "right"
+   ],
+   "head": false,
+   "lift": false,
+   "tray": true,
+   "vlm_verify": false,
+   "voice": true
+  },
+  "goal_kinds": {
+   "close": {
+    "feasible": false,
+    "needs": [
+     "Close"
+    ],
+    "slots": {}
+   },
+   "deliver": {
+    "feasible": true,
+    "needs": [
+     "MoveTo",
+     "WaitForUnload"
+    ],
+    "slots": {}
+   },
+   "go": {
+    "feasible": true,
+    "needs": [
+     "MoveTo"
+    ],
+    "slots": {}
+   },
+   "in": {
+    "feasible": true,
+    "needs": [
+     "Pick",
+     [
+      "PutIn",
+      "Place"
+     ]
+    ],
+    "slots": {}
+   },
+   "on": {
+    "feasible": true,
+    "needs": [
+     "Pick",
+     "Place"
+    ],
+    "slots": {}
+   },
+   "open": {
+    "feasible": false,
+    "needs": [
+     "Open"
+    ],
+    "slots": {}
+   },
+   "say": {
+    "feasible": true,
+    "needs": [
+     "Say"
+    ],
+    "slots": {}
+   }
+  },
+  "pack": {
+   "extends": "household",
+   "name": "",
+   "schema": 1,
+   "version": ""
+  },
+  "places": [
+   "bin@cell a",
+   "jig@cell a",
+   "outfeed@cell b"
+  ],
+  "plan_actions": [
+   "Fasten",
+   "Find",
+   "Inspect",
+   "MoveTo",
+   "Pick",
+   "Place",
+   "Say",
+   "WaitForUnload"
+  ],
+  "question_kinds": [],
+  "robot": "fakeline",
+  "site": "golden",
+  "version": "1.0"
+ }
+}

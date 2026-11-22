@@ -22,6 +22,28 @@ exactly what it got before (the default path of `/ws/agent` is pinned by `tests/
 
 503 when the robot package's manifest cannot be loaded. It starts nothing. `GET /` is unchanged.
 
+### The pack keys (additive, Step S27a)
+
+When the robot's pack can be read, the answer also carries three keys; a reader that does not know them ignores them, and no old key
+changes (`tests/test_manifest_snapshot.py` pins the old ones, `tests/test_robot_info_pack.py` and the `s27a_*` snapshots pin these):
+
+```json
+"pack": {"schema": 1, "name": "", "version": "", "extends": "household"},
+"goal_kinds": {"on": {"feasible": true, "needs": ["Pick", "Place"], "slots": {}},
+               "in": {"feasible": true, "needs": ["Pick", ["PutIn", "Place"]], "slots": {}}},
+"question_kinds": []
+```
+
+| key | from |
+|---|---|
+| `pack` | the resolved pack's header: `schema` (1 for a manifest with no `pack:` section), `name` and `version` (`""` for schema 1), `extends` |
+| `goal_kinds` | every kind of the robot's goal-kind table, in its order: `feasible` (the robot lacks no action for the kind: the robot's own rule, `goals.missing_actions` on its `plan_actions`), `needs` (a list; an item is an action or a list of alternatives, any one of them), `slots` (slot name -> type as the pack declares them; `{}` when it declares none: nothing is guessed, a reader keeps its own default) |
+| `question_kinds` | the `kind` of each question the pack declares plus its `questions_default_kind`, sorted, no duplicate; `[]` for a pack that declares none |
+
+The keys are left out (the answer is the six keys above) when the view has no readable pack. Code: `robot_agent/core/pack/report.py`
+(pure: data in, data out) and `robot_info.pack_keys`. Switch off: there is none to set; a manager that does not read the keys is not
+affected, and the manager's own table stays the fallback for a robot that reports no `goal_kinds` (Step S27b).
+
 ## `WS /ws/agent`: the new fields of the first message
 
 ```json
