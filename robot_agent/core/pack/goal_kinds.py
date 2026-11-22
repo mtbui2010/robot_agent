@@ -54,8 +54,10 @@ def default_table(root=None) -> dict:
 
 
 def is_default(pack) -> bool:
-    """True for no pack, or a resolved pack whose goal-kind table is the default one (every robot without its own kinds)."""
-    return pack is None or pack.table(TABLE) == default_table()
+    """True for no pack, or a resolved pack whose goal-kind table is the default one or empty (every robot without its own
+    kinds: a pack that declares no goal kind at all, such as a schema-2 pack that only adds questions, is not a robot that
+    understands nothing)."""
+    return pack is None or not pack.table(TABLE) or pack.table(TABLE) == default_table()
 
 
 def render(template: str, slots: Mapping) -> Optional[str]:
