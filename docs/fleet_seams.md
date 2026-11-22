@@ -20,6 +20,26 @@ exactly what it got before (the default path of `/ws/agent` is pinned by `tests/
 | `places` | the ENV keys of the ACTIVE site (this robot's own place names; another robot's map may name them differently) |
 | `site` | the active site (location) name; `""` when the configs have no sites |
 
+Added keys (Step S27a of `docs/proposals/generalize_core_design.md`; the six above are unchanged):
+
+```json
+{"pack": {"schema": 1, "name": "", "version": "", "extends": "household"},
+ "goal_kinds": {"in": {"feasible": true, "needs": ["Pick", ["PutIn", "Place"]], "slots": {}},
+                "say": {"feasible": false, "needs": ["Say"], "slots": {}}},
+ "question_kinds": []}
+```
+
+| field | from |
+|---|---|
+| `pack` | the header of the robot's resolved pack (`RobotView.pack`): `schema` 1 = a manifest with no `pack:` section (the standard pack), 2 = a declared pack |
+| `goal_kinds` | every goal kind of the robot's table, in its order. `feasible`: the robot has the actions the kind needs (the robot's own answer, `goals.missing_actions` over `plan_actions`). `needs`: the declared list, an action name or a list of which any one will do. `slots`: name -> `{type, required}` as the kind declares them (`{}` when it declares none: the standard kinds do not yet) |
+| `question_kinds` | the sorted `kind` values of the pack's `questions` entries plus `questions_default_kind`; the kinds the loop itself puts on its questions are literals of the loop, not declared data, so they are not listed (`[]` for a pack that declares none) |
+
+A reader that does not know the added keys ignores them. When the robot's pack cannot be read (a stub view, a pack that fails to resolve)
+the three keys are left out and the answer is the old one. Code: `robot_agent/core/pack/report.py` (pure), `robot_agent/api/robot_info.py`;
+test: `tests/test_robot_info_pack.py` (snapshots `tests/golden/manifest_snapshots/s27a_<pack>.json`). The per-kind footprint is a later
+step (S32).
+
 503 when the robot package's manifest cannot be loaded. It starts nothing. `GET /` is unchanged.
 
 ## `WS /ws/agent`: the new fields of the first message

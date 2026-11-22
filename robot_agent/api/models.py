@@ -65,6 +65,20 @@ class RobotManifest(_Open):
     site: str = ''                # the active site (location); '' when the configs have no sites
 
 
+class GoalKindInfo(_Open):
+    """One goal kind of the robot's pack."""
+    feasible: bool                # the robot has the actions the kind needs (the robot's own answer)
+    needs: list = []              # an action name, or a list of which any one will do
+    slots: dict = {}              # name -> {type, required}, as the kind declares them ({} when it declares none)
+
+
+class RobotManifestPack(RobotManifest):
+    """``RobotManifest`` and the keys a pack adds. Each is absent (not null) when the robot's pack cannot be read here."""
+    pack: Optional[dict] = None   # {schema, name, version, extends}: the pack as it resolved (1 = no `pack:` section, the standard pack)
+    goal_kinds: Optional[dict[str, GoalKindInfo]] = None
+    question_kinds: Optional[list[str]] = None
+
+
 # --- teleop ------------------------------------------------------------------
 class TeleopFunction(_Open):
     name: str
