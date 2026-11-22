@@ -34,6 +34,7 @@ from robot_agent.observe.paths import data_dir
 from robot_agent.contract import FailureCode, classify_legacy_failure
 from robot_agent.state import current, host_id
 from ..options.spec import NEXT as _OPT_NEXT, STOP as _OPT_STOP
+from ..pack import questions as pack_questions
 from . import episode_memory, robot_prompt
 from .announcer import Announcer
 from .base import WorldState
@@ -233,7 +234,7 @@ class RunContext:
 
     def ev(self, event: str, say: Optional[str] = None, **fields) -> dict:
         """An event to stream, logged to the run's JSONL."""
-        d = {"event": event, **fields}
+        d = pack_questions.for_run({"event": event, **fields}, self.robot)   # a kind-less clarify: the pack's default kind (opt-in)
         if say is not None:
             d["say"] = self.speak(say) if self.speak is not None and isinstance(say, str) else say
         try:
