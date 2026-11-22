@@ -1,0 +1,36 @@
+# The core pack's phrases (section `phrases`): what any robot says whatever it does: clarifying questions, the read-back lead,
+# separators, the statements that end a run. Moved from CORE_PHRASES of core/planning/speech.py (robot_agent 2d57c99), the
+# text character for character; the pack's own `source` label (pack.yaml) labels every entry. Language: English only.
+# `text.<name>` entries are single texts the engine says as they are (not phrase keys): speech.CORE_PHRASES leaves them out.
+# A robot's own i18n and the language pack's `speech` block are read before this file (speech.phrase).
+phrases:
+  q_repeat: {en: "Sorry, I didn't catch that. Could you say it again?"}
+  q_silence: {en: "Sorry, I didn't hear you."}
+  q_confirm: {en: "{summary} Is that right?", slots: [summary]}
+  q_coverage: {en: "You also asked me for this, but I have not done it: {what}. Should I do it now?", slots: [what]}
+  q_mentioned: {en: "You mentioned the {what}. What should I do there?", slots: [what]}
+  q_unclear_task: {en: "Sorry, I did not understand. Could you say the task in other words?"}
+  q_what_exactly: {en: "What should I do exactly?"}
+  q_what_do: {en: "Sorry. What should I do?"}
+  q_which_part: {en: "Which part is not right: what I take, where I put it, or who it is for?"}
+  q_did_you_mean: {en: "Did you mean the {object}?", slots: [object]}
+  q_which_name: {en: "Did you mean {options}?", slots: [options]}
+  q_which_x: {en: "Which {what} do you mean: {options}?", slots: [what, options]}
+  q_which_reading: {en: "I can read that two ways: I will {first}, or I will {second}. Which one do you mean?", slots: [first, second]}
+  rb_restated: {en: "I understood it the same way again."}
+  rb_will: {en: "I will {what}.", slots: [what]}
+  rb_unsure: {en: "I am not sure I understood ({issues}).", slots: [issues]}
+  sep_then: {en: ", then "}
+  sep_or: {en: " or "}
+  sep_semi: {en: "; "}
+  iss_place: {en: "the {what} you mentioned is not in my plan", slots: [what]}
+  iss_unsaid: {en: "you did not say the {what}", slots: [what]}
+  iss_object: {en: "the {what} is not in my plan", slots: [what]}
+  say_stopped: {en: "Okay, I stopped."}
+  say_no_answer: {en: "I did not hear an answer, so I will stop here."}
+  say_not_confirmed: {en: "I could not confirm with you what to do, so I will stop here."}
+  say_could_not_do: {en: "Sorry, I could not finish the task."}
+  say_gave_up: {en: "I am sorry, I still could not understand what you want me to do."}
+  say_untranslated: {en: "Sorry, I cannot say that in your language right now."}
+  safety_partial: {en: "I won't {what}: {why}.", slots: [what, why]}
+  text.llm_budget: {en: "I have to stop: I could not work this task out within my limit of tries."}
