@@ -1,0 +1,6 @@
+{
+ "about": "Step S25a (bt_goal tree keys ladder: false and events: true, choice words from a pack question): the commit the feature cassettes of tests/golden/scenario_sets/s25a_*.py were recorded on (bt_ladder_off, bt_ladder_off_refind, bt_ladder_on_retry, bt_node_events, bt_choice_answer, bt_choice_other_answer). Recorded on the step's own production commit: the keys do not exist before it.",
+ "kind": "feature",
+ "commits": ["79c1c65"],
+ "notes": {"79c1c65": "gc/s25a: S25a production code (options/bt_goal.py, core/planning/tree_host.py), its unit tests and docs; the cassettes were recorded on it. The cassette bt_ladder_off is the only one whose tags and about text were corrected by hand before the commit (the run itself was not changed). The branch gc/s25a-r3 commits the same robot_agent/ tree (git diff 79c1c65 gc/s25a-r3 -- robot_agent is empty) together with these cassettes."}
+}
