@@ -52,7 +52,9 @@ calls when nothing fails) and has no entry condition (no belief predicate reads 
 **Tree keys (Step S25a; opt-in, per entry, next to `tree`).** An entry with none of them runs as before.
 - `ladder: false`: each `act` of this tree calls `try_step(run, step, ladder=False)` (the recovery is the tree's: a failed step is one
   failed `act`, and the tree's `retry` / `fallback` decide; the engine's retry, wait schedule, search legs, refind and help question do not
-  run for it). Default `ladder: true` = the section "Act = the engine's own step AND its own recovery". Only a literal `false` counts.
+  run for it; a step the ladder would have put in front of the retry, such as a look before a second grasp, is not run either, so write it
+  in the tree: `[retry, 2, [sequence, [act, Find, "{object}"], [act, Pick, "{object}"]]]`. The `recover` event the engine records for the failed
+  step still names the rung it chose; its steps do not run). Default `ladder: true` = the section "Act = the engine's own step AND its own recovery". Only a literal `false` counts.
 - `events: true`: each node, as the runner reports it, is also sent through the service `emit` as the public event `tree_node`
   `{goal, path, node, status}` (`goal` = the goal's number, `path` = the node's place "0.1.2", `node` = the label the lab record uses), so a
   dashboard or a fleet manager sees the tree node by node. Default off: only the lab record `bt_goal` exists. Only a literal `true` counts.
