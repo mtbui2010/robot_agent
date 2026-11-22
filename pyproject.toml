@@ -90,4 +90,3 @@ include = ["robot_agent*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"

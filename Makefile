@@ -205,7 +205,7 @@ test:
 		echo "               pip install pytest (or .[test]), or make test PYTHON=<python with pytest>"; \
 		exit 1; \
 	fi
-	@cd $(ROOT) && $(ENV_PY) -m pytest $(ARGS)
+	@cd $(ROOT) && $(ENV_PY) -m pytest -q $(ARGS)
 
 # Robot-specific names that must stay out of the core (CLAUDE.md rule 1): the
 # planning loops reach the robot only through its RobotAdapter. Blocking by
