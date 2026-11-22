@@ -1,0 +1,6 @@
+{
+ "about": "Step S25a (bt_goal tree keys ladder: false and events: true, choice words and trees from the pack): the commit the feature cassettes of tests/golden/scenario_sets/s25a_tree_keys.py were recorded on (bt_ladder_on_retry, bt_ladder_off, bt_ladder_off_no_way_left, bt_node_events, bt_choice_answer, bt_choice_other_answer). Recorded on the step's own production commit: the keys do not exist before it.",
+ "kind": "feature",
+ "commits": ["03a2b64"],
+ "notes": {"03a2b64": "gc/s25a-r4: S25a production code (options/bt_goal.py, core/planning/tree_host.py), its unit tests and docs; the cassettes were recorded on it with tools/golden_record.py --record, one per scenario"}
+}
