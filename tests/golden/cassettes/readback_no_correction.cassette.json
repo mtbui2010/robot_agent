@@ -1,0 +1,371 @@
+{
+ "format": 1,
+ "name": "readback_no_correction",
+ "tags": [
+  "question",
+  "failure"
+ ],
+ "about": "the read-back of the task is answered no",
+ "scenario": {
+  "name": "readback_no_correction",
+  "env": "sim_house",
+  "robot_pkg": "fakebot",
+  "task": "Bring the apple to the dining table.",
+  "robot": {
+   "objects": {
+    "apple": "desk@study room",
+    "mug": "desk@study room",
+    "banana": "dining table@kitchen",
+    "orange": "dining table@kitchen",
+    "sponge": "counter@kitchen",
+    "spoon": "drawer@kitchen/in",
+    "tennis ball": "stool@bedroom"
+   },
+   "answers": [
+    "no"
+   ]
+  },
+  "llm": {
+   "script": [],
+   "default": {
+    "status": "clear",
+    "reason": "",
+    "question": "",
+    "goals": [
+     {
+      "type": "on",
+      "object": "apple",
+      "from": "desk",
+      "to": "dining table"
+     }
+    ]
+   }
+  },
+  "planner": {
+   "plan": [
+    "MoveTo desk@study room",
+    "Find apple",
+    "Pick apple",
+    "MoveTo dining table@kitchen",
+    "Place dining table@kitchen"
+   ],
+   "replans": []
+  },
+  "options": {
+   "input_pivot": "none",
+   "look_then_ask": "0",
+   "bring_ask": "0",
+   "bt_goal": "0",
+   "fetch_guard": "0",
+   "confirm_task": true
+  }
+ },
+ "recorded": {
+  "llm_calls": [
+   {
+    "prompt": "c4bcf0d9ac145b3e",
+    "format": "b69b437228696e32",
+    "head": "You turn a household robot task into goals. The robot is a mobile manipu",
+    "answer": "{\"status\": \"clear\", \"reason\": \"\", \"question\": \"\", \"goals\": [{\"type\": \"on\", \"object\": \"apple\", \"from\": \"desk\", \"to\": \"dining table\"}]}"
+   }
+  ],
+  "planner_calls": [],
+  "robot_calls": [
+   {
+    "skill": "mobile_pose",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "pose": [
+      0.25,
+      2.1,
+      90.0
+     ]
+    }
+   },
+   {
+    "skill": "ask",
+    "params": {
+     "inputs": "I will put the apple on the dining table in the kitchen. Is that right?",
+     "retries": 0,
+     "lang": "en"
+    },
+    "result": {
+     "isdone": true,
+     "text": "no"
+    }
+   },
+   {
+    "skill": "ask",
+    "params": {
+     "inputs": "Sorry. What should I do?",
+     "retries": 0,
+     "lang": "en"
+    },
+    "result": {
+     "isdone": false,
+     "text": ""
+    }
+   },
+   {
+    "skill": "ask",
+    "params": {
+     "inputs": "Sorry, I didn't hear you. Sorry. What should I do?",
+     "retries": 0,
+     "lang": "en"
+    },
+    "result": {
+     "isdone": false,
+     "text": ""
+    }
+   }
+  ],
+  "events": [
+   {
+    "event": "task_start",
+    "task": "Bring the apple to the dining table.",
+    "world": {
+     "arrived": "entrance",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from entrance"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Starting the task"
+   },
+   {
+    "event": "reconcile",
+    "when": "start",
+    "changed": {
+     "arrived": [
+      null,
+      "entrance"
+     ]
+    },
+    "sensors": {
+     "arrived": {
+      "pose": [
+       0.25,
+       2.1
+      ],
+      "detail": "0.00 m from entrance",
+      "source": "mobile_pose"
+     },
+     "containers": {},
+     "unconfirmed": []
+    },
+    "provenance": {
+     "arrived": {
+      "source": "sensor",
+      "detail": "0.00 m from entrance"
+     },
+     "found": {
+      "source": "belief"
+     },
+     "holding": {
+      "source": "belief"
+     },
+     "opened": {
+      "source": "sensor",
+      "containers": {},
+      "unconfirmed": []
+     },
+     "on": {
+      "source": "belief"
+     }
+    },
+    "world": {
+     "arrived": "entrance",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from entrance"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    }
+   },
+   {
+    "event": "status",
+    "msg": "Understanding the task..."
+   },
+   {
+    "event": "understand",
+    "status": "clear",
+    "reason": "",
+    "goals": [
+     {
+      "type": "on",
+      "object": "apple",
+      "from": "",
+      "to": "dining table@kitchen"
+     }
+    ],
+    "question": null
+   },
+   {
+    "event": "clarify",
+    "question": "I will put the apple on the dining table in the kitchen. Is that right?",
+    "round": 1,
+    "kind": "confirm"
+   },
+   {
+    "event": "clarify",
+    "question": "Sorry. What should I do?",
+    "round": 1
+   },
+   {
+    "event": "done",
+    "status": "failed",
+    "msg": "no answer to: Sorry. What should I do?",
+    "world": {
+     "arrived": "entrance",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from entrance"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "code": "unknown",
+    "say": "I did not hear an answer, so I will stop here."
+   }
+  ],
+  "final": {
+   "robot": {
+    "at": "entrance",
+    "holding": null,
+    "objects": {
+     "apple": "desk@study room",
+     "mug": "desk@study room",
+     "banana": "dining table@kitchen",
+     "orange": "dining table@kitchen",
+     "sponge": "counter@kitchen",
+     "spoon": "drawer@kitchen/in",
+     "tennis ball": "stool@bedroom"
+    },
+    "opened": [],
+    "asked": [
+     "I will put the apple on the dining table in the kitchen. Is that right?",
+     "Sorry. What should I do?",
+     "Sorry, I didn't hear you. Sorry. What should I do?"
+    ]
+   },
+   "belief": {
+    "arrived": "entrance",
+    "found": null,
+    "holding": null,
+    "opened": [],
+    "on": [],
+    "found_pose": null,
+    "holding_pose": null,
+    "provenance": {
+     "arrived": {
+      "source": "sensor",
+      "detail": "0.00 m from entrance"
+     },
+     "found": {
+      "source": "belief"
+     },
+     "holding": {
+      "source": "belief"
+     },
+     "opened": {
+      "source": "sensor",
+      "containers": {},
+      "unconfirmed": []
+     },
+     "on": {
+      "source": "belief"
+     }
+    }
+   },
+   "lab_log": [],
+   "record": {
+    "task": "Bring the apple to the dining table.",
+    "lang": "en",
+    "obs": "",
+    "visible": [],
+    "planner": "sage+assist",
+    "plan_meta": {},
+    "warnings": [],
+    "steps": [],
+    "replans": [],
+    "status": "failed",
+    "failure": {
+     "code": "unknown"
+    }
+   },
+   "log_kinds": [
+    "reconcile",
+    "task_start",
+    "status",
+    "understand",
+    "clarify",
+    "done",
+    "snapshot"
+   ]
+  }
+ }
+}

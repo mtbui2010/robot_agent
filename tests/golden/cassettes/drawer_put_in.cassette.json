@@ -1,0 +1,1612 @@
+{
+ "format": 1,
+ "name": "drawer_put_in",
+ "tags": [
+  "success"
+ ],
+ "about": "open a drawer, fetch the orange, put it in",
+ "scenario": {
+  "name": "drawer_put_in",
+  "env": "sim_house",
+  "robot_pkg": "fakebot",
+  "task": "Put the orange in the kitchen drawer.",
+  "robot": {
+   "objects": {
+    "apple": "desk@study room",
+    "mug": "desk@study room",
+    "banana": "dining table@kitchen",
+    "orange": "dining table@kitchen",
+    "sponge": "counter@kitchen",
+    "spoon": "drawer@kitchen/in",
+    "tennis ball": "stool@bedroom"
+   }
+  },
+  "llm": {
+   "script": [],
+   "default": {
+    "status": "clear",
+    "reason": "",
+    "question": "",
+    "goals": [
+     {
+      "type": "in",
+      "object": "orange",
+      "from": "",
+      "to": "kitchen drawer"
+     }
+    ]
+   }
+  },
+  "planner": {
+   "plan": [
+    "MoveTo drawer@kitchen",
+    "Open drawer@kitchen",
+    "MoveTo dining table@kitchen",
+    "Find orange",
+    "Pick orange",
+    "MoveTo drawer@kitchen",
+    "PutIn drawer@kitchen"
+   ],
+   "replans": []
+  },
+  "options": {
+   "input_pivot": "none",
+   "look_then_ask": "0",
+   "bring_ask": "0",
+   "bt_goal": "0",
+   "fetch_guard": "0"
+  }
+ },
+ "recorded": {
+  "llm_calls": [
+   {
+    "prompt": "783e7a61afeb5280",
+    "format": "b69b437228696e32",
+    "head": "You turn a household robot task into goals. The robot is a mobile manipu",
+    "answer": "{\"status\": \"clear\", \"reason\": \"\", \"question\": \"\", \"goals\": [{\"type\": \"in\", \"object\": \"orange\", \"from\": \"\", \"to\": \"kitchen drawer\"}]}"
+   }
+  ],
+  "planner_calls": [
+   {
+    "call": "generate_plan",
+    "task": "Put the orange in the kitchen drawer."
+   }
+  ],
+  "robot_calls": [
+   {
+    "skill": "mobile_pose",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "pose": [
+      0.25,
+      2.1,
+      90.0
+     ]
+    }
+   },
+   {
+    "skill": "move",
+    "params": {
+     "inputs": "drawer@kitchen"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "arrived at drawer@kitchen"
+    }
+   },
+   {
+    "skill": "mobile_pose",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "pose": [
+      -0.755,
+      -0.209,
+      -178.1
+     ]
+    }
+   },
+   {
+    "skill": "open_drawer",
+    "params": {
+     "inputs": "drawer@kitchen"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "opened"
+    }
+   },
+   {
+    "skill": "move",
+    "params": {
+     "inputs": "dining table@kitchen"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "arrived at dining table@kitchen"
+    }
+   },
+   {
+    "skill": "mobile_pose",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "pose": [
+      -0.065,
+      -2.2,
+      0.0
+     ]
+    }
+   },
+   {
+    "skill": "find",
+    "params": {
+     "inputs": "orange",
+     "min_conf": 0.55
+    },
+    "result": {
+     "isdone": true,
+     "ins": {
+      "orange": {
+       "pose_3d": [
+        0.6,
+        0.05,
+        0.8
+       ]
+      }
+     }
+    }
+   },
+   {
+    "skill": "pick",
+    "params": {
+     "inputs": "orange",
+     "type": "fine_move"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "grasped"
+    }
+   },
+   {
+    "skill": "grasp_succeed",
+    "params": {},
+    "result": {
+     "isdone": true
+    }
+   },
+   {
+    "skill": "move",
+    "params": {
+     "inputs": "drawer@kitchen"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "arrived at drawer@kitchen"
+    }
+   },
+   {
+    "skill": "mobile_pose",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "pose": [
+      -0.755,
+      -0.209,
+      -178.1
+     ]
+    }
+   },
+   {
+    "skill": "grasp_succeed",
+    "params": {},
+    "result": {
+     "isdone": true
+    }
+   },
+   {
+    "skill": "place",
+    "params": {
+     "inputs": "drawer@kitchen"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "placed"
+    }
+   },
+   {
+    "skill": "grasp_succeed",
+    "params": {},
+    "result": {
+     "isdone": false
+    }
+   },
+   {
+    "skill": "find",
+    "params": {
+     "inputs": "orange",
+     "min_conf": 0.55
+    },
+    "result": {
+     "isdone": true,
+     "ins": {
+      "orange": {
+       "pose_3d": [
+        0.6,
+        0.05,
+        0.8
+       ]
+      }
+     }
+    }
+   }
+  ],
+  "events": [
+   {
+    "event": "task_start",
+    "task": "Put the orange in the kitchen drawer.",
+    "world": {
+     "arrived": "entrance",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from entrance"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Starting the task"
+   },
+   {
+    "event": "reconcile",
+    "when": "start",
+    "changed": {
+     "arrived": [
+      null,
+      "entrance"
+     ]
+    },
+    "sensors": {
+     "arrived": {
+      "pose": [
+       0.25,
+       2.1
+      ],
+      "detail": "0.00 m from entrance",
+      "source": "mobile_pose"
+     },
+     "containers": {},
+     "unconfirmed": []
+    },
+    "provenance": {
+     "arrived": {
+      "source": "sensor",
+      "detail": "0.00 m from entrance"
+     },
+     "found": {
+      "source": "belief"
+     },
+     "holding": {
+      "source": "belief"
+     },
+     "opened": {
+      "source": "sensor",
+      "containers": {},
+      "unconfirmed": []
+     },
+     "on": {
+      "source": "belief"
+     }
+    },
+    "world": {
+     "arrived": "entrance",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from entrance"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    }
+   },
+   {
+    "event": "status",
+    "msg": "Understanding the task..."
+   },
+   {
+    "event": "understand",
+    "status": "clear",
+    "reason": "",
+    "goals": [
+     {
+      "type": "in",
+      "object": "orange",
+      "from": "",
+      "to": "drawer@kitchen"
+     }
+    ],
+    "question": null
+   },
+   {
+    "event": "status",
+    "msg": "Generating task plan..."
+   },
+   {
+    "event": "gate",
+    "round": 0,
+    "problems": [],
+    "plan": [
+     "MoveTo drawer@kitchen",
+     "Open drawer@kitchen",
+     "MoveTo dining table@kitchen",
+     "Find orange",
+     "Pick orange",
+     "MoveTo drawer@kitchen",
+     "PutIn drawer@kitchen"
+    ]
+   },
+   {
+    "event": "plan",
+    "steps": [
+     {
+      "action": "MoveTo",
+      "object": "drawer@kitchen",
+      "grounded": true
+     },
+     {
+      "action": "Open",
+      "object": "drawer@kitchen",
+      "grounded": true
+     },
+     {
+      "action": "MoveTo",
+      "object": "dining table@kitchen",
+      "grounded": true
+     },
+     {
+      "action": "Find",
+      "object": "orange"
+     },
+     {
+      "action": "Pick",
+      "object": "orange"
+     },
+     {
+      "action": "MoveTo",
+      "object": "drawer@kitchen",
+      "grounded": true
+     },
+     {
+      "action": "PutIn",
+      "object": "drawer@kitchen",
+      "grounded": true
+     }
+    ],
+    "plan_meta": {
+     "method": "scripted",
+     "llm_plan": [
+      {
+       "action": "MoveTo",
+       "object": "drawer@kitchen",
+       "grounded": true
+      },
+      {
+       "action": "Open",
+       "object": "drawer@kitchen",
+       "grounded": true
+      },
+      {
+       "action": "MoveTo",
+       "object": "dining table@kitchen",
+       "grounded": true
+      },
+      {
+       "action": "Find",
+       "object": "orange"
+      },
+      {
+       "action": "Pick",
+       "object": "orange"
+      },
+      {
+       "action": "MoveTo",
+       "object": "drawer@kitchen",
+       "grounded": true
+      },
+      {
+       "action": "PutIn",
+       "object": "drawer@kitchen",
+       "grounded": true
+      }
+     ],
+     "edits": [],
+     "certified": true,
+     "gate_findings": [],
+     "repaired_by_op": {},
+     "completed_by_gate": 0
+    },
+    "warnings": [],
+    "plan_text": "move::drawer@kitchen\nopen_drawer::drawer@kitchen\nmove::dining table@kitchen\nfind::orange\npick::orange\nmove::drawer@kitchen\nplace::drawer@kitchen",
+    "certified": true,
+    "world": {
+     "arrived": "entrance",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from entrance"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    }
+   },
+   {
+    "event": "step_start",
+    "index": 0,
+    "action": "MoveTo",
+    "object": "drawer@kitchen",
+    "skill": "move",
+    "say": "I will move to drawer in the kitchen"
+   },
+   {
+    "event": "step_verify",
+    "index": 0,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "arrived at drawer@kitchen",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "localization",
+      "ok": true,
+      "detail": "0.00 m from drawer@kitchen",
+      "confidence": null,
+      "unknown": false
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 0,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "arrived at drawer@kitchen"
+    },
+    "world": {
+     "arrived": "drawer@kitchen",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: move to drawer in the kitchen"
+   },
+   {
+    "event": "step_start",
+    "index": 1,
+    "action": "Open",
+    "object": "drawer@kitchen",
+    "skill": "open_drawer",
+    "say": "I will open drawer in the kitchen"
+   },
+   {
+    "event": "step_verify",
+    "index": 1,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "opened",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "sensor",
+      "ok": true,
+      "detail": "unknown: open_drawer declares no sensor that checks it",
+      "confidence": null,
+      "unknown": true
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 1,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "opened"
+    },
+    "world": {
+     "arrived": "drawer@kitchen",
+     "found": null,
+     "holding": null,
+     "opened": [
+      "drawer@kitchen"
+     ],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {
+        "drawer@kitchen": {
+         "source": "belief",
+         "open": true
+        }
+       },
+       "unconfirmed": [
+        "drawer@kitchen"
+       ]
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: open drawer in the kitchen"
+   },
+   {
+    "event": "step_start",
+    "index": 2,
+    "action": "MoveTo",
+    "object": "dining table@kitchen",
+    "skill": "move",
+    "say": "I will move to dining table@kitchen"
+   },
+   {
+    "event": "step_verify",
+    "index": 2,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "arrived at dining table@kitchen",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "localization",
+      "ok": true,
+      "detail": "0.00 m from dining table@kitchen",
+      "confidence": null,
+      "unknown": false
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 2,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "arrived at dining table@kitchen"
+    },
+    "world": {
+     "arrived": "dining table@kitchen",
+     "found": null,
+     "holding": null,
+     "opened": [
+      "drawer@kitchen"
+     ],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {
+        "drawer@kitchen": {
+         "source": "belief",
+         "open": true
+        }
+       },
+       "unconfirmed": [
+        "drawer@kitchen"
+       ]
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: move to dining table@kitchen"
+   },
+   {
+    "event": "step_start",
+    "index": 3,
+    "action": "Find",
+    "object": "orange",
+    "skill": "find",
+    "say": "I will find orange"
+   },
+   {
+    "event": "step_verify",
+    "index": 3,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "sensor",
+      "ok": true,
+      "detail": "unknown: find declares no sensor that checks it",
+      "confidence": null,
+      "unknown": true
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 3,
+    "status": "success",
+    "result": {
+     "ins": {
+      "orange": {
+       "pose_3d": [
+        0.6,
+        0.05,
+        0.8
+       ]
+      }
+     },
+     "isdone": true,
+     "msg": ""
+    },
+    "world": {
+     "arrived": "dining table@kitchen",
+     "found": "orange",
+     "holding": null,
+     "opened": [
+      "drawer@kitchen"
+     ],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {
+        "drawer@kitchen": {
+         "source": "belief",
+         "open": true
+        }
+       },
+       "unconfirmed": [
+        "drawer@kitchen"
+       ]
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: find orange"
+   },
+   {
+    "event": "step_start",
+    "index": 4,
+    "action": "Pick",
+    "object": "orange",
+    "skill": "pick",
+    "say": "I will pick orange"
+   },
+   {
+    "event": "step_verify",
+    "index": 4,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "grasped",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "sensor",
+      "ok": true,
+      "detail": "grasp_succeed: ok",
+      "confidence": null,
+      "unknown": false
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 4,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "grasped"
+    },
+    "world": {
+     "arrived": "dining table@kitchen",
+     "found": null,
+     "holding": "orange",
+     "opened": [
+      "drawer@kitchen"
+     ],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {
+        "drawer@kitchen": {
+         "source": "belief",
+         "open": true
+        }
+       },
+       "unconfirmed": [
+        "drawer@kitchen"
+       ]
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: pick orange"
+   },
+   {
+    "event": "step_start",
+    "index": 5,
+    "action": "MoveTo",
+    "object": "drawer@kitchen",
+    "skill": "move",
+    "say": "I will move to drawer in the kitchen"
+   },
+   {
+    "event": "step_verify",
+    "index": 5,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "arrived at drawer@kitchen",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "localization",
+      "ok": true,
+      "detail": "0.00 m from drawer@kitchen",
+      "confidence": null,
+      "unknown": false
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 5,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "arrived at drawer@kitchen"
+    },
+    "world": {
+     "arrived": "drawer@kitchen",
+     "found": null,
+     "holding": "orange",
+     "opened": [
+      "drawer@kitchen"
+     ],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {
+        "drawer@kitchen": {
+         "source": "belief",
+         "open": true
+        }
+       },
+       "unconfirmed": [
+        "drawer@kitchen"
+       ]
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: move to drawer in the kitchen"
+   },
+   {
+    "event": "step_start",
+    "index": 6,
+    "action": "PutIn",
+    "object": "drawer@kitchen",
+    "skill": "place",
+    "say": "I will place drawer in the kitchen"
+   },
+   {
+    "event": "step_verify",
+    "index": 6,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "placed",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "sensor",
+      "ok": true,
+      "detail": "grasp_succeed: ok",
+      "confidence": null,
+      "unknown": false
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 6,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "placed"
+    },
+    "world": {
+     "arrived": "drawer@kitchen",
+     "found": null,
+     "holding": null,
+     "opened": [
+      "drawer@kitchen"
+     ],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {
+        "drawer@kitchen": {
+         "source": "belief",
+         "open": true
+        }
+       },
+       "unconfirmed": [
+        "drawer@kitchen"
+       ]
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: place drawer in the kitchen"
+   },
+   {
+    "event": "status",
+    "msg": "Checking the goals..."
+   },
+   {
+    "event": "goal_check",
+    "goal": {
+     "type": "in",
+     "object": "orange",
+     "from": "",
+     "to": "drawer@kitchen"
+    },
+    "ok": true,
+    "evidence": "the orange is seen on the drawer in the kitchen",
+    "world": {
+     "arrived": "drawer@kitchen",
+     "found": "orange",
+     "holding": null,
+     "opened": [
+      "drawer@kitchen"
+     ],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {
+        "drawer@kitchen": {
+         "source": "belief",
+         "open": true
+        }
+       },
+       "unconfirmed": [
+        "drawer@kitchen"
+       ]
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    }
+   },
+   {
+    "event": "done",
+    "status": "success",
+    "msg": "",
+    "world": {
+     "arrived": "drawer@kitchen",
+     "found": "orange",
+     "holding": null,
+     "opened": [
+      "drawer@kitchen"
+     ],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {
+        "drawer@kitchen": {
+         "source": "belief",
+         "open": true
+        }
+       },
+       "unconfirmed": [
+        "drawer@kitchen"
+       ]
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Task completed"
+   }
+  ],
+  "final": {
+   "robot": {
+    "at": "drawer@kitchen",
+    "holding": null,
+    "objects": {
+     "apple": "desk@study room",
+     "mug": "desk@study room",
+     "banana": "dining table@kitchen",
+     "orange": "drawer@kitchen/in",
+     "sponge": "counter@kitchen",
+     "spoon": "drawer@kitchen/in",
+     "tennis ball": "stool@bedroom"
+    },
+    "opened": [
+     "drawer@kitchen"
+    ],
+    "asked": []
+   },
+   "belief": {
+    "arrived": "drawer@kitchen",
+    "found": "orange",
+    "holding": null,
+    "opened": [
+     "drawer@kitchen"
+    ],
+    "on": [],
+    "found_pose": null,
+    "holding_pose": null,
+    "provenance": {
+     "arrived": {
+      "source": "sensor",
+      "detail": "MoveTo localization check"
+     },
+     "found": {
+      "source": "belief"
+     },
+     "holding": {
+      "source": "belief"
+     },
+     "opened": {
+      "source": "belief",
+      "containers": {
+       "drawer@kitchen": {
+        "source": "belief",
+        "open": true
+       }
+      },
+      "unconfirmed": [
+       "drawer@kitchen"
+      ]
+     },
+     "on": {
+      "source": "belief"
+     }
+    }
+   },
+   "lab_log": [],
+   "record": {
+    "task": "Put the orange in the kitchen drawer.",
+    "lang": "en",
+    "obs": "goals: [{\"type\": \"in\", \"object\": \"orange\", \"from\": \"\", \"to\": \"drawer@kitchen\"}]",
+    "visible": [],
+    "planner": "sage+assist",
+    "plan_meta": {
+     "method": "scripted",
+     "llm_plan": [
+      {
+       "action": "MoveTo",
+       "object": "drawer@kitchen",
+       "grounded": true
+      },
+      {
+       "action": "Open",
+       "object": "drawer@kitchen",
+       "grounded": true
+      },
+      {
+       "action": "MoveTo",
+       "object": "dining table@kitchen",
+       "grounded": true
+      },
+      {
+       "action": "Find",
+       "object": "orange"
+      },
+      {
+       "action": "Pick",
+       "object": "orange"
+      },
+      {
+       "action": "MoveTo",
+       "object": "drawer@kitchen",
+       "grounded": true
+      },
+      {
+       "action": "PutIn",
+       "object": "drawer@kitchen",
+       "grounded": true
+      }
+     ],
+     "edits": [],
+     "certified": true,
+     "gate_findings": [],
+     "repaired_by_op": {},
+     "completed_by_gate": 0
+    },
+    "warnings": [],
+    "steps": [
+     {
+      "index": 0,
+      "action": "MoveTo",
+      "object": "drawer@kitchen",
+      "skill": "move",
+      "params": {
+       "inputs": "drawer@kitchen"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "arrived at drawer@kitchen"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "arrived at drawer@kitchen",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "localization",
+        "ok": true,
+        "detail": "0.00 m from drawer@kitchen",
+        "confidence": null,
+        "unknown": false
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 1,
+      "action": "Open",
+      "object": "drawer@kitchen",
+      "skill": "open_drawer",
+      "params": {
+       "inputs": "drawer@kitchen"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "opened"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "opened",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "sensor",
+        "ok": true,
+        "detail": "unknown: open_drawer declares no sensor that checks it",
+        "confidence": null,
+        "unknown": true
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 2,
+      "action": "MoveTo",
+      "object": "dining table@kitchen",
+      "skill": "move",
+      "params": {
+       "inputs": "dining table@kitchen"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "arrived at dining table@kitchen"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "arrived at dining table@kitchen",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "localization",
+        "ok": true,
+        "detail": "0.00 m from dining table@kitchen",
+        "confidence": null,
+        "unknown": false
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 3,
+      "action": "Find",
+      "object": "orange",
+      "skill": "find",
+      "params": {
+       "inputs": "orange",
+       "min_conf": 0.55
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "ins": {
+        "orange": {
+         "pose_3d": [
+          0.6,
+          0.05,
+          0.8
+         ]
+        }
+       },
+       "isdone": true,
+       "msg": ""
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "sensor",
+        "ok": true,
+        "detail": "unknown: find declares no sensor that checks it",
+        "confidence": null,
+        "unknown": true
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 4,
+      "action": "Pick",
+      "object": "orange",
+      "skill": "pick",
+      "params": {
+       "inputs": "orange",
+       "type": "fine_move"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "grasped"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "grasped",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "sensor",
+        "ok": true,
+        "detail": "grasp_succeed: ok",
+        "confidence": null,
+        "unknown": false
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 5,
+      "action": "MoveTo",
+      "object": "drawer@kitchen",
+      "skill": "move",
+      "params": {
+       "inputs": "drawer@kitchen"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "arrived at drawer@kitchen"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "arrived at drawer@kitchen",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "localization",
+        "ok": true,
+        "detail": "0.00 m from drawer@kitchen",
+        "confidence": null,
+        "unknown": false
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 6,
+      "action": "PutIn",
+      "object": "drawer@kitchen",
+      "skill": "place",
+      "params": {
+       "inputs": "drawer@kitchen"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "placed"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "placed",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "sensor",
+        "ok": true,
+        "detail": "grasp_succeed: ok",
+        "confidence": null,
+        "unknown": false
+       }
+      ],
+      "logs": []
+     }
+    ],
+    "replans": [],
+    "status": "success",
+    "failure": {}
+   },
+   "log_kinds": [
+    "reconcile",
+    "task_start",
+    "status",
+    "understand",
+    "status",
+    "gate",
+    "plan",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "status",
+    "goal_check",
+    "done",
+    "snapshot"
+   ]
+  }
+ }
+}
