@@ -140,12 +140,16 @@ This section describes the second run. The text above describes run 1 and stays 
 - Done and merged on `generalize-core`: S02 (pack schema, loader with the schema-1 lift, registry, empty core and household packs),
   S03 (move words, Places and Memory to `places.py`; the `phases` package), S04 (phrase tables become pack data; S04b finished the
   household and core phrase files), S06 (one predicate table for tree conditions and effect checks).
-- Stopped: S05 (goal-reach rules chosen by kind, one rules object per household kind), wave W2.
-- Stop reason: in wave W2 the run could not prove equivalence for S05. The owner's stop rule is to stop at the first mismatch, so the
-  run stopped there and no step after S05 was started in this run.
-- Caveat for the reader: the S05 commit (050ec5a) is present on the branch, and the integration suite is green with it (see below),
-  because it was merged before the stop. The equivalence proof for it is still open. Until that proof is written, treat S05 as
-  merged but not accepted, and revert it (one revertible commit) if the proof fails.
+- Also done: S05 (goal-reach rules chosen by kind, one rules object per household kind), commit 050ec5a, merged as 6e37529.
+  Correction of an earlier line of this section: the run first reported "S05 stopped, proof open". That was a bookkeeping artefact. After
+  a session restart two workers worked on S05 at once; one stopped without changing anything (it found the other writing in the same
+  worktree), the other finished with the proof. The run took the first answer. The proof exists: `tests/legacy_ref/goal_reach.py`
+  (a verbatim copy of the six old methods) and `tests/test_goal_semantics_diff.py` (27 tests, re-run on 2026-11-23: 27 passed), and the
+  roundB check (goldens, mutation check, full suite) is green with S05. S05 is accepted.
+- Not merged on purpose: branch `gc/s04` is a second, competing implementation of S04 (S04b is the one merged); it conflicts and is
+  kept only as a branch.
+- Known flakiness (not caused by this work): some tests compare an event stream that holds a measured time (`plan_sec`); under heavy
+  machine load they can fail once and pass on a re-run (seen on a tip before S05 too). No test was changed.
 - Not touched: robot_agent's real-robot checkout, shared services, any push, the main branch.
 
 ### Numbers now versus the baseline
@@ -179,8 +183,7 @@ So the answer for G1..G7, P7 and P8 is: none can be deleted today; G2 is the clo
 
 ### What is next
 
-1. Write the equivalence proof for S05 (run the goldens and the mutation check against 050ec5a and its parent, and report the
-   first differing cassette if any). If it holds, the S05 step is accepted. If not, revert S05 on `generalize-core`.
+1. (Done: the S05 proof exists, see Steps above.)
 2. Continue wave W3 onward from `generalize_core_plan.json`, at most 4 parallel streams per wave, stopping at the first mismatch.
 3. Round C (the PEX robot on the new framework) starts only after the steps listed in the table exist.
 4. Nothing is pushed; the owner reviews first.
