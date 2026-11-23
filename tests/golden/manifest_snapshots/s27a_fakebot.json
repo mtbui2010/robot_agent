@@ -1,0 +1,658 @@
+{
+ "manifest": {
+  "capabilities": {
+   "arms": 1,
+   "base": true,
+   "drawer": true,
+   "find_reaches": false,
+   "hands": [
+    "right"
+   ],
+   "head": true,
+   "lift": true,
+   "lying_objects": [
+    "phone",
+    "fork",
+    "spoon",
+    "bread",
+    "banana",
+    "control"
+   ],
+   "standing_objects": [
+    "cup",
+    "can",
+    "bottle"
+   ],
+   "vlm_verify": false,
+   "voice": true
+  },
+  "defaults": {
+   "home_place": "living room",
+   "mobile_height": 435
+  },
+  "geometry": {
+   "arrive_tol_m": 0.3,
+   "max_reach_y_m": 0.8,
+   "reach_far_m": 1.0,
+   "reach_m": 0.78
+  },
+  "language": "ko",
+  "robot": "fakebot",
+  "safety": {
+   "profile": "../../fixtures/safety/household_fixture.yaml"
+  },
+  "skills": [
+   {
+    "action": "MoveTo",
+    "effects": [
+     "arrived(?inputs)"
+    ],
+    "errors": [
+     "unreachable",
+     "blocked",
+     "timeout",
+     "hw_fault",
+     "cancelled",
+     "software"
+    ],
+    "hold": [],
+    "interruptible": true,
+    "name": "move",
+    "params": {
+     "properties": {
+      "inputs": {
+       "description": "ENV location key, e.g. 'table@living room', 'home'",
+       "type": "string"
+      },
+      "keep_arm": {
+       "default": false,
+       "description": "drive only: no fold / lift / give",
+       "type": "boolean"
+      },
+      "lift_height": {
+       "description": "lift target on arrival (default from the ENV entry)"
+      },
+      "mode": {
+       "description": "approach side (default: the ENV entry's default_mode)",
+       "enum": [
+        "front",
+        "left",
+        "right"
+       ],
+       "type": "string"
+      }
+     },
+     "required": [
+      "inputs"
+     ],
+     "type": "object"
+    },
+    "pre": [],
+    "verify": [
+     {
+      "kind": "symbolic"
+     },
+     {
+      "kind": "sensor",
+      "skill": "mobile_pose"
+     }
+    ],
+    "version": "1.0"
+   },
+   {
+    "action": "Find",
+    "effects": [
+     "found(?inputs)"
+    ],
+    "errors": [
+     "absent",
+     "perception_unavailable",
+     "hw_fault",
+     "timeout",
+     "cancelled",
+     "software"
+    ],
+    "hold": [],
+    "interruptible": true,
+    "name": "find",
+    "params": {
+     "properties": {
+      "inputs": {
+       "description": "'obj[,obj...][@location][|trials]' (open-vocabulary detector names)",
+       "type": "string"
+      },
+      "min_conf": {
+       "default": 0.55,
+       "description": "detections below this are not seen (core default ROBOT_AGENT_FIND_MIN_CONF; the skill's own default is 0)",
+       "type": "number"
+      },
+      "once": {
+       "default": true,
+       "description": "false: also search every ENV location",
+       "type": "boolean"
+      },
+      "others": {
+       "description": "look-alikes in view, comma separated",
+       "type": "string"
+      },
+      "verify": {
+       "default": false,
+       "description": "VLM check of low-scoring boxes",
+       "type": "boolean"
+      },
+      "views": {
+       "default": [
+        "down"
+       ],
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      }
+     },
+     "required": [
+      "inputs"
+     ],
+     "type": "object"
+    },
+    "pre": [],
+    "verify": [
+     {
+      "kind": "symbolic"
+     }
+    ],
+    "version": "1.0"
+   },
+   {
+    "action": "Pick",
+    "effects": [
+     "holding(?inputs)",
+     "not found(?inputs)",
+     "not hand_empty()"
+    ],
+    "errors": [
+     "absent",
+     "unreachable",
+     "grasp_failed",
+     "perception_unavailable",
+     "hw_fault",
+     "cancelled",
+     "software"
+    ],
+    "hold": [],
+    "interruptible": false,
+    "name": "pick",
+    "params": {
+     "properties": {
+      "inputs": {
+       "description": "'obj[@location][|trials]'; the core passes world.found",
+       "type": "string"
+      },
+      "islying": {
+       "description": "override the detected lying / standing pose",
+       "type": "boolean"
+      },
+      "num_trials": {
+       "default": 2,
+       "type": "integer"
+      },
+      "type": {
+       "description": "sage_namemap.build_params sends 'fine_move'",
+       "type": "string"
+      }
+     },
+     "required": [
+      "inputs"
+     ],
+     "type": "object"
+    },
+    "pre": [
+     "found(?inputs)",
+     "hand_empty()"
+    ],
+    "verify": [
+     {
+      "kind": "symbolic"
+     },
+     {
+      "kind": "sensor",
+      "skill": "grasp_succeed"
+     }
+    ],
+    "version": "1.0"
+   },
+   {
+    "action": "Place",
+    "alias_actions": [
+     "PutIn"
+    ],
+    "effects": [
+     "hand_empty()",
+     "not holding(*)"
+    ],
+    "errors": [
+     "dropped",
+     "grasp_failed",
+     "unreachable",
+     "blocked",
+     "perception_unavailable",
+     "hw_fault",
+     "cancelled",
+     "software"
+    ],
+    "hold": [],
+    "interruptible": false,
+    "name": "place",
+    "params": {
+     "properties": {
+      "big_object": {
+       "default": false,
+       "type": "boolean"
+      },
+      "inputs": {
+       "description": "'[target>>]destination'; 'me' = home_place",
+       "type": "string"
+      },
+      "lower_before_open": {
+       "description": "default: the held object's islying",
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "inputs"
+     ],
+     "type": "object"
+    },
+    "pre": [
+     "arrived(?inputs)",
+     "not hand_empty()"
+    ],
+    "verify": [
+     {
+      "kind": "symbolic"
+     },
+     {
+      "expect": false,
+      "kind": "sensor",
+      "skill": "grasp_succeed"
+     }
+    ],
+    "version": "1.0"
+   },
+   {
+    "action": "Open",
+    "effects": [
+     "opened(?inputs)"
+    ],
+    "errors": [
+     "absent",
+     "unreachable",
+     "grasp_failed",
+     "perception_unavailable",
+     "hw_fault",
+     "cancelled",
+     "software",
+     "unknown"
+    ],
+    "hold": [],
+    "interruptible": false,
+    "name": "open_drawer",
+    "params": {
+     "properties": {
+      "inputs": {
+       "description": "ENV location key of a drawer (needs 'handle' + 'handle_height' in ENV)",
+       "type": "string"
+      },
+      "stay_here": {
+       "default": false,
+       "description": "skip the move to the drawer",
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "inputs"
+     ],
+     "type": "object"
+    },
+    "pre": [
+     "arrived(?inputs)",
+     "hand_empty()"
+    ],
+    "verify": [
+     {
+      "kind": "symbolic"
+     },
+     {
+      "kind": "vlm",
+      "prompt": "Is the drawer open?"
+     }
+    ],
+    "version": "1.0"
+   },
+   {
+    "action": "Close",
+    "effects": [
+     "not opened(?inputs)"
+    ],
+    "errors": [
+     "absent",
+     "unreachable",
+     "perception_unavailable",
+     "hw_fault",
+     "cancelled",
+     "software",
+     "unknown"
+    ],
+    "hold": [],
+    "interruptible": false,
+    "name": "close_drawer",
+    "params": {
+     "properties": {
+      "forward_after_open": {
+       "description": "from the open_drawer result",
+       "type": "number"
+      },
+      "inputs": {
+       "description": "ENV location key of a drawer",
+       "type": "string"
+      },
+      "lift_after_open": {
+       "description": "from the open_drawer result",
+       "type": "number"
+      },
+      "pose_after_open": {
+       "description": "from the open_drawer result",
+       "type": "array"
+      },
+      "stay_here": {
+       "default": true,
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "inputs"
+     ],
+     "type": "object"
+    },
+    "pre": [
+     "arrived(?inputs)",
+     "hand_empty()",
+     "opened(?inputs)"
+    ],
+    "verify": [
+     {
+      "kind": "symbolic"
+     },
+     {
+      "kind": "vlm",
+      "prompt": "Is the drawer closed?"
+     }
+    ],
+    "version": "1.0"
+   },
+   {
+    "action": "Verify",
+    "effects": [],
+    "errors": [
+     "perception_unavailable",
+     "software"
+    ],
+    "hold": [],
+    "interruptible": true,
+    "name": "grasp_succeed",
+    "params": {
+     "properties": {
+      "crop_roi": {
+       "description": "wrist-cam ROI [x0, y0, x1, y1]",
+       "items": {
+        "type": "integer"
+       },
+       "type": "array"
+      },
+      "grasp_check_margin": {
+       "description": "m beyond the tool tip (FIND_CONFIGS)",
+       "type": "number"
+      },
+      "grasp_check_min_frac": {
+       "description": "ROI fraction that must read near (FIND_CONFIGS)",
+       "type": "number"
+      }
+     },
+     "required": [],
+     "type": "object"
+    },
+    "pre": [],
+    "verify": [],
+    "version": "1.0"
+   },
+   {
+    "action": "Observe",
+    "effects": [],
+    "errors": [
+     "hw_fault",
+     "software"
+    ],
+    "hold": [],
+    "interruptible": true,
+    "name": "mobile_pose",
+    "params": {
+     "properties": {},
+     "required": [],
+     "type": "object"
+    },
+    "pre": [],
+    "verify": [],
+    "version": "1.0"
+   },
+   {
+    "action": "Ask",
+    "effects": [],
+    "errors": [
+     "timeout",
+     "cancelled",
+     "hw_fault",
+     "software"
+    ],
+    "hold": [],
+    "interruptible": true,
+    "name": "ask",
+    "params": {
+     "properties": {
+      "confirm": {
+       "type": "boolean"
+      },
+      "inputs": {
+       "description": "the question (said in `lang`)",
+       "type": "string"
+      },
+      "lang": {
+       "default": "ko",
+       "type": "string"
+      },
+      "options": {
+       "description": "allowed answers, 'spoken->value'",
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "read_options": {
+       "default": false,
+       "type": "boolean"
+      },
+      "retries": {
+       "default": 2,
+       "type": "integer"
+      },
+      "screen_choice": {
+       "default": true,
+       "type": "boolean"
+      },
+      "screen_wait_sec": {
+       "default": 30,
+       "type": "number"
+      }
+     },
+     "required": [
+      "inputs"
+     ],
+     "type": "object"
+    },
+    "pre": [],
+    "verify": [],
+    "version": "1.0"
+   },
+   {
+    "action": "Query",
+    "effects": [],
+    "errors": [
+     "hw_fault",
+     "timeout",
+     "software"
+    ],
+    "hold": [],
+    "interruptible": true,
+    "name": "llm",
+    "params": {
+     "properties": {
+      "inputs": {
+       "description": "prompt for the 'llm' connection (text only)",
+       "type": "string"
+      }
+     },
+     "required": [
+      "inputs"
+     ],
+     "type": "object"
+    },
+    "pre": [],
+    "verify": [],
+    "version": "1.0"
+   }
+  ],
+  "version": "1.0"
+ },
+ "manifest_of": {
+  "capabilities": {
+   "arms": 1,
+   "base": true,
+   "drawer": true,
+   "find_reaches": false,
+   "hands": [
+    "right"
+   ],
+   "head": true,
+   "lift": true,
+   "lying_objects": [
+    "phone",
+    "fork",
+    "spoon",
+    "bread",
+    "banana",
+    "control"
+   ],
+   "standing_objects": [
+    "cup",
+    "can",
+    "bottle"
+   ],
+   "vlm_verify": false,
+   "voice": true
+  },
+  "goal_kinds": {
+   "close": {
+    "feasible": true,
+    "needs": [
+     "Close"
+    ],
+    "slots": {}
+   },
+   "deliver": {
+    "feasible": false,
+    "needs": [
+     "MoveTo",
+     "WaitForUnload"
+    ],
+    "slots": {}
+   },
+   "go": {
+    "feasible": true,
+    "needs": [
+     "MoveTo"
+    ],
+    "slots": {}
+   },
+   "in": {
+    "feasible": true,
+    "needs": [
+     "Pick",
+     [
+      "PutIn",
+      "Place"
+     ]
+    ],
+    "slots": {}
+   },
+   "on": {
+    "feasible": true,
+    "needs": [
+     "Pick",
+     "Place"
+    ],
+    "slots": {}
+   },
+   "open": {
+    "feasible": true,
+    "needs": [
+     "Open"
+    ],
+    "slots": {}
+   },
+   "say": {
+    "feasible": false,
+    "needs": [
+     "Say"
+    ],
+    "slots": {}
+   }
+  },
+  "pack": {
+   "extends": "household",
+   "name": "",
+   "schema": 1,
+   "version": ""
+  },
+  "places": [
+   "sofa@living room",
+   "side table@living room",
+   "desk@study room",
+   "drawer@kitchen",
+   "counter@kitchen",
+   "shelf@kitchen",
+   "dining table@kitchen",
+   "washer@laundry room",
+   "chest@bedroom",
+   "stool@bedroom",
+   "shelf@restroom",
+   "shoe area@living room",
+   "entrance"
+  ],
+  "plan_actions": [
+   "Close",
+   "Find",
+   "LieOn",
+   "MoveTo",
+   "Open",
+   "Pick",
+   "Place",
+   "PutIn",
+   "Serve",
+   "Sit",
+   "Wait"
+  ],
+  "question_kinds": [],
+  "robot": "fakebot",
+  "site": "golden",
+  "version": "1.0"
+ }
+}

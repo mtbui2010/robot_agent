@@ -77,7 +77,7 @@ skills:
       type: object
       properties:
         inputs: {type: string, description: "'obj[@location][|trials]'; the core passes world.found"}
-        type: {type: string, description: "grace_namemap.build_params sends 'fine_move'"}
+        type: {type: string, description: "sage_namemap.build_params sends 'fine_move'"}
         islying: {type: boolean, description: "override the detected lying / standing pose"}
         num_trials: {type: integer, default: 2}
       required: [inputs]
@@ -91,7 +91,7 @@ skills:
 
   - name: place
     action: Place
-    # grace_namemap.SKILL_MAP maps PutIn onto this skill too (into an opened container)
+    # sage_namemap.SKILL_MAP maps PutIn onto this skill too (into an opened container)
     alias_actions: [PutIn]
     params:
       type: object
@@ -212,3 +212,7 @@ skills:
     interruptible: true
     errors: [hw_fault, timeout, software]
     version: "1.0"
+
+# a household-style test robot: the test fixture profile (tests/fixtures/safety), so the hazard gate tests run on a profile
+safety:
+  profile: ../../fixtures/safety/household_fixture.yaml

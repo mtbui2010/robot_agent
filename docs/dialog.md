@@ -47,6 +47,19 @@ The understand model sometimes writes `from: "me"` for "bring me the cup". Befor
 when `to` is set. The source is then searched for or taken from the object memory. "Where are you?" is asked
 only for a `to: "me"` whose place the person's words do not name ("... to me at the sofa" names it).
 
+Option `bring_ask` (default on, `$ROBOT_AGENT_BRING_ASK`): for such a request the robot asks ONE combined question, "Where are you? Or where
+should I put it?" (pack key `q_where_bring`), also when the person is tracked (the answer is kept, the delivery stays the engine's own). A place
+in the answer is the destination; no place is a hand-over; asked once per request. Code `robot_agent/options/bring_ask.py`, service `person_where`
+(used by `assist_loop`). Switch off: key `enabled`.
+
+### The place the person said is remembered (m10 round 5)
+
+An untracked speaker's answer to "Where are you?" names where they are. The place is kept for the run
+(`AssistLoop._person_at`, per person). A later answer to another question ("what should I do?", a restated request)
+is the latest answer, but it does not clear the place: before this, the next grounding found no place in the latest
+answer and asked "Where are you?" again until the clarify cap ended the run. The place is used only after the
+question was asked; an unasked remark never places the person.
+
 ### Unclear answers to a yes / no question (ASR2)
 
 `dialog.read_yes_no(text)` returns a `Reply` whose `kind` is one of:
@@ -78,14 +91,14 @@ questions ("Shall I try again?") still treat anything but a clear yes as no.
   its i18n `cannot_do`.
 - **capability / safety from the model's typed status** (`infeasible` / `unsafe`): this stands on the person's own
   command, or on a typed answer. After an answer heard through the microphone, it stands only when the person's
-  words name something unsafe or impossible (`understand._MARK`: knife, window, throw, fire, pour, washer ...,
-  plus the Korean and Vietnamese words). If they name nothing like that, the refusal could only come from a
+  words name something unsafe or impossible (the robot's safety profile `refusal_marks`: for a household robot knife, window, throw, fire, pour, washer ..., plus the
+  Korean words; a profile with none lets the refusal stand). If they name nothing like that, the refusal could only come from a
   misheard answer ("the rest broom" for "the restroom"). The misheard answer is then dropped from the dialogue,
   and the question is asked again: "Sorry, I may have misheard you. <the question>". The `clarify_rounds` limit
   still applies.
 - **declined**: the person said no (kept as a kind for the refusals the dialog adds later).
 
-The `done` event of a refusal carries `refusal: capability | safety` (`declined` is not used yet).
+The `done` event of a refusal carries `refusal: capability | safety` (`declined` is not used yet). When the safety rules of the robot's profile refused a goal, the `done` event also carries `refusals` (rule id, reason and goal, on every final status; [safety.md](safety.md)).
 
 ### A deterministic understand call (UND_T0)
 
@@ -110,3 +123,63 @@ Tests: `tests/test_v2_dialog_*.py`. Scenarios: `scenarios/tests/test_t1_v2_under
 A read-back correction that names a new destination ("Put the apple on the dining table", then "on the
 kitchen counter") replaces the destination it read back: the goal read-back (`goal_readback`) no longer counts
 the task's mention of that place (`understand.without_places`). ASR2c and GR06 run with `goal_readback` on.
+
+### A restated request replaces a garbled first hearing in the object check (m10 round 6)
+
+The object-coverage check of `find_issues` reads the task's own words. After a first hearing the recogniser garbled
+("the chicken bring"), a clean answer that said the whole request again was understood, but the check still read the
+garbled original and re-asked. `AssistLoop._object_source` now reads the latest answer that restates the request
+(`_restates`: most of the original's words again) in place of the first hearing. Short answers do not replace it.
+
+### Dialogue convergence (R4b item 2, `core/planning/dialog_converge.py`)
+Failure class: clarify and read-back loops that end in "I could not confirm with you what to do". Causes found
+in the failing dialogues of a 50-task slice (not task ids):
+
+1. A correction after a "no" rewrote every goal. `pin_to` sent ALL move goals to the destination the correction
+   named, and the model, asked again with the correction in the dialogue, moved the other object too. The person
+   fixed one goal and broke another, again and again.
+2. A reading the person had refused was read back again (the request said again gave the same goals).
+3. The caps counted every read-back and every question, also those that changed the goals.
+4. A question reworded only in politeness passed the word-for-word check.
+
+What the loop does now (option `dialog_converge`, env `ROBOT_AGENT_DIALOG_CONVERGE`, default on; `0` = the earlier loop):
+
+- **A correction edits the goal it names.** `correction_edit` reads one object (the goals' own names, one letter off
+  allowed, the Korean names the loop attached by their head syllables) and one destination (an ENV place, or the
+  speaker) from the correction. Only that goal is grounded again (a person's hand-over, a surface beside them) and the
+  edited goals are read back next: no new understanding of the task, so one model call less. Several objects, no
+  destination, two places, or a speaker the ENV cannot place: the earlier path.
+- **A correction the goal already satisfies** ("the lamp on the shelf" when the lamp is going to the shelf) may be a
+  misheard "no": the goals are read back once more; the second time the person is asked a choice ("what I take,
+  where I put it, or who it is for"; phrase `q_which_part`).
+- **A refused reading is not read back again.** The goal set is keyed (`goal_sig`); a set that was refused earlier
+  gets the same choice question once, and the run ends as "not confirmed" if it comes back a third time. A bare
+  "no" to a reading refused before also asks the choice instead of "what should I do".
+- **The caps count what gained nothing.** Each read-back whose goals differ from every earlier one earns one more
+  read-back (two at most); a question whose answer gave goals not seen before gives its round back (twice at most).
+- **A near-duplicate question** (the same content words, other politeness) is reworded once, like a repeat.
+- The read-back no longer says "from the you" for a source that is a person.
+
+Not done: executing the goals the person never contradicted before the rest is confirmed. It needs the plan phase
+split in two with a reversibility rule for what may move before confirmation; the failing dialogues show wrong
+goals (a wrong object, place or recipient), not right goals left unconfirmed, so the gain is unmeasured.
+
+Generality: objects are the goals' names, places are the ENV, the speaker words are `persons.SPEAKER_FORMS`.
+The Korean phrase for `q_which_part` comes from the robot pack's i18n; a pack without it gets the translator.
+
+### Two objects fit the words: which one? (R4b item 3, `core/planning/which_one.py`)
+
+A Find that sees more than one object fitting its query may put `candidates` in its result: short descriptions of
+the instances in view, the way a person tells them apart ("red mug", "blue mug"), never an internal id. A pack whose
+Find has no `candidates` is not affected. After such a Find, when a Pick of the same object follows in the plan:
+
+1. The candidates are narrowed by the words the person used for the object (`said`). One left: it is taken, no
+   question.
+2. Otherwise one question per object and run: "I see more than one mug here: the red mug or the blue mug. Which one
+   do you mean?" (`q_which_one`; in another language the whole sentence is translated). It is asked outside the
+   `clarify_rounds` count, so it is never lost to the cap. The answer is read by the words that tell the candidates
+   apart; when they do not decide ("the second one", an answer in the user's language) one model call chooses
+   (`where="which_one"`, under the run's LLM budget). An answer that chooses nothing leaves the robot as it was;
+   the question is not asked again.
+3. From then on the Find and Pick of that object get the chosen description as the skill input (the plan's object
+   name stays, so goals and memory are unchanged); a Find that had seen the other instance is repeated.

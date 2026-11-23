@@ -127,13 +127,13 @@ def test_live_memory_only_verified(tmp_path):
     assert len(ex.read_pool(None, str(live), verified_only=False)) == 3
 
 
-def test_grace_planner_gets_the_manifest_actions(monkeypatch):
-    """ClosedLoop._make_planner('grace') -> GraceBackend -> SAGEPlanner(actions, robot_description)."""
+def test_sage_planner_gets_the_manifest_actions(monkeypatch):
+    """ClosedLoop._make_planner('sage') -> SageBackend -> SAGEPlanner(actions, robot_description)."""
     import pytest
     pytest.importorskip("embodiplan")
     from robot_agent.core.planning.loop import ClosedLoop
     lp = object.__new__(ClosedLoop)
-    lp.cfg = {"planner": "grace", "host": "http://127.0.0.1:1", "model": "m", "live_path": ""}
+    lp.cfg = {"planner": "sage", "host": "http://127.0.0.1:1", "model": "m", "live_path": ""}
     lp._llm_cfg, lp.robot_pkg = {}, "pkg"
     lp.robot = view(BASE)
     sage = lp._make_planner()._p

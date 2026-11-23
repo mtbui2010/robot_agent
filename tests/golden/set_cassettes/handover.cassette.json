@@ -1,0 +1,1126 @@
+{
+ "format": 1,
+ "name": "handover",
+ "tags": [
+  "success",
+  "fakehome"
+ ],
+ "about": "a hand-over to the person on fakehome: the person's ENV entry (no surface), the Handover release action, the goal check of a person destination",
+ "scenario": {
+  "name": "handover",
+  "env": {
+   "counter@kitchen": {
+    "aliases": [
+     "counter"
+    ],
+    "loc": {
+     "x": 6.0,
+     "y": 1.0
+    },
+    "surface": true
+   },
+   "desk@study": {
+    "aliases": [
+     "desk"
+    ],
+    "loc": {
+     "x": 0.5,
+     "y": 6.0
+    },
+    "surface": true
+   },
+   "spot near you": {
+    "person": "lena",
+    "speaker": true,
+    "aliases": [
+     "me",
+     "lena"
+    ],
+    "loc": {
+     "x": 0.5,
+     "y": 6.0
+    },
+    "seat": "desk@study",
+    "spot": "desk@study",
+    "surface": false
+   }
+  },
+  "robot_pkg": "fakehome",
+  "task": "Bring me the mug.",
+  "robot": {
+   "objects": {
+    "mug": "counter@kitchen"
+   },
+   "start": "counter@kitchen",
+   "skills": {
+    "handover": {
+     "isdone": true,
+     "msg": "handed",
+     "release_to": "person:lena"
+    }
+   }
+  },
+  "llm": {
+   "script": [
+    {
+     "status": "clear",
+     "reason": "",
+     "question": "",
+     "goals": [
+      {
+       "type": "on",
+       "object": "mug",
+       "from": "counter@kitchen",
+       "to": "me"
+      }
+     ]
+    }
+   ],
+   "default": "{}"
+  },
+  "planner": {
+   "plan": [
+    "MoveTo counter@kitchen",
+    "Find mug",
+    "Pick mug",
+    "MoveTo spot near you",
+    "Handover spot near you"
+   ]
+  },
+  "options": {
+   "input_pivot": "none",
+   "look_then_ask": "0",
+   "bring_ask": "0",
+   "bt_goal": "0",
+   "fetch_guard": "0",
+   "search_legs": 1,
+   "ask_help": false,
+   "detector_miss_rate": 0
+  },
+  "capture": [
+   "prompts"
+  ]
+ },
+ "recorded": {
+  "llm_calls": [
+   {
+    "prompt": "410c428e3e786719",
+    "format": "b69b437228696e32",
+    "head": "You turn a household robot task into goals. The robot is a mobile manipu",
+    "answer": "{\"status\": \"clear\", \"reason\": \"\", \"question\": \"\", \"goals\": [{\"type\": \"on\", \"object\": \"mug\", \"from\": \"counter@kitchen\", \"to\": \"me\"}]}"
+   }
+  ],
+  "planner_calls": [
+   {
+    "call": "generate_plan",
+    "task": "Bring me the mug."
+   }
+  ],
+  "robot_calls": [
+   {
+    "skill": "mobile_pose",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "pose": [
+      6.0,
+      1.0,
+      0
+     ]
+    }
+   },
+   {
+    "skill": "find",
+    "params": {
+     "inputs": "mug",
+     "min_conf": 0.55
+    },
+    "result": {
+     "isdone": true,
+     "ins": {
+      "mug": {
+       "pose_3d": [
+        0.6,
+        0.05,
+        0.8
+       ]
+      }
+     }
+    }
+   },
+   {
+    "skill": "pick",
+    "params": {
+     "inputs": "mug",
+     "type": "fine_move"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "grasped"
+    }
+   },
+   {
+    "skill": "grasp_succeed",
+    "params": {},
+    "result": {
+     "isdone": true
+    }
+   },
+   {
+    "skill": "move",
+    "params": {
+     "inputs": "spot near you"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "arrived at spot near you"
+    }
+   },
+   {
+    "skill": "mobile_pose",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "pose": [
+      0.5,
+      6.0,
+      0
+     ]
+    }
+   },
+   {
+    "skill": "handover",
+    "params": {
+     "inputs": "spot near you"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "handed"
+    }
+   },
+   {
+    "skill": "grasp_succeed",
+    "params": {},
+    "result": {
+     "isdone": false
+    }
+   }
+  ],
+  "events": [
+   {
+    "event": "task_start",
+    "task": "Bring me the mug.",
+    "world": {
+     "arrived": "counter@kitchen",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from counter@kitchen"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Starting the task"
+   },
+   {
+    "event": "reconcile",
+    "when": "start",
+    "changed": {
+     "arrived": [
+      null,
+      "counter@kitchen"
+     ]
+    },
+    "sensors": {
+     "arrived": {
+      "pose": [
+       6.0,
+       1.0
+      ],
+      "detail": "0.00 m from counter@kitchen",
+      "source": "mobile_pose"
+     },
+     "containers": {},
+     "unconfirmed": []
+    },
+    "provenance": {
+     "arrived": {
+      "source": "sensor",
+      "detail": "0.00 m from counter@kitchen"
+     },
+     "found": {
+      "source": "belief"
+     },
+     "holding": {
+      "source": "belief"
+     },
+     "opened": {
+      "source": "sensor",
+      "containers": {},
+      "unconfirmed": []
+     },
+     "on": {
+      "source": "belief"
+     }
+    },
+    "world": {
+     "arrived": "counter@kitchen",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from counter@kitchen"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    }
+   },
+   {
+    "event": "status",
+    "msg": "Understanding the task..."
+   },
+   {
+    "event": "understand",
+    "status": "clear",
+    "reason": "",
+    "goals": [
+     {
+      "type": "on",
+      "object": "mug",
+      "from": "",
+      "to": "spot near you"
+     }
+    ],
+    "question": null
+   },
+   {
+    "event": "status",
+    "msg": "Generating task plan..."
+   },
+   {
+    "event": "gate",
+    "round": 0,
+    "problems": [],
+    "plan": [
+     "Find mug",
+     "Pick mug",
+     "MoveTo spot near you",
+     "Handover spot near you"
+    ],
+    "tidied": [
+     "step 1 'MoveTo counter@kitchen' does nothing here: removed"
+    ]
+   },
+   {
+    "event": "plan",
+    "steps": [
+     {
+      "action": "Find",
+      "object": "mug"
+     },
+     {
+      "action": "Pick",
+      "object": "mug"
+     },
+     {
+      "action": "MoveTo",
+      "object": "spot near you",
+      "grounded": true
+     },
+     {
+      "action": "Handover",
+      "object": "spot near you"
+     }
+    ],
+    "plan_meta": {
+     "method": "scripted",
+     "llm_plan": [
+      {
+       "action": "MoveTo",
+       "object": "counter@kitchen",
+       "grounded": true
+      },
+      {
+       "action": "Find",
+       "object": "mug"
+      },
+      {
+       "action": "Pick",
+       "object": "mug"
+      },
+      {
+       "action": "MoveTo",
+       "object": "spot near you",
+       "grounded": true
+      },
+      {
+       "action": "Handover",
+       "object": "spot near you"
+      }
+     ],
+     "edits": [],
+     "certified": true,
+     "gate_findings": [],
+     "repaired_by_op": {},
+     "completed_by_gate": 0
+    },
+    "warnings": [],
+    "plan_text": "find::mug\npick::mug\nmove::spot near you\nhandover::spot near you",
+    "certified": true,
+    "world": {
+     "arrived": "counter@kitchen",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from counter@kitchen"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    }
+   },
+   {
+    "event": "step_start",
+    "index": 0,
+    "action": "Find",
+    "object": "mug",
+    "skill": "find",
+    "say": "I will find mug"
+   },
+   {
+    "event": "step_verify",
+    "index": 0,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "sensor",
+      "ok": true,
+      "detail": "unknown: find declares no sensor that checks it",
+      "confidence": null,
+      "unknown": true
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 0,
+    "status": "success",
+    "result": {
+     "ins": {
+      "mug": {
+       "pose_3d": [
+        0.6,
+        0.05,
+        0.8
+       ]
+      }
+     },
+     "isdone": true,
+     "msg": ""
+    },
+    "world": {
+     "arrived": "counter@kitchen",
+     "found": "mug",
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from counter@kitchen"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: find mug"
+   },
+   {
+    "event": "step_start",
+    "index": 1,
+    "action": "Pick",
+    "object": "mug",
+    "skill": "pick",
+    "say": "I will pick mug"
+   },
+   {
+    "event": "step_verify",
+    "index": 1,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "grasped",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "sensor",
+      "ok": true,
+      "detail": "grasp_succeed: ok",
+      "confidence": null,
+      "unknown": false
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 1,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "grasped"
+    },
+    "world": {
+     "arrived": "counter@kitchen",
+     "found": null,
+     "holding": "mug",
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from counter@kitchen"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: pick mug"
+   },
+   {
+    "event": "step_start",
+    "index": 2,
+    "action": "MoveTo",
+    "object": "spot near you",
+    "skill": "move",
+    "say": "I will move to spot near you"
+   },
+   {
+    "event": "step_verify",
+    "index": 2,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "arrived at spot near you",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "localization",
+      "ok": true,
+      "detail": "0.00 m from spot near you",
+      "confidence": null,
+      "unknown": false
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 2,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "arrived at spot near you"
+    },
+    "world": {
+     "arrived": "spot near you",
+     "found": null,
+     "holding": "mug",
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: move to spot near you"
+   },
+   {
+    "event": "step_start",
+    "index": 3,
+    "action": "Handover",
+    "object": "spot near you",
+    "skill": "handover",
+    "say": "I will handover spot near you"
+   },
+   {
+    "event": "step_verify",
+    "index": 3,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "handed",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "sensor",
+      "ok": true,
+      "detail": "grasp_succeed: ok",
+      "confidence": null,
+      "unknown": false
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 3,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "handed"
+    },
+    "world": {
+     "arrived": "spot near you",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: handover spot near you"
+   },
+   {
+    "event": "status",
+    "msg": "Checking the goals..."
+   },
+   {
+    "event": "goal_check",
+    "goal": {
+     "type": "on",
+     "object": "mug",
+     "from": "",
+     "to": "spot near you"
+    },
+    "ok": true,
+    "evidence": "the mug was handed over at the spot near you (the hand-over succeeded)",
+    "world": {
+     "arrived": "spot near you",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    }
+   },
+   {
+    "event": "done",
+    "status": "success",
+    "msg": "",
+    "world": {
+     "arrived": "spot near you",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Task completed"
+   }
+  ],
+  "final": {
+   "robot": {
+    "at": "spot near you",
+    "holding": null,
+    "objects": {
+     "mug": "person:lena"
+    },
+    "opened": [],
+    "asked": []
+   },
+   "belief": {
+    "arrived": "spot near you",
+    "found": null,
+    "holding": null,
+    "opened": [],
+    "on": [],
+    "found_pose": null,
+    "holding_pose": null,
+    "provenance": {
+     "arrived": {
+      "source": "sensor",
+      "detail": "MoveTo localization check"
+     },
+     "found": {
+      "source": "belief"
+     },
+     "holding": {
+      "source": "belief"
+     },
+     "opened": {
+      "source": "sensor",
+      "containers": {},
+      "unconfirmed": []
+     },
+     "on": {
+      "source": "belief"
+     }
+    }
+   },
+   "lab_log": [],
+   "record": {
+    "task": "Bring me the mug.",
+    "lang": "en",
+    "obs": "goals: [{\"type\": \"on\", \"object\": \"mug\", \"from\": \"\", \"to\": \"spot near you\"}]",
+    "visible": [],
+    "planner": "sage+assist",
+    "plan_meta": {
+     "method": "scripted",
+     "llm_plan": [
+      {
+       "action": "MoveTo",
+       "object": "counter@kitchen",
+       "grounded": true
+      },
+      {
+       "action": "Find",
+       "object": "mug"
+      },
+      {
+       "action": "Pick",
+       "object": "mug"
+      },
+      {
+       "action": "MoveTo",
+       "object": "spot near you",
+       "grounded": true
+      },
+      {
+       "action": "Handover",
+       "object": "spot near you"
+      }
+     ],
+     "edits": [],
+     "certified": true,
+     "gate_findings": [],
+     "repaired_by_op": {},
+     "completed_by_gate": 0
+    },
+    "warnings": [],
+    "steps": [
+     {
+      "index": 0,
+      "action": "Find",
+      "object": "mug",
+      "skill": "find",
+      "params": {
+       "inputs": "mug",
+       "min_conf": 0.55
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "ins": {
+        "mug": {
+         "pose_3d": [
+          0.6,
+          0.05,
+          0.8
+         ]
+        }
+       },
+       "isdone": true,
+       "msg": ""
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "sensor",
+        "ok": true,
+        "detail": "unknown: find declares no sensor that checks it",
+        "confidence": null,
+        "unknown": true
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 1,
+      "action": "Pick",
+      "object": "mug",
+      "skill": "pick",
+      "params": {
+       "inputs": "mug",
+       "type": "fine_move"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "grasped"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "grasped",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "sensor",
+        "ok": true,
+        "detail": "grasp_succeed: ok",
+        "confidence": null,
+        "unknown": false
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 2,
+      "action": "MoveTo",
+      "object": "spot near you",
+      "skill": "move",
+      "params": {
+       "inputs": "spot near you"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "arrived at spot near you"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "arrived at spot near you",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "localization",
+        "ok": true,
+        "detail": "0.00 m from spot near you",
+        "confidence": null,
+        "unknown": false
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 3,
+      "action": "Handover",
+      "object": "spot near you",
+      "skill": "handover",
+      "params": {
+       "inputs": "spot near you"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "handed"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "handed",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "sensor",
+        "ok": true,
+        "detail": "grasp_succeed: ok",
+        "confidence": null,
+        "unknown": false
+       }
+      ],
+      "logs": []
+     }
+    ],
+    "replans": [],
+    "status": "success",
+    "failure": {}
+   },
+   "log_kinds": [
+    "reconcile",
+    "task_start",
+    "status",
+    "understand",
+    "status",
+    "gate",
+    "plan",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "status",
+    "goal_check",
+    "done",
+    "snapshot"
+   ]
+  },
+  "prompts": {
+   "sage_prompt_kwargs": {
+    "actions": {
+     "sha": "5f1c23f22f042551",
+     "head": "[\"MoveTo <place>: move to a place\", \"Find <object>: look for an object where the robot is\", \"Pic",
+     "chars": 457
+    },
+    "robot_description": {
+     "sha": "3403ec4ca682de8c",
+     "head": "fakehome: a robot that has 1 arm with a hand (right), so it holds one object at a time, drives o",
+     "chars": 204
+    }
+   },
+   "direct_prompt": {
+    "sha": "0d8f45bf4b956eb5",
+    "head": "You plan tasks for this robot: fakehome: a robot that has 1 arm with a hand (right), so it holds",
+    "chars": 1104
+   },
+   "planner_cfg": {
+    "sha": "1cdd23f8523065fc",
+    "head": "{\"actions\": [\"Close\", \"Find\", \"Handover\", \"LieOn\", \"MoveTo\", \"Open\", \"Pick\", \"Place\", \"PutIn\", \"",
+    "chars": 824
+   }
+  }
+ },
+ "commit": "4d584ba"
+}

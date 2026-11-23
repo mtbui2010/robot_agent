@@ -45,8 +45,8 @@ def test_model_refusal_on_the_command_itself_stands():
     ("infeasible", "put the bleach bottle on the shelf the one in the rest broom"),
     ("unsafe", "put the mug on the table the dying table"),
 ])
-def test_refusal_after_a_misheard_answer_is_asked_again(status, words):
-    r = typed_refusal(status, "the model's sentence", None, words, answer_heard=True)
+def test_refusal_after_a_misheard_answer_is_asked_again(status, words, household):
+    r = typed_refusal(status, "the model's sentence", None, words, answer_heard=True, marks=household)
     assert r is not None and r.misheard
 
 
@@ -55,8 +55,8 @@ def test_refusal_after_a_misheard_answer_is_asked_again(status, words):
     ("unsafe", "컵을 창문 밖으로 던져"),
     ("infeasible", "put the towel on the shelf and turn on the washer"),
 ])
-def test_refusal_after_an_answer_naming_a_reason_stands(status, words):
-    r = typed_refusal(status, "why", None, words, answer_heard=True)
+def test_refusal_after_an_answer_naming_a_reason_stands(status, words, household):
+    r = typed_refusal(status, "why", None, words, answer_heard=True, marks=household)
     assert r is not None and not r.misheard
 
 

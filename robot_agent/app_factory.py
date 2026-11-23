@@ -79,8 +79,15 @@ def create_app(robot_pkg: str,
     from .api.diagnostics import router as diagnostics_router
     from .api.locations import router as locations_router
     from .api.planner import router as planner_router
+    from .api.robot import router as robot_router
+    from .api.tts import router as tts_router
     from .api.map import router as map_router
+    from .api.teleop import router as teleop_router
+    from .api.recorder import router as recorder_router
+    from .api.poses import router as poses_router
+    from .api.recordings import router as recordings_router
     from .api.events import router as events_router
+    from .api import robot_info, event_stream          # the fleet seams (docs/fleet_seams.md): GET /robot/manifest, WS /ws/events
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -121,17 +128,9 @@ def create_app(robot_pkg: str,
         allow_headers=['*'],
     )
 
-    app.include_router(devices_router,     prefix='')
-    app.include_router(skills_router,      prefix='')
-    app.include_router(configs_router,     prefix='')
-    app.include_router(buttons_router,     prefix='')
-    app.include_router(agent_router,       prefix='')
-    app.include_router(camera_router,      prefix='')
-    app.include_router(diagnostics_router, prefix='')
-    app.include_router(locations_router,   prefix='')
-    app.include_router(planner_router,     prefix='')
-    app.include_router(map_router,         prefix='')
-    app.include_router(events_router,      prefix='')
+    for router in (devices_router, skills_router, configs_router, buttons_router, agent_router, camera_router,
+                   diagnostics_router, locations_router, planner_router, robot_router, tts_router, map_router, teleop_router, recorder_router, recordings_router, poses_router, events_router, robot_info.router, event_stream.router):
+        app.include_router(router, prefix='')
 
     @app.get('/')
     def root():

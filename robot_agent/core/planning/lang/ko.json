@@ -1,0 +1,377 @@
+{
+ "lang": "ko",
+ "heat_safety": {"refuse": "그건 할 수 없어요. 불에 탈 수 있는 물건은 열원에서 최소 {m}미터 떨어져 있어야 해요.", "part": "나머지는 했지만 다 하지는 않았어요. 불에 탈 수 있는 물건은 열원에서 최소 {m}미터 떨어져 있어야 해요.", "assumed": true, "source": "assumed: plain polite Korean wording of option heat_safety's refusal; the rule and its distance are the robot pack's data with their own source (docs/heat_safety.md)"},
+ "name": "Korean",
+ "register": "polite spoken Korean, 해요체",
+ "words": {
+  "putin": [
+   "안에",
+   "안쪽",
+   "속에",
+   "넣"
+  ],
+  "on_top": [
+   "위에",
+   "위로"
+  ],
+  "hand": [
+   "손에",
+   "손으로",
+   "건네",
+   "쥐여",
+   "쥐어"
+  ],
+  "first_person": [
+   "(?:^|(?<=\\s))(?:나|저|제|내)(?:한테|에게|게|가|는|를|도|의)?(?=\\s|$|[.,!?])",
+   "(?:^|(?<=\\s))(?:내게|제게)"
+  ],
+  "recipient": [
+   "(?:나|저|우리)(?:한테|에게)",
+   "제게|내게|저희",
+   "가져다|갖다|가져와|가져 와|갖고 와|가지고 와|건네",
+   "여기|이리|이쪽",
+   "(?:을|를|좀)\\s*(?:줘|주세요|줄래|주실래|주시겠|주실 수|줄 수)"
+  ],
+  "tell": [
+   "말해",
+   "말씀",
+   "전해",
+   "알려",
+   "얘기해",
+   "이야기해",
+   "물어봐",
+   "여쭤"
+  ],
+  "open_words": [
+   "(?<![가-힣])열(?:[어었고면려기게을은린지자까래도며나겠야렴]|\\s+(?:수|거|것|때)|$)",
+   "(?<![가-힣])(?:여(?:세요|십시오|시|는|니|라|네)|엽니|연다)"
+  ]
+ },
+ "particles": [
+  "이랑",
+  "에서",
+  "한테",
+  "에게",
+  "으로",
+  "까지",
+  "부터",
+  "하고",
+  "에",
+  "을",
+  "를",
+  "이",
+  "가",
+  "은",
+  "는",
+  "께",
+  "로",
+  "도",
+  "만",
+  "의",
+  "과",
+  "와",
+  "랑",
+  "위",
+  "안",
+  "옆",
+  "쪽"
+ ],
+ "script": {
+  "letters": "[가-힣]",
+  "min_share": 0.7,
+  "other_script": "[぀-ヿ㐀-䶿一-鿿]"
+ },
+ "dialogue_ext": {
+  "polite_endings": [
+   "이에요",
+   "예요",
+   "이요",
+   "요"
+  ],
+  "self_correction": [
+   "(?:\\.\\.\\.|,|-)?\\s*(?<![가-힣])(?:아니(?:야|지|고|라|다)?|잠깐|말고)(?![가-힣요])"
+  ],
+  "answer_unsure": [
+   "모르겠",
+   "모를겠",
+   "몰라요",
+   "몰라",
+   "글쎄",
+   "기억이 안",
+   "기억 안",
+   "잘 모",
+   "확실하지 않",
+   "확실치 않"
+  ],
+  "room_names": {
+   "bedroom": [
+    "침실",
+    "안방"
+   ],
+   "kitchen": [
+    "주방",
+    "부엌"
+   ],
+   "living room": [
+    "거실"
+   ],
+   "bathroom": [
+    "욕실",
+    "화장실"
+   ],
+   "restroom": [
+    "화장실"
+   ],
+   "study": [
+    "서재"
+   ],
+   "study room": [
+    "서재"
+   ],
+   "kids room": [
+    "아이방",
+    "아이 방",
+    "어린이방"
+   ],
+   "dining room": [
+    "식당"
+   ],
+   "hallway": [
+    "복도"
+   ],
+   "entrance": [
+    "현관"
+   ],
+   "balcony": [
+    "베란다",
+    "발코니"
+   ],
+   "laundry room": [
+    "세탁실"
+   ]
+  }
+ },
+ "asr": {
+  "hole": [
+   "(?<![가-힣])(?:내|제|네|우리|그|이|저)\\s+(?:을|를|에서|에게|한테)(?![가-힣])"
+  ],
+  "distance_unit": "jamo",
+  "assumed": true,
+  "source": "assumed: general grammar, a determiner directly followed by a case particle; the name distance counts the letters inside a syllable"
+ },
+ "speech": {
+  "q_which_name": "{options} 말씀하시는 거예요?",
+  "q_pick_one": "{text} 중에서 어느 쪽인지 말씀해 주세요.",
+  "q_which_reading": "두 가지로 이해할 수 있어요. {first}, 아니면 {second}. 어느 쪽을 말씀하시는 거예요?",
+  "q_ask_next_find": "{object}을(를) 찾지 못했어요. 여기서 다시 찾을까요, 다른 곳을 찾아볼까요, 아니면 그만할까요?",
+  "q_ask_next_pick": "{object}을(를) 집지 못했어요. 여기서 다시 해 볼까요, 다른 곳을 찾아볼까요, 아니면 그만할까요?",
+  "q_ask_next_move": "{object}에 갈 수 없어요. 다시 해 볼까요, 아니면 그만할까요?",
+  "q_ask_next_again": "다시, 다른 곳, 그만 중에서 하나를 말씀해 주세요.",
+  "q_ask_next_again_move": "다시, 그만 중에서 하나를 말씀해 주세요.",
+  "q_ask_next_place": "{object}을(를) 어디에서 찾아볼까요?",
+  "say_bt_goal_done": "{object}을(를) {place}에 놓았어요.",
+  "say_bt_goal_stop_held": "멈춰야 했어요. {object}을(를) 아직 들고 있어요.",
+  "q_metal_microwave": "{object}, 금속인가요? 금속을 전자레인지에 넣으면 불꽃이 튀고 불이 날 수 있어요.",
+  "q_closed_can_microwave": "{object}, 아직 밀봉된 상태인가요? 밀봉된 캔은 전자레인지에서 터질 수 있어요.",
+  "assumed": true,
+  "source": "assumed: the robot's own questions in plain polite Korean, said when the robot pack has no phrase of its own for the key (the robot's i18n wins); q_metal_microwave, q_closed_can_microwave: assumed translations of the en phrases"
+ },
+ "ask_next": {
+  "retry": ["다시", "다시 해", "다시 해 봐", "다시 해 줘", "다시 해요", "한 번 더", "다시 시도"],
+  "elsewhere": ["다른 곳", "다른 곳에", "다른 곳에서", "다른 곳을", "다른 데", "다른 데서", "딴 데", "딴 데서", "여기 말고"],
+  "anywhere": ["아무 데나", "아무데나", "아무 곳이나", "알아서", "알아서 해"],
+  "stop": ["그만", "그만해", "그만해요", "그만하자", "포기", "포기해", "됐어", "됐어요", "하지 마"],
+  "assumed": true,
+  "source": "assumed: plain Korean answers to the menu of option ask_next (again here / somewhere else / stop), matched as whole words (so inflected forms are listed); the run's stop words (dialogue.stop_prefix) and yes / no count too"
+ },
+ "patterns": {
+  "into_after": "^\\s*(?:의\\s*)?(?:안|속|안쪽)|^(?:에|에다|에다가)?\\s*(?:\\S+\\s+){0,2}?\\S*넣",
+  "ontop_after": "^\\s*(?:의\\s*)?위",
+  "open_verb": "열어|열어\\s*줘",
+  "close_verb": "닫아",
+  "from_after": "(?:에서|에게서|한테서|부터|으로부터|로부터)",
+  "addressee": "(?<!\\w){name}\\s*(?:한테|에게|께|더러)",
+  "answer_tail": "(?:에서|에|이요|요|이에요|예요|있어요|요\\.)$",
+  "object_marked": "([\\uac00-\\ud7a3][\\uac00-\\ud7a3 ]*?[\\uac00-\\ud7a3])(?:을|를)(?=\\s|$|[.,!?])",
+  "object_and": "\\s*(?:과|와|하고|이랑|랑|,)\\s*"
+ },
+ "grammar": {
+  "noun_particles": [
+   "이랑",
+   "에서",
+   "한테",
+   "에게",
+   "으로",
+   "까지",
+   "부터",
+   "하고",
+   "에다",
+   "에",
+   "을",
+   "를",
+   "이",
+   "가",
+   "은",
+   "는",
+   "께",
+   "로",
+   "도",
+   "만",
+   "의",
+   "과",
+   "와",
+   "랑",
+   "위",
+   "안",
+   "옆",
+   "쪽"
+  ],
+  "verb_noun_suffix": "(?:하|해|했|할|한|합|함)",
+  "sep_or": " 아니면 ",
+  "object_check": true,
+  "head_slip_ratio": 0.66,
+  "speaker_forms": [
+   "나",
+   "저",
+   "나한테",
+   "저한테",
+   "나에게",
+   "저에게",
+   "내게",
+   "제게",
+   "여기",
+   "여기로"
+  ],
+  "object_particle": {
+   "first": 44032,
+   "last": 55203,
+   "cycle": 28,
+   "with_final": "을",
+   "without_final": "를"
+  },
+  "asr_hallucinations": [
+   "감사합니다",
+   "시청해주셔서감사합니다",
+   "다음영상에서만나요",
+   "구독과좋아요부탁드립니다",
+   "구독과좋아요",
+   "시청해주셔서고맙습니다",
+   "좋아요와구독부탁드립니다"
+  ]
+ },
+ "dialogue": {
+  "yes": [
+   "네",
+   "예",
+   "응",
+   "맞아",
+   "맞아요",
+   "좋아"
+  ],
+  "no": [
+   "아니",
+   "아니요",
+   "아뇨"
+  ],
+  "fillers": [
+   "음",
+   "어",
+   "아",
+   "에",
+   "으",
+   "흠",
+   "뭐",
+   "글쎄"
+  ],
+  "near_yes_no": [
+   "내",
+   "녜",
+   "네에",
+   "예에",
+   "니",
+   "예스",
+   "노"
+  ],
+  "stop_prefix": [
+   "멈춰",
+   "멈춰라",
+   "멈추세요",
+   "그만",
+   "정지",
+   "스톱",
+   "중지",
+   "취소",
+   "서"
+  ],
+  "pause_prefix": [
+   "잠깐",
+   "잠시만",
+   "잠시",
+   "기다려",
+   "일시정지",
+   "일시 정지",
+   "멈춰 봐",
+   "멈춰봐"
+  ],
+  "resume_prefix": [
+   "계속",
+   "다시 시작",
+   "진행해",
+   "재개"
+  ],
+  "filler_tokens": [
+   "제발",
+   "좀",
+   "이제",
+   "로봇",
+   "야",
+   "로봇아",
+   "빨리",
+   "당장"
+  ],
+  "negation_contains_native": [
+   "지 마",
+   "지마",
+   "지 말",
+   "지말",
+   "말고",
+   "않"
+  ],
+  "fallback_status_sub": [
+   "뭐 해",
+   "뭐해",
+   "뭐 하고",
+   "어디야",
+   "어디 있",
+   "다 했",
+   "진행 상황"
+  ],
+  "fallback_drop_sub": [
+   "빼",
+   "안 가져와도",
+   "필요 없",
+   "하지 말고"
+  ],
+  "fallback_modify_sub": [
+   "대신",
+   "말고",
+   "아니라",
+   "바꿔"
+  ],
+  "fallback_add_sub": [
+   "그리고",
+   "도 ",
+   "하나 더",
+   "그 다음"
+  ]
+ },
+ "detect_marks": "[가-힣぀-ヿ㐀-䶿一-鿿Ѐ-ӿ]",
+ "guard": {
+  "forbid": "[぀-ヿ㐀-䶿一-鿿]|[Ѐ-ӿ]",
+  "forbid_msg": "Chinese / Japanese / Cyrillic characters",
+  "min_share": 0.6,
+  "low_share_msg": "not Korean",
+  "latin_words": true,
+  "latin_msg": "English words left"
+ }
+}

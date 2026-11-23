@@ -1,5 +1,5 @@
 """v2 directfix: a step that names its skill call binds to that call in one place
-(core/planning/concrete.py via RobotView.bind / ActionMapper.to_skill); grace steps bind as before."""
+(core/planning/concrete.py via RobotView.bind / ActionMapper.to_skill); SAGE steps bind as before."""
 
 import types
 
@@ -43,7 +43,7 @@ def test_a_concrete_call_wins_over_the_adapter():
     assert v.bind(dict(MOVE), WorldState()) == ("move", {"inputs": "kitchen", "speed": 1})
     assert ad.bound == []                                          # the abstract binding is not asked
     assert v.bind({"action": "MoveTo", "object": "kitchen"}) == ("move", {"inputs": "KITCHEN", "from_adapter": True})
-    assert ad.bound == [{"action": "MoveTo", "object": "kitchen"}]   # a grace step: exactly as before
+    assert ad.bound == [{"action": "MoveTo", "object": "kitchen"}]   # a SAGE step: exactly as before
 
 
 def test_the_params_are_a_copy():
@@ -83,22 +83,22 @@ def test_action_mapper_over_a_robot_view():
 
 
 def test_action_mapper_over_a_namemap_module():
-    from fakebot.configs import grace_namemap
-    m = ActionMapper(grace_namemap)
+    from fakebot.configs import sage_namemap
+    m = ActionMapper(sage_namemap)
     assert m.to_skill({"action": "Open", "object": "drawer", "skill": "open_drawer", "params": {"inputs": "drawer"}},
                       WorldState()) == ("open_drawer", {"inputs": "drawer"})
     with pytest.raises(Unmappable, match="no skill 'announce'"):
         m.to_skill({"action": "", "object": "hi", "skill": "announce", "params": {"inputs": "hi"}}, WorldState())
-    m2 = ActionMapper(grace_namemap, registry=Registry("announce"))
+    m2 = ActionMapper(sage_namemap, registry=Registry("announce"))
     assert m2.to_skill({"action": "", "skill": "announce", "params": {"inputs": "hi"}}, WorldState()) == \
         ("announce", {"inputs": "hi"})
-    # a grace step through the namemap: unchanged
+    # a SAGE step through the namemap: unchanged
     assert m.to_skill({"action": "MoveTo", "object": "kitchen"}, WorldState()) == ("move", {"inputs": "kitchen"})
 
 
-def test_screen_passes_skill_only_steps_and_still_warns_on_grace_ones():
-    from fakebot.configs import grace_namemap
-    m = ActionMapper(grace_namemap)
+def test_screen_passes_skill_only_steps_and_still_warns_on_sage_ones():
+    from fakebot.configs import sage_namemap
+    m = ActionMapper(sage_namemap)
     st = {"action": "", "object": "", "skill": "lift", "params": {"height": 0.5}}
     assert m.screen([st, {"action": "MoveTo", "object": "kitchen"}]) == []
     assert len(m.screen([{"action": "Wash", "object": "cup"}])) == 1

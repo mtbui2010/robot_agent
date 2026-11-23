@@ -6,6 +6,7 @@ from typing import Any, Optional
 
 from ..state import current
 from ..core.unified_agent import _serialize_result
+from ..core.languages import set_run_language_auto, start_run_language
 from . import models as M
 from .models import OPEN
 
@@ -228,7 +229,7 @@ def _runs():
     return manager()
 
 
-_OK_STATUS = ('success', 'aborted', 'planned')
+_OK_STATUS = ('success', 'aborted', 'planned', 'understood')     # understood: option goals_only (an understand-only run)
 
 
 def _done_ok(done: dict) -> bool:
@@ -435,9 +436,9 @@ async def agent_ws(websocket: WebSocket):
     try:
         data = await websocket.receive_json()
         prompt  = data.get('prompt', '')
-        lang    = data.get('lang', 'en')
+        lang    = start_run_language(data.get('lang'))      # none: the manifest's default; 'auto': that, and detect the user's
         direct    = data.get('direct', False)
-        planner   = data.get('planner')         # 'grace' | 'direct' | 'sage' | 'package.module:Class' | None (legacy)
+        planner   = data.get('planner')         # 'sage' | 'sage_plain' | 'direct' | 'package.module:Class' | None (legacy); planning/planner_names.py
         plan_only = data.get('plan_only', False) # generate plan, don't execute
         log_data  = data.get('log_data', False)  # save rgb/depth/results of vision
         # 'backend' writes the dataset to disk here; 'frontend' streams it to the
@@ -446,7 +447,7 @@ async def agent_ws(websocket: WebSocket):
         log_all   = data.get('log_all', True)
         # planner options (SAGE: confirm_task, confirm_answers, find_min_conf, ...); unknown keys are ignored
         options   = data.get('options') if isinstance(data.get('options'), dict) else None
-        # 'sage' only: the planner behind it (a registry name or 'package.module:Class'; default grace)
+        # 'sage' only: the planner behind it (a registry name or 'package.module:Class'; default the sage backend)
         if data.get('generator'):
             options = dict(options or {}, generator=data['generator'])
         # who is asking (optional; a client without them acts as the owner, as before)
@@ -454,12 +455,13 @@ async def agent_ws(websocket: WebSocket):
         role      = data.get('role')
 
         import asyncio
+        from . import run_start
         sender = _Sender(websocket)
-        # One active run per robot: while one runs, this client observes it and
-        # its prompt becomes an event into that run.
-        start = _runs().start(goal=prompt, user_id=user_id, role=role)
-        if not start.started:
-            await _observe(websocket, sender, start.run, prompt, user_id, role)
+        prompt, options = run_start.with_goals(data, prompt, options)       # typed `goals`: into the run's options (fleet seams)
+        # One active run per robot: while one runs, this client observes it and its prompt becomes an event into that run
+        # (unless it sent busy: "refuse"); an empty prompt with no run starts nothing; a `client_ref` seen before starts nothing.
+        start = await run_start.begin(websocket, sender, data, prompt, direct, user_id, role, _runs(), _observe)
+        if start is None:
             return
         run = start.run
 
@@ -506,8 +508,7 @@ async def agent_ws(websocket: WebSocket):
         except Exception:
             pass
     finally:
-        # The run is over: stop watching, so finishing normally never looks
-        # like a cancel.
+        set_run_language_auto(False)         # The run is over: stop watching (finishing normally never looks like a cancel)
         if watcher is not None:
             watcher.cancel()
         if notices is not None:

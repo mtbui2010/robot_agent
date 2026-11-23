@@ -302,6 +302,7 @@ def begin_run(node=None) -> None:
             return
         _CANCEL.clear()
         _END_DIALOG.clear()
+        _teleop_off()
         n = _node(node)
         if n is not None:
             try:
@@ -310,12 +311,25 @@ def begin_run(node=None) -> None:
                 pass
 
 
+def _teleop_off() -> None:
+    """A run starts or Cancel is pressed: every teleop function goes OFF (the arm must not follow a knob while a plan drives it).
+    Best effort; nothing when no TELEOP group is configured."""
+    try:
+        from .teleop import bridge
+        bridge().stop_all()
+    except Exception:
+        pass
+
+
 def request_cancel(node=None) -> dict:
     """Stop the robot: cancel in-flight ROS work and block further commands.
 
     Returns ``{'ok', 'cancelled', 'errors'}`` — which agents had something to
-    cancel, and which raised while doing so. Never raises: a Stop button that
-    fails with a 500 is worse than a partial stop.
+    cancel, and which raised while doing so. ``ok`` is False when anything raised
+    (a stop that failed in part must not read as a clean stop); an empty
+    ``cancelled`` alone is not an error (nothing may have been in flight), so a
+    caller that needs to know what stopped reads that list. Never raises: a Stop
+    button that fails with a 500 is worse than a partial stop.
     """
     with _LOCK:
         _CANCEL.set()
@@ -329,9 +343,11 @@ def request_cancel(node=None) -> dict:
                 result['run_id'] = run.run_id
         except Exception as e:
             result['errors']['run'] = str(e)
+        _teleop_off()
         out = _stop_robot(node)
         result['errors'].update(out.pop('errors'))
         result.update(out)
+        result['ok'] = not result['errors']
         return result
 
 

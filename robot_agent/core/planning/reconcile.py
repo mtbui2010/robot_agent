@@ -23,12 +23,13 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
+from ..pack import actions as action_data
 from .sensor_health import pose_problem
 
 SENSOR, BELIEF, OPERATOR, UNKNOWN = "sensor", "belief", "operator", "unknown"
 
 # steps whose precondition is where the robot stands (the per-step guard checks a non-sensor arrived)
-AT_PLACE_ACTIONS = frozenset({"Find", "Pick", "Place", "PutIn", "Open", "Close"})
+AT_PLACE_ACTIONS = frozenset(action_data.names(action_data.default_table(), cls=("look", "grasp", "release", "open", "close")))   # pack: actions.yaml
 
 
 @dataclass
@@ -148,10 +149,27 @@ def reconcile_containers(world, robot, node) -> dict:
     return read
 
 
+def drop_stale_found(world, pose) -> Optional[str]:
+    """``found`` (an object seen earlier, kept on the belief and on disk between runs) is dropped when its sighting no longer holds: the
+    base is now farther than ``WorldState.found_pose_is_stale`` allows from where the object was seen from. Only a sighting that carries
+    its base pose can be proved stale; one without it, or a pose that cannot be read, leaves the belief as it is. ``pose``: ``[x, y]`` or
+    None. Returns the dropped object's name, else None."""
+    fp = getattr(world, "found_pose", None)
+    if not getattr(world, "found", None) or not fp or not fp.get("robot_pose") or not pose:
+        return None
+    if not world.found_pose_is_stale(pose):
+        return None
+    dropped, world.found, world.found_pose = world.found, None, None
+    return dropped
+
+
 def reconcile_sensors(world, robot, node, sense, env: dict, tol: float) -> dict:
-    """Pose and containers into the belief; the report ``{arrived: {...}, containers: {...}, unconfirmed}``."""
+    """Pose and containers into the belief; the report ``{arrived: {...}, containers: {...}, unconfirmed, found_dropped?}``."""
     out = {"arrived": reconcile_arrived(world, robot, node, sense, env, tol),
            "containers": reconcile_containers(world, robot, node)}
+    gone = drop_stale_found(world, out["arrived"].get("pose"))
+    if gone:
+        out["found_dropped"] = gone                 # the old sighting is no 'found': the plan must look (or ask) again
     unconfirmed = world.provenance_view()["opened"]["unconfirmed"]
     world.mark("opened", BELIEF if unconfirmed else SENSOR)
     out["unconfirmed"] = unconfirmed
@@ -188,4 +206,4 @@ def confirm_arrival(world, verifies) -> None:
 
 __all__ = ["SENSOR", "BELIEF", "OPERATOR", "UNKNOWN", "AT_PLACE_ACTIONS", "PoseReading", "read_pose",
            "nearest_place", "reconcile_arrived", "reconcile_containers", "reconcile_sensors", "guard_arrived",
-           "confirm_arrival"]
+           "confirm_arrival", "drop_stale_found"]

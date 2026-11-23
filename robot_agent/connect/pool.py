@@ -571,7 +571,7 @@ class VlmPool(ServerPool):
         return self.call(one)
 
     def planner_server(self) -> dict | None:
-        """The first usable Ollama server (the GRACE planner talks to Ollama directly)."""
+        """The first usable Ollama server (the SAGE planner talks to Ollama directly)."""
         for i in self.order():
             if provider_of(self.servers[i]) == 'ollama':
                 return self.servers[i]

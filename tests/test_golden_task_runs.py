@@ -37,13 +37,13 @@ def load(path):
 def test_subset_is_small_and_varied():
     assert 5 <= len(RUNS) <= 10
     planners = {load(p)[1]["snapshot"][-1]["record"]["planner"] for p in RUNS}
-    assert planners == {"grace", "llm_direct"}
+    assert planners == {"grace", "llm_direct"}     # recorded before the SAGE rename: history, not changed
 
 
 @pytest.fixture
 def mapper():
-    from fakebot.configs import grace_namemap
-    return ActionMapper(grace_namemap)
+    from fakebot.configs import sage_namemap
+    return ActionMapper(sage_namemap)
 
 
 def _plans(path):

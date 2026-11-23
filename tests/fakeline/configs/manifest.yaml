@@ -1,0 +1,135 @@
+# A made-up assembly-line cart for the golden traces (robot package ``fakeline``, tests/golden, Step S01). NOT a household
+# robot: stations instead of rooms, no drawer, a tray a person unloads, two line actions (Inspect, Fasten). Schema 1 (no
+# schema field): the old code must load it. Every fact here is made up (assumed); change it only when the contract changes.
+robot: fakeline
+version: "1.0"
+language: en
+capabilities:
+  base: true
+  arms: 1
+  hands: [right]
+  lift: false
+  head: false
+  drawer: false
+  voice: true
+  tray: true
+  find_reaches: false
+  vlm_verify: false
+geometry:
+  arrive_tol_m: 0.3
+  reach_m: 0.7
+  reach_far_m: 1.0
+  max_reach_y_m: 0.7
+skills:
+  - name: move
+    action: MoveTo
+    params: {type: object, properties: {inputs: {type: string, description: "station key"}}, required: [inputs]}
+    pre: []
+    hold: []
+    effects: ["arrived(?inputs)"]
+    verify: [{kind: symbolic}, {kind: sensor, skill: mobile_pose}]
+    interruptible: true
+    errors: [unreachable, blocked, timeout, hw_fault, cancelled, software]
+    version: "1.0"
+  - name: find
+    action: Find
+    params: {type: object, properties: {inputs: {type: string}}, required: [inputs]}
+    pre: []
+    hold: []
+    effects: ["found(?inputs)"]
+    verify: [{kind: symbolic}]
+    interruptible: true
+    errors: [absent, perception_unavailable, hw_fault, timeout, cancelled, software]
+    version: "1.0"
+  - name: pick
+    action: Pick
+    params: {type: object, properties: {inputs: {type: string}}, required: [inputs]}
+    pre: ["found(?inputs)", "hand_empty()"]
+    hold: []
+    effects: ["holding(?inputs)", "not found(?inputs)", "not hand_empty()"]
+    verify: [{kind: symbolic}, {kind: sensor, skill: grasp_succeed}]
+    interruptible: false
+    errors: [absent, unreachable, grasp_failed, perception_unavailable, hw_fault, cancelled, software]
+    version: "1.0"
+  - name: place
+    action: Place
+    params: {type: object, properties: {inputs: {type: string}}, required: [inputs]}
+    pre: ["arrived(?inputs)", "not hand_empty()"]
+    hold: []
+    effects: ["hand_empty()", "not holding(*)"]
+    verify: [{kind: symbolic}, {kind: sensor, skill: grasp_succeed, expect: false}]
+    interruptible: false
+    errors: [dropped, grasp_failed, unreachable, blocked, perception_unavailable, hw_fault, cancelled, software]
+    version: "1.0"
+  - name: say
+    action: Say
+    params: {type: object, properties: {inputs: {type: string, description: "the sentence"}}, required: [inputs]}
+    pre: []
+    hold: []
+    effects: []
+    verify: []
+    interruptible: true
+    errors: [hw_fault, software]
+    version: "1.0"
+  - name: wait_for_unload
+    action: WaitForUnload
+    params: {type: object, properties: {}, required: []}
+    pre: []
+    hold: []
+    effects: []
+    verify: []
+    interruptible: true
+    errors: [timeout, hw_fault, cancelled, software]
+    version: "1.0"
+  # the two line actions: Inspect declares an effect on the ``on`` predicate (tracked by the belief), Fasten one the belief
+  # does not track (``fastened``)
+  - name: inspect
+    action: Inspect
+    params: {type: object, properties: {inputs: {type: string, description: "the part"}}, required: [inputs]}
+    pre: []
+    hold: []
+    effects: ["not on(?inputs)"]
+    verify: [{kind: symbolic}]
+    interruptible: true
+    errors: [absent, perception_unavailable, hw_fault, software]
+    version: "1.0"
+  - name: fasten
+    action: Fasten
+    params: {type: object, properties: {inputs: {type: string, description: "the part"}}, required: [inputs]}
+    pre: []
+    hold: []
+    effects: ["fastened(?inputs)"]
+    verify: [{kind: symbolic}]
+    interruptible: false
+    errors: [unreachable, hw_fault, software]
+    version: "1.0"
+  - name: grasp_succeed
+    action: Verify
+    params: {type: object, properties: {}, required: []}
+    pre: []
+    hold: []
+    effects: []
+    verify: []
+    interruptible: true
+    errors: [perception_unavailable, software]
+    version: "1.0"
+  - name: mobile_pose
+    action: Observe
+    params: {type: object, properties: {}, required: []}
+    pre: []
+    hold: []
+    effects: []
+    verify: []
+    interruptible: true
+    errors: [hw_fault, software]
+    version: "1.0"
+  - name: ask
+    action: Ask
+    params: {type: object, properties: {inputs: {type: string}}, required: [inputs]}
+    pre: []
+    hold: []
+    effects: []
+    verify: []
+    interruptible: true
+    errors: [timeout, cancelled, hw_fault, software]
+    version: "1.0"

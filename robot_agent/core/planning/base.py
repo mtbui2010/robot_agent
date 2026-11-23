@@ -8,7 +8,7 @@ driver, the action mapper, and every planner backend:
   lock-step with the executed plan (mirrors ``pyplanner.verifier``'s
   ``SymbolicState`` / ``_apply``; see ``ACTION_MAPPER_SPEC.md`` section 3).
 * :class:`Planner` -- a structural ``typing.Protocol`` describing the
-  ``generate_plan`` / ``replan`` surface that GRACE and any other backend
+  ``generate_plan`` / ``replan`` surface that SAGE and any other backend
   expose (see ``ACTION_MAPPER_SPEC.md`` section 1).
 * Optional planner capabilities (:class:`SubgoalRepair`,
   :class:`ProgressReporting`, :class:`EpisodeMemory`): extra surfaces a planner
@@ -20,13 +20,13 @@ PlanStep
 A plan is ``list[dict]``; each step is a plain dict (NOT a class), shaped::
 
     {
-        "action": str,            # one GRACE action, CamelCase
+        "action": str,            # one SAGE action, CamelCase
         "object": str,            # target, CamelCase (Apple, CoffeeMachine)
         "target": str,            # optional, rarely used
         "reason": str,            # optional, ignored by the verifier
     }
 
-GRACE action vocabulary (14 actions, see ``pyplanner/base.py`` ROBOT_ACTIONS):
+SAGE action vocabulary (14 actions, see ``pyplanner/base.py`` ROBOT_ACTIONS):
     MoveTo, Find, Pick, Place, PutIn, Open, Close,
     TurnOn, TurnOff, Wash, Sit, LieOn, Serve, Wait
 
@@ -50,7 +50,7 @@ class WorldState:
     """Symbolic world state, updated only from skills that actually succeeded.
 
     Mirrors ``pyplanner.verifier.SymbolicState`` so that, on a skill failure,
-    the mapper can hand GRACE the exact recovered state for suffix repair
+    the mapper can hand SAGE the exact recovered state for suffix repair
     (``ACTION_MAPPER_SPEC.md`` section 3). It is intentionally a self-contained
     dataclass -- no ``pyplanner`` import.
 
@@ -95,6 +95,11 @@ class WorldState:
     # while the field still has the value it was recorded for; any other value is a belief (a
     # skill's effect, a load from disk). Written by :meth:`mark`, shown by :meth:`provenance_view`.
     provenance: dict = field(default_factory=dict)
+    # The fact store (pack schema 2, Step S26): predicate name -> set of argument tuples, added and removed only by the
+    # declared effects of a pack's actions (core/pack/action_rules.py). Empty for every robot that declares none. Reset at
+    # the start of a run (a fact of an earlier run never satisfies a precondition); in to_dict() only when not empty;
+    # never in as_text() (the planner's view).
+    facts: dict = field(default_factory=dict)
 
     # ── provenance ─────────────────────────────────────────────────────
     _PROV_FIELDS = ("arrived", "found", "holding", "opened", "on")
@@ -162,7 +167,12 @@ class WorldState:
             found_pose=dict(self.found_pose) if self.found_pose else None,
             holding_pose=dict(self.holding_pose) if self.holding_pose else None,
             provenance=_copy.deepcopy(self.provenance),
+            facts={k: set(v) for k, v in self.facts.items()},
         )
+
+    def clear_facts(self) -> None:
+        """Empty the fact store (the start of a run)."""
+        self.facts = {}
 
     def found_pose_is_stale(self, robot_xy, threshold: float = 0.25) -> bool:
         """True if the stored ``found_pose`` can no longer be trusted: there is
@@ -176,8 +186,8 @@ class WorldState:
         return ((rx - robot_xy[0]) ** 2 + (ry - robot_xy[1]) ** 2) ** 0.5 > threshold
 
     def to_dict(self) -> dict:
-        """JSON-serializable snapshot for the UI / edit endpoint (sets -> sorted lists)."""
-        return {
+        """JSON-serializable snapshot for the UI / edit endpoint (sets -> sorted lists); ``facts`` only when there are any."""
+        out = {
             "arrived": self.arrived,
             "found": self.found,
             "holding": self.holding,
@@ -189,6 +199,9 @@ class WorldState:
             # added in SAGE-v2 (docs/guard.md); old clients ignore it, as_text() (the planner's) has none
             "provenance": self.provenance_view(),
         }
+        if any(self.facts.values()):
+            out["facts"] = {k: sorted(list(t) for t in v) for k, v in sorted(self.facts.items()) if v}
+        return out
 
     def update_from_dict(self, d: dict) -> None:
         """Apply an operator edit in place (only the keys present are touched).
@@ -225,6 +238,9 @@ class WorldState:
             self.on = set(d["on"] or [])
         if "holding_since" in d and "holding" not in d:
             self.holding_since = d["holding_since"]
+        if "facts" in d:
+            self.facts = {str(k): {tuple(str(a) for a in (t if isinstance(t, (list, tuple)) else [t])) for t in v or ()}
+                          for k, v in (d["facts"] or {}).items()}
 
     def as_text(self) -> str:
         """Render a compact, human-readable one-line summary of the state.
@@ -354,6 +370,20 @@ def subgoal_repair(planner) -> Optional[SubgoalRepair]:
     return planner if _has_methods(planner, _CAPABILITY_MEMBERS["subgoal_repair"]) else None
 
 
+def chat_override(planner):
+    """The planner's optional ``chat_override(fn)`` context manager (a model of its own for its LLM calls; role_models.py),
+    else None. Transparent proxies (``_inner``) are looked through."""
+    p = planner
+    for _ in range(6):
+        if callable(getattr(p, "chat_override", None)):
+            return p.chat_override
+        try:
+            p = object.__getattribute__(p, "_inner")
+        except AttributeError:
+            break
+    return None
+
+
 def planner_capabilities(planner) -> set[str]:
     """The optional capabilities ``planner`` offers: a subset of
     ``{"subgoal_repair", "progress", "episode_memory"}`` (for logs, tests and
@@ -362,3 +392,26 @@ def planner_capabilities(planner) -> set[str]:
     if hasattr(planner, "progress"):
         out.add("progress")
     return out
+
+
+def accepts(planner, method: str, name: str) -> bool:
+    """Does ``planner.method`` take the keyword ``name`` (e.g. ``generate_plan(subgoals=)``,
+    ``budget=``)? Transparent proxies (``_inner``) are looked through. Only a parameter of that NAME counts:
+    a ``**kwargs`` planner may drop the keyword (a budget it never takes would leave its calls uncounted).
+    Optional planner keywords are passed only when this says so."""
+    import inspect
+    p = planner
+    for _ in range(6):
+        try:
+            p = object.__getattribute__(p, "_inner")
+        except AttributeError:
+            break
+    fn = getattr(p, method, None)
+    if fn is None:
+        return False
+    try:
+        params = inspect.signature(fn).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    return any(q.name == name and q.kind in (q.POSITIONAL_OR_KEYWORD, q.KEYWORD_ONLY) for q in params)
+

@@ -43,7 +43,7 @@ def make_pkg(root: Path, manifest: str = MANIFEST, skills_json=None) -> Path:
     (pkg / "__init__.py").write_text("")
     (pkg / "configs" / "skills_config.py").write_text(SKILLS_CONFIG)
     (pkg / "configs" / "manifest.yaml").write_text(manifest)
-    (pkg / "configs" / "grace_namemap.py").write_text('SKILL_MAP = {"MoveTo": "move", "Pick": "grab"}\n')
+    (pkg / "configs" / "sage_namemap.py").write_text('SKILL_MAP = {"MoveTo": "move", "Pick": "grab"}\n')
     (pkg / "skills" / "mobile.py").write_text(MOBILE)
     (pkg / "skills" / "arm.py").write_text(ARM)
     if skills_json is not None:

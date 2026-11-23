@@ -72,7 +72,7 @@ def test_not_a_planner_is_a_clear_type_error(plugin_module):
 
 
 @pytest.mark.parametrize("name, msg", [
-    ("nope", "available planners: grace, llm_direct"),
+    ("nope", "available planners: sage, llm_direct"),
     ("no_such_mod_xyz:Cls", "cannot import"),
     ("my_planners:Missing", "has no 'Missing'"),
     ("my_planners:", "expected 'package.module:Class'"),
@@ -88,15 +88,16 @@ def test_entry_point_group(monkeypatch, plugin_module):
     assert is_planner_name("mine") and is_planner_name("MINE")
     assert resolve_planner("mine") == (MinimalPlanner, False)
     assert get_planner("Mine").generate_plan("t", "", [])[1]["method"] == "minimal"
-    with pytest.raises(ValueError, match="grace, llm_direct, mine"):
+    with pytest.raises(ValueError, match="sage, llm_direct, mine"):
         get_planner("other")
 
 
 def test_builtin_names_unchanged(monkeypatch):
-    assert resolve_planner("GRACE")[1] is True and resolve_planner("llm_direct")[1] is True
-    assert is_planner_name("grace") and is_planner_name("a.b:C") and not is_planner_name("sage")
+    assert resolve_planner("SAGE")[1] is True and resolve_planner("llm_direct")[1] is True
+    # "sage" is the built-in backend now (it was the loop-level name only); "sage_plain" is a request-level name only
+    assert is_planner_name("sage") and is_planner_name("a.b:C") and not is_planner_name("sage_plain")
     assert not is_planner_name("") and not is_planner_name(None)
-    assert planner_available("grace")                    # embodiplan is on the test path
+    assert planner_available("sage")                    # embodiplan is on the test path
     assert not planner_available("nope")
 
 
@@ -113,7 +114,7 @@ class _Block:
 
 
 class PublicSage:
-    """embodiplan's public SAGE editing surface (what GraceBackend adapts)."""
+    """embodiplan's public SAGE editing surface (what SageBackend adapts)."""
 
     def __init__(self):
         self.last_blocks = [_Block("a", GOOD[:3]), _Block("b", GOOD[3:])]
@@ -134,10 +135,10 @@ class PublicSage:
         return [], {}
 
 
-def test_grace_backend_offers_subgoal_repair_through_the_proxy():
-    from robot_agent.core.planning.backends.pyplanner_grace import GraceBackend
+def test_sage_backend_offers_subgoal_repair_through_the_proxy():
+    from robot_agent.core.planning.backends.pyplanner_sage import SageBackend
     inner = PublicSage()
-    p = RecordingPlanner(GraceBackend.wrap(inner))
+    p = RecordingPlanner(SageBackend.wrap(inner))
     assert planner_capabilities(p) >= {"subgoal_repair", "progress"}
     rep = subgoal_repair(p)
     blocks = rep.blocks()
@@ -165,7 +166,11 @@ def test_gate_without_repair_falls_back_to_one_fresh_plan(make_assist, env):
         def generate_plan(self, task, obs, visible_objects):
             self.calls.append(("generate_plan", task, obs))
             n = sum(1 for c in self.calls if c[0] == "generate_plan")
-            return ([s for s in GOOD if s["action"] != "Find"] if n == 1 else list(GOOD)), {}
+            # the first plan puts the apple down at the wrong place: no symbolic repair can know where it
+            # belongs instead (SAGE-v2 plan_repair fixes a missing Find without any LLM call)
+            bad = [dict(s) for s in GOOD]
+            bad[-2], bad[-1] = {"action": "MoveTo", "object": DS}, {"action": "Place", "object": DS}
+            return (bad if n == 1 else list(GOOD)), {}
     robot = FakeRobot(env, {"apple": DS})
     planner = TwoPlans(GOOD)
     loop = make_assist(robot, FakeLLM(default=APPLE), planner)

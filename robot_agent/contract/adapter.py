@@ -1,6 +1,6 @@
 """RobotAdapter: everything the core needs from one robot, as a Protocol.
 
-Replaces the duck-typed ``<pkg>.configs.grace_namemap`` module. A robot
+Replaces the duck-typed ``<pkg>.configs.sage_namemap`` module. A robot
 package ships ``configs/adapter.py`` with a class that has these members (it
 does not need to inherit from anything); until it does,
 :class:`~robot_agent.contract.legacy_adapter.NamemapAdapter` wraps the old

@@ -88,7 +88,7 @@ def test_open_loop_no_program(monkeypatch, robot_view, env, agent_state):
     assert any(e["event"] == "error" and "no valid task plan" in e["msg"] for e in evs)
 
 
-@pytest.mark.parametrize("planner,uses", [("direct", True), ("llm_direct", True), ("grace", False),
+@pytest.mark.parametrize("planner,uses", [("direct", True), ("llm_direct", True), ("sage_plain", False),
                                           ("sage", False), ("no_such_mod:X", False)])
 def test_which_planners_use_the_prompt(planner, uses, monkeypatch):
     monkeypatch.delenv("ROBOT_AGENT_SAGE_GENERATOR", raising=False)
@@ -110,6 +110,16 @@ def test_sage_with_llm_direct_generator_and_default(monkeypatch, tmp_path):
     monkeypatch.syspath_prepend(str(tmp_path))
     importlib.invalidate_caches()
     assert dp.uses_direct_prompt("dplug:P")
+
+
+@pytest.mark.parametrize("generator,uses", [("sage", False), ("SAGE", False), ("llm_direct", True), ("dplug_none:X", False)])
+def test_the_sage_loop_reads_its_generator_as_a_backend_name(generator, uses, monkeypatch):
+    """The loop-level 'sage' asks its generator; the backend 'sage' is not the loop again (no recursion)."""
+    monkeypatch.setenv("ROBOT_AGENT_SAGE_GENERATOR", generator)
+    assert dp.uses_direct_prompt("sage") is uses
+    monkeypatch.setenv("ROBOT_AGENT_CLOSED_LOOP", "1")
+    monkeypatch.delenv("ROBOT_AGENT_PLANNER", raising=False)
+    assert dp.default_planner() == "sage_plain" and dp.uses_direct_prompt(None) is False
 
 
 def test_prompt_endpoint(monkeypatch, robot_view):

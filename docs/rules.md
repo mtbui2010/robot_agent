@@ -109,3 +109,35 @@ file maps, examples and history go in `docs/*.md`, linked from `CLAUDE.md` and
 from [README.md](README.md).
 
 Why: CLAUDE.md is read on every session; long text there hides the rules.
+
+## 13. Layers: contract <- engine <- options <- robot profiles
+
+`contract` <- engine (`robot_agent/core`) <- options (`robot_agent/options`); `interact` and `api` sit above the engine and never import an
+option. The engine reaches options only through the registry (`core/options`), never by an import; an option never imports another option
+(shared code goes down into the engine as a public function); nothing imports the tests, the benchmark or a robot pack. Robot profiles are
+data outside this repo (manifest, safety profile, language overlays). `tools/lint_arch.py` resolves relative imports and fails on a new
+violation; the old ones are a baseline that may only shrink ([architecture.md](architecture.md)).
+
+Why: a feature that can be removed, tested and replaced alone needs imports that go one way; a hook table in the engine is reviewable, a web of
+imports between options is not.
+
+## 14. No domain facts in the engine or in an option
+
+No object, place, person or skill names, no word lists or regexes of a human language, no hazard, place-class or receiver rules, no
+thresholds tuned on a dev set. Such facts are declared data with provenance (`sourced` / `assumed`): the robot's manifest and safety profile,
+a language pack. What is dangerous depends on the robot (a household robot and a factory robot differ), so it is per-robot configuration; the
+engine ships an empty default (`SafetyProfile.EMPTY`, fail open). Tests cover an empty profile, a second robot's profile and a made-up
+language. The benchmark's judge, generator and simulated-user rules are never read by the system under test.
+
+Why: one engine serves many robots, languages and benchmarks; a fact written in code is silently wrong for all but one of them.
+
+## 15. An option is a registered module
+
+A feature that can be switched is an `OptionSpec` (name, key schema, hooks, order) and a class in `robot_agent/options/<name>.py`, listed in
+`options/__init__.py`, documented in [options.md](options.md) and tested through the real `AssistLoop` with the option on and off. No new
+`if self.cfg.get("<option>")` branch goes into `assist_loop.py`; the number of option keys the loop reads and of its branches may not grow
+(`tests/test_architecture.py`). Functions at most 80 lines in the engine, 60 in an option; files 1200 and 400; old offenders are recorded and
+may not grow. Moving code out of the loop keeps the old option names, manifest keys and `loop.cfg` keys working and is proved by a
+byte-identical replay of recorded episodes.
+
+Why: the loop had 66 option keys read in 67 branches across 4,000 lines; each option added a few more, and no one could read what a flag did.

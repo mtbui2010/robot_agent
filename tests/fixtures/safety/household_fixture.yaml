@@ -1,0 +1,147 @@
+# TEST FIXTURE of robot_agent, not shipped, not a safety assessment. A copy of the household robot's profile (English and
+# Korean words) so that robot_agent's own tests can run the engine on a household profile. Same data as the symbolic_robot home robot pack's
+# configs/safety/household.yaml. Generated from the r17 language packs (the hazard / place / receiver / refusal keys of
+# lang/{en,ko}.json) when they were moved out of the core. Words under `sourced` come from the CHOP page in `sources`; everything
+# else is `assumed` (general vocabulary). The child rule is `assumed`: the CHOP page does not state it.
+profile: household_fixture
+version: 1
+sources:
+  chop_cleaners:
+    url: https://chop.edu/centers-programs/poison-control-center/household-cleaners
+    opened: '2026-11-04'
+    supports: the product list (ammonia cleaners, bleach, acid drain / toilet / oven cleaners, mildew removers); it does not state the food or
+      child rule
+checks:
+- 'on'
+- in
+hazard_classes:
+  cleaning_chemical:
+    words:
+      en:
+        sourced:
+        - \bbleach\b
+        - \bammonia\b
+        - \bglass cleaner\b
+        - \bfloor cleaner\b
+        - \bjewel(?:le)?ry cleaner\b
+        - \bdrain (?:opener|cleaner)\b
+        - \btoilet (?:bowl )?cleaner\b
+        - \boven cleaner\b
+        - \bmildew (?:stain )?remover\b
+        assumed:
+        - \bdetergent\b
+        - \bdishwasher (?:pods?|tablets?)\b
+        - \blaundry pods?\b
+        - \bdisinfectant\b
+        - \brust remover\b
+        - \binsecticide\b
+        - \bbug spray\b
+        - \blye\b
+        - \bcleaning spray\b
+        - \blysol\b
+        - \bclorox\b
+        - \bwindex\b
+        - \bdrano\b
+        - \bpine-?sol\b
+        - \bchlorine\b
+      ko:
+        sourced:
+        - 표백제
+        - 락스
+        - 암모니아
+        - 유리 ?세정제
+        - 배수구 ?세정제
+        - 변기 ?세정제
+        - 오븐 ?세정제
+        - 곰팡이 ?제거제
+        assumed:
+        - 라이솔
+        - 리솔
+        - 클로록스
+        - 염소계
+        - 세제
+        - 살충제
+        - 소독제
+        - 세정제
+    sources:
+    - chop_cleaners
+place_classes:
+  food_storage:
+    words:
+      en:
+      - \bfridge\b
+      - \brefrigerator\b
+      - \bfreezer\b
+      - \bpantry\b
+      - \blarder\b
+      - \bbread ?box\b
+      - \bkimchi fridge\b
+      - \bice ?box\b
+      - \bfood (?:cabinet|storage|container)\b
+      - \blunch ?box\b
+      ko:
+      - 냉장고
+      - 냉동고
+      - 김치냉장고
+      - 팬트리
+      - 식료품
+      - 찬장
+      - 반찬통
+      - 도시락
+    provenance: assumed
+  food_prep:
+    words:
+      en:
+      - \bcutting board\b
+      - \bchopping board\b
+      - \bstove\b
+      - \bhob\b
+      - \boven\b
+      - \bmicrowave\b
+      - \brice cooker\b
+      - \btoaster\b
+      ko:
+      - 도마
+      - 가스레인지
+      - 레인지
+      - 오븐
+      - 전자레인지
+      - 밥솥
+    provenance: assumed
+receiver_classes:
+  vulnerable_person:
+    words:
+      en:
+      - \b(?:child|children|kids?|toddlers?|babys?|babies|infants?|little one)\b
+      ko:
+      - 아이
+      - 아기
+      - 어린이
+      - 유아
+      - 꼬마
+    fields:
+    - age_group
+    - category
+    provenance: assumed
+rules:
+- id: chem_food
+  hazard: cleaning_chemical
+  places:
+  - food_storage
+  - food_prep
+  say: cleaning chemicals do not go with food
+  provenance: assumed
+- id: chem_child
+  hazard: cleaning_chemical
+  receivers:
+  - vulnerable_person
+  say: cleaning chemicals must not be handed to a child
+  enabled_by: hazard.receivers
+  provenance: assumed
+refusal_marks:
+  safety:
+    en: \b(?:knife|knives|blade|scissors|razor|fire|flame|stove|burn|hot|boil|window|throw|hit|hurt|poison|bleach|medicine|pills?|child|baby|kid|outside)\b
+    ko: 칼|불|창문|던지|가위|독|약|아이
+  capability:
+    en: \b(?:throw|pour|cook|wash|washer|climb|window|door|tools?|turn on|switch on|lift|furniture|sofa|bed|leave|outside|clean)\b
+    ko: 던지|붓|요리|씻|세탁|올라|창문|문을|켜

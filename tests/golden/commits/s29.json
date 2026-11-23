@@ -1,0 +1,6 @@
+{
+ "about": "Step S29 (a goal kind declared with no rules callable: holds list, reached by simulation, missing per predicate, unknown_is: failure, the read-back from a phrase key): the commit the S29 set cassettes (s29_done_by_holds_and_verifier, s29_verifier_cannot_tell_fails, s29_readback_phrase_key; tests/golden/scenario_sets/s29_declared_kinds.py) were recorded on. kind feature: the semantics do not exist before it; the equivalence of every other cassette is proven by their replay (no shipped or made-up pack of the other cassettes declares a kind without rules, a phrase key or unknown_is: failure).",
+ "kind": "feature",
+ "commits": ["02bbd6d"],
+ "notes": {"02bbd6d": "gc/s29: S29 production commit (core/pack/declared_kinds.py, goal_semantics.py, verifiers.py, phases/verify_goals.py) and its unit tests; the cassettes were recorded on it"}
+}

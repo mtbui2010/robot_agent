@@ -1,0 +1,2302 @@
+{
+ "format": 1,
+ "name": "subgoals_close_replan",
+ "tags": [
+  "replan",
+  "subgoals"
+ ],
+ "about": "a close and an on goal; the pick fails, so the replan call shows what the loop passes there",
+ "scenario": {
+  "name": "subgoals_close_replan",
+  "env": "sim_house",
+  "robot_pkg": "fakebot",
+  "task": "Close the kitchen drawer and bring the apple from the desk to the dining table.",
+  "robot": {
+   "objects": {
+    "apple": "desk@study room",
+    "mug": "desk@study room",
+    "banana": "dining table@kitchen",
+    "orange": "dining table@kitchen",
+    "sponge": "counter@kitchen",
+    "spoon": "drawer@kitchen/in",
+    "tennis ball": "stool@bedroom"
+   },
+   "opened": [
+    "drawer@kitchen"
+   ],
+   "faults": [
+    {
+     "skill": "pick",
+     "kind": "fail",
+     "nth": [
+      1,
+      2
+     ]
+    }
+   ]
+  },
+  "llm": {
+   "script": [],
+   "default": {
+    "status": "clear",
+    "reason": "",
+    "question": "",
+    "goals": [
+     {
+      "type": "close",
+      "object": "kitchen drawer",
+      "from": "",
+      "to": ""
+     },
+     {
+      "type": "on",
+      "object": "apple",
+      "from": "desk",
+      "to": "dining table"
+     }
+    ]
+   }
+  },
+  "planner": {
+   "plan": [
+    "MoveTo drawer@kitchen",
+    "Close drawer@kitchen",
+    "MoveTo desk@study room",
+    "Find apple",
+    "Pick apple",
+    "MoveTo dining table@kitchen",
+    "Place dining table@kitchen"
+   ],
+   "replans": [
+    [
+     "MoveTo desk@study room",
+     "Find apple",
+     "Pick apple",
+     "MoveTo dining table@kitchen",
+     "Place dining table@kitchen"
+    ]
+   ],
+   "takes_subgoals": true
+  },
+  "options": {
+   "input_pivot": "none",
+   "look_then_ask": "0",
+   "bring_ask": "0",
+   "bt_goal": "0",
+   "fetch_guard": "0"
+  },
+  "world": {
+   "opened": [
+    "drawer@kitchen"
+   ]
+  }
+ },
+ "recorded": {
+  "llm_calls": [
+   {
+    "prompt": "86c33e71392a12cb",
+    "format": "b69b437228696e32",
+    "head": "You turn a household robot task into goals. The robot is a mobile manipu",
+    "answer": "{\"status\": \"clear\", \"reason\": \"\", \"question\": \"\", \"goals\": [{\"type\": \"close\", \"object\": \"kitchen drawer\", \"from\": \"\", \"to\": \"\"}, {\"type\": \"on\", \"object\": \"apple\", \"from\": \"desk\", \"to\": \"dining table\"}]}"
+   }
+  ],
+  "planner_calls": [
+   {
+    "call": "generate_plan",
+    "task": "Close the kitchen drawer and bring the apple from the desk to the dining table.",
+    "subgoals": [
+     "close drawer@kitchen",
+     "put the apple (it is at desk@study room) on dining table@kitchen"
+    ]
+   },
+   {
+    "call": "replan",
+    "failed": {
+     "action": "Pick",
+     "object": "apple"
+    },
+    "reason": "E: Pick apple failed. R: pick failed; the grasp of the apple failed 2 times and nobody could help: try it again. S: robot at desk@study room, holding nothing; goals: close drawer@kitchen to drawer@kitchen; on apple from desk@study room to dining table@kitchen",
+    "completed": [
+     "MoveTo drawer@kitchen",
+     "Close drawer@kitchen",
+     "MoveTo desk@study room",
+     "Find apple",
+     "Find apple"
+    ],
+    "subgoals": null
+   }
+  ],
+  "robot_calls": [
+   {
+    "skill": "mobile_pose",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "pose": [
+      0.25,
+      2.1,
+      90.0
+     ]
+    }
+   },
+   {
+    "skill": "move",
+    "params": {
+     "inputs": "drawer@kitchen"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "arrived at drawer@kitchen"
+    }
+   },
+   {
+    "skill": "mobile_pose",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "pose": [
+      -0.755,
+      -0.209,
+      -178.1
+     ]
+    }
+   },
+   {
+    "skill": "close_drawer",
+    "params": {
+     "inputs": "drawer@kitchen"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "closed"
+    }
+   },
+   {
+    "skill": "move",
+    "params": {
+     "inputs": "desk@study room"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "arrived at desk@study room"
+    }
+   },
+   {
+    "skill": "mobile_pose",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "pose": [
+      3.1,
+      2.5,
+      -180.0
+     ]
+    }
+   },
+   {
+    "skill": "find",
+    "params": {
+     "inputs": "apple",
+     "min_conf": 0.55
+    },
+    "result": {
+     "isdone": true,
+     "ins": {
+      "apple": {
+       "pose_3d": [
+        0.6,
+        0.05,
+        0.8
+       ]
+      }
+     }
+    }
+   },
+   {
+    "skill": "pick",
+    "params": {
+     "inputs": "apple",
+     "type": "fine_move"
+    },
+    "result": {
+     "isdone": false,
+     "msg": "pick failed"
+    }
+   },
+   {
+    "skill": "grasp_succeed",
+    "params": {},
+    "result": {
+     "isdone": false
+    }
+   },
+   {
+    "skill": "find",
+    "params": {
+     "inputs": "apple",
+     "min_conf": 0.55
+    },
+    "result": {
+     "isdone": true,
+     "ins": {
+      "apple": {
+       "pose_3d": [
+        0.6,
+        0.05,
+        0.8
+       ]
+      }
+     }
+    }
+   },
+   {
+    "skill": "pick",
+    "params": {
+     "inputs": "apple",
+     "type": "fine_move"
+    },
+    "result": {
+     "isdone": false,
+     "msg": "pick failed"
+    }
+   },
+   {
+    "skill": "grasp_succeed",
+    "params": {},
+    "result": {
+     "isdone": false
+    }
+   },
+   {
+    "skill": "ask",
+    "params": {
+     "inputs": "I can't pick up the apple. Could you move it closer to the edge, then say yes?",
+     "retries": 0,
+     "lang": "en"
+    },
+    "result": {
+     "isdone": false,
+     "text": ""
+    }
+   },
+   {
+    "skill": "ask",
+    "params": {
+     "inputs": "Sorry, I didn't hear you. I can't pick up the apple. Could you move it closer to the edge, then say yes?",
+     "retries": 0,
+     "lang": "en"
+    },
+    "result": {
+     "isdone": false,
+     "text": ""
+    }
+   },
+   {
+    "skill": "find",
+    "params": {
+     "inputs": "apple",
+     "min_conf": 0.55
+    },
+    "result": {
+     "isdone": true,
+     "ins": {
+      "apple": {
+       "pose_3d": [
+        0.6,
+        0.05,
+        0.8
+       ]
+      }
+     }
+    }
+   },
+   {
+    "skill": "pick",
+    "params": {
+     "inputs": "apple",
+     "type": "fine_move"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "grasped"
+    }
+   },
+   {
+    "skill": "grasp_succeed",
+    "params": {},
+    "result": {
+     "isdone": true
+    }
+   },
+   {
+    "skill": "move",
+    "params": {
+     "inputs": "dining table@kitchen"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "arrived at dining table@kitchen"
+    }
+   },
+   {
+    "skill": "mobile_pose",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "pose": [
+      -0.065,
+      -2.2,
+      0.0
+     ]
+    }
+   },
+   {
+    "skill": "grasp_succeed",
+    "params": {},
+    "result": {
+     "isdone": true
+    }
+   },
+   {
+    "skill": "place",
+    "params": {
+     "inputs": "dining table@kitchen"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "placed"
+    }
+   },
+   {
+    "skill": "grasp_succeed",
+    "params": {},
+    "result": {
+     "isdone": false
+    }
+   },
+   {
+    "skill": "find",
+    "params": {
+     "inputs": "apple",
+     "min_conf": 0.55
+    },
+    "result": {
+     "isdone": true,
+     "ins": {
+      "apple": {
+       "pose_3d": [
+        0.6,
+        0.05,
+        0.8
+       ]
+      }
+     }
+    }
+   }
+  ],
+  "events": [
+   {
+    "event": "task_start",
+    "task": "Close the kitchen drawer and bring the apple from the desk to the dining table.",
+    "world": {
+     "arrived": "entrance",
+     "found": null,
+     "holding": null,
+     "opened": [
+      "drawer@kitchen"
+     ],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from entrance"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {
+        "drawer@kitchen": {
+         "source": "belief",
+         "open": true
+        }
+       },
+       "unconfirmed": [
+        "drawer@kitchen"
+       ]
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Starting the task"
+   },
+   {
+    "event": "reconcile",
+    "when": "start",
+    "changed": {
+     "arrived": [
+      null,
+      "entrance"
+     ]
+    },
+    "sensors": {
+     "arrived": {
+      "pose": [
+       0.25,
+       2.1
+      ],
+      "detail": "0.00 m from entrance",
+      "source": "mobile_pose"
+     },
+     "containers": {},
+     "unconfirmed": [
+      "drawer@kitchen"
+     ]
+    },
+    "provenance": {
+     "arrived": {
+      "source": "sensor",
+      "detail": "0.00 m from entrance"
+     },
+     "found": {
+      "source": "belief"
+     },
+     "holding": {
+      "source": "belief"
+     },
+     "opened": {
+      "source": "belief",
+      "containers": {
+       "drawer@kitchen": {
+        "source": "belief",
+        "open": true
+       }
+      },
+      "unconfirmed": [
+       "drawer@kitchen"
+      ]
+     },
+     "on": {
+      "source": "belief"
+     }
+    },
+    "world": {
+     "arrived": "entrance",
+     "found": null,
+     "holding": null,
+     "opened": [
+      "drawer@kitchen"
+     ],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from entrance"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {
+        "drawer@kitchen": {
+         "source": "belief",
+         "open": true
+        }
+       },
+       "unconfirmed": [
+        "drawer@kitchen"
+       ]
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    }
+   },
+   {
+    "event": "status",
+    "msg": "Understanding the task..."
+   },
+   {
+    "event": "understand",
+    "status": "clear",
+    "reason": "",
+    "goals": [
+     {
+      "type": "close",
+      "object": "drawer@kitchen",
+      "from": "",
+      "to": "drawer@kitchen"
+     },
+     {
+      "type": "on",
+      "object": "apple",
+      "from": "desk@study room",
+      "to": "dining table@kitchen"
+     }
+    ],
+    "question": null
+   },
+   {
+    "event": "status",
+    "msg": "Generating task plan..."
+   },
+   {
+    "event": "gate",
+    "round": 0,
+    "problems": [],
+    "plan": [
+     "MoveTo drawer@kitchen",
+     "Close drawer@kitchen",
+     "MoveTo desk@study room",
+     "Find apple",
+     "Pick apple",
+     "MoveTo dining table@kitchen",
+     "Place dining table@kitchen"
+    ]
+   },
+   {
+    "event": "plan",
+    "steps": [
+     {
+      "action": "MoveTo",
+      "object": "drawer@kitchen",
+      "grounded": true
+     },
+     {
+      "action": "Close",
+      "object": "drawer@kitchen",
+      "grounded": true
+     },
+     {
+      "action": "MoveTo",
+      "object": "desk@study room",
+      "grounded": true
+     },
+     {
+      "action": "Find",
+      "object": "apple"
+     },
+     {
+      "action": "Find",
+      "object": "apple"
+     },
+     {
+      "action": "Pick",
+      "object": "apple"
+     },
+     {
+      "action": "MoveTo",
+      "object": "dining table@kitchen",
+      "grounded": true
+     },
+     {
+      "action": "Place",
+      "object": "dining table@kitchen",
+      "grounded": true
+     }
+    ],
+    "plan_meta": {
+     "method": "scripted",
+     "llm_plan": [
+      {
+       "action": "MoveTo",
+       "object": "drawer@kitchen",
+       "grounded": true
+      },
+      {
+       "action": "Close",
+       "object": "drawer@kitchen",
+       "grounded": true
+      },
+      {
+       "action": "MoveTo",
+       "object": "desk@study room",
+       "grounded": true
+      },
+      {
+       "action": "Find",
+       "object": "apple"
+      },
+      {
+       "action": "Pick",
+       "object": "apple"
+      },
+      {
+       "action": "MoveTo",
+       "object": "dining table@kitchen",
+       "grounded": true
+      },
+      {
+       "action": "Place",
+       "object": "dining table@kitchen",
+       "grounded": true
+      }
+     ],
+     "edits": [],
+     "certified": true,
+     "gate_findings": [],
+     "repaired_by_op": {},
+     "completed_by_gate": 0
+    },
+    "warnings": [],
+    "plan_text": "move::drawer@kitchen\nclose_drawer::drawer@kitchen\nmove::desk@study room\nfind::apple\npick::apple\nmove::dining table@kitchen\nplace::dining table@kitchen",
+    "certified": true,
+    "world": {
+     "arrived": "entrance",
+     "found": null,
+     "holding": null,
+     "opened": [
+      "drawer@kitchen"
+     ],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from entrance"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {
+        "drawer@kitchen": {
+         "source": "belief",
+         "open": true
+        }
+       },
+       "unconfirmed": [
+        "drawer@kitchen"
+       ]
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    }
+   },
+   {
+    "event": "step_start",
+    "index": 0,
+    "action": "MoveTo",
+    "object": "drawer@kitchen",
+    "skill": "move",
+    "say": "I will move to drawer in the kitchen"
+   },
+   {
+    "event": "step_verify",
+    "index": 0,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "arrived at drawer@kitchen",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "localization",
+      "ok": true,
+      "detail": "0.00 m from drawer@kitchen",
+      "confidence": null,
+      "unknown": false
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 0,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "arrived at drawer@kitchen"
+    },
+    "world": {
+     "arrived": "drawer@kitchen",
+     "found": null,
+     "holding": null,
+     "opened": [
+      "drawer@kitchen"
+     ],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {
+        "drawer@kitchen": {
+         "source": "belief",
+         "open": true
+        }
+       },
+       "unconfirmed": [
+        "drawer@kitchen"
+       ]
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: move to drawer in the kitchen"
+   },
+   {
+    "event": "step_start",
+    "index": 1,
+    "action": "Close",
+    "object": "drawer@kitchen",
+    "skill": "close_drawer",
+    "say": "I will close drawer in the kitchen"
+   },
+   {
+    "event": "step_verify",
+    "index": 1,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "closed",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "sensor",
+      "ok": true,
+      "detail": "unknown: close_drawer declares no sensor that checks it",
+      "confidence": null,
+      "unknown": true
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 1,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "closed"
+    },
+    "world": {
+     "arrived": "drawer@kitchen",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: close drawer in the kitchen"
+   },
+   {
+    "event": "step_start",
+    "index": 2,
+    "action": "MoveTo",
+    "object": "desk@study room",
+    "skill": "move",
+    "say": "I will move to desk@study room"
+   },
+   {
+    "event": "step_verify",
+    "index": 2,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "arrived at desk@study room",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "localization",
+      "ok": true,
+      "detail": "0.00 m from desk@study room",
+      "confidence": null,
+      "unknown": false
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 2,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "arrived at desk@study room"
+    },
+    "world": {
+     "arrived": "desk@study room",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: move to desk@study room"
+   },
+   {
+    "event": "step_start",
+    "index": 3,
+    "action": "Find",
+    "object": "apple",
+    "skill": "find",
+    "say": "I will find apple"
+   },
+   {
+    "event": "step_verify",
+    "index": 3,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "sensor",
+      "ok": true,
+      "detail": "unknown: find declares no sensor that checks it",
+      "confidence": null,
+      "unknown": true
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 3,
+    "status": "success",
+    "result": {
+     "ins": {
+      "apple": {
+       "pose_3d": [
+        0.6,
+        0.05,
+        0.8
+       ]
+      }
+     },
+     "isdone": true,
+     "msg": ""
+    },
+    "world": {
+     "arrived": "desk@study room",
+     "found": "apple",
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: find apple"
+   },
+   {
+    "event": "step_start",
+    "index": 4,
+    "action": "Pick",
+    "object": "apple",
+    "skill": "pick",
+    "say": "I will pick apple"
+   },
+   {
+    "event": "step_verify",
+    "index": 4,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": false,
+      "detail": "pick failed",
+      "confidence": null,
+      "unknown": false
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 4,
+    "status": "failed",
+    "result": {
+     "isdone": false,
+     "msg": "pick failed",
+     "code": "unknown"
+    },
+    "reason": "pick failed",
+    "world": {
+     "arrived": "desk@study room",
+     "found": "apple",
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Failed to pick apple. pick failed"
+   },
+   {
+    "event": "recover",
+    "at_index": 4,
+    "kind": "retry",
+    "msg": "pick apple failed; looking again"
+   },
+   {
+    "event": "step_start",
+    "index": 4,
+    "action": "Find",
+    "object": "apple",
+    "skill": "find",
+    "say": "I will find apple"
+   },
+   {
+    "event": "step_verify",
+    "index": 4,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "sensor",
+      "ok": true,
+      "detail": "unknown: find declares no sensor that checks it",
+      "confidence": null,
+      "unknown": true
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 4,
+    "status": "success",
+    "result": {
+     "ins": {
+      "apple": {
+       "pose_3d": [
+        0.6,
+        0.05,
+        0.8
+       ]
+      }
+     },
+     "isdone": true,
+     "msg": ""
+    },
+    "world": {
+     "arrived": "desk@study room",
+     "found": "apple",
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: find apple"
+   },
+   {
+    "event": "step_start",
+    "index": 5,
+    "action": "Pick",
+    "object": "apple",
+    "skill": "pick",
+    "say": "I will pick apple"
+   },
+   {
+    "event": "step_verify",
+    "index": 5,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": false,
+      "detail": "pick failed",
+      "confidence": null,
+      "unknown": false
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 5,
+    "status": "failed",
+    "result": {
+     "isdone": false,
+     "msg": "pick failed",
+     "code": "unknown"
+    },
+    "reason": "pick failed",
+    "world": {
+     "arrived": "desk@study room",
+     "found": "apple",
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Failed to pick apple. pick failed"
+   },
+   {
+    "event": "clarify",
+    "question": "I can't pick up the apple. Could you move it closer to the edge, then say yes?",
+    "round": 0
+   },
+   {
+    "event": "replan",
+    "at_index": 5,
+    "reason": "E: Pick apple failed. R: pick failed; the grasp of the apple failed 2 times and nobody could help: try it again. S: robot at desk@study room, holding nothing; goals: close drawer@kitchen to drawer@kitchen; on apple from desk@study room to dining table@kitchen",
+    "problems": [],
+    "search": null,
+    "plan": [
+     "Find apple",
+     "Pick apple",
+     "MoveTo dining table@kitchen",
+     "Place dining table@kitchen"
+    ],
+    "world": {
+     "arrived": "desk@study room",
+     "found": "apple",
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Replanning"
+   },
+   {
+    "event": "step_start",
+    "index": 5,
+    "action": "Find",
+    "object": "apple",
+    "skill": "find",
+    "say": "I will find apple"
+   },
+   {
+    "event": "step_verify",
+    "index": 5,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "sensor",
+      "ok": true,
+      "detail": "unknown: find declares no sensor that checks it",
+      "confidence": null,
+      "unknown": true
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 5,
+    "status": "success",
+    "result": {
+     "ins": {
+      "apple": {
+       "pose_3d": [
+        0.6,
+        0.05,
+        0.8
+       ]
+      }
+     },
+     "isdone": true,
+     "msg": ""
+    },
+    "world": {
+     "arrived": "desk@study room",
+     "found": "apple",
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: find apple"
+   },
+   {
+    "event": "step_start",
+    "index": 6,
+    "action": "Pick",
+    "object": "apple",
+    "skill": "pick",
+    "say": "I will pick apple"
+   },
+   {
+    "event": "step_verify",
+    "index": 6,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "grasped",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "sensor",
+      "ok": true,
+      "detail": "grasp_succeed: ok",
+      "confidence": null,
+      "unknown": false
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 6,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "grasped"
+    },
+    "world": {
+     "arrived": "desk@study room",
+     "found": null,
+     "holding": "apple",
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: pick apple"
+   },
+   {
+    "event": "step_start",
+    "index": 7,
+    "action": "MoveTo",
+    "object": "dining table@kitchen",
+    "skill": "move",
+    "say": "I will move to dining table@kitchen"
+   },
+   {
+    "event": "step_verify",
+    "index": 7,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "arrived at dining table@kitchen",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "localization",
+      "ok": true,
+      "detail": "0.00 m from dining table@kitchen",
+      "confidence": null,
+      "unknown": false
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 7,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "arrived at dining table@kitchen"
+    },
+    "world": {
+     "arrived": "dining table@kitchen",
+     "found": null,
+     "holding": "apple",
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: move to dining table@kitchen"
+   },
+   {
+    "event": "step_start",
+    "index": 8,
+    "action": "Place",
+    "object": "dining table@kitchen",
+    "skill": "place",
+    "say": "I will place dining table in the kitchen"
+   },
+   {
+    "event": "step_verify",
+    "index": 8,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "placed",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "sensor",
+      "ok": true,
+      "detail": "grasp_succeed: ok",
+      "confidence": null,
+      "unknown": false
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 8,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "placed"
+    },
+    "world": {
+     "arrived": "dining table@kitchen",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: place dining table in the kitchen"
+   },
+   {
+    "event": "status",
+    "msg": "Checking the goals..."
+   },
+   {
+    "event": "goal_check",
+    "goal": {
+     "type": "on",
+     "object": "apple",
+     "from": "desk@study room",
+     "to": "dining table@kitchen"
+    },
+    "ok": true,
+    "evidence": "the apple is seen on the dining table in the kitchen",
+    "world": {
+     "arrived": "dining table@kitchen",
+     "found": "apple",
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    }
+   },
+   {
+    "event": "goal_check",
+    "goal": {
+     "type": "close",
+     "object": "drawer@kitchen",
+     "from": "",
+     "to": "drawer@kitchen"
+    },
+    "ok": null,
+    "evidence": "close drawer@kitchen: no sensor declared for it (belief)",
+    "world": {
+     "arrived": "dining table@kitchen",
+     "found": "apple",
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    }
+   },
+   {
+    "event": "done",
+    "status": "success",
+    "msg": "",
+    "world": {
+     "arrived": "dining table@kitchen",
+     "found": "apple",
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "belief",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Task completed"
+   }
+  ],
+  "final": {
+   "robot": {
+    "at": "dining table@kitchen",
+    "holding": null,
+    "objects": {
+     "apple": "dining table@kitchen",
+     "mug": "desk@study room",
+     "banana": "dining table@kitchen",
+     "orange": "dining table@kitchen",
+     "sponge": "counter@kitchen",
+     "spoon": "drawer@kitchen/in",
+     "tennis ball": "stool@bedroom"
+    },
+    "opened": [],
+    "asked": [
+     "I can't pick up the apple. Could you move it closer to the edge, then say yes?",
+     "Sorry, I didn't hear you. I can't pick up the apple. Could you move it closer to the edge, then say yes?"
+    ]
+   },
+   "belief": {
+    "arrived": "dining table@kitchen",
+    "found": "apple",
+    "holding": null,
+    "opened": [],
+    "on": [],
+    "found_pose": null,
+    "holding_pose": null,
+    "provenance": {
+     "arrived": {
+      "source": "sensor",
+      "detail": "MoveTo localization check"
+     },
+     "found": {
+      "source": "belief"
+     },
+     "holding": {
+      "source": "belief"
+     },
+     "opened": {
+      "source": "belief",
+      "containers": {},
+      "unconfirmed": []
+     },
+     "on": {
+      "source": "belief"
+     }
+    }
+   },
+   "lab_log": [],
+   "record": {
+    "task": "Close the kitchen drawer and bring the apple from the desk to the dining table.",
+    "lang": "en",
+    "obs": "goals: [{\"type\": \"close\", \"object\": \"drawer@kitchen\", \"from\": \"\", \"to\": \"drawer@kitchen\"}, {\"type\": \"on\", \"object\": \"apple\", \"from\": \"desk@study room\", \"to\": \"dining table@kitchen\"}]",
+    "visible": [],
+    "planner": "sage+assist",
+    "plan_meta": {
+     "method": "scripted",
+     "llm_plan": [
+      {
+       "action": "MoveTo",
+       "object": "drawer@kitchen",
+       "grounded": true
+      },
+      {
+       "action": "Close",
+       "object": "drawer@kitchen",
+       "grounded": true
+      },
+      {
+       "action": "MoveTo",
+       "object": "desk@study room",
+       "grounded": true
+      },
+      {
+       "action": "Find",
+       "object": "apple"
+      },
+      {
+       "action": "Pick",
+       "object": "apple"
+      },
+      {
+       "action": "MoveTo",
+       "object": "dining table@kitchen",
+       "grounded": true
+      },
+      {
+       "action": "Place",
+       "object": "dining table@kitchen",
+       "grounded": true
+      }
+     ],
+     "edits": [],
+     "certified": true,
+     "gate_findings": [],
+     "repaired_by_op": {},
+     "completed_by_gate": 0
+    },
+    "warnings": [],
+    "steps": [
+     {
+      "index": 0,
+      "action": "MoveTo",
+      "object": "drawer@kitchen",
+      "skill": "move",
+      "params": {
+       "inputs": "drawer@kitchen"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "arrived at drawer@kitchen"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "arrived at drawer@kitchen",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "localization",
+        "ok": true,
+        "detail": "0.00 m from drawer@kitchen",
+        "confidence": null,
+        "unknown": false
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 1,
+      "action": "Close",
+      "object": "drawer@kitchen",
+      "skill": "close_drawer",
+      "params": {
+       "inputs": "drawer@kitchen"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "closed"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "closed",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "sensor",
+        "ok": true,
+        "detail": "unknown: close_drawer declares no sensor that checks it",
+        "confidence": null,
+        "unknown": true
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 2,
+      "action": "MoveTo",
+      "object": "desk@study room",
+      "skill": "move",
+      "params": {
+       "inputs": "desk@study room"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "arrived at desk@study room"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "arrived at desk@study room",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "localization",
+        "ok": true,
+        "detail": "0.00 m from desk@study room",
+        "confidence": null,
+        "unknown": false
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 3,
+      "action": "Find",
+      "object": "apple",
+      "skill": "find",
+      "params": {
+       "inputs": "apple",
+       "min_conf": 0.55
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "ins": {
+        "apple": {
+         "pose_3d": [
+          0.6,
+          0.05,
+          0.8
+         ]
+        }
+       },
+       "isdone": true,
+       "msg": ""
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "sensor",
+        "ok": true,
+        "detail": "unknown: find declares no sensor that checks it",
+        "confidence": null,
+        "unknown": true
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 4,
+      "action": "Pick",
+      "object": "apple",
+      "skill": "pick",
+      "params": {
+       "inputs": "apple",
+       "type": "fine_move"
+      },
+      "status": "failed",
+      "attempt": 1,
+      "result": {
+       "isdone": false,
+       "msg": "pick failed",
+       "code": "unknown"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": false,
+        "detail": "pick failed",
+        "confidence": null,
+        "unknown": false
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 4,
+      "action": "Find",
+      "object": "apple",
+      "skill": "find",
+      "params": {
+       "inputs": "apple",
+       "min_conf": 0.55
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "ins": {
+        "apple": {
+         "pose_3d": [
+          0.6,
+          0.05,
+          0.8
+         ]
+        }
+       },
+       "isdone": true,
+       "msg": ""
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "sensor",
+        "ok": true,
+        "detail": "unknown: find declares no sensor that checks it",
+        "confidence": null,
+        "unknown": true
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 5,
+      "action": "Pick",
+      "object": "apple",
+      "skill": "pick",
+      "params": {
+       "inputs": "apple",
+       "type": "fine_move"
+      },
+      "status": "failed",
+      "attempt": 1,
+      "result": {
+       "isdone": false,
+       "msg": "pick failed",
+       "code": "unknown"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": false,
+        "detail": "pick failed",
+        "confidence": null,
+        "unknown": false
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 5,
+      "action": "Find",
+      "object": "apple",
+      "skill": "find",
+      "params": {
+       "inputs": "apple",
+       "min_conf": 0.55
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "ins": {
+        "apple": {
+         "pose_3d": [
+          0.6,
+          0.05,
+          0.8
+         ]
+        }
+       },
+       "isdone": true,
+       "msg": ""
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "sensor",
+        "ok": true,
+        "detail": "unknown: find declares no sensor that checks it",
+        "confidence": null,
+        "unknown": true
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 6,
+      "action": "Pick",
+      "object": "apple",
+      "skill": "pick",
+      "params": {
+       "inputs": "apple",
+       "type": "fine_move"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "grasped"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "grasped",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "sensor",
+        "ok": true,
+        "detail": "grasp_succeed: ok",
+        "confidence": null,
+        "unknown": false
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 7,
+      "action": "MoveTo",
+      "object": "dining table@kitchen",
+      "skill": "move",
+      "params": {
+       "inputs": "dining table@kitchen"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "arrived at dining table@kitchen"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "arrived at dining table@kitchen",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "localization",
+        "ok": true,
+        "detail": "0.00 m from dining table@kitchen",
+        "confidence": null,
+        "unknown": false
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 8,
+      "action": "Place",
+      "object": "dining table@kitchen",
+      "skill": "place",
+      "params": {
+       "inputs": "dining table@kitchen"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "placed"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "placed",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "sensor",
+        "ok": true,
+        "detail": "grasp_succeed: ok",
+        "confidence": null,
+        "unknown": false
+       }
+      ],
+      "logs": []
+     }
+    ],
+    "replans": [
+     {
+      "at_index": 5,
+      "failed": {
+       "action": "Pick",
+       "object": "apple"
+      },
+      "reason": "E: Pick apple failed. R: pick failed; the grasp of the apple failed 2 times and nobody could help: try it again. S: robot at desk@study room, holding nothing; goals: close drawer@kitchen to drawer@kitchen; on apple from desk@study room to dining table@kitchen",
+      "suffix_len": 4,
+      "problems": []
+     }
+    ],
+    "status": "success",
+    "failure": {}
+   },
+   "log_kinds": [
+    "reconcile",
+    "task_start",
+    "status",
+    "understand",
+    "status",
+    "gate",
+    "plan",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "clarify",
+    "replan",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "status",
+    "goal_check",
+    "goal_check",
+    "done",
+    "snapshot"
+   ]
+  }
+ },
+ "commit": "99eab47"
+}

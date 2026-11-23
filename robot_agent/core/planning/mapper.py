@@ -1,21 +1,21 @@
 # robot_agent/robot_agent/core/planning/mapper.py
-"""ActionMapper -- GRACE symbolic action -> robot skill call + state.
+"""ActionMapper -- SAGE symbolic action -> robot skill call + state.
 
 This is the robot-agnostic glue specified in ``ACTION_MAPPER_SPEC.md``. It
-turns a GRACE plan step (abstract, CamelCase) into a concrete skill call
-``(skill_name, params)`` for ``SkillRegistry.execute``, mirrors the GRACE
+turns a SAGE plan step (abstract, CamelCase) into a concrete skill call
+``(skill_name, params)`` for ``SkillRegistry.execute``, mirrors the SAGE
 symbolic effects onto a :class:`WorldState`, and pre-screens plans for
 actions this robot cannot perform.
 
 All robot-specific knowledge (name maps, skill selection, the supported /
 no-op / VLM action sets) is pulled from the robot -- a ``RobotAdapter``
 (``robot_agent.contract``; ``to_skill`` is then its ``bind``) or a duck-typed
-``<robot>.configs.grace_namemap`` module -- never hard-coded here. A namemap
+``<robot>.configs.sage_namemap`` module -- never hard-coded here. A namemap
 module is expected to expose (see docs/contract.md):
 
-* ``to_loc(name) -> str``           : GRACE location -> ENV/move key
-* ``to_obj(name) -> str``           : GRACE object -> detector/skill string
-* ``SKILL_MAP: dict[str, str]``     : GRACE action -> robot skill name
+* ``to_loc(name) -> str``           : SAGE location -> ENV/move key
+* ``to_obj(name) -> str``           : SAGE object -> detector/skill string
+* ``SKILL_MAP: dict[str, str]``     : SAGE action -> robot skill name
 * ``SUPPORTED_ACTIONS: set[str]``   : actions this robot can execute
 * ``NOOP_ACTIONS: set[str]``        : Sit / LieOn / Serve / Wait
 * ``VLM_ACTIONS: set[str]``         : actions checked via a VLM hook
@@ -36,18 +36,19 @@ from __future__ import annotations
 
 from typing import Optional
 
+from ..pack import actions as action_data
 from . import action_model, concrete
 from .base import WorldState
 
-# GRACE param fields that name a location (vs. an object) for param building.
+# SAGE param fields that name a location (vs. an object) for param building.
 # MoveTo / Place / PutIn target a place-like receptacle (uses ``to_loc``);
 # Find / Pick target a graspable object (uses ``to_obj``).
-_LOCATION_ACTIONS = {"MoveTo", "Place", "PutIn"}
+_LOCATION_ACTIONS = set(action_data.names(action_data.default_table(), cls=("move", "release")))   # pack: actions.yaml
 _OBJECT_ACTIONS = {"Find", "Pick", "Open", "Close", "TurnOn", "TurnOff", "Wash"}
 
 
 class Unmappable(Exception):
-    """Raised when a GRACE step has no executable skill on this robot.
+    """Raised when a SAGE step has no executable skill on this robot.
 
     Carries the offending action/object so the driver can turn it into a
     ``failure_reason`` for ``replan`` or escalate it to the operator
@@ -56,7 +57,7 @@ class Unmappable(Exception):
 
 
 class ActionMapper:
-    """Translate GRACE steps to skill calls and track symbolic effects.
+    """Translate SAGE steps to skill calls and track symbolic effects.
 
     Parameters
     ----------
@@ -89,11 +90,11 @@ class ActionMapper:
 
     @staticmethod
     def _action(step: dict) -> str:
-        return (step.get("action") or "").strip()
+        return str(step.get("action") or "").strip()
 
     @staticmethod
     def _object(step: dict) -> str:
-        return (step.get("object") or "").strip()
+        return str(step.get("object") or "").strip()
 
     def _concrete(self, step: dict) -> tuple[str, dict]:
         """A step that names its skill call (the direct planner's): that call, checked against the
@@ -112,7 +113,7 @@ class ActionMapper:
     def to_skill(
         self, step: dict, world: WorldState
     ) -> Optional[tuple[str, dict]]:
-        """Map one GRACE ``step`` to ``(skill_name, params)`` or ``None``.
+        """Map one SAGE ``step`` to ``(skill_name, params)`` or ``None``.
 
         Returns
         -------
@@ -163,7 +164,7 @@ class ActionMapper:
         # Resolve the argument name.
         obj = self._object(step)
 
-        # GRACE ``Pick`` carries no object -> take it from world.found
+        # SAGE ``Pick`` carries no object -> take it from world.found
         # (ACTION_MAPPER_SPEC.md section 2 / table note).
         if action == "Pick" and not obj:
             if not world.found:
@@ -184,7 +185,7 @@ class ActionMapper:
         return skill_name, params
 
     def apply_effect(self, step: dict, world: WorldState) -> None:
-        """Mutate ``world`` to mirror the GRACE symbolic effect of ``step``.
+        """Mutate ``world`` to mirror the SAGE symbolic effect of ``step``.
 
         Called by the driver only after the real skill reported success, so the
         mapper's state stays consistent with physical ground truth. The effect is

@@ -1,5 +1,5 @@
 """v2 memory: SAGE's live memory learns only runs whose goals were seen to hold
-(core/planning/episode_memory.py), and GraceBackend hands the robot's seed pool to SAGE."""
+(core/planning/episode_memory.py), and SageBackend hands the robot's seed pool to SAGE."""
 
 import json
 
@@ -141,7 +141,7 @@ def test_closed_loop_success_is_a_belief(tmp_path, env, monkeypatch, agent_state
     assert done(evs)["status"] == "success" and len(planner.recorded) == 1
 
 
-# ── GraceBackend: seed pool and meta ──────────────────────────────────
+# ── SageBackend: seed pool and meta ──────────────────────────────────
 def _seed(tmp_path):
     p = tmp_path / "seed.jsonl"
     p.write_text(json.dumps({"task": "Open the kitchen drawer.", "reasoning": "seed",
@@ -150,10 +150,10 @@ def _seed(tmp_path):
     return p
 
 
-def test_grace_backend_seed_and_verified_record(tmp_path, monkeypatch):
+def test_sage_backend_seed_and_verified_record(tmp_path, monkeypatch):
     pytest.importorskip("embodiplan")
     from embodiplan.sage import SAGEPlanner
-    from robot_agent.core.planning.backends.pyplanner_grace import GraceBackend
+    from robot_agent.core.planning.backends.pyplanner_sage import SageBackend
     prompts = []
 
     def chat(self, messages, temperature=0.2):
@@ -161,7 +161,7 @@ def test_grace_backend_seed_and_verified_record(tmp_path, monkeypatch):
         return '{"subgoals": []}', 0, 0
     monkeypatch.setattr(SAGEPlanner, "_chat", chat)
     live = tmp_path / "live.jsonl"
-    b = GraceBackend(host="http://127.0.0.1:1", model="x", live_path=str(live), seed_memory=str(_seed(tmp_path)))
+    b = SageBackend(host="http://127.0.0.1:1", model="x", live_path=str(live), seed_memory=str(_seed(tmp_path)))
     b.generate_plan("open the drawer in the kitchen", "", [])
     assert any("Open the kitchen drawer." in p and "(GT," in p for p in prompts)
     plan = [{"action": "MoveTo", "object": "drawer@kitchen"}, {"action": "Open", "object": "drawer@kitchen"}]
@@ -171,8 +171,8 @@ def test_grace_backend_seed_and_verified_record(tmp_path, monkeypatch):
     assert b.record_episode("bad", [{"action": "Open", "object": "drawer@kitchen"}]) is False
 
 
-def test_grace_backend_without_seed(tmp_path, caplog):
+def test_sage_backend_without_seed(tmp_path, caplog):
     pytest.importorskip("embodiplan")
-    from robot_agent.core.planning.backends.pyplanner_grace import _seed_gt_path
+    from robot_agent.core.planning.backends.pyplanner_sage import _seed_gt_path
     assert _seed_gt_path(None) == "" and _seed_gt_path(str(tmp_path / "missing.jsonl")) == ""
     assert _seed_gt_path(str(_seed(tmp_path))).endswith("seed.jsonl")

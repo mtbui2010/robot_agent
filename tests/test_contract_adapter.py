@@ -9,12 +9,13 @@ import pytest
 
 from robot_agent.contract import (Geometry, Manifest, NamemapAdapter, Observation, RobotAdapter, Unbindable,
                                   load_adapter, policy_for, Recovery)
+from robot_agent.contract.legacy_adapter import NAMEMAP_MODULES
 
 FIXTURE = Path(__file__).parent / "fixtures" / "contract" / "manifest_kaair.yaml"
-KCARE_NAMEMAPS = [
-    Path(__file__).resolve().parents[2] / "kcare_robot" / "kcare_robot" / "configs" / "grace_namemap.py",
-    Path("/home/trung/trung_workdir/kcare_robot/kcare_robot/configs/grace_namemap.py"),
-]
+# KAAIR's namemap under either of the loader's file names (legacy_adapter.NAMEMAP_MODULES)
+KCARE_NAMEMAPS = [d / f"{m}.py" for d in (Path(__file__).resolve().parents[2] / "kcare_robot" / "kcare_robot" / "configs",
+                                          Path("/home/trung/trung_workdir/kcare_robot/kcare_robot/configs"))
+                  for m in NAMEMAP_MODULES]
 
 
 class World:
@@ -23,7 +24,7 @@ class World:
 
 
 def fake_namemap(**extra):
-    m = types.ModuleType("toybot.configs.grace_namemap")
+    m = types.ModuleType("toybot.configs.sage_namemap")
     m.SKILL_MAP = {"MoveTo": "go", "Find": "look", "Pick": "grab", "Place": "drop", "PutIn": "drop"}
     m.NOOP_ACTIONS = {"Wait"}
     m.SUPPORTED_ACTIONS = set(m.SKILL_MAP) | m.NOOP_ACTIONS
@@ -73,14 +74,14 @@ def test_bind_uses_build_params_like_closed_loop():
 
 
 def test_manifest_skill_names_and_geometry_win():
-    m = Manifest.from_dict({"robot": "toy", "language": "vi",
+    m = Manifest.from_dict({"robot": "toy", "language": "qq",
                             "geometry": {"arrive_tol_m": 0.5, "reach_m": 0.6},
                             "skills": [{"name": "nav", "action": "MoveTo"}]})
     a = NamemapAdapter(fake_namemap(), m)
     assert a.bind({"action": "MoveTo", "object": "Kitchen"})[0] == "nav"
     assert a.bind({"action": "Find", "object": "Cup"})[0] == "look"         # not in the manifest: namemap's
     assert a.geometry == Geometry(arrive_tol_m=0.5, reach_m=0.6)
-    assert a.i18n.language == "vi"
+    assert a.i18n.language == "qq"
 
 
 def test_hooks_and_fallbacks():
@@ -134,7 +135,7 @@ NAMEMAP_SRC = 'SKILL_MAP = {"MoveTo": "move"}\nNOOP_ACTIONS = set()\nSUPPORTED_A
 
 def test_load_adapter_shim_with_manifest(on_path):
     _write_pkg(on_path, "shimbot", {"__init__.py": "", "configs/__init__.py": "",
-                                    "configs/grace_namemap.py": NAMEMAP_SRC,
+                                    "configs/sage_namemap.py": NAMEMAP_SRC,
                                     "configs/manifest.yaml": FIXTURE.read_text()})
     a = load_adapter("shimbot")
     assert isinstance(a, NamemapAdapter) and a.manifest.robot == "kaair" and a.i18n.language == "ko"
@@ -143,7 +144,7 @@ def test_load_adapter_shim_with_manifest(on_path):
 
 def test_load_adapter_prefers_configs_adapter(on_path):
     _write_pkg(on_path, "ownbot", {
-        "__init__.py": "", "configs/__init__.py": "", "configs/grace_namemap.py": NAMEMAP_SRC,
+        "__init__.py": "", "configs/__init__.py": "", "configs/sage_namemap.py": NAMEMAP_SRC,
         "configs/adapter.py": "class Adapter:\n    manifest = geometry = i18n = None\n    tag = 'own'\n"})
     assert load_adapter("ownbot").tag == "own"
     _write_pkg(on_path, "bothbot", {"__init__.py": "", "configs/__init__.py": "",
@@ -154,12 +155,12 @@ def test_load_adapter_prefers_configs_adapter(on_path):
 
 def test_load_adapter_nothing(on_path):
     _write_pkg(on_path, "shimbot", {"__init__.py": "", "configs/__init__.py": ""})
-    with pytest.raises(ImportError, match="grace_namemap"):
+    with pytest.raises(ImportError, match="sage_namemap"):
         load_adapter("shimbot")
 
 
 def _load_file(path: Path):
-    spec = importlib.util.spec_from_file_location("_kcare_grace_namemap_under_test", path)
+    spec = importlib.util.spec_from_file_location("_kcare_namemap_under_test", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod

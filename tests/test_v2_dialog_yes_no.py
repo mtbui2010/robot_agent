@@ -6,7 +6,7 @@ from robot_agent.interact.dialog import Reply, ask_yes_no, read_yes_no, yes_no
 
 
 @pytest.mark.parametrize("text, kind", [
-    ("yes", "yes"), ("Yeah, go ahead", "yes"), ("네", "yes"), ("có", "yes"),
+    ("yes", "yes"), ("Yeah, go ahead", "yes"), ("네", "yes"),
     ("no", "no"), ("no, the sofa", "no"), ("아니요", "no"),
     ("yet", "unclear"), ("yea", "unclear"), ("yess", "unclear"), ("uh hmm", "unclear"), ("now", "unclear"),
     ("...", "unclear"), ("[noise]", "unclear"), ("내", "unclear"), ("네에", "unclear"), ("음", "unclear"),

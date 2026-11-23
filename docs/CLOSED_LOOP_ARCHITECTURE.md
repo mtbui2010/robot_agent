@@ -1,6 +1,6 @@
 # Closed-loop architecture — NL → plan → exec → check → replan
 
-Detailed architecture for wiring a **planner** (GRACE/pyplanner, or a direct-LLM
+Detailed architecture for wiring a **planner** (SAGE/pyplanner, or a direct-LLM
 fallback) into **kcare_robot / robot_agent** (the real executor) as a closed
 loop, alongside the legacy open-loop `UnifiedAgent.run`.
 
@@ -8,15 +8,15 @@ loop, alongside the legacy open-loop `UnifiedAgent.run`.
 > driver, a planner-agnostic abstraction, two backends, the per-step verifier,
 > the announcer, run logging, and the user-facing planner / plan-only controls
 > are implemented. Remaining stubs are called out inline (e.g. the real
-> grounding pass in `grace_namemap.observe()` and the true VLM frame check in
-> `grace_namemap.vlm_hook()`).
+> grounding pass in `sage_namemap.observe()` and the true VLM frame check in
+> `sage_namemap.vlm_hook()`).
 
 Companion docs: [`SKILLS.md`](../../kcare_robot/docs/SKILLS.md) · [`ACTION_MAPPER_SPEC.md`](ACTION_MAPPER_SPEC.md) · [`TRACKING_VERIFY_VOICE.md`](TRACKING_VERIFY_VOICE.md).
 
-> **Constraint:** `pyplanner/` and `paper_grace/` are consumed **read-only** as a
-> library — no edits there. `robot_agent` stays **decoupled from GRACE** behind a
-> `Planner` Protocol (`core/planning/base.py`); GRACE is reached only through the
-> `pyplanner_grace` backend, and `pyplanner` is an **optional extra** (`grace`),
+> **Constraint:** `pyplanner/` and the planner research repo are consumed **read-only** as a
+> library — no edits there. `robot_agent` stays **decoupled from SAGE** behind a
+> `Planner` Protocol (`core/planning/base.py`); SAGE is reached only through the
+> `pyplanner_sage` backend, and `pyplanner` is an **optional extra** (`sage`; `grace` is an alias),
 > imported lazily. All glue code is robot-side (`robot_agent/`, `kcare_robot/`).
 
 ---
@@ -26,7 +26,7 @@ Companion docs: [`SKILLS.md`](../../kcare_robot/docs/SKILLS.md) · [`ACTION_MAPP
 ```mermaid
 graph TD
   subgraph UI["robotapp (frontend) — optional"]
-    AP["AgentPanel.tsx<br/>unstructured command (+voice)<br/>planner: GRACE | Direct · plan-only ✓"]
+    AP["AgentPanel.tsx<br/>unstructured command (+voice)<br/>planner: SAGE | Direct · plan-only ✓"]
     PG["page.tsx<br/>WebSocket {planner, plan_only}"]
   end
 
@@ -36,7 +36,7 @@ graph TD
     CL["core/planning/loop.py<br/>ClosedLoop driver"]
     REG["core/planning/registry.py<br/>get_planner(name) — lazy"]
     BASE["core/planning/base.py<br/>Planner Protocol + WorldState"]
-    BG["backends/pyplanner_grace.py<br/>GraceBackend (optional pyplanner)"]
+    BG["backends/pyplanner_sage.py<br/>SageBackend (optional pyplanner)"]
     BD["backends/llm_direct.py<br/>LlmDirectBackend (no pyplanner)"]
     MAP["core/planning/mapper.py<br/>ActionMapper: step → skill + effect"]
     VER["core/planning/verify.py<br/>StepVerifier: isdone → symbolic → VLM"]
@@ -47,12 +47,12 @@ graph TD
   end
 
   subgraph KC["kcare_robot (robot-specific)"]
-    NM["configs/grace_namemap.py<br/>LOCATIONS/OBJECTS · SKILL_MAP · observe() · vlm_hook()"]
+    NM["configs/sage_namemap.py<br/>LOCATIONS/OBJECTS · SKILL_MAP · observe() · vlm_hook()"]
     SK["skills/*.py<br/>find, move, pick, place, open_drawer…"]
   end
 
-  subgraph PP["pyplanner (READ-ONLY, OPTIONAL extra 'grace')"]
-    PL["GRACEPlanner<br/>generate_plan / replan / record_episode"]
+  subgraph PP["pyplanner (READ-ONLY, OPTIONAL extra 'sage')"]
+    PL["SAGEPlanner<br/>generate_plan / replan / record_episode"]
     VF["verifier.py<br/>verify_step / simulate (symbolic pre-check)"]
     MEM["memory_retriever.py<br/>retrieve / record_episode"]
   end
@@ -82,7 +82,7 @@ graph TD
 ```
 
 Blue = shipped robot-side code. Purple/dashed = pyplanner, read-only and
-optional (only `GraceBackend` ever imports it, lazily).
+optional (only `SageBackend` ever imports it, lazily).
 
 ### The planner abstraction (decoupling)
 
@@ -95,13 +95,13 @@ optional (only `GraceBackend` ever imports it, lazily).
 - **`registry.py`** — `get_planner(name, **cfg)` constructs a backend by name.
   Backends are imported **lazily inside the function** so importing the planning
   package never pulls in `pyplanner` or other heavy deps. Known names:
-  `"grace"` → `backends.pyplanner_grace.GraceBackend`, `"llm_direct"` →
+  `"sage"` → `backends.pyplanner_sage.SageBackend`, `"llm_direct"` →
   `backends.llm_direct.LlmDirectBackend`. Unknown names raise `ValueError`
   listing the available backends.
-- **`backends/pyplanner_grace.py`** — `GraceBackend` adapts pyplanner's GRACE
+- **`backends/pyplanner_sage.py`** — `SageBackend` adapts pyplanner's SAGE
   planner. `import pyplanner` happens **inside `__init__`**; if pyplanner is
   absent it raises a clear `RuntimeError("pip install -e pyplanner ...")`. It
-  filters kwargs to those `pyplanner.get("GRACE", …)` accepts, coerces the
+  filters kwargs to those `pyplanner.get("SAGE", …)` accepts, coerces the
   returned `PlanMetrics` to a plain dict, and exposes an optional
   `record_episode`.
 - **`backends/llm_direct.py`** — `LlmDirectBackend`: one LLM call with the
@@ -112,9 +112,10 @@ optional (only `GraceBackend` ever imports it, lazily).
   true suffix replan: `replan` re-runs a full `generate_plan` with the failure
   context appended to the task. LLM-client imports are lazy.
 - **Optional extra.** `robot_agent/pyproject.toml` declares
-  `[project.optional-dependencies] grace = ["pyplanner"]`. The core install does
-  **not** depend on pyplanner; use `pip install -e ".[grace]"` (and
-  `pip install -e ../pyplanner`) to enable the GRACE backend.
+  `[project.optional-dependencies] sage = ["embodiplan>=0.2.1,<0.3"]` (`grace` is kept as an alias with the same
+  dependencies). The core install does
+  **not** depend on pyplanner; use `pip install -e ".[sage]"` (and
+  `pip install -e ../pyplanner`) to enable the SAGE backend.
 
 ---
 
@@ -122,12 +123,12 @@ optional (only `GraceBackend` ever imports it, lazily).
 
 ```mermaid
 sequenceDiagram
-  participant U as User (NL, vi/en)
+  participant U as User (NL, ko/en)
   participant UA as UnifiedAgent.run
   participant CL as ClosedLoop ★
-  participant NM as grace_namemap.observe()
+  participant NM as sage_namemap.observe()
   participant REG as get_planner()
-  participant PL as Planner backend (grace | llm_direct)
+  participant PL as Planner backend (sage | llm_direct)
   participant AM as ActionMapper ★
   participant VER as StepVerifier ★
   participant SR as SkillRegistry → skill
@@ -195,7 +196,7 @@ sequenceDiagram
 ## 3. Per-step data / state flow
 
 ```
-GRACE step {action, object, target?}
+SAGE step {action, object, target?}
         │
         ▼
 ActionMapper.to_skill(step, world)            # core/planning/mapper.py
@@ -252,7 +253,7 @@ dashboard — see `TRACKING_VERIFY_VOICE.md` §5.
 |---|---|
 | `base.py` | `Planner` Protocol + `WorldState` dataclass + `PlanStep` alias. No `pyplanner` import. |
 | `registry.py` | `get_planner(name, **cfg)` — lazy backend dispatch; keeps the planning package import-clean. |
-| `backends/pyplanner_grace.py` | `GraceBackend` — adapts pyplanner's GRACE; lazy `import pyplanner`, kwarg filtering, metrics→dict, optional `record_episode`. |
+| `backends/pyplanner_sage.py` | `SageBackend` — adapts pyplanner's SAGE; lazy `import pyplanner`, kwarg filtering, metrics→dict, optional `record_episode`. |
 | `backends/llm_direct.py` | `LlmDirectBackend` — legacy direct-LLM flow behind the Protocol; lazy LLM imports; naive full re-plan on `replan`. |
 | `loop.py` | `ClosedLoop` — the driver: ground → generate_plan → screen → map → exec → check → replan → record, streaming events; `run_blocking(task, lang, plan_only)`. |
 | `mapper.py` | `ActionMapper` (`to_skill`, `apply_effect`, `screen`) + `Unmappable`. Robot-agnostic; pulls specifics from the NameMap. |
@@ -264,7 +265,7 @@ dashboard — see `TRACKING_VERIFY_VOICE.md` §5.
 
 | File | Purpose |
 |---|---|
-| `kcare_robot/kcare_robot/configs/grace_namemap.py` | `LOCATIONS`/`OBJECTS` maps; `to_loc`/`to_obj`; `SKILL_MAP`; `SUPPORTED_ACTIONS`/`NOOP_ACTIONS`/`VLM_ACTIONS`; `build_params`; `observe(node)` grounding hook; `vlm_hook(step, node)` Layer-3 verifier. **Partly stubbed — see §8.** |
+| `kcare_robot/kcare_robot/configs/sage_namemap.py` | `LOCATIONS`/`OBJECTS` maps; `to_loc`/`to_obj`; `SKILL_MAP`; `SUPPORTED_ACTIONS`/`NOOP_ACTIONS`/`VLM_ACTIONS`; `build_params`; `observe(node)` grounding hook; `vlm_hook(step, node)` Layer-3 verifier. **Partly stubbed — see §8.** |
 
 ### ✎ MODIFIED
 
@@ -272,8 +273,8 @@ dashboard — see `TRACKING_VERIFY_VOICE.md` §5.
 |---|---|
 | `robot_agent/robot_agent/core/unified_agent.py` | `run()` gained `planner` / `plan_only` params; after translate, a **closed-loop branch** delegates to `ClosedLoop(self, planner=…).run_blocking(prompt_en, lang, plan_only=…)`. Legacy open-loop path is unchanged below it (fallback). |
 | `robot_agent/robot_agent/api/agent.py` | `/ws/agent` reads `planner` and `plan_only` from the inbound JSON and forwards them to `ua.run(...)`. |
-| `robot_agent/pyproject.toml` | Added `[project.optional-dependencies] grace = ["pyplanner"]`. **pyplanner is NOT a core dependency.** |
-| `robotapp/frontend/components/AgentPanel.tsx` | Unstructured mode gained a **planner selector** (`GRACE` \| `Direct`, default `grace`) and a **"plan only" checkbox** (default checked); both persisted to `localStorage`. |
+| `robot_agent/pyproject.toml` | Added `[project.optional-dependencies] sage = ["embodiplan>=0.2.1,<0.3"]` (`grace` kept as an alias; originally named `grace`). **pyplanner is NOT a core dependency.** |
+| `robotapp/frontend/components/AgentPanel.tsx` | Unstructured mode gained a **planner selector** (`SAGE` \| `Direct`, default sends `grace`, the alias of `sage_plain`) and a **"plan only" checkbox** (default checked); both persisted to `localStorage`. |
 | `robotapp/frontend/app/page.tsx` | `run()` takes `planner`/`planOnly`, sends them over the WebSocket as `{planner, plan_only}`; speaks each event's `say` via `useVoiceOutput`. |
 
 ### ✗ UNTOUCHED (by constraint / design)
@@ -281,7 +282,7 @@ dashboard — see `TRACKING_VERIFY_VOICE.md` §5.
 | Path | Why |
 |---|---|
 | `pyplanner/**` | Consumed as an optional library via public API only. |
-| `paper_grace/**` | Research repo, read-only. |
+| the planner research repo | Research repo, read-only. |
 | `kcare_robot/kcare_robot/skills/*.py` | Mapper / hooks call **existing** skills (`find`, `grasp_succeed`, `llm`, …); only a config file was added. |
 | `robot_agent/.../skill_registry.py`, `device_manager.py` | Reused as-is. |
 
@@ -292,8 +293,8 @@ dashboard — see `TRACKING_VERIFY_VOICE.md` §5.
 `UnifiedAgent.run` ([unified_agent.py](../robot_agent/core/unified_agent.py)) now branches inside `_blocking()`, right after the translate block:
 
 ```python
-# api maps UI 'direct' → backend 'llm_direct'; 'grace' stays 'grace'.
-_planner = {'grace': 'grace', 'direct': 'llm_direct'}.get(planner) if planner else None
+# request names (planning/planner_names.py): 'sage' = AssistLoop, 'sage_plain' = this plain ClosedLoop
+# ('grace' = deprecated alias of 'sage_plain'), 'direct' -> backend 'llm_direct'.
 if (_planner is not None or plan_only
         or _os.environ.get('ROBOT_AGENT_CLOSED_LOOP') == '1'):
     from .planning.loop import ClosedLoop
@@ -308,7 +309,7 @@ So the closed loop is activated by **any** of: an explicit UI planner choice, a
 `plan_only` request, or the `ROBOT_AGENT_CLOSED_LOOP=1` env gate.
 `ClosedLoop.__init__` pulls `skill_registry`, `device_manager` and `_llm_cfg`
 off the agent, resolves the robot package from `state.current()`, imports
-`<robot_pkg>.configs.grace_namemap`, and resolves config (§6). The WebSocket
+`<robot_pkg>.configs.sage_namemap`, and resolves config (§6). The WebSocket
 event stream (`task_start`, `status`, `plan`, `warning`, `step_start`,
 `step_verify`, `step_done`, `replan`, `done`, plus `say`) is serialized by
 `api/agent.py` exactly like the legacy events.
@@ -322,17 +323,17 @@ then `_llm_cfg`, then defaults under `state.common_dir`:
 
 | Key | Source | Default |
 |---|---|---|
-| `planner` | UI `{planner}` (`grace`/`direct`→`llm_direct`) or `ROBOT_AGENT_PLANNER` | `grace` |
+| `planner` | UI `{planner}` (`sage_plain` / `direct`→`llm_direct`; `sage` = AssistLoop) or `ROBOT_AGENT_PLANNER` | `sage_plain` when `ROBOT_AGENT_CLOSED_LOOP=1` |
 | `vlm_enabled` | `ROBOT_AGENT_VERIFY_VLM` (`"1"` → on) | `False` |
 | `speak_backend` | `ROBOT_AGENT_VOICE_BACKEND` (`"0"` → off) | on |
 | `mute_skill_tts` | override | `True` (plan-level announcer owns milestone speech) |
 | `max_replans` | `ROBOT_AGENT_MAX_REPLANS` | `3` |
 | `host` / `model` | `_llm_cfg["url"\|"host"]` / `_llm_cfg["model"]` | from llm_cfg |
 | `log_dir` | override | `<common_dir>/task_runs` (per-run JSONL) |
-| `live_path` | override | `<common_dir>/grace_memory.jsonl` (GRACE `record_episode`, robot-side) |
+| `live_path` | override | `<common_dir>/sage_memory.jsonl` (SAGE `record_episode`, robot-side) |
 
-For the GRACE backend, `ClosedLoop._make_planner` calls
-`get_planner("grace", host=…, model=…, live_path=…, safe_refine=True)`; for the
+For the SAGE backend, `ClosedLoop._make_planner` calls
+`get_planner("sage", host=…, model=…, live_path=…, safe_refine=True)`; for the
 direct backend it calls
 `get_planner("llm_direct", llm_cfg=self._llm_cfg, robot_pkg=self.robot_pkg)`.
 
@@ -342,8 +343,8 @@ direct backend it calls
 
 The two NEW controls live in the **unstructured** tab of `AgentPanel.tsx`:
 
-1. **Planner method** — `<select>` `GRACE` | `Direct`, state `planner`
-   (`PlannerMethod = 'grace' | 'direct'`), **default `grace`**, persisted under
+1. **Planner method** — `<select>` `SAGE` | `Direct`, state `planner`
+   (`PlannerMethod = 'grace' | 'direct'` in the dashboard, which still sends the deprecated `grace`, the alias of `sage_plain`), **default `grace`**, persisted under
    `robotapp_planner`.
 2. **Plan only** — checkbox, state `planOnly`, **default checked** (`po === null
    ? true : po === '1'`), persisted under `robotapp_plan_only`.
@@ -354,7 +355,7 @@ Flow:
 AgentPanel.run()
   └─ onRun(prompt, /*direct=*/false, lang, planner, planOnly)
         ▼
-page.tsx run(finalPrompt, direct, lang, planner='grace', planOnly=false)
+page.tsx run(finalPrompt, direct, lang, planner='grace' (alias of sage_plain), planOnly=false)
   └─ ws.send({ prompt, lang, direct, planner, plan_only: planOnly })
         ▼
 api/agent.py  agent_ws()
@@ -385,11 +386,11 @@ operator reviewing what the planner intends to do.
 
 ## 8. Robot-side stubs (implemented vs TODO)
 
-In `kcare_robot/configs/grace_namemap.py`:
+In `kcare_robot/configs/sage_namemap.py`:
 
 | Hook | Status |
 |---|---|
-| `to_loc` / `to_obj` / `SKILL_MAP` / `SUPPORTED_ACTIONS` / `NOOP_ACTIONS` / `VLM_ACTIONS` / `build_params` | **Implemented.** Maps GRACE vocabulary ↔ kcare names/skills. `VLM_ACTIONS = {Pick, Place, PutIn, Open, Close}`. `TODO(integrator)`: fill/trim the maps from the deployed site's ENV config. |
+| `to_loc` / `to_obj` / `SKILL_MAP` / `SUPPORTED_ACTIONS` / `NOOP_ACTIONS` / `VLM_ACTIONS` / `build_params` | **Implemented.** Maps SAGE vocabulary ↔ kcare names/skills. `VLM_ACTIONS = {Pick, Place, PutIn, Open, Close}`. `TODO(integrator)`: fill/trim the maps from the deployed site's ENV config. |
 | `observe(node)` | **Stub (safe default).** Returns `("", [])`. A real grounding pass (head-camera open-vocab detect through the `find`/`detect` skill → human-readable obs + labels) is sketched but **disabled by default**, because a meaningful query needs a candidate set and `find()` moves the head as a side effect. `generate_plan` therefore currently plans from the NL task alone. |
 | `vlm_hook(step, node)` | **Partly implemented.** `Pick` → real depth-based `grasp_succeed` check (kcare's authoritative in-hand check). Other `VLM_ACTIONS` → **text-LLM yes/no heuristic** via the `llm` skill (skipped permissively if no LLM client). The true *vision*-language check (grab a head/arm frame, send to a VLM) is `TODO(integrator)` — the current `llm` skill is text-only. Guarded end-to-end: never raises; permissive on failure. Only invoked when `ROBOT_AGENT_VERIFY_VLM=1`. |
 
@@ -398,7 +399,7 @@ In `kcare_robot/configs/grace_namemap.py`:
 ## 9. Rollout phases ↔ status
 
 1. **Planner abstraction** — `base.py` Protocol + `WorldState`, `registry.py`,
-   `pyplanner_grace`/`llm_direct` backends, optional `grace` extra. **Done.**
+   `pyplanner_sage`/`llm_direct` backends, optional `sage` extra. **Done.**
 2. **Driver + mapper + screen** — `loop.py`, `mapper.py` (`screen` warnings).
    **Done.**
 3. **Verify + voice + logging** — `verify.py` (layered), `announcer.py`,
@@ -408,7 +409,7 @@ In `kcare_robot/configs/grace_namemap.py`:
 5. **Grounding + true VLM** — real `observe()` and a vision `vlm_hook`.
    **TODO (stubs in place; §8).**
 6. **Memory + eval** — `record_episode` to `live_path` on success. **Done**
-   (best-effort); on-robot eval via the paper_grace harness (read-only)
+   (best-effort); on-robot eval via the planner research repo harness (read-only)
    remains optional.
 
 The legacy open-loop path stays the default fallback whenever no planner /

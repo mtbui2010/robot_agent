@@ -70,10 +70,10 @@ def test_loops_use_the_adapter(make_assist, env):
 
 
 def test_namemap_only_robot_still_works():
-    """A robot package with only grace_namemap (no manifest / adapter) gets the shim: no sensors,
+    """A robot package with only sage_namemap (no manifest / adapter) gets the shim: no sensors,
     so its post-step physical check is UNKNOWN, never a silent pass."""
-    from fakebot.configs import grace_namemap
-    r = RobotView(NamemapAdapter(grace_namemap))
+    from fakebot.configs import sage_namemap
+    r = RobotView(NamemapAdapter(sage_namemap))
     assert r.holding_sensor() is None and r.pose_sensor() is None and r.ask_spec() is None
     v = StepVerifier(False, set(), robot=r)
     out = v.verify({"action": "Pick", "object": "cup"}, {"isdone": True}, W(found="cup"), None)
@@ -221,14 +221,14 @@ def test_capabilities_reach_the_planner(make_assist, env, monkeypatch):
     loop = make_assist(FakeRobot(env, HOUSE), FakeLLM(APPLE), ScriptedPlanner([]))
     del loop._make_planner                                  # the real one
     loop._make_planner()
-    assert seen["name"] == "grace" and seen["capabilities"]["find_reaches"] is False
+    assert seen["name"] == "sage" and seen["capabilities"]["find_reaches"] is False
     assert seen["capabilities"]["hands"] == ["right"]
 
 
 def test_sage_planner_gets_the_robot_body():
     pytest.importorskip("embodiplan")
-    from robot_agent.core.planning.backends.pyplanner_grace import GraceBackend
-    b = GraceBackend(host="http://127.0.0.1:9", model="x", capabilities={"hands": ["right"], "find_reaches": False},
+    from robot_agent.core.planning.backends.pyplanner_sage import SageBackend
+    b = SageBackend(host="http://127.0.0.1:9", model="x", capabilities={"hands": ["right"], "find_reaches": False},
                      live_path="")
     assert b._p.capabilities.hands == 1 and b._p.capabilities.find_reaches is False
     # with Find only looking, a found drawer is not open-able from afar: the gate wants the MoveTo
@@ -255,3 +255,15 @@ def test_verify_spec_expect_in_the_manifest():
     d["skills"][0]["verify"][0]["expect"] = "no"
     with pytest.raises(ManifestError, match="expect"):
         Manifest.from_dict(d)
+
+
+def test_a_sensor_that_failed_is_unknown_not_a_contradiction(robot):
+    """A sensor call that fails with a device fault gave no reading: the skill's report stands (a broken sensor is
+    not evidence against the step), while a sensor that read a negative still fails it."""
+    broken = lambda s: SkillResult(False, "hw_fault", "hardware fault: pose")             # noqa: E731
+    v = StepVerifier(False, set(), robot=robot, sensor=broken, locate=lambda k: (1.0, 0.0))
+    out = v.verify({"action": "Pick", "object": "cup"}, {"isdone": True}, W(found="cup"), None)
+    assert out[-1].ok and out[-1].unknown and "hardware fault" in out[-1].detail
+    empty = lambda s: SkillResult.from_legacy({"isdone": False})                           # noqa: E731
+    v = StepVerifier(False, set(), robot=robot, sensor=empty, locate=lambda k: (1.0, 0.0))
+    assert not v.verify({"action": "Pick", "object": "cup"}, {"isdone": True}, W(found="cup"), None)[-1].ok

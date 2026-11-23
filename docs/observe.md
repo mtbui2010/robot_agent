@@ -30,7 +30,7 @@ The capture points are the single paths all runs use. No loop code was changed t
 - `LLMobj.chat` / `chat_guide` (`connect/llm/llm_object.py`) cover every robot_agent LLM client,
   including the pool's `PoolLLM`. A `chat_guide` that calls `chat` is recorded once.
 - `embodiplan.LLMBackend.chat`. embodiplan has no public way to inject a client: each planner builds
-  its own `LLMBackend`. So `core/planning/backends/pyplanner_grace.py` wraps that public method once,
+  its own `LLMBackend`. So `core/planning/backends/pyplanner_sage.py` wraps that public method once,
   at the class. Outside a recorded run or a replay, the wrapper calls the original. *Change request
   to embodiplan:* accept an `llm=` callable in `BasePlanner`, so the wrapper can go.
 - `get_planner` returns the backend behind a transparent `RecordingPlanner` proxy. `_p`, `progress`
@@ -87,7 +87,7 @@ python -m robot_agent.observe.replay exec <run> --fake [--strict]
   the nearest recorded request.
 - The planner is served in one of two ways. `recorded` returns the recorded `generate_plan` /
   `replan` output for the same task, completed prefix and failed step; it warns when `obs` differs.
-  `live` runs the real SAGE / GRACE planner and serves its LLM calls from the record. `auto` picks
+  `live` runs the real SAGE planner and serves its LLM calls from the record. `auto` picks
   `live` when the record contains embodiplan calls and embodiplan imports.
 - Volatile fields (`t`, `run_id`, `plan_sec`, `holding_since`, `latency_ms`, `trace`, ...) are ignored.
 - Exit status: 0 identical, 1 differs, 2 mismatch or cannot replay.
@@ -101,7 +101,7 @@ Limits:
   run on a real robot therefore replays with an empty `obs`: a `recorded` planner warns, a `live`
   planner mismatches.
 - VLM verification is off in a replay.
-- SAGE's live memory (`grace_memory`) is not copied into the record. A `live` replay uses a copy of
+- SAGE's live memory (`sage_memory`) is not copied into the record. A `live` replay uses a copy of
   the current file, so episodes added since the run change the prompts.
 - Skill results are stored as JSON, so a ROS message in a result becomes a string.
 
@@ -120,7 +120,7 @@ every path is where it was before:
 | `task_runs` | `C/task_runs/H/` | `R/task_runs/H/` |
 | `run_records` | `C/run_records/H/` | `R/run_records/H/` |
 | `metrics` | `C/run_records/H/metrics.jsonl` | `R/run_records/H/metrics.jsonl` |
-| `grace_memory` | `C/grace_memory.H.jsonl` | `R/grace_memory.H.jsonl` |
+| `sage_memory` | `C/sage_memory.H.jsonl` | `R/sage_memory.H.jsonl` |
 | `object_memory` | `C/object_memory.H.json` | `R/object_memory.H.json` |
 | `world_state` | `C/world_state.H.json` | `R/world_state.H.json` |
 

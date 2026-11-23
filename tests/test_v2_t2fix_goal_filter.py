@@ -128,3 +128,13 @@ def test_h02_go_misreading_is_never_a_success(make_assist, env):
     evs = run_task(make_assist(robot, FakeLLM(und, default=und), ScriptedPlanner(plan)),
                    "The spoon is in the kitchen drawer. Bring it to the sofa.")
     assert done(evs)["status"] != "success" and robot.asked
+
+
+def test_a_condition_is_not_a_negation():
+    """'If the red book is on the table, bring it to me; if not, bring me the blue book': the red book stays a goal
+    (the 'not' of 'if not' belongs to the condition); a real negation still drops its object."""
+    s = "If the red book is on the coffee table, bring it to me; if not, bring me the blue book instead."
+    goals = [G("on", "red book", "", "me"), G("on", "blue book", "", "me")]
+    assert F.before_grounding(goals, s)[0] == goals
+    neg = [G("on", "apple", "", "dining table"), G("on", "mug", "", "")]
+    assert F.before_grounding(neg, "Put the apple on the dining table, but don't touch the mug.")[0] == neg[:1]

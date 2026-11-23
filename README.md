@@ -160,7 +160,7 @@ blank each time.
   discarded.
 - **Sensor vs belief** — only `arrived` is sensor-derived: `reconcile_world(node,
   world)` matches the localizer against the nearest configured location at each
-  plan start. It is robot-overridable through three optional `grace_namemap`
+  plan start. It is robot-overridable through three optional `sage_namemap`
   hooks (`reconcile_world` full override · `robot_xy` pose reader · else a generic
   `mobile_pose` + ENV fallback). `found`/`holding`/`opened`/`on` are **beliefs**
   (no gripper sensor) — `holding_since` timestamps the grasp belief for staleness.

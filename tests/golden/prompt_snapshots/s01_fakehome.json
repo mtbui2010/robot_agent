@@ -1,0 +1,75 @@
+{
+ "direct_prompt": "You plan tasks for this robot: fakehome: a robot that has 1 arm with a hand (right), so it holds one object at a time, drives on a mobile base, has a lift, has a movable head camera, can open and close drawers and can speak and listen.\n\nSkills (write a step as skill::input):\n- move::<place> (MoveTo): move to a place\n- find::<object> (Find): look for an object where the robot is\n- pick::<object> (Pick): pick up the found object\n- place::<place> (Place): put the held object on a place the robot is at\n- place::<container> (PutIn): put the held object into an open container the robot is at\n- open_drawer::<container> (Open): open a container the robot is at\n- close_drawer::<container> (Close): close a container the robot is at\n- handover::<inputs> (Handover): the person's ENV key\n\nPlaces:\n- sofa@living room (also: 소파)\n- side table@living room (also: 사이드 테이블, 소파 옆 테이블)\n- desk@study room (also: 책상)\n- drawer@kitchen (also: drawer@living room, 부엌 서랍)\n- counter@kitchen (also: 조리대)\n- shelf@kitchen (also: 부엌 선반)\n- dining table@kitchen (also: 식탁)\n- washer@laundry room (also: 세탁기)\n- chest@bedroom (also: 서랍장)\n- stool@bedroom (also: 스툴)\n- shelf@restroom (also: 화장실 선반)\n- shoe area@living room (also: shoe area, 신발 놓는 곳)\n- entrance (also: 현관)\n\nAnswer with the program only: one step per line, written skill::input, using only the skills above and the place names exactly as listed. No explanation, no notes, no numbering.\n\nCommand: Bring the part to the station.\nProgram:\n",
+ "planner_cfg": {
+  "actions": [
+   "Close",
+   "Find",
+   "Handover",
+   "LieOn",
+   "MoveTo",
+   "Open",
+   "Pick",
+   "Place",
+   "PutIn",
+   "Serve",
+   "Sit",
+   "Wait"
+  ],
+  "capabilities": {
+   "arms": 1,
+   "base": true,
+   "drawer": true,
+   "find_reaches": false,
+   "hands": [
+    "right"
+   ],
+   "head": true,
+   "lift": true,
+   "lying_objects": [
+    "phone",
+    "fork",
+    "spoon",
+    "bread",
+    "banana",
+    "control"
+   ],
+   "release_actions": [
+    "Handover"
+   ],
+   "standing_objects": [
+    "cup",
+    "can",
+    "bottle"
+   ],
+   "vlm_verify": false,
+   "voice": true
+  },
+  "host": null,
+  "live_path": "<tmp>/live.jsonl",
+  "llm_cfg": {
+   "model": "scripted",
+   "name": "fake",
+   "url": null
+  },
+  "model": "scripted",
+  "robot_description": "fakehome: a robot that has 1 arm with a hand (right), so it holds one object at a time, drives on a mobile base, has a lift, has a movable head camera, can open and close drawers and can speak and listen.",
+  "robot_pkg": "fakehome"
+ },
+ "sage_prompt_kwargs": {
+  "actions": [
+   "MoveTo <place>: move to a place",
+   "Find <object>: look for an object where the robot is",
+   "Pick <object>: pick up the found object",
+   "Place <place>: put the held object on a place the robot is at",
+   "PutIn <container>: put the held object into an open container the robot is at",
+   "Open <container>: open a container the robot is at",
+   "Close <container>: close a container the robot is at",
+   "Handover: the person's ENV key",
+   "LieOn",
+   "Serve",
+   "Sit",
+   "Wait"
+  ],
+  "robot_description": "fakehome: a robot that has 1 arm with a hand (right), so it holds one object at a time, drives on a mobile base, has a lift, has a movable head camera, can open and close drawers and can speak and listen."
+ }
+}

@@ -42,6 +42,192 @@ class OkText(Ok):
     text: Optional[str] = None
 
 
+# --- robot -------------------------------------------------------------------
+class RobotLanguages(_Open):
+    robot: str
+    language: str                 # the default language (manifest `language`)
+    languages: list[str]          # the languages on at this site (a subset of `supported`), the default first; [] when the manifest names none
+    declared: bool = True         # the manifest names a language at all; False: the dashboard offers only "detect"
+    supported: list[str] = []     # what the manifest says it can talk in; `languages` is what this site has switched on (a subset)
+
+
+class LanguagesIn(_Open):
+    languages: list[str]          # the languages to switch on: a non-empty subset of `supported`
+
+
+def _pack_keys_in_schema(schema: dict) -> None:
+    """Document the keys ``core/pack/report.py`` adds (Step S27a) in the OpenAPI schema. They are not model fields: the model's
+    fields stay the six old keys (tests/test_manifest_snapshot.py), and an extra key of the answer passes through (extra='allow')."""
+    schema.setdefault('properties', {}).update({
+        'pack': {'type': 'object', 'title': 'Pack', 'description': "the robot's pack header: schema, name, version, extends"},
+        'goal_kinds': {'type': 'object', 'title': 'Goal Kinds', 'description': 'kind -> {feasible, needs, slots}'},
+        'question_kinds': {'type': 'array', 'items': {'type': 'string'}, 'title': 'Question Kinds',
+                           'description': 'the kinds the robot\'s questions carry'}})
+
+
+class RobotManifest(_Open):
+    """``GET /robot/manifest``: what a fleet manager needs to know of this robot (docs/fleet_seams.md); read-only.
+    When the robot's pack can be read the answer also has ``pack``, ``goal_kinds`` and ``question_kinds`` (core/pack/report.py)."""
+    model_config = ConfigDict(extra='allow', json_schema_extra=_pack_keys_in_schema)
+    robot: str                    # the manifest's `robot`
+    version: str                  # the manifest's `version`
+    plan_actions: list[str] = []  # the abstract actions a plan may use on this robot (sorted)
+    capabilities: dict = {}       # the manifest's `capabilities`
+    places: list[str] = []        # the ENV keys of the ACTIVE site (the robot's own place names)
+    site: str = ''                # the active site (location); '' when the configs have no sites
+
+
+# --- teleop ------------------------------------------------------------------
+class TeleopFunction(_Open):
+    name: str
+    label: str
+    available: bool               # a fresh state has arrived (the function is running)
+    state: Optional[dict] = None  # its last state (core/teleop.py): state, ready, gripper_open, speed, input_age_s, stalled
+    age_s: Optional[float] = None
+
+
+class TeleopList(_Open):
+    functions: list[TeleopFunction]
+
+
+class TeleopEnableIn(_Open):
+    on: bool
+    confirm: bool = False         # required for on=true: a person is next to the robot
+
+
+class TeleopSpeedIn(_Open):
+    scale: float                  # 0..1, a fraction of the function's top speed
+
+
+# --- poses ---------------------------------------------------------------------
+class Pose(_Open):
+    id: str
+    label: str
+    plan: str                     # one or more steps, written like a shortcut button's plan
+
+
+class PoseIn(_Open):
+    label: str
+    plan: str
+
+
+class PoseUpdate(_Open):
+    label: Optional[str] = None
+    plan: Optional[str] = None
+
+
+class PoseList(_Open):
+    speed: float                  # the one speed every pose runs at, 0.05..1
+    poses: list[Pose]
+    defaults_missing: int = 0     # seed poses of the robot package that are not in the list
+
+
+class PoseSpeed(_Open):
+    speed: float
+
+
+class PoseDefaults(_Open):
+    added: int
+
+
+class PoseRun(_Open):
+    isdone: bool
+    msg: str = ''
+    plan: str = ''                # the plan that ran (with the speed applied)
+
+
+# --- recorder ----------------------------------------------------------------
+class RecorderStatus(_Open):
+    available: bool               # a fresh state has arrived: robot_teleop's recorder is running
+    state: Optional[dict] = None  # {state: idle|recording|saving, episode, prompt, elapsed_s, counts, last, error, ready, root}
+    age_s: Optional[float] = None
+    dir: Optional[str] = None
+    teleop: Optional[str] = None  # the teleop function switched on / off with the recording
+    fields: list[str] = []        # the prompt fields the form shows, in order
+
+
+class RecorderPromptIn(_Open):
+    fields: dict[str, str]
+    avoid: Optional[str] = None   # the sentence made last time: the next one is another sentence when there is one
+
+
+class RecorderPrompt(_Open):
+    prompt: str
+
+
+class RecorderStartIn(_Open):
+    prompt: str
+    meta: Optional[dict] = None
+
+
+class RecorderStopIn(_Open):
+    label: str                    # success | failure | discard
+
+
+class RecordingList(_Open):
+    dir: str
+    modes: list[str] = []          # the robot modes the listed episodes have (and the crop's modes)
+    crop: Optional[dict] = None    # the robot's export crop spec (RECORDER config) or None: the export may cut the camera views with it
+    episodes: list[dict]          # rows: id, day, episode, prompt, label, summary{...}, edit?, or {id, error}
+    totals: dict                  # episodes, hours, success, failure, excluded
+
+
+class RecordingDetail(_Open):
+    id: str
+    prompt: str = ''
+    summary: dict = {}
+    series: dict = {}             # t, joints (7 x N), gripper, gripper_cmd: down-sampled curves
+    cameras: dict = {}            # name -> {frames, first_t}
+    edit: Optional[dict] = None
+
+
+class RecordingEditIn(_Open):
+    trim_start_s: Optional[float] = None
+    trim_end_s: Optional[float] = None
+    label: Optional[str] = None   # success | failure: overrides the label given when recording
+    exclude: Optional[bool] = None
+    note: Optional[str] = None
+    robot_mode: Optional[str] = None   # overrides the mode recorded with the episode (left | right | front ...)
+    prompt: Optional[str] = None       # overrides the prompt recorded with the episode (used by the list and the export; the raw files are not changed)
+
+
+class RecordingEdit(_Open):
+    version: int = 1
+
+
+class RecordingTrashed(_Open):
+    ok: bool
+    trash: str                    # where the episode went: <data>/trash/<day>/<ep>
+
+
+class RecordingAutoCleanIn(_Open):
+    ids: Optional[list[str]] = None   # only these episodes (default: all)
+    overwrite: bool = False           # also replace an existing trim
+
+
+class RecordingAutoClean(_Open):
+    cleaned: int
+    skipped: int
+    rows: list[dict] = []
+
+
+class RecordingExportIn(_Open):
+    name: str
+    fps: int = 30
+    action: str = 'future_state'  # future_state | servo | ref
+    horizon_s: float = 0.3
+    labels: list[str] = ['success']
+    crop: bool = False            # cut the camera views with the robot's crop spec (RECORDER config)
+    auto_trim: bool = True        # an episode with no saved trim is cut to its suggested range: the idle start and end, where nothing changes, are left out
+
+
+class RecordingExport(_Open):
+    manifest: str
+    episodes: int
+    hours: float
+    command: str = ''
+
+
 # --- skills ------------------------------------------------------------------
 class SkillInfo(_Open):
     name: str
@@ -108,6 +294,7 @@ class RunInfo(_Open):
     awaiting: Optional[str] = None
     pending: list = []
     n_events: Optional[int] = None
+    client_ref: Optional[dict] = None   # only on a run started with one (docs/fleet_seams.md)
     events: Optional[list[dict]] = None
 
 

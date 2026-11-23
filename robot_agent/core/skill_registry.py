@@ -21,7 +21,7 @@ class SkillDef:
     method: str = 'POST'
     headers: dict = field(default_factory=dict)
     plan: str = ''               # type 'plan': the steps (see core/plan_skill.py)
-    # Other names the skill answers to (라면가져와, lấy mì …): every caller —
+    # Other names the skill answers to (라면가져와 …): every caller —
     # Agent panel, POST /skill/<alias>, CLI, plan skills, planners — resolves
     # them through SkillRegistry.resolve. Checked on save by check_aliases.
     aliases: list = field(default_factory=list)

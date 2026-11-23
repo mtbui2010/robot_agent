@@ -60,8 +60,29 @@ def _llm(llm_cfg: dict | None = None):
 
 def translate(text: str, to_language: str = 'korean', llm_cfg: dict | None = None) -> str:
     """Translate *text* into *to_language* using the active LLM."""
-    return _llm(llm_cfg).chat(
-        prompt=f'Translate to daily {to_language}. Output result only: {text}')
+    import threading
+    from .core import run_control          # a Stop interrupts the wait (legacy open-loop path); the closed loop does not call this
+    box: dict = {}
+    done = threading.Event()
+
+    def work():
+        try:
+            box['v'] = _llm(llm_cfg).chat(prompt=f'Translate to daily {to_language}. Output result only: {text}')
+        except BaseException as e:      # noqa: BLE001 - re-raised below
+            box['e'] = e
+        finally:
+            done.set()
+    threading.Thread(target=work, name='translate', daemon=True).start()
+    while not done.wait(0.05):
+        if run_control.cancel_requested():
+            try:
+                from .interact.run_manager import RunCancelled as _Stop
+            except Exception:           # noqa: BLE001
+                _Stop = RuntimeError
+            raise _Stop('translate interrupted by Stop')
+    if 'e' in box:
+        raise box['e']
+    return box['v']
 
 
 # ---------------------------------------------------------------------------
@@ -82,14 +103,14 @@ def skill_tts_muted() -> bool:
     return _SKILL_TTS_MUTED
 
 
-_TTS_LANGS = ('ko', 'en', 'vi')
+_TTS_LANGS = ('ko', 'en')
 
 
 def text2voice(text, lang=None, run_thread=True, slow=False, force=False):
     """Speak *text* through the local audio device via gTTS.
 
     Args:
-        lang: ``'ko'`` / ``'en'`` / ``'vi'``; auto-detected from *text* when
+        lang: ``'ko'`` / ``'en'``; auto-detected from *text* when
             None. Anything else is spoken with the English voice.
         run_thread: play in the background instead of blocking the caller.
         force: speak even while skill-level TTS is muted (announcer path).
@@ -321,8 +342,34 @@ def record_phrase(max_sec: float = 8.0, silence_sec: float = 1.5,
                               min_phrase_sec=min_phrase_sec, wait_sec=wait_sec)
 
 
+def _with_vocabulary(prompt, lang):
+    """`prompt` plus the ENV's place / room names in `lang` (ROBOT_AGENT_STT_HINT=1; default off: `prompt` unchanged)."""
+    from robot_agent.core.planning import stt_hint
+    if not stt_hint.enabled():
+        return prompt
+    try:
+        from robot_agent.skill_configs import ENV
+        return stt_hint.merge(prompt, stt_hint.vocabulary(dict(ENV), lang or 'en', stt_hint.max_chars())) or prompt
+    except Exception:                              # a hint is never worth a failed transcription
+        return prompt
+
+
+_STT_LANG = threading.local()
+
+
+def last_stt_language() -> str:
+    """The language of the last `speech_to_text` of this thread ('ko'), '' when unknown."""
+    return getattr(_STT_LANG, 'value', '') or ''
+
+
+def _too_short(text: str, min_letters: int = 6) -> bool:
+    """A phrase with too few letters to tell its language from ('네', 'okay'): Whisper guesses those badly."""
+    return sum(ch.isalnum() for ch in (text or '')) < min_letters
+
+
 def speech_to_text(audio, lang: str | None = None, prompt: str | None = None,
-                   mime: str = 'audio/wav', stt: str | None = None) -> str:
+                   mime: str = 'audio/wav', stt: str | None = None, auto: bool = False,
+                   candidates: list | None = None) -> str:
     """Transcribe audio with Whisper.
 
     `audio` is robot-mic float32 samples (16 kHz), or the bytes of a recording
@@ -330,16 +377,33 @@ def speech_to_text(audio, lang: str | None = None, prompt: str | None = None,
     connection (`stt` names one; default the first), else the legacy ``vlms``
     TCP server (samples only).
 
-    `lang` pins Whisper's language ('ko', 'en', 'vi', ...) instead of letting it
+    `lang` pins Whisper's language ('ko', 'en', ...) instead of letting it
     guess from a few seconds of audio, which it gets wrong on short answers;
     `prompt` lists words to expect. Returns the transcript stripped, '' when
     nothing was recognised.
+
+    `auto` (detect the user's language): Whisper hears the phrase unpinned and says which language it was; that language is
+    taken when it is one of `candidates` (None = any) AND the phrase is long enough to tell (`_too_short`); otherwise the
+    phrase is transcribed again pinned to `lang` (the language in use). `last_stt_language()` then gives the language.
     """
+    _STT_LANG.value = lang or ''
     from robot_agent.state import current
     dm = current().dm
     stt_client = dm.stt_client(stt) if hasattr(dm, 'stt_client') else None
     if stt_client is not None:
-        text = stt_client.transcribe(audio, lang=lang, prompt=prompt, mime=mime)
+        prompt = _with_vocabulary(prompt, lang)
+        if auto:
+            text = stt_client.transcribe(audio, lang=None, prompt=prompt, mime=mime)
+            heard = (getattr(stt_client, 'last_language', '') or '').lower()
+            if heard and (not candidates or heard in candidates) and not _too_short(text):
+                _STT_LANG.value = heard
+                return text
+            if lang:                     # not sure, or not a language the robot talks in: the language in use decides
+                text = stt_client.transcribe(audio, lang=lang, prompt=prompt, mime=mime)
+        else:
+            text = stt_client.transcribe(audio, lang=lang, prompt=prompt, mime=mime)
+            if not lang:
+                _STT_LANG.value = (getattr(stt_client, 'last_language', '') or '').lower()
         dropped = getattr(stt_client, 'last_dropped', '')
         if dropped:                      # noise Whisper turned into words
             from robot_agent.skills import log_data
@@ -357,6 +421,12 @@ def speech_to_text(audio, lang: str | None = None, prompt: str | None = None,
     if isinstance(res, dict):
         res = res.get('text', '')
     return str(res or '').strip()
+
+
+def _cancelled() -> bool:
+    """Has the current run been asked to stop (so a wait that starts now would never be released)?"""
+    from robot_agent.core.run_control import cancel_requested
+    return cancel_requested()
 
 
 _LISTEN_PENDING: dict[str, dict] = {}
@@ -380,7 +450,8 @@ def speech_rate():
 def listen_dashboard(prompt: str | None = None, lang: str = 'ko', max_sec: float = 8.0,
                      timeout: float = 30.0, mode: str = 'voice', capture: str = 'browser',
                      hint: str | None = None, silence_sec: float = 1.5, stt: str | None = None,
-                     audio_out: list | None = None, earcon: float = 0.0, rate: float | None = None):
+                     audio_out: list | None = None, earcon: float = 0.0, rate: float | None = None,
+                     auto: bool = False, candidates: list | None = None, info_out: dict | None = None):
     """Have the dashboard capture one spoken phrase with the browser mic.
 
     Emits a ``listen`` event over the running agent's WebSocket; the dashboard
@@ -405,6 +476,8 @@ def listen_dashboard(prompt: str | None = None, lang: str = 'ko', max_sec: float
     `earcon` (volume, 0 = off): the dashboard plays the "your turn" tone before the mic opens and the "got it"
     tone once a phrase was taken (see `earcon`).
     `rate`: how fast the browser says `prompt` (default `speech_rate()`).
+    `auto` / `candidates` (capture 'whisper'): detect the user's language (see `speech_to_text`; `lang` is the language in
+    use); `info_out`, a dict, then gets ``language`` — the language of the phrase ('' when unknown).
     """
     import uuid
     from robot_agent.skills import has_emitter, log_data
@@ -413,7 +486,8 @@ def listen_dashboard(prompt: str | None = None, lang: str = 'ko', max_sec: float
                            "Agent panel — use source='robot' from the CLI or /skill")
     req_id = uuid.uuid4().hex[:12]
     slot = {'event': threading.Event(), 'text': None, 'error': None, 'note': None,
-            'lang': lang, 'hint': hint, 'stt': stt, 'keep': audio_out is not None, 'kind': 'listen'}
+            'lang': lang, 'hint': hint, 'stt': stt, 'keep': audio_out is not None, 'kind': 'listen',
+            'auto': bool(auto), 'candidates': list(candidates) if candidates else None}
     with _LISTEN_LOCK:
         _LISTEN_PENDING[req_id] = slot
     try:
@@ -422,12 +496,17 @@ def listen_dashboard(prompt: str | None = None, lang: str = 'ko', max_sec: float
                              'capture': capture if mode == 'voice' else 'browser',
                              'silence_sec': silence_sec, 'earcon': float(earcon or 0),
                              **({'rate': r} if (r := rate or speech_rate()) else {})}})
-        slot['event'].wait(timeout)
+        if _cancelled():
+            slot['error'] = 'cancelled'           # the Stop came before this listen existed: nothing will release it
+        else:
+            slot['event'].wait(timeout)
     finally:
         with _LISTEN_LOCK:
             _LISTEN_PENDING.pop(req_id, None)
     if audio_out is not None and slot.get('audio'):
         audio_out.append(slot['audio'])
+    if info_out is not None:
+        info_out['language'] = slot.get('detected') or ''
     if slot['error']:
         raise RuntimeError(f'dashboard microphone: {slot["error"]}')
     text = (slot['text'] or '').strip() or None
@@ -458,7 +537,9 @@ def transcribe_listen_audio(req_id: str, data: bytes, mime: str = 'audio/webm',
         t0 = time.time()
         try:
             text = speech_to_text(data, lang=slot.get('lang'), prompt=slot.get('hint'),
-                                  mime=mime, stt=slot.get('stt'))
+                                  mime=mime, stt=slot.get('stt'), auto=bool(slot.get('auto')),
+                                  candidates=slot.get('candidates'))
+            slot['detected'] = last_stt_language() if slot.get('auto') else ''
             note = f'whisper {time.time() - t0:.1f}s, {len(data) // 1024} KB'
         except Exception as e:                       # server down / bad audio
             error = f'whisper: {e}'
@@ -606,6 +687,8 @@ def say_to_user(text: str, lang: str = 'ko', source: str = 'robot', wait: bool |
                 _LISTEN_PENDING[req_id] = slot
             try:
                 log_data({'speak': text, 'speak_lang': lang, 'speak_id': req_id, **extra})
+                if _cancelled():
+                    return                          # the Stop came before this wait existed
                 # ~6 characters a second in speech (times the rate), plus slack for the queue ahead of it.
                 slot['event'].wait(5.0 + len(text) / (6.0 * min(1.0, float(rate or 1.0))) + 5.0)
             finally:

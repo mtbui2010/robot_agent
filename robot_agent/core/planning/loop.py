@@ -5,7 +5,7 @@ frontend already consumes from ``UnifiedAgent.run``, plus ``action/object/
 verifies/say``). It is selected from ``UnifiedAgent.run`` behind a config gate;
 the legacy open-loop path remains the default fallback.
 
-Per-step it: binds a GRACE step to a skill of the robot (``RobotView.bind``, the
+Per-step it: binds a SAGE step to a skill of the robot (``RobotView.bind``, the
 robot's ``RobotAdapter`` from ``robot_agent.contract.load_adapter``), executes it
 (``SkillRegistry.execute``, normalised by ``run_skill``), verifies the result in
 layers (``StepVerifier``: isdone -> symbolic effects -> VLM -> the skill's sensor
@@ -33,11 +33,14 @@ from typing import Iterator, Optional
 from robot_agent.observe.paths import data_dir
 from robot_agent.contract import FailureCode, classify_legacy_failure
 from robot_agent.state import current, host_id
+from ..options.spec import NEXT as _OPT_NEXT, STOP as _OPT_STOP
+from ..pack import action_rules, questions as pack_questions
 from . import episode_memory, robot_prompt
 from .announcer import Announcer
 from .base import WorldState
 from .mapper import ActionMapper, Unmappable
 from .records import RunLogger, StepRecord, VerifyResult, new_task_record
+from .planner_names import BACKEND as _SAGE, loop_backend, record_name
 from .registry import get_planner
 from .robot import RobotView, current_robot, run_skill
 from .verify import StepVerifier, verdict
@@ -49,16 +52,16 @@ def _vr_list(results: list[VerifyResult]) -> list[dict]:
 
 
 def _robot_namemap():
-    """Best-effort import of the active robot's ``configs.grace_namemap`` module
+    """Best-effort import of the active robot's ``configs.sage_namemap`` module
     (the duck-typed config that already owns robot-specific knowledge, e.g.
     ``observe``/name maps). Returns ``None`` if unavailable so callers can fall
     back to the generic path. Resolved via ``current().robot_pkg`` so this works
     from both the closed loop and the open-loop / direct paths.
     """
     try:
-        import importlib
+        from robot_agent.contract.legacy_adapter import namemap_module_name
         from robot_agent.state import current
-        return importlib.import_module(f"{current().robot_pkg}.configs.grace_namemap")
+        return importlib.import_module(namemap_module_name(current().robot_pkg))
     except Exception:
         return None
 
@@ -107,11 +110,11 @@ def reconcile_world(node, world, threshold=0.8):
     """Sync the persisted WorldState against ground truth before planning.
 
     **Hybrid (robot-overridable) strategy** — keeps robot-specific knowledge in
-    the robot's ``grace_namemap`` config per the project's namemap-hook design
+    the robot's ``sage_namemap`` config per the project's namemap-hook design
     (``mapper.py`` docstring), while still working out-of-the-box for any robot
     that has a base-pose agent (its manifest's MoveTo sensor) + ENV ``loc``:
 
-      1. If ``grace_namemap`` defines ``reconcile_world(node, world)`` → it owns
+      1. If ``sage_namemap`` defines ``reconcile_world(node, world)`` → it owns
          reconciliation entirely (e.g. can also read a real gripper sensor for
          ``holding``). Core does nothing else.
       2. Else if it defines ``robot_xy(node) -> (x, y) | None`` → core uses that
@@ -180,7 +183,7 @@ def _manager_run_id() -> Optional[str]:
 
 
 # step outcomes of the phase methods (generators return one of these)
-_NEXT, _FAIL, _STOP, _DONE = "next", "fail", "stop", "done"
+_NEXT, _FAIL, _STOP, _DONE = _OPT_NEXT, "fail", _OPT_STOP, "done"
 
 
 class RunContext:
@@ -192,8 +195,11 @@ class RunContext:
         self.robot = loop.robot
         self.announcer = loop._announcer(lang)
         self.world = current().world
+        self.world.clear_facts()     # a fact of an earlier run never satisfies a precondition (S26)
+        self.rules_before = action_rules.use(action_rules.of_robot(loop.robot))   # the robot's declared action rules, this run
         self.node = getattr(loop.dm, "_ros_node", None)
         self.muted = False
+        self.speak = None            # the language layer's speak(): every `say` of this run's events passes it
         now = time.time()
         # one id per run: the RunManager run this executive acts for (events, RunLogger file and RunRecord
         # agree, GET /runs/<id> finds it); a run started outside the RunManager gets a time-based one
@@ -231,12 +237,12 @@ class RunContext:
         """An event to stream, logged to the run's JSONL."""
         d = {"event": event, **fields}
         if say is not None:
-            d["say"] = say
+            d["say"] = self.speak(say) if self.speak is not None and isinstance(say, str) else say
         try:
             self.logger.event(event, t=time.time(), **{k: v for k, v in d.items() if k != "event"})
         except Exception:
             pass
-        return d
+        return pack_questions.tag(d, self.robot)   # the streamed event only: a pack may give a kind-less clarify a kind (S31)
 
 
 class ClosedLoop:
@@ -253,6 +259,10 @@ class ClosedLoop:
         ``live_path``). Anything not overridden is resolved from env vars /
         sensible defaults in :meth:`_resolve_cfg`.
     """
+
+    # the post-step verify applies a step with the robot's body (its release actions empty the hand); off for the
+    # ClosedLoop / sage_plain path (its behaviour stays as it is), on for AssistLoop (SAGE-v2 F6.1)
+    _verify_with_body = False
 
     def __init__(self, agent, emit=None, **overrides) -> None:
         self.agent = agent
@@ -303,7 +313,7 @@ class ClosedLoop:
         env = os.environ.get
         common = Path(getattr(st, "common_dir", "."))
         return {
-            "planner": o.get("planner") or env("ROBOT_AGENT_PLANNER", "grace"),
+            "planner": loop_backend(o.get("planner") or env("ROBOT_AGENT_PLANNER", _SAGE)),
             "vlm_enabled": o.get(
                 "vlm_enabled", env("ROBOT_AGENT_VERIFY_VLM", "0") == "1"
             ),
@@ -325,16 +335,17 @@ class ClosedLoop:
             # Per machine (common/ is shared by every robot using this folder).
             # observe.paths: ROBOT_AGENT_DATA_DIR moves them; unset = common/ as before
             "log_dir": Path(o.get("log_dir") or data_dir("task_runs", common, host_id())),
-            "live_path": str(o.get("live_path") or data_dir("grace_memory", common, host_id())),
+            "live_path": str(o.get("live_path") or data_dir("sage_memory", common, host_id())),
             # which successes the planner's memory learns (ROBOT_AGENT_MEMORY_RECORD): observed | belief | off
             "memory_record": episode_memory.record_mode(o.get("memory_record")),
         }
 
     def _make_planner(self):
         name = self.cfg["planner"]
-        if name == "grace":
+        if loop_backend(name) == _SAGE:
+            opts = getattr(self, "options", None)         # options may add constructor keys (hook on_planner_kwargs)
             return get_planner(
-                "grace",
+                _SAGE,
                 host=self.cfg.get("host"),
                 model=self.cfg.get("model"),
                 live_path=self.cfg.get("live_path"),
@@ -345,6 +356,7 @@ class ClosedLoop:
                 seed_memory=self.robot.seed_memory(),
                 # its plan actions + description in SAGE's prompts (ROBOT_AGENT_SAGE_ROBOT_PROMPT=0: off)
                 **robot_prompt.sage_prompt_kwargs(self.robot),
+                **(opts.transform("on_planner_kwargs", {}) if opts is not None else {}),
             )
         if name == "llm_direct":
             return get_planner(
@@ -370,6 +382,11 @@ class ClosedLoop:
     def _arg_name(self, action: str, obj: str) -> str:
         """Localized-ish argument name for announcements."""
         return self.robot.name_for(action, obj)
+
+    def _announce(self, r, kind: str, step: dict, action: str, obj: str, **kw) -> str:
+        """The announcer's line for a step milestone (``step_start`` / ``step_success`` / ``step_fail``). A host with
+        its own speech layer overrides this (AssistLoop says the robot's own phrase with no model call)."""
+        return r.announcer.announce(kind, **self._say(step, action, obj), **kw)
 
     def _say(self, step: dict, action: str, obj: str) -> dict:
         """Announcer kwargs for a step: the spoken names the plan gave
@@ -399,8 +416,8 @@ class ClosedLoop:
 
     def _plan_text(self, steps, meta, mapper, world) -> str:
         """Render the plan in the ``skill::inputs`` format the robot
-        actually runs (e.g. ``move::living room``), not GRACE CamelCase. The
-        direct planner already produced that string (``meta['raw']``); for GRACE
+        actually runs (e.g. ``move::living room``), not SAGE CamelCase. The
+        direct planner already produced that string (``meta['raw']``); for SAGE
         we map each step through the ActionMapper, threading a world copy so
         ``Pick`` etc. resolve. Best-effort — never raises."""
         raw = meta.get("raw") if isinstance(meta, dict) else None
@@ -409,8 +426,8 @@ class ClosedLoop:
         lines = []
         w = world.copy()
         for st in steps:
-            action = (st.get("action") or "").strip()
-            obj = (st.get("object") or "").strip()
+            action = str(st.get("action") or "").strip()
+            obj = str(st.get("object") or "").strip()
             try:
                 mapped = mapper.to_skill(st, w)
                 if mapped is None:                       # no-op action
@@ -441,7 +458,8 @@ class ClosedLoop:
                        observe=self._observe_object, min_conf=float(robot.geometry.extra.get("vlm_min_conf", 0) or 0))
         return StepVerifier(self.cfg["vlm_enabled"], robot.vlm_actions, robot.vlm_hook, robot=robot,
                             sensor=lambda skill: run_skill(self.sr, skill, {}, node, raise_errors=True),
-                            locate=locate, vlm_check=vlm)
+                            locate=locate, vlm_check=vlm,
+                            capabilities=robot.model_capabilities() if self._verify_with_body else None)
 
     def _observe_object(self, obj: str, node=None):
         """The VLM fallback's look: the robot's Find of ``obj`` here. True seen, False not seen,
@@ -477,6 +495,7 @@ class ClosedLoop:
                 pass
 
     def _close_run(self, r: "RunContext") -> None:
+        action_rules.use(r.rules_before)
         if r.muted:
             try:
                 from robot_agent.utils import set_skill_tts_muted
@@ -523,10 +542,10 @@ class ClosedLoop:
 
     def _hook_progress(self, planner) -> None:
         """Stream live multi-step progress (decompose/expand/refine) for planners with the optional
-        ``progress`` hook (base.ProgressReporting; GRACE / SAGE has it). Best-effort."""
+        ``progress`` hook (base.ProgressReporting; SAGE has it). Best-effort."""
         try:
             if self._emit is not None and hasattr(planner, "progress"):
-                _emit = self._emit
+                _emit = self._pushed()
 
                 def _on_progress(d):
                     try:
@@ -545,14 +564,19 @@ class ClosedLoop:
             return None
         try:
             from ..unified_agent import _make_log_fn
-            return _make_log_fn(self._emit, i, allow_say=False)
+            return _make_log_fn(self._pushed(), i, allow_say=False)
         except Exception:
             return None
+
+    def _pushed(self):
+        """The host's live channel (``emit``) with the options' ``on_event`` watchers in front (an AssistLoop's trace); None stays None."""
+        opts = getattr(self, "options", None)
+        return opts.tap_push("on_event", self._emit) if opts is not None else self._emit
 
     # ── main loop ────────────────────────────────────────────────────────
     def run_blocking(self, task: str, lang: str = "en",
                      plan_only: bool = False) -> Iterator[dict]:
-        r = self._open_run(task, lang, plan_only, self.cfg["planner"])
+        r = self._open_run(task, lang, plan_only, record_name(self.cfg["planner"]))
         r.mapper = ActionMapper(r.robot)
         r.verifier = self._verifier(r.node)
         fixed = self._reconcile(r, "start")
@@ -735,7 +759,7 @@ class ClosedLoop:
         rec = StepRecord(index=r.i, action=action, object=obj, skill=skill_name,
                          params=params, status="running", started_at=started)
         yield r.ev("step_start", index=r.i, action=action, object=obj, skill=skill_name,
-                   say=r.announcer.announce("step_start", **self._say(step, action, obj)))
+                   say=self._announce(r, "step_start", step, action, obj))
         res = run_skill(self.sr, skill_name, params, r.node, log_fn=self._log_fn(r.i),
                         interruptible=r.robot.interruptible(skill_name))
         rec.result = res.to_legacy()
@@ -762,7 +786,7 @@ class ClosedLoop:
                                       status="failed", started_at=started, ended_at=time.time(),
                                       verifies=[VerifyResult("isdone", False, reason)]))
         yield r.ev("step_done", index=r.i, status="failed",
-                   say=r.announcer.announce("step_fail", **self._say(step, action, obj), reason=reason),
+                   say=self._announce(r, "step_fail", step, action, obj, reason=reason),
                    reason=reason, world=r.world.to_dict())
         if not self._cl_replan(r, step, reason):
             return _FAIL
@@ -786,7 +810,7 @@ class ClosedLoop:
         r.completed.append(step)
         r.run.steps.append(rec)
         yield r.ev("step_done", index=r.i, status="success", result=rec.result,
-                   say=r.announcer.announce("step_success", **self._say(step, action, obj)),
+                   say=self._announce(r, "step_success", step, action, obj),
                    world=r.world.to_dict())
         r.i += 1
 
@@ -796,7 +820,7 @@ class ClosedLoop:
         rec.status = "failed"
         r.run.steps.append(rec)
         yield r.ev("step_done", index=r.i, status="failed", result=rec.result, reason=reason,
-                   say=r.announcer.announce("step_fail", **self._say(step, action, obj), reason=reason),
+                   say=self._announce(r, "step_fail", step, action, obj, reason=reason),
                    world=r.world.to_dict())
         code = r.robot.failure_code(res, reason)
         r.failed_with(code, res.device or rec.skill, reason, {"action": action, "object": obj})

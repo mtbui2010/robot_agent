@@ -5,11 +5,17 @@ verify (``verify.symbolic_check``) and the world effects (``ActionMapper.apply_e
 ``AssistLoop._effect``) all decide through this module, so they cannot drift apart again.
 It is the only planning module that imports the rules from embodiplan; the others import
 from here. See ``docs/action_model_divergence.md``.
+
+A pack action with ``rules: declared`` (Step S26) adds its rules here, the one place they are read: ``check`` also lists
+its ``pre`` predicates that do not hold (code ``pre_<predicate>``), ``apply`` also adds / removes its ``effects`` facts
+(``core/pack/action_rules.py``; the rules of the run's robot are active during its run). No declared action: the model only.
 """
 
 from __future__ import annotations
 
 import functools
+
+from ..pack import action_rules
 
 # embodiplan is imported on first use, not at import time: importing the package loads
 # all its planners (and `requests`), and `import robot_agent.core.planning` stays light.
@@ -28,13 +34,23 @@ def _model():
 
 
 def check(step, world, **kw):
-    """embodiplan.action_model.check."""
-    return _model().check(step, world, **kw)
+    """embodiplan.action_model.check, then the unmet ``pre`` of a declared pack action (after the model's findings)."""
+    out = _model().check(step, world, **kw)
+    rules = action_rules.active()
+    if not rules.declared:
+        return out
+    return out + [_model().Violation(code, why) for code, why in action_rules.violations(rules, step, world)]
 
 
 def apply(step, world, **kw):
-    """embodiplan.action_model.apply."""
-    return _model().apply(step, world, **kw)
+    """embodiplan.action_model.apply, then the ``effects`` facts of a declared pack action."""
+    rules = action_rules.active()
+    if not rules.declared:
+        return _model().apply(step, world, **kw)
+    bound = action_rules.binding(rules, step, world)         # read before the step changes the hand
+    w = _model().apply(step, world, **kw)
+    action_rules.apply_effects(rules, step, bound, w)
+    return w
 
 
 def simulate(plan, world=None, **kw):

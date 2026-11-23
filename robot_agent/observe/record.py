@@ -28,8 +28,8 @@ end         outcome, then a ``snapshot`` row with the header and the metrics
 
 The capture points are the single paths every run goes through:
 ``LLMobj.chat`` / ``chat_guide`` (every robot_agent LLM client),
-``embodiplan.LLMBackend.chat`` (SAGE / GRACE, hooked in
-``core/planning/backends/pyplanner_grace.py``), ``get_planner`` (planner
+``embodiplan.LLMBackend.chat`` (SAGE, hooked in
+``core/planning/backends/pyplanner_sage.py``), ``get_planner`` (planner
 boundary), ``SkillRegistry.execute`` and ``Run.publish``. Test doubles that do
 not go through them are wrapped with :func:`instrument`.
 
@@ -100,6 +100,12 @@ class RunHeader:
     robot_pkg: str = ''
     schema: int = SCHEMA_VERSION
     metrics: dict = field(default_factory=dict)
+    client_ref: dict = field(default_factory=dict)     # a machine client's key of the run (docs/fleet_seams.md); written only when set
+
+
+def _fields(header: RunHeader, drop=()) -> dict:
+    """The header's fields without ``drop`` and without an empty ``client_ref`` (a run started without one writes the rows it always did)."""
+    return {k: v for k, v in vars(header).items() if k not in drop and not (k == 'client_ref' and not v)}
 
 
 class RunRecord(RunLogger):
@@ -117,7 +123,7 @@ class RunRecord(RunLogger):
         self._world: Optional[dict] = None          # last world seen on an event
         self._step_world: dict[Any, Optional[dict]] = {}
         self.rows_mem: list[dict] = []              # kept for metrics (small rows only)
-        self.row('header', **{k: v for k, v in vars(header).items() if k != 'metrics'})
+        self.row('header', **_fields(header, drop=('metrics',)))
 
     @property
     def dir(self) -> Path:
@@ -198,7 +204,7 @@ class RunRecord(RunLogger):
 
     def snapshot(self) -> None:
         self._append({'seq': self._seq + 1, 't': time.time(), 'kind': 'snapshot',
-                      'record': _to_jsonable(vars(self.header))})
+                      'record': _to_jsonable(_fields(self.header))})
 
 
 def read_rows(path) -> list[dict]:
@@ -367,7 +373,8 @@ def _robot_pkg() -> str:
 
 
 def open_record(run_id: str, robot_id: str = '', user_id: str = '', role: str = 'owner',
-                goal: str = '', created: Optional[float] = None, directory=None) -> Optional[RunRecord]:
+                goal: str = '', created: Optional[float] = None, directory=None,
+                client_ref: Optional[dict] = None) -> Optional[RunRecord]:
     """Create (and register) the record of ``run_id``; None when recording is
     off or there is no data dir."""
     if not enabled():
@@ -376,7 +383,8 @@ def open_record(run_id: str, robot_id: str = '', user_id: str = '', role: str = 
         base = Path(directory) if directory is not None else records_dir()
         from ..state import host_id
         hdr = RunHeader(run_id=run_id, robot_id=robot_id, user_id=user_id, role=role, goal=goal,
-                        created=created or time.time(), host=host_id(), robot_pkg=_robot_pkg())
+                        created=created or time.time(), host=host_id(), robot_pkg=_robot_pkg(),
+                        client_ref=dict(client_ref or {}))
         rec = RunRecord(hdr, base / run_id / RECORD_FILE)
     except Exception:
         return None
@@ -388,7 +396,7 @@ def open_record(run_id: str, robot_id: str = '', user_id: str = '', role: str = 
 def on_run_start(run) -> None:
     """RunManager ``on_start`` hook: open the record and follow the run's events."""
     rec = open_record(run.run_id, run.robot_id, run.user_id, getattr(run.role, 'value', str(run.role)),
-                      run.goal, run.created)
+                      run.goal, run.created, client_ref=getattr(run, 'client_ref', None))
     if rec is None:
         return
     with _LOCK:
@@ -617,17 +625,22 @@ class RecordingPlanner(_Proxy):
                     latency_ms=round((time.time() - t0) * 1000, 1))
         return steps, meta
 
-    def generate_plan(self, task, obs, visible_objects):
+    def generate_plan(self, task, obs, visible_objects, **kw):
+        # optional keywords (subgoals=, budget=) go through only when the caller passes them
+        # (base.accepts looks through this proxy at the planner's own signature)
         inner = object.__getattribute__(self, '_inner')
-        return self._call('generate_plan', {'task': task, 'obs': obs, 'visible': visible_objects},
-                          lambda: inner.generate_plan(task, obs, visible_objects))
+        inputs = {'task': task, 'obs': obs, 'visible': visible_objects}
+        if kw.get('subgoals'):
+            inputs['subgoals'] = list(kw['subgoals'])
+        return self._call('generate_plan', inputs,
+                          lambda: inner.generate_plan(task, obs, visible_objects, **kw))
 
-    def replan(self, task, completed, failed_step, failure_reason, obs, visible_objects):
+    def replan(self, task, completed, failed_step, failure_reason, obs, visible_objects, **kw):
         inner = object.__getattribute__(self, '_inner')
         return self._call('replan', {'task': task, 'completed': completed, 'failed_step': failed_step,
                                      'reason': failure_reason, 'obs': obs, 'visible': visible_objects},
                           lambda: inner.replan(task, completed, failed_step, failure_reason, obs,
-                                               visible_objects))
+                                               visible_objects, **kw))
 
 
 def recording_planner(planner):

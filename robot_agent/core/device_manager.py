@@ -459,7 +459,7 @@ class DeviceManager:
             return {}
         if active.type == 'vlms':
             # init_llm_client('pool') → the pool's LLMobj (fallback on every call);
-            # url / model: the first usable Ollama server, for the GRACE planner,
+            # url / model: the first usable Ollama server, for the SAGE planner,
             # which talks to Ollama itself.
             s = active.pool.planner_server() or {}
             out = {'name': 'pool', 'connection': active.id}

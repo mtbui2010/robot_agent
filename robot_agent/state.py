@@ -45,6 +45,7 @@ from .core.skill_registry import SkillRegistry
 from .core.unified_agent import UnifiedAgent
 from .core.config_manager import ConfigManager
 from .core.button_manager import ButtonManager
+from .core.poses import PoseManager
 from .core.planning.base import WorldState
 
 DEFAULT_LOCATION = 'default'
@@ -129,6 +130,7 @@ class AgentState:
         self.sr = SkillRegistry(data_dir=self.common_dir)
         self.cm = ConfigManager(data_dir=self.location_dir, robot_pkg=robot_pkg)
         self.bm = ButtonManager(data_dir=self.common_dir)
+        self.pm = PoseManager(data_dir=self.common_dir, get_cfg=lambda: self.cm.get('POSES'), get_group=lambda n: self.cm.get(n) if n else None)
         self.ua = UnifiedAgent(skill_registry=self.sr, device_manager=self.dm)
         # Symbolic world state that PERSISTS across plan runs (holding / arrived /
         # opened / on). The closed-loop driver reads & mutates this same object,

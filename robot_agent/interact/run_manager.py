@@ -195,12 +195,13 @@ class Run:
     API handlers and observers act on it."""
 
     def __init__(self, robot_id: str, goal: str = '', user_id: str = '',
-                 role: Role = Role.OWNER, run_id: str | None = None):
+                 role: Role = Role.OWNER, run_id: str | None = None, client_ref: dict | None = None):
         self.run_id = run_id or _new_run_id()
         self.robot_id = robot_id
         self.goal = goal
         self.user_id = user_id
         self.role = role
+        self.client_ref = dict(client_ref) if client_ref else None   # a machine client's key of this run (docs/fleet_seams.md)
         self.created = time.time()
         self.updated = self.created
         self.outcome: str = ''             # set by finish(): success / failed / aborted / error text
@@ -412,6 +413,8 @@ class Run:
              'created': self.created, 'updated': self.updated, 'outcome': self.outcome,
              'cancel_requested': self.cancel_requested, 'awaiting': self._question,
              'pending': list(self.pending), 'n_events': len(self.events)}
+        if self.client_ref:
+            d['client_ref'] = dict(self.client_ref)
         if events:
             d['events'] = list(self.events)
         return d
@@ -451,15 +454,15 @@ class RunManager:
 
     # ---- lifecycle ---------------------------------------------------
     def start(self, goal: str = '', robot_id: str = DEFAULT_ROBOT, user_id: str = '',
-              role: Role | str = Role.OWNER) -> StartDecision:
-        """Start a run, or return the robot's active one with ``started=False``."""
+              role: Role | str = Role.OWNER, client_ref: dict | None = None) -> StartDecision:
+        """Start a run, or return the robot's active one with ``started=False``. ``client_ref``: kept on the new run (audit, idempotent starts)."""
         role = Role.parse(role)
         with self._lock:
             cur = self._active.get(robot_id)
             if cur is not None and cur.active:
                 return StartDecision(cur, False, 'busy',
                                      f'run {cur.run_id} is {cur.state.value} on {robot_id}')
-            run = Run(robot_id, goal=goal, user_id=user_id, role=role)
+            run = Run(robot_id, goal=goal, user_id=user_id, role=role, client_ref=client_ref)
             self._active[robot_id] = run
             self._runs[run.run_id] = run
             self._trim()

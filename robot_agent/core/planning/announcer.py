@@ -7,7 +7,7 @@ control loop. The driver attaches the returned text to streamed events as
 phrasebook, shared contract — no duplicated phrasing in TS + Python.
 
 Planner/robot-agnostic; lives under robot_agent.core.planning. The core
-ships English and Vietnamese; a robot adds its languages (and overrides any
+ships English; a robot adds its languages (and overrides any
 phrase) through its adapter's ``i18n``: ``{kind: {lang: template}}`` and
 ``{'verb.<action>': {lang: verb}}``.
 """
@@ -15,56 +15,26 @@ from __future__ import annotations
 
 import threading
 
+from ..pack import actions as action_data
+
 
 # Map run language -> gTTS voice code (a two-letter code is used as is).
-_GTTS_CODE = {'vi': 'vi', 'en': 'en'}
+_GTTS_CODE = {'en': 'en'}
 
 # Per-action localized verbs (resolved into {verb} when ctx carries 'action').
-# Keys cover both GRACE actions (CamelCase) and the skill names used by the
+# Keys cover both SAGE actions (CamelCase) and the skill names used by the
 # direct/structured path (lowercase, e.g. ``find::apple``).
-VERBS: dict[str, dict[str, str]] = {
-    'vi': {
-        'MoveTo': 'đi tới', 'GoTo': 'đi tới', 'Navigate': 'đi tới',
-        'Find': 'tìm', 'Search': 'tìm', 'Detect': 'tìm',
-        'Pick': 'lấy', 'PickUp': 'lấy', 'Grasp': 'lấy',
-        'Place': 'đặt', 'PlaceAt': 'đặt', 'PutDown': 'đặt', 'PutIn': 'đặt',
-        'Open': 'mở', 'Close': 'đóng',
-        # direct-path skills
-        'navigate': 'đi tới', 'move': 'đi tới', 'moveto': 'đi tới',
-        'find': 'tìm', 'detect': 'tìm', 'detect_object': 'tìm',
-        'pick': 'lấy', 'grasp': 'lấy',
-        'place': 'đặt', 'put': 'đặt',
-        'open': 'mở', 'close': 'đóng',
-    },
-    'en': {
-        'MoveTo': 'move to', 'GoTo': 'move to', 'Navigate': 'move to',
-        'Find': 'find', 'Search': 'find', 'Detect': 'find',
-        'Pick': 'pick', 'PickUp': 'pick', 'Grasp': 'pick',
-        'Place': 'place', 'PlaceAt': 'place', 'PutDown': 'place', 'PutIn': 'place',
-        'Open': 'open', 'Close': 'close',
-        # direct-path skills
-        'navigate': 'move to', 'move': 'move to', 'moveto': 'move to',
-        'find': 'find', 'detect': 'find', 'detect_object': 'find',
-        'pick': 'pick', 'grasp': 'pick',
-        'place': 'place', 'put': 'place',
-        'open': 'open', 'close': 'close',
-    },
-}
+# The canonical actions' verbs are pack data (actions.yaml, field ``verb``); the other names the planners and the direct path
+# use for the same action (a synonym, or the lowercase skill name) are listed here with the action they stand for.
+_VERB_OF = {'GoTo': 'MoveTo', 'Navigate': 'MoveTo', 'Search': 'Find', 'Detect': 'Find', 'PickUp': 'Pick', 'Grasp': 'Pick',
+            'PlaceAt': 'Place', 'PutDown': 'Place', 'navigate': 'MoveTo', 'move': 'MoveTo', 'moveto': 'MoveTo',
+            'find': 'Find', 'detect': 'Find', 'detect_object': 'Find', 'pick': 'Pick', 'grasp': 'Pick', 'place': 'Place',
+            'put': 'Place', 'open': 'Open', 'close': 'Close'}
+_EN = action_data.words(action_data.default_table(), 'verb')
+VERBS: dict[str, dict[str, str]] = {'en': {**_EN, **{a: _EN[t] for a, t in _VERB_OF.items()}}}
 
 # Localized templates keyed by [lang][kind]. step_* use {verb} and {object}.
 PHRASES: dict[str, dict[str, str]] = {
-    'vi': {
-        'task_start':   'Bắt đầu nhiệm vụ',
-        'step_start':   'Đang {verb} {object}',
-        'step_success': 'Đã {verb} {object}',
-        'step_fail':    'Lỗi khi {verb} {object}. {reason}',
-        'replan':       'Đang lập lại kế hoạch',
-        'done_success': 'Đã hoàn thành nhiệm vụ',
-        'done_fail':    'Nhiệm vụ thất bại',
-        'plan_ready':   'Đã tạo kế hoạch',
-        'unsupported':  'Hành động không được hỗ trợ',
-        'llm_down':     'Tôi không kết nối được với mô hình ngôn ngữ, nên phải dừng nhiệm vụ này',
-    },
     'en': {
         'task_start':   'Starting the task',
         'step_start':   'I will {verb} {object}',
@@ -80,7 +50,7 @@ PHRASES: dict[str, dict[str, str]] = {
 }
 
 # Last-resort generic phrase per language (when a kind is missing everywhere).
-_GENERIC = {'vi': 'Đang thực hiện', 'en': 'Working'}
+_GENERIC = {'en': 'Working'}
 
 # Skills that speak to the user themselves (HRI reply / ask). Their steps are
 # not narrated: announcing "doing reply" talks over the skill's own question,
@@ -100,12 +70,18 @@ SILENT_KINDS = {'plan_ready'}
 
 
 def _eul(word) -> str:
-    """Korean object particle for *word*: 을 after a final consonant (이동을),
-    를 after a vowel (찾기를). A verb written in the plan (``이동->move``) can
-    end either way, so the template cannot hard-code one."""
+    """The object particle for *word*, from the rule a language pack declares (``grammar.object_particle``: for Korean, 을 after
+    a syllable with a final consonant (이동을), 를 after one without (찾기를)). A verb written in the plan (``이동->move``) can end
+    either way, so the template cannot hard-code one. A word outside every rule's letters gets the particle for "no final"
+    of the first rule; no pack with a rule: ''."""
+    from . import langdata
     w = str(word or '').rstrip()
     c = ord(w[-1]) if w else 0
-    return '을' if 0xAC00 <= c <= 0xD7A3 and (c - 0xAC00) % 28 else '를'
+    rules = [r for r in (langdata.grammar(lg, 'object_particle') for lg in langdata.languages()) if isinstance(r, dict)]
+    for r in rules:
+        if r['first'] <= c <= r['last']:
+            return r['with_final'] if (c - r['first']) % r['cycle'] else r['without_final']
+    return rules[0]['without_final'] if rules else ''
 
 
 class _BlankDict(dict):
@@ -181,6 +157,13 @@ class Announcer:
             return tmpl.format_map(_BlankDict(ctx)).strip()
         except Exception:
             return tmpl
+
+    def slots_for(self, kind: str, **ctx) -> dict:
+        """The slots ``say_for`` fills the template of ``kind`` with ({verb}, {eul}, {object}, ...): what a host that
+        says the same phrase through its own speech layer needs (the robot's phrase with a slot said alone)."""
+        ctx = self._resolve_verb(ctx)
+        ctx.setdefault('eul', _eul(ctx.get('verb', '')))
+        return ctx
 
     # -- speech --------------------------------------------------------------
     def announce(self, kind: str, **ctx) -> str:

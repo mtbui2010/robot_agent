@@ -53,7 +53,9 @@ from the CLI) the old process-global flag is used, as before.
 
 - `begin_run()` no longer clears anything while the active run is being cancelled.
 - `request_cancel()` (dashboard Stop, `/agent/cancel`, a client going away) cancels the active run
-  without a role check, then stops the robot as before.
+  without a role check, then stops the robot as before. Its answer `{ok, cancelled, errors}` says `ok: false` when any step of the stop raised
+  (a partial stop is not a clean stop); an empty `cancelled` alone is not an error (nothing may have been in flight), so a caller that must know
+  what stopped reads that list.
 - New: `wait_if_paused()`, `check_cancel()`, `current_run()`, `manager()`.
 
 ## Intent router
@@ -61,11 +63,11 @@ from the CLI) the old process-global flag is used, as before.
 `IntentRouter(llm=None).classify(text, awaiting=None, goal='') -> IntentDecision(intent, text, source,
 confidence, reason)`. The order is:
 
-1. STOP / PAUSE / RESUME by keyword, never through the LLM. English, Korean and Vietnamese. The keyword
+1. STOP / PAUSE / RESUME by keyword, never through the LLM. English and Korean. The keyword
    counts only in a short utterance (at most 4 words) that, after fillers such as "please" or "robot" are
-   dropped, *is* the phrase, optionally followed by tail words ("now", "it", "đi", "nhé"). A negation
-   ("don't", "đừng", "-지 마") blocks it. So "bus stop", "stop at the door", "stopwatch", "đi thôi" and
-   "멈추지 마" are not stops. PAUSE is checked before STOP because "tạm dừng" and "일시정지" contain a
+   dropped, *is* the phrase, optionally followed by tail words ("now", "it"). A negation
+   ("don't", "-지 마") blocks it. So "bus stop", "stop at the door", "stopwatch" and
+   "멈추지 마" are not stops. PAUSE is checked before STOP because "일시정지" contains a
    stop word.
 2. ANSWER when the run is waiting on a question (`Run.ask()` / `Run.set_awaiting()`).
 3. MODIFY / ADD / DROP / NEW / STATUS from the injected `llm(text, {'goal': ...})` callable. It may
@@ -93,7 +95,7 @@ role-checked.
 
 ## API
 
-- Every event on `/ws/agent` now has `run_id`. The first message may carry `user_id` and `role`.
+- Every event on `/ws/agent` now has `run_id`. The first message may carry `user_id` and `role`. A first message with an empty prompt (and no `direct`) while no run is active starts nothing: the socket answers one `error` event (`empty prompt: no run was started`); with a run active it still observes it.
   Nothing was renamed.
 - During the run a client may send `{"text": "..."}`, which is injected. The reply is
   `{"event": "run_injected", "action", "intent", ...}`. `{"cancel": true}` and disconnecting still
@@ -187,3 +189,22 @@ Measured on the scenario suite (T1, fake robot, 10 runs each, median / max):
 - The thread binding is best effort. If another `begin_run()` (a skill command) runs between `start()`
   and the run's own `begin_run()`, that thread is bound instead. The executive then falls back to "the
   active run", which is the same run with one robot per process.
+
+
+## Cancel audit (2026-11-12): what a stop interrupts
+`POST /agent/cancel` = `run_control.request_cancel`: sets the run's flag, `CustomNode.cancel_all`, releases pending dashboard listens. Tests: `tests/test_cancel_audit.py`
+(a call of 8 s, a stop at 0.4 s, the run must end in under 2.5 s with a cancelled `done` and no step started).
+
+| a run can sit in | interrupted | how |
+|---|---|---|
+| understand / rank / which-one / coverage LLM calls (`ask_json`) | at once (10 ms poll) | `call_cancellable` |
+| planner calls (`_plan_call`, repair) | at once | `call_cancellable` |
+| input translation, output translation, glossary names, dialog model (`language.py`) | at once (fixed 2026-11-12: plain `.chat` before) | `language._chat` = `call_cancellable`; the `done` of a stopped run is said untranslated |
+| the Ask skill / answer wait (`dialog.ask`) | at once | polls the run's flag; the skill's thread is freed by `cancel_pending_listens` |
+| a dashboard listen / speak wait that opens AFTER the stop | at once (fixed: it waited its whole timeout) | `listen_dashboard` / `say_to_user` check the flag after registering the slot |
+| a question being written when the stop comes | the Ask skill is not started (fixed: it was) | `_ask_io` re-checks |
+| health wait, search legs | within 0.1 s | polling loop |
+| a robot skill in flight (MoveTo, Pick, ...) | by the robot, not Python | ROS goals cancelled by `cancel_all`; a skill declared `interruptible: false` finishes first (at most 30 s); the run ends at the step boundary; not testable without ROS |
+| legacy `utils.translate` in `UnifiedAgent.run` (non-closed-loop path) | no | gap, not used by the closed loops |
+
+The next run starts clean: `begin_run` clears the flag unless the active run is being cancelled, a run has its own flag, and the listen slots are removed in `finally`.

@@ -17,7 +17,7 @@ def test_default_layout_is_unchanged(tmp_path, monkeypatch):
     monkeypatch.delenv(P.ENV_VAR, raising=False)
     c = tmp_path / "common"
     assert P.data_dir("task_runs", c, "h1") == c / "task_runs" / "h1"
-    assert P.data_dir("grace_memory", c, "h1") == c / "grace_memory.h1.jsonl"
+    assert P.data_dir("sage_memory", c, "h1") == c / "sage_memory.h1.jsonl"
     assert P.data_dir("object_memory", c, "h1") == c / "object_memory.h1.json"
     assert P.data_dir("world_state", c, "h1") == c / "world_state.h1.json"
     assert P.data_dir("run_records", c, "h1") == c / "run_records" / "h1"
@@ -63,7 +63,7 @@ def test_loop_paths_come_from_data_dir(tmp_path, monkeypatch, agent_state):
     loop._llm_cfg = {}
     cfg = loop._resolve_cfg({}, agent_state)
     assert cfg["log_dir"] == tmp_path / "data" / "task_runs" / "test"
-    assert cfg["live_path"] == str(tmp_path / "data" / "grace_memory.test.jsonl")
+    assert cfg["live_path"] == str(tmp_path / "data" / "sage_memory.test.jsonl")
     monkeypatch.delenv(P.ENV_VAR)
     cfg = loop._resolve_cfg({}, agent_state)
     assert cfg["log_dir"] == tmp_path / "task_runs" / "test"            # as before
@@ -109,7 +109,7 @@ def test_llmobj_calls_are_recorded_once(tmp_path, monkeypatch):
 
 def test_embodiplan_backend_is_recorded_and_served(tmp_path):
     embodiplan = pytest.importorskip("embodiplan")
-    from robot_agent.core.planning.backends.pyplanner_grace import _observe_llm
+    from robot_agent.core.planning.backends.pyplanner_sage import _observe_llm
     _observe_llm(embodiplan)
     _observe_llm(embodiplan)                                         # idempotent
     assert getattr(embodiplan.LLMBackend.chat, "_robot_agent_observed", False)

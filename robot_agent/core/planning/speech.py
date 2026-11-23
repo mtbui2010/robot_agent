@@ -1,0 +1,290 @@
+"""What the robot says, in the user's language, without raw ENV keys (SAGE-v2 F5.1 / F5.2 / F5.4).
+
+* ``say_name(places, key, lang)``: how the robot names an ENV key to a person: the entry's first alias in the
+  user's script (Hangul for ko), else its head in words with the room ("shelf in the kitchen"); a person by
+  their name; the speaker as "you". No raw key (``bath_cabinet@bathroom``, ``person_b``) reaches the user.
+* ``LocalText``: a question / read-back the loop builds from a fixed phrase. It is the English text (a ``str``:
+  logs, the structured-question derive and every old caller see the English template) and carries the phrase
+  ``key`` and its ``slots``, so ``render(text, lang, robot, places, slot_tr=...)`` says the ROBOT's own phrase in the user's
+  language (its i18n), with the slots named by ``say_name``. Only free text (the model's own questions, Say
+  sentences) needs the translator.
+* ``CORE_PHRASES``: the English phrases (the core default, a view of the shipped packs' ``phrases`` files; a robot
+  pack gives other languages in its i18n under the same keys).
+* ``guard(text, lang, keep)``: is a translation in the target script and does it keep the names
+  (``translate_model``'s output check)?
+"""
+
+from __future__ import annotations
+
+import re
+from typing import Optional
+
+from robot_agent.core.pack import phrases as pack_phrases
+
+from . import langdata
+
+# the English phrases and the two fixed help-question ends are DATA of the shipped packs (packs/core/phrases.yaml and
+# packs/household/phrases.yaml, read by core/pack/phrases.py); these names are loaded views of them.
+CORE_PHRASES = pack_phrases.view()
+# the fixed ends of the Pick / MoveTo ladders' help questions (step_ladder.py; English free text, as before; a bench's question parser anchors on them)
+HELP_PICK = pack_phrases.text("help_pick")
+HELP_MOVE = pack_phrases.text("help_move")
+
+# A question's kind survives the language layer's last resort (``language._fallback``): a read-back is never replaced by
+# "say the task in other words" (a different question). ``q_confirm_restated`` (a pack's whole-sentence phrase for a
+# restated read-back, if it has one) falls back to the plain ``q_confirm`` with the same summary.
+READBACK_KEYS = frozenset({"q_confirm", "q_confirm_restated"})
+READBACK_PLAIN = {"q_confirm_restated": "q_confirm"}
+
+
+def restated_readback(summary):
+    """The read-back of a reading the user already refused and gave again: a lead sentence (``rb_restated``) said
+    before the ordinary read-back (``q_confirm``) with its summary, so a pack that has ``q_confirm`` says the summary
+    without a translator call, and a language without the lead sentence still says the read-back."""
+    plain = LocalText("q_confirm", {"summary": summary}, text=f"{summary} Is that right?")
+    return LocalText.join(LocalText("rb_restated"), plain)
+
+
+# phrases that open with an apology of their own: asked again after silence they are not prefixed with q_silence
+# ("Sorry, I didn't hear you. Sorry. ...", option dialog_unstick). Keys, so it holds in every language of the pack.
+APOLOGY_KEYS = frozenset({"q_repeat", "q_unclear_task", "q_what_do", "q_silence"})
+
+def _script_ok(alias: str, lang: str) -> bool:
+    """Is ``alias`` a name in the script of ``lang``? A language whose pack declares ``script.letters`` wants one of them; one
+    whose pack says ``grammar.ascii_names`` (the prompt language) wants plain ASCII; any other language wants a name that is
+    not in the script of another pack (so a Latin-script language takes accented names)."""
+    a = str(alias or "")
+    if not a or "@" in a:
+        return False
+    lg = (lang or "en")[:2]
+    mine = langdata.script_rx(lg)
+    if mine is not None:
+        return bool(mine.search(a))
+    if langdata.grammar(lg, "ascii_names"):
+        return a.isascii()
+    return not any(r.search(a) for code, r in langdata.script_langs() if code != lg)
+
+
+def _words(k: str) -> str:
+    return " ".join(str(k or "").replace("_", " ").split())
+
+
+def say_name(places, key, lang: str = "en") -> str:
+    """See the module doc. ``places``: assist_loop.Places (env, head, room)."""
+    key = str(key or "")
+    if key.startswith("@"):
+        return _words(key[1:])
+    e = (getattr(places, "env", {}) or {}).get(key) or {}
+    lg = (lang or "en")[:2]
+    if e.get("speaker"):
+        return "you" if lg == "en" else next((a for a in e.get("aliases") or [] if _script_ok(a, lg)
+                                              and not _speaker_alias(a)), "")
+    al = [a for a in e.get("aliases") or [] if _script_ok(a, lg) and not _speaker_alias(a)]
+    if e.get("person"):
+        return al[0] if al else _words(e.get("person"))
+    if al and lg != "en":
+        return al[0]
+    head, room = _words(key.split("@")[0]), _words(key.split("@")[1]) if "@" in key else ""
+    if lg == "en":
+        named = next((a for a in al if room and room.lower() in a.lower()), None)
+        return named or (f"{head} in the {room}" if room else head)
+    return al[0] if al else (f"{head} ({room})" if room else head)
+
+
+def _speaker_alias(a: str) -> bool:
+    from .persons import is_speaker_word
+    return is_speaker_word(a)
+
+
+class LocalText(str):
+    """English text built from the phrase ``key`` with ``slots`` (see the module doc)."""
+
+    key: str = ""
+    slots: dict = {}
+    parts: tuple = ()
+    ask: Optional[dict] = None           # what a question declares about itself, the core's own schema: {"intent": "choose",
+    #                                      "options": [...], "about": "<the thing asked about>"} (a host maps it onto its own kinds)
+
+    def __new__(cls, key: str, slots: Optional[dict] = None, text: Optional[str] = None, parts=(),
+                ask: Optional[dict] = None):
+        slots = dict(slots or {})
+        en = text if text is not None else _fmt(CORE_PHRASES.get(key, key), slots)
+        out = super().__new__(cls, en)
+        out.key, out.slots, out.parts = key, slots, tuple(parts)
+        out.ask = dict(ask) if ask else None
+        return out
+
+    @classmethod
+    def join(cls, *items) -> "LocalText":
+        """Several phrases said one after the other ("Which shelf ...? Where should I put the cup?")."""
+        items = [x for x in items if x]
+        if len(items) == 1 and isinstance(items[0], LocalText):
+            return items[0]
+        return cls("_join", {}, text=" ".join(str(x) for x in items), parts=tuple(items))
+
+    def again(self) -> "LocalText":
+        """The question asked again after silence ("Sorry, I didn't hear you. <question>")."""
+        return LocalText.join(LocalText("q_silence"), self)
+
+    @classmethod
+    def seq(cls, items, sep_key: str = "sep_then") -> "LocalText":
+        """Phrases in a row with the robot's separator ("A, then B, then C")."""
+        items = [x for x in items if x]
+        sep = CORE_PHRASES.get(sep_key, " ")
+        out = cls("_seq", {"sep": sep_key}, text=sep.join(str(x) for x in items), parts=tuple(items))
+        return out
+
+
+def declared_ask(question) -> Optional[dict]:
+    """What a question declares about its own kind (``LocalText.ask``: ``intent`` and its slots), looking at the parts of
+    a joined text left to right; None for a question that declares nothing. A host that reads questions (a simulated
+    user, a log) uses it instead of guessing from the words."""
+    if getattr(question, "ask", None):
+        return dict(question.ask)
+    for p in getattr(question, "parts", ()) or ():
+        d = declared_ask(p)
+        if d:
+            return d
+    return None
+
+
+class _Calm(LocalText):
+    """A question that opens with its own apology: asked again after silence it is said as it is."""
+
+    def again(self) -> "LocalText":
+        return self
+
+
+def calm(q):
+    """``q`` as a question that is not prefixed with the silence apology when it is asked again, when it opens with an
+    apology of its own (``APOLOGY_KEYS``); else ``q`` itself."""
+    if not isinstance(q, LocalText) or isinstance(q, _Calm):
+        return q
+    if q.key in APOLOGY_KEYS or any(isinstance(p, LocalText) and p.key in APOLOGY_KEYS for p in q.parts[:1]):
+        out = _Calm.__new__(_Calm, q.key, q.slots, text=str(q), parts=q.parts, ask=q.ask)
+        return out
+    return q
+
+
+def _fmt(s: str, slots: dict) -> str:
+    try:
+        return s.format(**slots)
+    except (KeyError, IndexError, ValueError):
+        return s
+
+
+def phrase(robot, key: str, lang: str) -> Optional[str]:
+    """The robot's phrase for ``key`` in ``lang`` (its i18n), else the language pack's own (block ``speech``, labelled data of the pack),
+    the shipped packs' phrase (English: ``CORE_PHRASES``; another language only if the files hold it), else None."""
+    lg = (lang or "en")[:2]
+    by = ((getattr(getattr(robot, "i18n", None), "phrases", None) or {}).get(key) or {}) if robot is not None else {}
+    if by.get(lg):
+        return by[lg]
+    own = langdata.block(lg, "speech").get(key)
+    if isinstance(own, str) and own:
+        return own
+    return CORE_PHRASES.get(key) if lg == "en" else pack_phrases.other(key, lg)
+
+
+def pack_phrase(robot, key: str, lang: str, **slots) -> Optional[LocalText]:
+    """The phrase ``key`` (``phrase``) with ``slots`` as a LocalText said in ``lang`` (its English text from the en phrase); None when ``lang``
+    has no such phrase or a slot is missing."""
+    tpl = phrase(robot, key, lang) if key else None
+    en = phrase(robot, key, "en") or tpl
+    try:
+        return LocalText(key, slots, text=en.format(**slots)) if tpl else None
+    except (KeyError, IndexError, ValueError):
+        return None
+
+
+def render(text, lang: str, robot=None, places=None, name_slots=("place", "person", "options"), slot_tr=None) -> Optional[str]:
+    """``text`` said in ``lang`` from the robot's phrases (None: a slot / phrase is missing in that language,
+    the caller translates instead). A plain str is returned as is for en, else None."""
+    lg = (lang or "en")[:2]
+    if not isinstance(text, LocalText):
+        return str(text) if lg == "en" else None
+    if text.key in ("_join", "_seq"):
+        out = [render(p, lang, robot, places, name_slots, slot_tr) for p in text.parts]
+        if any(o is None for o in out):
+            return None
+        sep = " " if text.key == "_join" else phrase(robot, text.slots.get("sep", "sep_then"), lg)
+        return None if sep is None else sep.join(out)
+    tpl = phrase(robot, text.key, lg)
+    if tpl is None:
+        return str(text) if lg == "en" else None
+    slots = {}
+    for k, v in text.slots.items():
+        if "{" + k + "}" not in tpl:
+            continue                                  # a slot this language's phrase does not say
+        if isinstance(v, LocalText):
+            v = render(v, lang, robot, places, name_slots, slot_tr)
+            if v is None:
+                return None
+        elif k in ("place", "person", "source", "object") and places is not None and isinstance(v, str) \
+                and v in (getattr(places, "env", {}) or {}):      # a raw ENV key is never said
+            v = say_name(places, v, lg)
+            if not v:
+                return None
+        elif k == "options" and isinstance(v, (list, tuple)):
+            names = [say_name(places, x, lg) if places is not None else str(x) for x in v]
+            if not all(names):
+                return None
+            v = (phrase(robot, "sep_or", lg) or langdata.grammar(lg, "sep_or") or " or ").join(names)
+        elif k in ("object", "text", "what", "why", "summary", "first", "rest") and lg != "en" and \
+                v and not _in_script(str(v), lg):
+            v = _slot(slot_tr, str(v), k) if slot_tr is not None else None   # an English slot in a Korean phrase: say it alone
+            if v is None:
+                return None                           # (or translate the whole)
+        slots[k] = v
+    return _fmt(tpl, slots)
+
+
+def _slot(slot_tr, v: str, k: str):
+    try:
+        return slot_tr(v, k)
+    except TypeError:                                 # a one-argument callback
+        return slot_tr(v)
+
+
+def _in_script(s: str, lg: str) -> bool:
+    """Is the slot text ``s`` already in the script of ``lg``? True for a language whose pack declares no script."""
+    mine = langdata.script_rx(lg)
+    return bool(mine.search(s)) if mine is not None else True
+
+
+def guard(text: str, lang: str, keep=()) -> Optional[str]:
+    """Why ``text`` is not an acceptable translation into ``lang`` (None = acceptable). A language whose pack has a ``guard``
+    block (Korean: the share of its letters is at least ``min_share``, no ``forbid`` characters, no Latin word except the
+    names to keep and digits) is checked by it; a language without one is not (fail open: a Latin-script language cannot be
+    told from English by its letters). Every name of ``keep`` that must appear does."""
+    t = str(text or "").strip()
+    if not t:
+        return "empty"
+    lg = (lang or "en")[:2]
+    g = langdata.block(lg, "guard")
+    mine = langdata.script_rx(lg)
+    if g and mine is not None:
+        forbid = re.compile(g["forbid"]) if g.get("forbid") else None
+        if forbid is not None and forbid.search(t):
+            return str(g.get("forbid_msg") or "foreign characters")
+        rest = t
+        for k in keep:
+            rest = rest.replace(str(k), " ")
+        letters = [c for c in rest if c.isalpha()]
+        native = [c for c in letters if mine.match(c)]
+        if letters and g.get("min_share") is not None and len(native) / len(letters) < float(g["min_share"]):
+            return str(g.get("low_share_msg") or "not the language")
+        if g.get("latin_words") and re.search(r"[A-Za-z]{2,}", rest):
+            return str(g.get("latin_msg") or "English words left")
+    for k in keep:
+        if k and str(k) not in t:
+            return f"the name {k!r} is missing"
+    return None
+
+
+__all__ = ["CORE_PHRASES", "APOLOGY_KEYS", "calm", "LocalText", "say_name", "phrase", "pack_phrase", "render", "guard"]
+
+
+def script_ok(alias: str, lang: str) -> bool:
+    """Public form of the script test: is ``alias`` a name in the script of ``lang`` (see ``_script_ok``)?"""
+    return _script_ok(alias, lang)

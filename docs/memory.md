@@ -1,13 +1,13 @@
 # The planner's retrieval memory
 
-SAGE (the `grace` / `sage` planners, embodiplan) puts the most similar past plans into its
+SAGE (the `sage` planner, embodiplan) puts the most similar past plans into its
 prompts. They come from two pools (embodiplan `docs/memory.md` has the file format and the
 cleaning tool):
 
 | pool | file | who fills it |
 |---|---|---|
 | seed | the robot's manifest `planner.seed_memory` (JSONL, shipped with the robot) | a person, verified offline |
-| live | `data_dir("grace_memory")` = `<common>/grace_memory.<host>.jsonl` (option `live_path`) | the loops, after a verified run |
+| live | `data_dir("sage_memory")` = `<common>/sage_memory.<host>.jsonl` (option `live_path`) | the loops, after a verified run |
 
 ## Seed pool (manifest)
 
@@ -18,8 +18,8 @@ planner:
 
 The key is optional; a robot without it starts SAGE with no seed. `Manifest.seed_memory`
 resolves the path, `RobotView.seed_memory()` hands it to the planner
-(`ClosedLoop._make_planner` -> `GraceBackend(seed_memory=...)` -> SAGE's `gt_path`, unless a
-`gt_path` is given). embodiplan < 0.2.3 cannot read a JSONL seed: GraceBackend logs a warning
+(`ClosedLoop._make_planner` -> `SageBackend(seed_memory=...)` -> SAGE's `gt_path`, unless a
+`gt_path` is given). embodiplan < 0.2.3 cannot read a JSONL seed: SageBackend logs a warning
 and goes on without it. `check_manifest` fails when the file is missing or a line is not an
 episode (`task` + `plan_text` / `steps`). Write seed plans in the robot's own place names and
 check them with the action model under the manifest's capabilities (kcare_robot:
@@ -30,7 +30,7 @@ check them with the action model under the manifest's capabilities (kcare_robot:
 A wrong plan in memory is copied into the next plans, so a run is recorded only when its goals
 were **seen** to hold after the task (`ROBOT_AGENT_MEMORY_RECORD`, option `memory_record`):
 
-| mode | AssistLoop (`sage`) | ClosedLoop (`grace`) |
+| mode | AssistLoop (`sage`) | plain ClosedLoop (`sage_plain`) |
 |---|---|---|
 | `observed` (default) | success, and every `on` / `in` goal's latest `goal_check` is `ok: true`; a state goal (`open` / `close`, no sensor) must not be `ok: false` | never (it does not look at its goals) |
 | `belief` (the old rule) | every success | every success |
@@ -48,8 +48,8 @@ The live pool written before this rule holds false successes, duplicates and ben
 Clean a copy, never the file the agent is appending to:
 
 ```bash
-python -m embodiplan.memory_tools clean <common>/grace_memory.<host>.jsonl \
-    --out /tmp/grace_memory.clean.jsonl --exclude-tasks <test tasks> \
+python -m embodiplan.memory_tools clean <common>/sage_memory.<host>.jsonl \
+    --out /tmp/sage_memory.clean.jsonl --exclude-tasks <test tasks> \
     --capabilities <robot>/configs/manifest.yaml --report
 ```
 

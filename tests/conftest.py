@@ -88,7 +88,9 @@ def make_assist(tmp_path, monkeypatch, env, agent_state):
                                       _llm_cfg={"name": "fake", "url": None, "model": "scripted"})
         ov = dict(log_dir=str(tmp_path / "runs"), live_path=str(tmp_path / "live.jsonl"),
                   memory_path=str(tmp_path / "object_memory.json"), mute_skill_tts=False,
-                  speak_backend=False, vlm_enabled=False)
+                  speak_backend=False, vlm_enabled=False,
+                  input_pivot="none",      # the older tests exercise the loop without the language layer's IN side
+                  look_then_ask="0", bring_ask="0", bt_goal="0", fetch_guard="0")   # default ON in the engine; the older tests pin the earlier order (new tests turn them on)
         ov.update(overrides)
         loop = AL.AssistLoop(agent, emit=None, **ov)
         loop._llm_client = llm
@@ -96,3 +98,10 @@ def make_assist(tmp_path, monkeypatch, env, agent_state):
         return loop
 
     return make
+
+
+@pytest.fixture(scope="session")
+def household():
+    """The household test profile (tests/fixtures/safety/household_fixture.yaml)."""
+    from fakes import safety_profile
+    return safety_profile("household_fixture")

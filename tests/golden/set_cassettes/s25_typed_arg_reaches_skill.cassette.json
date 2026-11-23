@@ -1,0 +1,1244 @@
+{
+ "format": 1,
+ "name": "s25_typed_arg_reaches_skill",
+ "tags": [
+  "bt_goal",
+  "success",
+  "fakehome"
+ ],
+ "about": "a tree gives each MoveTo leaf a typed argument `mode`: the step carries `args`, they reach the move skill as its param `mode` (left to the counter, right to the desk)",
+ "scenario": {
+  "name": "s25_typed_arg_reaches_skill",
+  "env": {
+   "counter@kitchen": {
+    "aliases": [
+     "counter"
+    ],
+    "loc": {
+     "x": 6.0,
+     "y": 1.0
+    },
+    "surface": true
+   },
+   "desk@study": {
+    "aliases": [
+     "desk"
+    ],
+    "loc": {
+     "x": 0.5,
+     "y": 6.0
+    },
+    "surface": true
+   }
+  },
+  "robot_pkg": "fakehome",
+  "task": "Put the mug on the desk.",
+  "robot": {
+   "objects": {
+    "mug": "counter@kitchen"
+   },
+   "start": "desk@study"
+  },
+  "llm": {
+   "script": [],
+   "default": {
+    "status": "clear",
+    "reason": "",
+    "question": "",
+    "goals": [
+     {
+      "type": "on",
+      "object": "mug",
+      "from": "counter",
+      "to": "desk"
+     }
+    ]
+   }
+  },
+  "planner": {
+   "plan": [
+    "MoveTo counter@kitchen",
+    "Find mug",
+    "Pick mug",
+    "MoveTo desk@study",
+    "Place desk@study"
+   ],
+   "replans": []
+  },
+  "options": {
+   "input_pivot": "none",
+   "look_then_ask": "0",
+   "bring_ask": "0",
+   "bt_goal": "1",
+   "fetch_guard": "0",
+   "search_legs": 1,
+   "ask_help": false,
+   "detector_miss_rate": 0,
+   "health_wait_s": 0
+  },
+  "pack": {
+   "schema": 2,
+   "name": "s26_home_args",
+   "extends": "household",
+   "assumed": true,
+   "actions": {
+    "MoveTo": {
+     "class": "move",
+     "arg": {
+      "name": "place",
+      "type": "place"
+     },
+     "verb": "move to",
+     "ability": "move to a place",
+     "describe": "move to a place",
+     "args": {
+      "mode": {
+       "type": "enum",
+       "values": [
+        "front",
+        "left",
+        "right"
+       ]
+      }
+     },
+     "assumed": true
+    }
+   }
+  },
+  "pack_options": {
+   "bt_goal": {
+    "trees": {
+     "on": {
+      "tree": [
+       "sequence",
+       [
+        "act",
+        "MoveTo",
+        "counter@kitchen",
+        {
+         "mode": "left"
+        }
+       ],
+       [
+        "act",
+        "Find",
+        "{object}"
+       ],
+       [
+        "act",
+        "Pick",
+        "{object}"
+       ],
+       [
+        "act",
+        "MoveTo",
+        "{to}",
+        {
+         "mode": "right"
+        }
+       ],
+       [
+        "act",
+        "Place",
+        "{to}"
+       ],
+       [
+        "cond",
+        "placed",
+        "{object}",
+        "{to}"
+       ]
+      ],
+      "skip_if": [
+       "hand"
+      ],
+      "assumed": true
+     }
+    }
+   }
+  }
+ },
+ "recorded": {
+  "llm_calls": [
+   {
+    "prompt": "8312c07ee9d3bf63",
+    "format": "b69b437228696e32",
+    "head": "You turn a household robot task into goals. The robot is a mobile manipu",
+    "answer": "{\"status\": \"clear\", \"reason\": \"\", \"question\": \"\", \"goals\": [{\"type\": \"on\", \"object\": \"mug\", \"from\": \"counter\", \"to\": \"desk\"}]}"
+   }
+  ],
+  "planner_calls": [],
+  "robot_calls": [
+   {
+    "skill": "mobile_pose",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "pose": [
+      0.5,
+      6.0,
+      0
+     ]
+    }
+   },
+   {
+    "skill": "move",
+    "params": {
+     "inputs": "counter@kitchen",
+     "mode": "left"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "arrived at counter@kitchen"
+    }
+   },
+   {
+    "skill": "mobile_pose",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "pose": [
+      6.0,
+      1.0,
+      0
+     ]
+    }
+   },
+   {
+    "skill": "find",
+    "params": {
+     "inputs": "mug",
+     "min_conf": 0.55
+    },
+    "result": {
+     "isdone": true,
+     "ins": {
+      "mug": {
+       "pose_3d": [
+        0.6,
+        0.05,
+        0.8
+       ]
+      }
+     }
+    }
+   },
+   {
+    "skill": "pick",
+    "params": {
+     "inputs": "mug",
+     "type": "fine_move"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "grasped"
+    }
+   },
+   {
+    "skill": "grasp_succeed",
+    "params": {},
+    "result": {
+     "isdone": true
+    }
+   },
+   {
+    "skill": "move",
+    "params": {
+     "inputs": "desk@study",
+     "mode": "right"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "arrived at desk@study"
+    }
+   },
+   {
+    "skill": "mobile_pose",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "pose": [
+      0.5,
+      6.0,
+      0
+     ]
+    }
+   },
+   {
+    "skill": "grasp_succeed",
+    "params": {},
+    "result": {
+     "isdone": true
+    }
+   },
+   {
+    "skill": "place",
+    "params": {
+     "inputs": "desk@study"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "placed"
+    }
+   },
+   {
+    "skill": "grasp_succeed",
+    "params": {},
+    "result": {
+     "isdone": false
+    }
+   },
+   {
+    "skill": "find",
+    "params": {
+     "inputs": "mug",
+     "min_conf": 0.55
+    },
+    "result": {
+     "isdone": true,
+     "ins": {
+      "mug": {
+       "pose_3d": [
+        0.6,
+        0.05,
+        0.8
+       ]
+      }
+     }
+    }
+   }
+  ],
+  "events": [
+   {
+    "event": "task_start",
+    "task": "Put the mug on the desk.",
+    "world": {
+     "arrived": "desk@study",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from desk@study"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Starting the task"
+   },
+   {
+    "event": "reconcile",
+    "when": "start",
+    "changed": {
+     "arrived": [
+      null,
+      "desk@study"
+     ]
+    },
+    "sensors": {
+     "arrived": {
+      "pose": [
+       0.5,
+       6.0
+      ],
+      "detail": "0.00 m from desk@study",
+      "source": "mobile_pose"
+     },
+     "containers": {},
+     "unconfirmed": []
+    },
+    "provenance": {
+     "arrived": {
+      "source": "sensor",
+      "detail": "0.00 m from desk@study"
+     },
+     "found": {
+      "source": "belief"
+     },
+     "holding": {
+      "source": "belief"
+     },
+     "opened": {
+      "source": "sensor",
+      "containers": {},
+      "unconfirmed": []
+     },
+     "on": {
+      "source": "belief"
+     }
+    },
+    "world": {
+     "arrived": "desk@study",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from desk@study"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    }
+   },
+   {
+    "event": "status",
+    "msg": "Understanding the task..."
+   },
+   {
+    "event": "understand",
+    "status": "clear",
+    "reason": "",
+    "goals": [
+     {
+      "type": "on",
+      "object": "mug",
+      "from": "",
+      "to": "desk@study"
+     }
+    ],
+    "question": null
+   },
+   {
+    "event": "status",
+    "msg": "Generating task plan..."
+   },
+   {
+    "event": "step_start",
+    "index": 0,
+    "action": "MoveTo",
+    "object": "counter@kitchen",
+    "skill": "move",
+    "say": "I will move to counter in the kitchen"
+   },
+   {
+    "event": "step_verify",
+    "index": 0,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "arrived at counter@kitchen",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "localization",
+      "ok": true,
+      "detail": "0.00 m from counter@kitchen",
+      "confidence": null,
+      "unknown": false
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 0,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "arrived at counter@kitchen"
+    },
+    "world": {
+     "arrived": "counter@kitchen",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: move to counter in the kitchen"
+   },
+   {
+    "event": "step_start",
+    "index": 1,
+    "action": "Find",
+    "object": "mug",
+    "skill": "find",
+    "say": "I will find mug"
+   },
+   {
+    "event": "step_verify",
+    "index": 1,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "sensor",
+      "ok": true,
+      "detail": "unknown: find declares no sensor that checks it",
+      "confidence": null,
+      "unknown": true
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 1,
+    "status": "success",
+    "result": {
+     "ins": {
+      "mug": {
+       "pose_3d": [
+        0.6,
+        0.05,
+        0.8
+       ]
+      }
+     },
+     "isdone": true,
+     "msg": ""
+    },
+    "world": {
+     "arrived": "counter@kitchen",
+     "found": "mug",
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: find mug"
+   },
+   {
+    "event": "step_start",
+    "index": 2,
+    "action": "Pick",
+    "object": "mug",
+    "skill": "pick",
+    "say": "I will pick mug"
+   },
+   {
+    "event": "step_verify",
+    "index": 2,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "grasped",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "sensor",
+      "ok": true,
+      "detail": "grasp_succeed: ok",
+      "confidence": null,
+      "unknown": false
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 2,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "grasped"
+    },
+    "world": {
+     "arrived": "counter@kitchen",
+     "found": null,
+     "holding": "mug",
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: pick mug"
+   },
+   {
+    "event": "step_start",
+    "index": 3,
+    "action": "MoveTo",
+    "object": "desk@study",
+    "skill": "move",
+    "say": "I will move to desk in the study"
+   },
+   {
+    "event": "step_verify",
+    "index": 3,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "arrived at desk@study",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "localization",
+      "ok": true,
+      "detail": "0.00 m from desk@study",
+      "confidence": null,
+      "unknown": false
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 3,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "arrived at desk@study"
+    },
+    "world": {
+     "arrived": "desk@study",
+     "found": null,
+     "holding": "mug",
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: move to desk in the study"
+   },
+   {
+    "event": "step_start",
+    "index": 4,
+    "action": "Place",
+    "object": "desk@study",
+    "skill": "place",
+    "say": "I will place desk in the study"
+   },
+   {
+    "event": "step_verify",
+    "index": 4,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "placed",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "sensor",
+      "ok": true,
+      "detail": "grasp_succeed: ok",
+      "confidence": null,
+      "unknown": false
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 4,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "placed"
+    },
+    "world": {
+     "arrived": "desk@study",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: place desk in the study"
+   },
+   {
+    "event": "status",
+    "msg": "Checking the goals..."
+   },
+   {
+    "event": "goal_check",
+    "goal": {
+     "type": "on",
+     "object": "mug",
+     "from": "",
+     "to": "desk@study"
+    },
+    "ok": true,
+    "evidence": "the mug is seen on the desk in the study",
+    "world": {
+     "arrived": "desk@study",
+     "found": "mug",
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    }
+   },
+   {
+    "event": "done",
+    "status": "success",
+    "msg": "",
+    "world": {
+     "arrived": "desk@study",
+     "found": "mug",
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Task completed"
+   }
+  ],
+  "final": {
+   "robot": {
+    "at": "desk@study",
+    "holding": null,
+    "objects": {
+     "mug": "desk@study"
+    },
+    "opened": [],
+    "asked": []
+   },
+   "belief": {
+    "arrived": "desk@study",
+    "found": "mug",
+    "holding": null,
+    "opened": [],
+    "on": [],
+    "found_pose": null,
+    "holding_pose": null,
+    "provenance": {
+     "arrived": {
+      "source": "sensor",
+      "detail": "MoveTo localization check"
+     },
+     "found": {
+      "source": "belief"
+     },
+     "holding": {
+      "source": "belief"
+     },
+     "opened": {
+      "source": "sensor",
+      "containers": {},
+      "unconfirmed": []
+     },
+     "on": {
+      "source": "belief"
+     }
+    }
+   },
+   "lab_log": [
+    {
+     "flag": "bt_goal",
+     "goal": 1,
+     "status": "claimed"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.0 act MoveTo counter@kitchen {'mode': 'left'}",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.1 act Find mug",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.2 act Pick mug",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.3 act MoveTo desk@study {'mode': 'right'}",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.4 act Place desk@study",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.5 cond placed mug desk@study",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0 sequence",
+     "status": "success"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": "on mug desk@study",
+     "status": "success"
+    }
+   ],
+   "record": {
+    "task": "Put the mug on the desk.",
+    "lang": "en",
+    "obs": "goals: [{\"type\": \"on\", \"object\": \"mug\", \"from\": \"\", \"to\": \"desk@study\"}]",
+    "visible": [],
+    "planner": "sage+assist",
+    "plan_meta": {
+     "method": "option"
+    },
+    "warnings": [],
+    "steps": [
+     {
+      "index": 0,
+      "action": "MoveTo",
+      "object": "counter@kitchen",
+      "skill": "move",
+      "params": {
+       "inputs": "counter@kitchen",
+       "mode": "left"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "arrived at counter@kitchen"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "arrived at counter@kitchen",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "localization",
+        "ok": true,
+        "detail": "0.00 m from counter@kitchen",
+        "confidence": null,
+        "unknown": false
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 1,
+      "action": "Find",
+      "object": "mug",
+      "skill": "find",
+      "params": {
+       "inputs": "mug",
+       "min_conf": 0.55
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "ins": {
+        "mug": {
+         "pose_3d": [
+          0.6,
+          0.05,
+          0.8
+         ]
+        }
+       },
+       "isdone": true,
+       "msg": ""
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "sensor",
+        "ok": true,
+        "detail": "unknown: find declares no sensor that checks it",
+        "confidence": null,
+        "unknown": true
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 2,
+      "action": "Pick",
+      "object": "mug",
+      "skill": "pick",
+      "params": {
+       "inputs": "mug",
+       "type": "fine_move"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "grasped"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "grasped",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "sensor",
+        "ok": true,
+        "detail": "grasp_succeed: ok",
+        "confidence": null,
+        "unknown": false
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 3,
+      "action": "MoveTo",
+      "object": "desk@study",
+      "skill": "move",
+      "params": {
+       "inputs": "desk@study",
+       "mode": "right"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "arrived at desk@study"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "arrived at desk@study",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "localization",
+        "ok": true,
+        "detail": "0.00 m from desk@study",
+        "confidence": null,
+        "unknown": false
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 4,
+      "action": "Place",
+      "object": "desk@study",
+      "skill": "place",
+      "params": {
+       "inputs": "desk@study"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "placed"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "placed",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "sensor",
+        "ok": true,
+        "detail": "grasp_succeed: ok",
+        "confidence": null,
+        "unknown": false
+       }
+      ],
+      "logs": []
+     }
+    ],
+    "replans": [],
+    "status": "success",
+    "failure": {}
+   },
+   "log_kinds": [
+    "reconcile",
+    "task_start",
+    "status",
+    "understand",
+    "status",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "status",
+    "goal_check",
+    "done",
+    "snapshot"
+   ]
+  }
+ },
+ "commit": "39c2d2a"
+}

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from robot_agent.contract import Manifest, NamemapAdapter
 
-from . import grace_namemap
+from . import sage_namemap
 
 
 PHRASES = {
@@ -25,7 +25,7 @@ class Adapter(NamemapAdapter):
     quiet_skills = {"check_fall"}
 
     def __init__(self):
-        super().__init__(grace_namemap, Manifest.from_yaml(Path(__file__).with_name("manifest.yaml")))
+        super().__init__(sage_namemap, Manifest.from_yaml(Path(__file__).with_name("manifest.yaml")))
         self.i18n.phrases.update(PHRASES)
 
     @staticmethod

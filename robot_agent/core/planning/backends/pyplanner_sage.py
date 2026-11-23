@@ -1,0 +1,366 @@
+# robot_agent/robot_agent/core/planning/backends/pyplanner_sage.py
+"""SAGE planner backend — adapts embodiplan's SAGEPlanner to the Planner
+interface.
+
+``embodiplan`` is an OPTIONAL dependency: it is imported lazily so this module
+imports cleanly even when embodiplan is absent. The first time a SageBackend is
+constructed without embodiplan installed, a clear RuntimeError is raised.
+
+SAGE already returns steps in the canonical PlanStep shape
+(``{"action", "object", "target"?, "reason"?}``), so generate_plan / replan
+delegate directly and only coerce the returned PlanMetrics dataclass to a plain
+dict for transport across the Planner boundary.
+
+SageBackend also offers the optional planner capabilities of ``base.py``
+(``docs/planners.md``) on top of embodiplan's public SAGE API: ``SubgoalRepair``
+(``blocks`` / ``join_blocks`` / ``repair_block`` = SAGE's ``last_blocks`` /
+``flatten`` / ``edit_block`` with its memory examples), ``ProgressReporting``
+(``progress``) and ``EpisodeMemory`` (``record_episode``). This is the only
+place that knows those SAGE names.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import dataclasses
+import inspect
+import logging
+import os
+from typing import Any
+
+log = logging.getLogger(__name__)
+
+
+# Kwargs that embodiplan's SAGEPlanner (registry name "SAGE")
+# accepts; see embodiplan/sage.py::SAGEPlanner.__init__.
+_SAGE_KWARGS = (
+    "host",
+    "model",
+    "provider",
+    "api_key",
+    "gt_path",
+    "live_path",
+    "safe_refine",
+    "top_k",
+    "max_refines",
+    "use_chroma",
+    "chroma_path",
+    # the robot's body (manifest capabilities: hands, find_reaches): SAGE's symbolic gate
+    # then plans e.g. the MoveTo to a drawer before its Open
+    "capabilities",
+    # evaluation: never retrieve the query task itself (embodiplan >= 0.2.3)
+    "leave_one_out",
+    # the robot's plan actions and body from its manifest (core/planning/robot_prompt.py):
+    # they replace SAGE's household action list / robot line (embodiplan >= 0.2.4; older
+    # versions take **kwargs and ignore them)
+    "actions",
+    "robot_description",
+    # which block a replan repairs (embodiplan >= the replan_block_fix key; older versions take **kwargs and ignore it)
+    "replan_block_fix",
+)
+
+
+def _metrics_to_dict(metrics: Any) -> dict:
+    """Best-effort coercion of an embodiplan PlanMetrics into a plain dict.
+
+    PlanMetrics is a dataclass and also exposes a ``to_dict()`` helper; prefer
+    that, then fall back to dataclasses.asdict, then a getattr sweep.
+    """
+    if metrics is None:
+        return {}
+    if isinstance(metrics, dict):
+        return metrics
+    # PlanMetrics.to_dict() gives the curated, JSON-friendly view.
+    to_dict = getattr(metrics, "to_dict", None)
+    if callable(to_dict):
+        try:
+            d = to_dict()
+            if isinstance(d, dict):
+                # to_dict() drops `extra`; fold it back in if present.
+                extra = getattr(metrics, "extra", None)
+                if isinstance(extra, dict) and "extra" not in d:
+                    d["extra"] = extra
+                return d
+        except Exception:
+            pass
+    if dataclasses.is_dataclass(metrics) and not isinstance(metrics, type):
+        try:
+            return dataclasses.asdict(metrics)
+        except Exception:
+            pass
+    # Last resort: scrape public, non-callable attributes.
+    out: dict = {}
+    for k in dir(metrics):
+        if k.startswith("_"):
+            continue
+        try:
+            v = getattr(metrics, k)
+        except Exception:
+            continue
+        if callable(v):
+            continue
+        out[k] = v
+    return out
+
+
+def _observe_llm(embodiplan) -> None:
+    """Route embodiplan's LLM calls through ``robot_agent.observe.llm.call``:
+    recorded on the current run (prompt messages, model, seed, temperature,
+    latency), served from the record during a replay.
+
+    embodiplan has no public way to inject a client: every planner builds its
+    own public ``embodiplan.LLMBackend`` and calls ``LLMBackend.chat(messages,
+    temperature)``. That public method is wrapped once, at the class, here (the
+    only module that imports embodiplan). Calls outside a recorded run or a
+    replay go straight through, unchanged.
+    """
+    backend = getattr(embodiplan, "LLMBackend", None)
+    chat = getattr(backend, "chat", None)
+    if chat is None or getattr(chat, "_robot_agent_observed", False):
+        return
+
+    def observed_chat(self, messages, temperature=None):
+        from robot_agent.observe.llm import call
+        temp = temperature if temperature is not None else getattr(self, "temperature", None)
+        return call(
+            "embodiplan",
+            lambda: chat(self, messages, temperature),
+            {"messages": messages, "temperature": temp},
+            model=getattr(self, "model", None),
+            backend=getattr(self, "provider", None),
+            temperature=temp,
+            seed=getattr(self, "seed", None),
+            as_tuple=True,
+        )
+
+    observed_chat._robot_agent_observed = True
+    observed_chat.__wrapped__ = chat
+    backend.chat = observed_chat
+
+
+def available() -> bool:
+    """True when embodiplan (the SAGE planner) can be imported here."""
+    try:
+        import embodiplan  # noqa: F401  optional dependency
+    except Exception:
+        return False
+    return True
+
+
+def _seed_gt_path(seed_memory) -> str:
+    """A JSONL seed pool as SAGE's ``gt_path`` ("" when there is none, or when this
+    embodiplan reads only its JSON dataset format: embodiplan < 0.2.3)."""
+    if not seed_memory:
+        return ""
+    path = str(seed_memory)
+    if not os.path.isfile(path):
+        log.warning("seed memory %s not found: SAGE starts without a seed pool", path)
+        return ""
+    try:
+        from embodiplan.memory_retriever import SEED_FORMATS
+    except ImportError:
+        SEED_FORMATS = ("json",)
+    if path.endswith(".jsonl") and "jsonl" not in SEED_FORMATS:
+        log.warning("embodiplan < 0.2.3 cannot read the JSONL seed pool %s: not used", path)
+        return ""
+    return path
+
+
+class SageBackend:
+    """Planner backend backed by embodiplan's SAGEPlanner."""
+
+    _examples: tuple | None = None   # (task, SAGE memory examples block) for repair_block
+
+    @classmethod
+    def wrap(cls, planner) -> "SageBackend":
+        """A SageBackend around an already built SAGE planner (any object
+        with embodiplan's public planner API, e.g. a scripted SAGEPlanner in tests)."""
+        b = cls.__new__(cls)
+        b._p = planner
+        return b
+
+    def __init__(
+        self,
+        host: str | None = None,
+        model: str | None = None,
+        provider: str | None = None,
+        api_key: str = "",
+        gt_path: str = "",
+        live_path: str = "",
+        safe_refine: bool = True,
+        seed_memory: Any = None,
+        **cfg: Any,
+    ) -> None:
+        try:
+            import embodiplan  # optional dependency — imported lazily
+        except ImportError as e:  # pragma: no cover - depends on install
+            raise RuntimeError(
+                "pip install -e embodiplan to use the SAGE planner"
+            ) from e
+        _observe_llm(embodiplan)
+        # the robot's curated seed pool (manifest planner.seed_memory) is SAGE's seed pool
+        # unless a gt_path is given
+        gt_path = gt_path or _seed_gt_path(seed_memory)
+
+        # Assemble the candidate kwargs, then keep only those embodiplan accepts.
+        candidate: dict[str, Any] = {
+            "host": host,
+            "model": model,
+            "provider": provider,
+            "api_key": api_key,
+            "gt_path": gt_path,
+            "live_path": live_path,
+            "safe_refine": safe_refine,
+        }
+        candidate.update(cfg)
+        selected = {
+            k: v
+            for k, v in candidate.items()
+            if k in _SAGE_KWARGS and v is not None
+        }
+
+        # embodiplan.get("SAGE", ...) routes through the registry to SAGEPlanner.
+        self._p = embodiplan.get("SAGE", **selected)
+
+    # ── Planner interface ────────────────────────────────────────────
+    def _optional(self, method: str, subgoals=None, budget=None) -> tuple[dict, Any]:
+        """The optional keywords SAGE's ``method`` takes (embodiplan >= 0.2.6: ``subgoals``, ``budget``),
+        and the budget this backend must take itself when SAGE has no budget hook (None: SAGE takes it)."""
+        from ..base import accepts
+        kw: dict = {}
+        if subgoals and accepts(self._p, method, "subgoals"):
+            kw["subgoals"] = list(subgoals)
+        own = None
+        if budget is not None:
+            if accepts(self._p, method, "budget"):
+                kw["budget"] = budget
+            else:
+                own = budget
+        return kw, own
+
+    @staticmethod
+    def _count_after(own, metrics: dict) -> None:
+        """An older SAGE without the budget hook: one unit was taken before the call, the rest of its real
+        calls are counted after it (``llm_calls``), so the run's budget sees the truth."""
+        if own is not None:
+            extra = int((metrics or {}).get("llm_calls") or 1) - 1
+            if extra > 0:
+                own.used = getattr(own, "used", 0) + extra
+
+    def generate_plan(
+        self,
+        task: str,
+        obs: str,
+        visible_objects: list[str],
+        subgoals: list | None = None,
+        budget: Any = None,
+    ) -> tuple[list[dict], dict]:
+        """SAGE's plan. ``subgoals``: one per goal the caller understood (no decompose call);
+        ``budget``: the run's LLM-call budget, taken before every call SAGE makes."""
+        kw, own = self._optional("generate_plan", subgoals, budget)
+        if own is not None:
+            own.take(what="plan")
+        steps, metrics = self._p.generate_plan(task, obs, visible_objects, **kw)
+        out = _metrics_to_dict(metrics)
+        self._count_after(own, out)
+        return list(steps), out
+
+    def replan(
+        self,
+        task: str,
+        completed: list[dict],
+        failed_step: dict,
+        failure_reason: str,
+        obs: str,
+        visible_objects: list[str],
+        budget: Any = None,
+        subgoals: list | None = None,
+    ) -> tuple[list[dict], dict]:
+        kw, own = self._optional("replan", subgoals, budget)
+        if own is not None:
+            own.take(what="replan")
+        steps, metrics = self._p.replan(
+            task,
+            completed,
+            failed_step,
+            failure_reason,
+            obs,
+            visible_objects,
+            **kw,
+        )
+        out = _metrics_to_dict(metrics)
+        self._count_after(own, out)
+        return list(steps), out
+
+    # ── Optional capability: SubgoalRepair (SAGE's sub-goal-local Editing) ──
+    def blocks(self) -> list | None:
+        """SAGE's sub-goal blocks of the last generate_plan (None when this planner
+        has no editing surface). Starts a new repair session (examples re-read)."""
+        self._examples = None
+        if not callable(getattr(self._p, "edit_block", None)):
+            return None
+        return getattr(self._p, "last_blocks", None) or None
+
+    def join_blocks(self, blocks: list) -> list[dict]:
+        """SAGE's ``flatten``: the blocks' steps with the redundant ones dropped."""
+        from embodiplan.sage import flatten
+        return flatten(blocks)
+
+    def repair_block(self, block, feedback: str, *, task: str, state=None, obs: str = "") -> list[dict]:
+        """SAGEPlanner.edit_block with the memory examples for ``task``."""
+        if self._examples is None or self._examples[0] != task:
+            self._examples = (task, self._p.retrieve_examples(task)[1])
+        return self._p.edit_block(block, feedback, task=task, state=state, obs=obs,
+                                  examples_block=self._examples[1])
+
+    # ── Optional capability: ChatOverride (a model of its own for some calls) ──
+    @contextlib.contextmanager
+    def chat_override(self, fn):
+        """Inside the ``with``, every LLM call of the wrapped planner is answered by ``fn(planner_chat, messages,
+        temperature)`` (``(text, in_tokens, out_tokens)``; ``planner_chat`` is the planner's own chat, for a fallback).
+        A planner without a ``_chat`` seam is left alone (the ``with`` changes nothing)."""
+        own = getattr(self._p, "_chat", None)
+        if not callable(own):
+            yield
+            return
+
+        def routed(messages, temperature=0.2):
+            return fn(own, messages, temperature)
+        self._p._chat = routed
+        try:
+            yield
+        finally:
+            self._p.__dict__.pop("_chat", None)           # back to the class's method
+
+    # ── Optional capability: fixed sub-goals ─────────────────────────
+    @property
+    def fixed_subgoals(self) -> bool:
+        """True when the wrapped planner keeps a caller's own steps for a sub-goal given as ``(text, steps)``
+        (embodiplan >= 0.2.7). The loop asks the planner it holds, which is this wrapper, so it must say so."""
+        return bool(getattr(self._p, "fixed_subgoals", False))
+
+    # ── Optional capability: ProgressReporting ───────────────────────
+    @property
+    def progress(self):
+        """SAGE's live progress hook (decompose / expand / refine)."""
+        return getattr(self._p, "progress", None)
+
+    @progress.setter
+    def progress(self, fn) -> None:
+        if hasattr(self._p, "progress"):
+            self._p.progress = fn
+
+    # ── Optional passthrough ─────────────────────────────────────────
+    def record_episode(self, task: str, steps: list[dict], meta: dict | None = None) -> bool:
+        """Record a verified episode into SAGE's live memory, if supported. ``meta`` (how
+        the goals were verified, the run id) is stored with it on embodiplan >= 0.2.3.
+        True when SAGE recorded it (its own gate: the plan passes the action model)."""
+        rec = getattr(self._p, "record_episode", None)
+        if not callable(rec):
+            return False
+        try:
+            takes_meta = "meta" in inspect.signature(rec).parameters
+        except (TypeError, ValueError):
+            takes_meta = False
+        out = rec(task=task, plan=steps, success=True, **({"meta": dict(meta)} if meta and takes_meta else {}))
+        return out is not False

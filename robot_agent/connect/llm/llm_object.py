@@ -15,9 +15,9 @@ fname = lambda p: os.path.splitext(os.path.split(p)[-1])[0]
 
 def sampling_options(base, kwargs) -> dict | None:
     """``base`` options plus the call's ``temperature`` / ``seed`` (the understand call sends 0 / a fixed
-    seed), in the Ollama ``options`` form; None when there is nothing to send."""
+    seed) and ``num_predict`` (a cap on the answer's tokens, sent by the guarded understand call), in the Ollama ``options`` form; None when there is nothing to send."""
     opts = dict(base or {})
-    for k in ('temperature', 'seed'):
+    for k in ('temperature', 'seed', 'num_predict'):
         if kwargs.get(k) is not None:
             opts[k] = kwargs[k]
     return opts or None

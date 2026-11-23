@@ -39,7 +39,7 @@ class VerifyResult:
 @dataclass
 class StepRecord:
     index: int
-    action: str                             # GRACE action (MoveTo, Pick, …)
+    action: str                             # SAGE action (MoveTo, Pick, …)
     object: str                             # CamelCase target
     skill: Optional[str]                    # mapped robot skill (None for no-op)
     params: dict = field(default_factory=dict)
@@ -65,7 +65,7 @@ class TaskRecord:
     lang: str = 'en'
     obs: str = ''
     visible: list[str] = field(default_factory=list)
-    planner: str = 'grace'                  # which backend produced the plan
+    planner: str = 'sage_plain'             # which planner produced the plan (loop.py: record_name)
     plan_meta: dict = field(default_factory=dict)         # PlanMetrics
     warnings: list[str] = field(default_factory=list)     # mapper.screen()
     steps: list[StepRecord] = field(default_factory=list)
@@ -188,7 +188,7 @@ def new_task_record(
     lang: str = 'en',
     obs: str = '',
     visible: Optional[list[str]] = None,
-    planner: str = 'grace',
+    planner: str = 'sage_plain',
     started_at: float = 0.0,
 ) -> TaskRecord:
     """Construct a fresh ``TaskRecord`` in the ``planning`` state."""

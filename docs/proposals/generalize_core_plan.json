@@ -1,0 +1,1078 @@
+{
+ "plan": "generalize-core level B, round B",
+ "date": "2026-11-22",
+ "design": "docs/proposals/generalize_core_design.md",
+ "base": {
+  "robot_agent": "generalize-core at 65124d0 (base 8002347)",
+  "robot_fleet": "master at 0dc947c"
+ },
+ "assist_loop_lines": {
+  "start": 4081,
+  "after_wave_8": 3239,
+  "after_wave_10": 3043,
+  "end_estimate": 366,
+  "end_credible_range": [
+   350,
+   450
+  ]
+ },
+ "rules": [
+  "wave W0 is the golden extension alone, recorded on the old code",
+  "at most 4 steps in a wave; the steps of a wave touch no common file",
+  "exactly one step of a wave touches robot_agent/core/planning/assist_loop.py and tools/arch_baseline.json",
+  "a step starts only when the steps in `needs` are merged and the cassettes it names exist",
+  "the first golden mismatch or red suite stops the run",
+  "CHANGELOG.md, docs indexes and .dev-principles*.json are written by the wave's integrator, never by a step"
+ ],
+ "notes": "Plan of the level-B core generalization after the adversarial review (29 findings; see section 'Review of this design' of generalize_core_design.md). Wave W0 is the golden extension alone, on the old code. assist_loop.py is touched by exactly one step in a wave (22 such steps), so the waves are as many as those steps; the other streams ride along, at most 4 steps a wave, file-disjoint by construction (one file per pack section, one scenario set and one mutation set per step). Shared files no step edits: CHANGELOG.md, docs indexes and .dev-principles*.json are written by the integrator of a wave from the steps' reports; tools/arch_baseline.json is updated only by the wave's assist_loop.py step. Equivalence cassettes are recorded only in W0; a feature cassette of an opt-in step is recorded by that step and reviewed as the specification of the new behaviour. Stop rule: the first golden mismatch or red suite stops the run. Sizes are estimates (about 10 percent); the rule is the sign. Smaller cut (removes fit G1 to G6 with the opt-in steps): waves W0 to W8, assist_loop.py about 3240 lines; with S14 and S16b (to W10) about 3050; all waves: about 370 (350 to 450), not 300.",
+ "waves": [
+  {
+   "id": "W0",
+   "steps": [
+    {
+     "id": "S01",
+     "title": "Extend the goldens on the old code (harness capture sections, made-up pack fakeline, cassettes, mutations, snapshots)",
+     "stream": "GOLD",
+     "model": "opus",
+     "needs": [],
+     "parallel_with": [],
+     "files": [
+      "tests/golden/harness_sets.py",
+      "tests/golden/scenario_sets/__init__.py",
+      "tests/golden/scenario_sets/s01_*.py",
+      "tests/golden/set_cassettes/*.cassette.json",
+      "tests/golden/test_golden_set_cassettes.py",
+      "tests/golden/commits/s01.json",
+      "tests/golden/snapshots.py",
+      "tests/golden/test_golden_order.py",
+      "tests/golden/test_planner_prompt_golden.py",
+      "tests/golden/prompt_snapshots/s01_*.json",
+      "tests/golden/manifest_snapshots/s01_*.json",
+      "tests/test_manifest_snapshot.py",
+      "tests/golden/config_snapshots/s01_*.json",
+      "tests/test_loop_config_snapshot.py",
+      "tests/golden/replay_runs/s01_*",
+      "tests/test_replay_smoke.py",
+      "tests/test_hooks_frozen.py",
+      "tests/fakeline/**",
+      "tests/legacy_ref/__init__.py",
+      "tests/legacy_ref/README.md",
+      "tools/golden_mutation_check.py",
+      "tools/golden_mutations/s01_*.py",
+      "tools/golden_record.py",
+      "docs/testing.md"
+     ],
+     "expected_assist_loop_delta": 0,
+     "assist_loop_lines_after": null,
+     "risk": "low for the product, real for the schedule",
+     "golden_coverage": "the step IS the coverage",
+     "notes": "Wave 0, alone. Cassettes: NEW files only, the 21 that exist are never touched. Every equivalence cassette is recorded on generalize-core at 65124d0 (no production commit merged) and carries that commit; tests/golden/commits/s01.json lists it (kind equivalence) and a new test checks it. harness.py and the 21 round-A cassettes stay byte-identical to 65124d0 (fix round 1, 2026-11-23: the first S01 merge had added code to harness.py, which broke the rule that no existing test is modified); the additions live in tests/golden/harness_sets.py, which wraps harness.py, and the set cassettes live in tests/golden/set_cassettes, replayed by tests/golden/test_golden_set_cassettes.py (FORMAT stays 1: tests/golden/test_golden_cassettes.py:24 compares every round-A cassette with harness.FORMAT): a scenario key `capture` (planner_io, llm_kw, prompts, reconcile, trace), a key `environ`, a key `pack` (calls robot.use_pack, which Step S02 adds), ROBOT_AGENT_* cleared before every run of a set, scenario sets and mutation sets loaded from one file per step. Order inside the step: harness, fakeline, the cassettes in the order of the waves that need them, the mutations. Done only when the 21 old cassettes replay identically, every new mutation is CAUGHT and the full suite is green. A path the fakes cannot play is listed in the report and the step that needs it is not started."
+    }
+   ]
+  },
+  {
+   "id": "W1",
+   "steps": [
+    {
+     "id": "S02",
+     "title": "The pack schema (whole), the loader with the schema-1 lift, the registry, the empty core and household packs",
+     "stream": "PACK",
+     "model": "fable",
+     "needs": [
+      "S01"
+     ],
+     "parallel_with": [
+      "S03"
+     ],
+     "files": [
+      "robot_agent/contract/pack.py",
+      "robot_agent/contract/manifest.py",
+      "robot_agent/core/pack/__init__.py",
+      "robot_agent/core/pack/loader.py",
+      "robot_agent/core/pack/registry.py",
+      "robot_agent/core/pack/show.py",
+      "robot_agent/packs/__init__.py",
+      "robot_agent/packs/index.yaml",
+      "robot_agent/packs/core/pack.yaml",
+      "robot_agent/packs/core/callables/__init__.py",
+      "robot_agent/packs/household/pack.yaml",
+      "robot_agent/packs/household/callables/__init__.py",
+      "robot_agent/core/planning/robot.py",
+      "tools/arch_rules.json",
+      "pyproject.toml",
+      "tools/pack_compat_check.py",
+      "tests/test_pack_schema.py",
+      "tests/test_pack_loader.py"
+     ],
+     "expected_assist_loop_delta": 0,
+     "assist_loop_lines_after": null,
+     "risk": "medium; the one hard-to-undo decision (the schema is a contract)",
+     "golden_coverage": "all cassettes (nothing reads the pack yet: identical replay shows the loader has no side effect); manifest snapshots of S01",
+     "notes": "contract/pack.py parses and validates the WHOLE schema now (holds lists, unknown_is, remove, questions_default_kind, fleet), so no later step edits it. The loader reads one file per section (`<section>.yaml` next to pack.yaml, a missing file = an empty section) and callables/__init__.py imports every sibling module it finds: a later step adds ITS file and edits no shared one. pyproject package data covers packs/**/*.yaml and packs/**/prompts/*.txt. RobotView gains `pack` and `use_pack(raw)`. Nothing pack-derived may be cached in AssistLoop.__init__. check_manifest (contract layer) validates the section's schema only; the resolved pack is printed by `python -m robot_agent.core.pack.show`. The goal-kind schema also has the field `subgoal` (the kind's sub-goal phrase for a planner that takes `subgoals`; review of S01, 2026-11-23); S07 fills the household text."
+    },
+    {
+     "id": "S03",
+     "title": "Places, Memory, words move to places.py; the phases package; the lint guards follow the code",
+     "stream": "LOOP",
+     "model": "opus",
+     "needs": [
+      "S01"
+     ],
+     "parallel_with": [
+      "S02"
+     ],
+     "files": [
+      "robot_agent/core/planning/places.py",
+      "robot_agent/core/planning/phases/__init__.py",
+      "robot_agent/core/planning/assist_loop.py",
+      "tools/lint_arch.py",
+      "tools/arch_baseline.json",
+      "tests/test_lint_loop_guards.py",
+      "tests/legacy_ref/places.py",
+      "tests/test_places_diff.py"
+     ],
+     "expected_assist_loop_delta": -191,
+     "assist_loop_lines_after": 3890,
+     "risk": "low for the move; the guards are what every later step relies on",
+     "golden_coverage": "NOT the cassettes alone (review of S01, 2026-11-23: eight source mutations of words / Places / Memory, assist_loop.py:107-291, passed every cassette and snapshot; three passed the whole suite). Proof: tests/test_places_memory_pins.py (mutations article_my_your_kept, one_word_fallback_lost, answers_window_nine) and, in S03's first commit, tests/test_places_diff.py: the moved words / Places / Memory against the reference copy tests/legacy_ref/places.py over a table of names and hints (a one-word match, a name with \"my\", nine remembered answers). The cassettes (every run builds Places; tags question, goals_only) are a smoke check only",
+     "notes": "Two commits. (1) Verbatim move; assist_loop.py re-exports Places, Memory, words; phases/__init__.py holds PHASE_MIXINS (an empty tuple, one entry per line later) and the class line becomes AssistLoop(*PHASE_MIXINS, WhichOne, ...). (2) tools/lint_arch.py: LOOP becomes the set {assist_loop.py, phases/*.py, places.py, loop_config.py, find_ladder.py, core/pack/*.py} (files that exist), the wiring ratchet counts the SUM over the set (62 keys, 59 branches today), the registered-option-key scan, a new embodiplan-internals scan and a new language-literal scan read the same set (new layers core/pack and packs: 0 rows), and a new vocabulary ratchet counts the quoted standard action names and goal kinds in the set (66 and 59 lines today). Function signatures of lint.wiring / check_wiring / run stay; no existing test is edited; the new checks get their own test file."
+    }
+   ]
+  },
+  {
+   "id": "W2",
+   "steps": [
+    {
+     "id": "S04",
+     "title": "The phrase tables become pack data (core and household phrase files; CORE_PHRASES is a view)",
+     "stream": "PACK",
+     "model": "sonnet",
+     "needs": [
+      "S02"
+     ],
+     "parallel_with": [
+      "S05",
+      "S06"
+     ],
+     "files": [
+      "robot_agent/core/planning/speech.py",
+      "robot_agent/core/planning/budget.py",
+      "robot_agent/packs/core/phrases.yaml",
+      "robot_agent/packs/household/phrases.yaml",
+      "robot_agent/core/pack/phrases.py",
+      "tests/test_pack_phrases.py"
+     ],
+     "expected_assist_loop_delta": 0,
+     "assist_loop_lines_after": null,
+     "risk": "medium (YAML quoting; the lookup order)",
+     "golden_coverage": "question, success, failure, refused, stop; S01: non_english, readback_kinds, move_help; mutations korean_phrases_lost, help_move_changed",
+     "notes": "62 + 3 texts, character for character; the equality test (union of the two files = CORE_PHRASES, no key twice) is committed before the constant goes. speech.HELP_PICK and speech.HELP_MOVE stay attributes of speech (tests/test_step_ladder.py:96-106). The pack chain is read AFTER the language pack's speech block. CORE_TEXT of robot.py is NOT moved in this step (robot.py belongs to S02 and S10)."
+    },
+    {
+     "id": "S05",
+     "title": "The goal-reach rules are chosen by kind (one rules object per household kind)",
+     "stream": "LOOP",
+     "model": "opus",
+     "needs": [
+      "S02",
+      "S03"
+     ],
+     "parallel_with": [
+      "S04",
+      "S06"
+     ],
+     "files": [
+      "robot_agent/core/planning/assist_loop.py",
+      "robot_agent/core/pack/goal_semantics.py",
+      "robot_agent/packs/household/callables/goals.py",
+      "robot_agent/packs/household/goal_kinds.yaml",
+      "tests/legacy_ref/goal_reach.py",
+      "tests/test_goal_semantics_diff.py",
+      "tools/arch_baseline.json"
+     ],
+     "expected_assist_loop_delta": -94,
+     "assist_loop_lines_after": 3796,
+     "risk": "medium (15 callers; the unknown-kind default)",
+     "golden_coverage": "success, replan, gate, bt_goal, failure, plan_only; S01: template_go, template_say_deliver, close_goal, open_goal, handover, given_goals_unknown_kind; mutations template_always_reached, unknown_kind_not_reached, on_goal_without_place",
+     "notes": "An UNKNOWN kind keeps today's result: vacuously reached and holding, no missing text (assist_loop.py:1504-1543); the differential grid has that row. _reaches, _goals_hold, _missing, _on_reached, _simulate_goals, _releases stay class attributes that delegate (__init__ wraps _reaches; tests call it through the class)."
+    },
+    {
+     "id": "S06",
+     "title": "One predicate table for tree conditions and effect checks",
+     "stream": "OPT",
+     "model": "sonnet",
+     "needs": [
+      "S02"
+     ],
+     "parallel_with": [
+      "S04",
+      "S05"
+     ],
+     "files": [
+      "robot_agent/packs/household/predicates.yaml",
+      "robot_agent/packs/household/callables/predicates.py",
+      "robot_agent/core/pack/predicates.py",
+      "robot_agent/options/bt_goal.py",
+      "robot_agent/core/planning/verify.py",
+      "tests/legacy_ref/predicates.py",
+      "tests/test_pack_predicates.py",
+      "tests/golden/scenario_sets/s06_*.py",
+      "tests/golden/set_cassettes/s06_*.cassette.json",
+      "tests/golden/commits/s06.json"
+     ],
+     "expected_assist_loop_delta": 0,
+     "assist_loop_lines_after": null,
+     "risk": "medium (the two old evaluators differ on purpose)",
+     "golden_coverage": "bt_goal (6), success, replan; S01: bt_go_tree, bt_drawer_conditions, effect_untracked_predicate, effect_on_predicate, custom_action; mutations bt_opened_inverted, bt_at_inverted, bt_placed_ignores_hand, effect_unknown_pred_fails; review of S01 (2026-11-23): tests/test_tree_condition_pins.py, mutations hand_free_always_true, holding_any_object (only these pins catch them today: no tree run evaluates hand_free with a full hand or holding o while another object is held). S06's own scenario set adds those two tree runs, with these two mutations as kill criteria",
+     "notes": "Each consumer keeps its own rule for a wrong arity and for 'cannot tell'. bt_goal.py is 367 lines of 400: it must not grow past its limit (helpers go to core/pack/predicates.py)."
+    }
+   ]
+  },
+  {
+   "id": "W3",
+   "steps": [
+    {
+     "id": "S07",
+     "title": "The goal-kind table is pack data (needs, prompt line, understood, planned_by, conflicts flag)",
+     "stream": "LOOP",
+     "model": "opus",
+     "needs": [
+      "S05"
+     ],
+     "parallel_with": [
+      "S25a",
+      "S31"
+     ],
+     "files": [
+      "robot_agent/packs/household/goal_kinds.yaml",
+      "robot_agent/core/planning/goals.py",
+      "robot_agent/core/planning/assist_loop.py",
+      "tests/legacy_ref/goal_tables.py",
+      "tests/test_pack_goal_kinds.py",
+      "tools/arch_baseline.json"
+     ],
+     "expected_assist_loop_delta": -6,
+     "assist_loop_lines_after": 3790,
+     "risk": "high for the prompt (kind lines and their order are in every understand prompt)",
+     "golden_coverage": "every cassette with an understand call (prompt hash), goals_only, refused, plan_only; S01: template_go, template_say_deliver (the say / deliver lines appear only for fakeline), given_goals_unknown_kind, two_destinations; mutations in_needs_no_pick, deliver_prompt_changed; S01b: subgoals_in_on_go, subgoals_close_replan (the sub-goal list a planner that takes `subgoals` gets), tests/test_subgoal_phrases.py; mutation subgoal_into_in",
+     "notes": "needs_when (say + MoveTo), canonical (give -> on), the optional kind `give`, compile_steps and the conflict validator STAY code in goals.py (one user each); the only new switch is `conflicts: none` per kind. goal_fix.py and plan_repair.py are not touched. The per-kind sub-goal phrase (`goals.subgoal_text`, goals.py:174-190: on, in, open / close, go, say, deliver; describe() for any other kind) becomes the kind's `subgoal` field, the household text character for character; an equality test over tests/test_subgoal_phrases.py's rows is committed before the if-chain goes."
+    },
+    {
+     "id": "S25a",
+     "title": "bt_goal uses the seams that exist: tree keys `ladder: false` and `events: true`, word lists from the pack",
+     "stream": "OPT",
+     "model": "sonnet",
+     "needs": [
+      "S02",
+      "S06"
+     ],
+     "parallel_with": [
+      "S07",
+      "S31"
+     ],
+     "files": [
+      "robot_agent/options/bt_goal.py",
+      "robot_agent/core/planning/tree_host.py",
+      "docs/bt_goal.md",
+      "tests/test_option_bt_goal_seams.py",
+      "tests/golden/scenario_sets/s25a_*.py",
+      "tests/golden/set_cassettes/s25a_*.cassette.json",
+      "tests/golden/commits/s25a.json",
+      "tools/golden_mutations/s25a_*.py"
+     ],
+     "expected_assist_loop_delta": 0,
+     "assist_loop_lines_after": null,
+     "risk": "low (opt-in keys of a tree entry)",
+     "golden_coverage": "bt_goal (6 cassettes: today's trees run the same); S01: menu_retry_place",
+     "notes": "`ladder: false` calls try_step(ladder=False) (option_services.py:74-79); `events: true` sends each node through svc.emit as a `tree_node` event (services.py:19); pack_words also reads the choice words of a pack question. Feature cassettes (fakeline with a scenario `pack`): a tree whose failed step does not run the engine's ladder, a tree with node events, a tree that branches on a choice answer. A tree with none of the keys runs as today."
+    },
+    {
+     "id": "S31",
+     "title": "Opt-in: questions_default_kind gives a kind-less clarify event the declared kind",
+     "stream": "PACK",
+     "model": "sonnet",
+     "needs": [
+      "S02"
+     ],
+     "parallel_with": [
+      "S07",
+      "S25a"
+     ],
+     "files": [
+      "robot_agent/core/planning/loop.py",
+      "robot_agent/core/pack/questions.py",
+      "tests/test_pack_question_kinds.py",
+      "tests/golden/scenario_sets/s31_*.py",
+      "tests/golden/set_cassettes/s31_*.cassette.json",
+      "tests/golden/commits/s31.json",
+      "tools/golden_mutations/s31_*.py"
+     ],
+     "expected_assist_loop_delta": 0,
+     "assist_loop_lines_after": null,
+     "risk": "low (one place: RunContext.ev)",
+     "golden_coverage": "all (no schema-1 pack sets the key: every replay identical); S01: two_destinations, search_legs (kind-less questions)",
+     "notes": "Applied where every event is built (loop.py RunContext.ev): a `clarify` with no `kind` gets the pack's literal value. The value `name` (each question its own name) needs the 28-row question table and is deferred. Feature cassette: fakeline with the key set, the two-destinations question carries the kind."
+    }
+   ]
+  },
+  {
+   "id": "W4",
+   "steps": [
+    {
+     "id": "S10",
+     "title": "The action table (class, argument kind, words): the copies read the pack",
+     "stream": "LOOP",
+     "model": "sonnet",
+     "needs": [
+      "S02",
+      "S04",
+      "S07"
+     ],
+     "parallel_with": [
+      "S30",
+      "S27a"
+     ],
+     "files": [
+      "robot_agent/packs/household/actions.yaml",
+      "robot_agent/core/pack/actions.py",
+      "robot_agent/core/planning/assist_loop.py",
+      "robot_agent/core/planning/reconcile.py",
+      "robot_agent/core/planning/mapper.py",
+      "robot_agent/core/planning/search.py",
+      "robot_agent/contract/legacy_adapter.py",
+      "robot_agent/core/planning/robot.py",
+      "robot_agent/core/planning/robot_prompt.py",
+      "robot_agent/core/planning/announcer.py",
+      "robot_agent/core/planning/plan_repair.py",
+      "tests/test_pack_actions.py",
+      "tools/arch_baseline.json"
+     ],
+     "expected_assist_loop_delta": -2,
+     "assist_loop_lines_after": 3788,
+     "risk": "medium (many small files; five place-argument sets that differ)",
+     "golden_coverage": "all; S01: the `prompts` capture (hash of sage_prompt_kwargs and of the direct planner's prompt), real_reconcile; mutations sage_prompt_changed, place_arg_set_changed. The planner prompt is NOT in the 21 old cassettes: the harness replaces the planner",
+     "notes": "Each call site keeps ITS set (the legacy adapter's has three names); no set is unified. legacy_adapter.py is contract layer: it gets the set as an argument. CORE_TEXT of robot.py moves here with _ABILITY and NOT_PLAN_STEPS."
+    },
+    {
+     "id": "S30",
+     "title": "Opt-in: the merge semantics of `extends` and `remove` take effect in a run",
+     "stream": "PACK",
+     "model": "sonnet",
+     "needs": [
+      "S07"
+     ],
+     "parallel_with": [
+      "S10",
+      "S27a"
+     ],
+     "files": [
+      "robot_agent/core/pack/loader.py",
+      "tests/test_pack_merge.py",
+      "tests/golden/scenario_sets/s30_*.py",
+      "tests/golden/set_cassettes/s30_*.cassette.json",
+      "tests/golden/commits/s30.json",
+      "tools/golden_mutations/s30_*.py"
+     ],
+     "expected_assist_loop_delta": 0,
+     "assist_loop_lines_after": null,
+     "risk": "low",
+     "golden_coverage": "all (schema 1 has no chain of its own); manifest snapshots of S01",
+     "notes": "An entry of a later pack replaces the base entry whole; `remove` deletes names; a removed kind leaves the understand prompt and the schema enum. Feature cassette: fakeline with `remove: {goal_kinds: [open, close]}` and one replaced kind: the prompt hash differs from the base cassette exactly by those lines (the cassette keeps the prompt head)."
+    },
+    {
+     "id": "S27a",
+     "title": "GET /robot/manifest reports the pack, the goal kinds with their needs, and the question kinds",
+     "stream": "FLEET",
+     "model": "sonnet",
+     "needs": [
+      "S07",
+      "S31"
+     ],
+     "parallel_with": [
+      "S10",
+      "S30"
+     ],
+     "files": [
+      "robot_agent/api/robot_info.py",
+      "robot_agent/api/models.py",
+      "robot_agent/core/pack/report.py",
+      "docs/fleet_seams.md",
+      "tests/test_robot_info_pack.py",
+      "tests/golden/manifest_snapshots/s27a_*.json"
+     ],
+     "expected_assist_loop_delta": 0,
+     "assist_loop_lines_after": null,
+     "risk": "low (additive fields)",
+     "golden_coverage": "no loop cassette reaches the endpoint; S01: the manifest snapshots of fakebot, fakehome, fakeline: tests/test_manifest_snapshot.py compares the recorded top-level keys only (old keys and values unchanged, an added key passes); S27a pins its added keys in its own snapshot set",
+     "notes": "New keys only: pack, goal_kinds {feasible, needs, slots}, question_kinds. The old snapshot keys and values must be equal. The added keys are pinned by `python tools/golden_record.py --snapshots --prefix s27a` (tests/golden/snapshots.py writes `<kind>_snapshots/s27a_<pack>.json`, never overwriting) and a new test tests/test_robot_info_pack.py compares them; tests/test_manifest_snapshot.py is not edited."
+    }
+   ]
+  },
+  {
+   "id": "W5",
+   "steps": [
+    {
+     "id": "S23a",
+     "title": "Execution helpers move to phases/exec_helpers.py",
+     "stream": "LOOP",
+     "model": "sonnet",
+     "needs": [
+      "S03"
+     ],
+     "parallel_with": [
+      "S32"
+     ],
+     "files": [
+      "robot_agent/core/planning/phases/exec_helpers.py",
+      "robot_agent/core/planning/phases/__init__.py",
+      "robot_agent/core/planning/assist_loop.py",
+      "tools/arch_baseline.json"
+     ],
+     "expected_assist_loop_delta": -90,
+     "assist_loop_lines_after": 3698,
+     "risk": "low to medium (_bind is called through the class)",
+     "golden_coverage": "all cassettes that move the robot (every step binds)",
+     "notes": "Verbatim mixin move of _bind, _params, _holding, _base_pose, _dist_to_place, _found_point, _place_of_far_point. _effect STAYS in assist_loop.py (it calls current(), which tests and replay.py patch on that module)."
+    },
+    {
+     "id": "S32",
+     "title": "Opt-in: the pack `fleet:` section (footprint per goal kind) is resolved and reported",
+     "stream": "FLEET",
+     "model": "sonnet",
+     "needs": [
+      "S27a"
+     ],
+     "parallel_with": [
+      "S23a"
+     ],
+     "files": [
+      "robot_agent/core/pack/fleet.py",
+      "robot_agent/core/pack/report.py",
+      "robot_agent/packs/household/fleet.yaml",
+      "tests/test_pack_fleet.py",
+      "tests/golden/manifest_snapshots/s32_*.json"
+     ],
+     "expected_assist_loop_delta": 0,
+     "assist_loop_lines_after": null,
+     "risk": "low",
+     "golden_coverage": "manifest snapshots (S01, S27a): a pack with no fleet section reports the default footprint (objects = object, places = from, to)",
+     "notes": "The golden of this step is an endpoint snapshot (fakeline with a scenario pack that declares a footprint), because no loop run reaches the endpoint. `carries` is dropped (one possible value)."
+    }
+   ]
+  },
+  {
+   "id": "W6",
+   "steps": [
+    {
+     "id": "S12",
+     "title": "Verifiers: the post-check and the end-of-run observation move out and are chosen by name",
+     "stream": "LOOP",
+     "model": "opus",
+     "needs": [
+      "S05",
+      "S07",
+      "S23a"
+     ],
+     "parallel_with": [
+      "S26",
+      "S27b"
+     ],
+     "files": [
+      "robot_agent/core/planning/phases/verify_goals.py",
+      "robot_agent/core/pack/verifiers.py",
+      "robot_agent/packs/household/callables/verifiers.py",
+      "robot_agent/packs/household/verifiers.yaml",
+      "robot_agent/packs/household/goal_kinds.yaml",
+      "robot_agent/core/planning/phases/__init__.py",
+      "robot_agent/core/planning/assist_loop.py",
+      "tests/test_pack_verifiers.py",
+      "tools/arch_baseline.json"
+     ],
+     "expected_assist_loop_delta": -165,
+     "assist_loop_lines_after": 3533,
+     "risk": "high (this is where 'done' is decided)",
+     "golden_coverage": "success (goal_check events), failure (dropped_on_the_way), bt_goal; S01: goal_absent, handover, template_go, close_goal; mutations non_manip_goal_seen, end_check_trusts_belief",
+     "notes": "observe: std.find_at_destination for on / in, null for the others (today's sentence 'no sensor declared for it (belief)'). Hooks on_goal_check, on_second_look, on_final, on_goals_met stay at the same points; _observe_goal stays callable through the class."
+    },
+    {
+     "id": "S26",
+     "title": "Opt-in: declared preconditions and effects of pack actions, the fact store, typed arguments at bind",
+     "stream": "PACK",
+     "model": "opus",
+     "needs": [
+      "S06",
+      "S10",
+      "S23a",
+      "S31"
+     ],
+     "parallel_with": [
+      "S12",
+      "S27b"
+     ],
+     "files": [
+      "robot_agent/core/pack/action_rules.py",
+      "robot_agent/core/planning/action_model.py",
+      "robot_agent/core/planning/base.py",
+      "robot_agent/core/planning/phases/exec_helpers.py",
+      "robot_agent/core/planning/loop.py",
+      "tests/test_pack_action_rules.py",
+      "tests/test_world_facts.py",
+      "tests/golden/scenario_sets/s26_*.py",
+      "tests/golden/set_cassettes/s26_*.cassette.json",
+      "tests/golden/commits/s26.json",
+      "tools/golden_mutations/s26_*.py"
+     ],
+     "expected_assist_loop_delta": 0,
+     "assist_loop_lines_after": null,
+     "risk": "high (the belief is in every event)",
+     "golden_coverage": "all (no schema-1 pack declares rules: identical replay, and no event's `world` has a new key)",
+     "notes": "Facts: reset at run start (a `persistent` flag is deferred), written into to_dict() only when not empty, accepted by update_from_dict (PUT /agent/world {facts: {}} clears them), not in as_text(). Feature cassettes (fakeline): a custom action whose precondition fails at the gate and at the guard; an effect that makes a fact true; typed args reach the skill."
+    },
+    {
+     "id": "S27b",
+     "title": "robot_fleet reads goal kinds, needs, footprint and question kinds from the manifest",
+     "stream": "FLEET",
+     "model": "sonnet",
+     "needs": [
+      "S32"
+     ],
+     "parallel_with": [
+      "S12",
+      "S26"
+     ],
+     "files": [
+      "robot_fleet:robot_fleet/models.py",
+      "robot_fleet:robot_fleet/spoke.py",
+      "robot_fleet:robot_fleet/scheduler.py",
+      "robot_fleet:robot_fleet/graph.py",
+      "robot_fleet:robot_fleet/compat/needs_v1.json",
+      "robot_fleet:tests/test_manifest_needs.py",
+      "robot_fleet:CHANGELOG.md"
+     ],
+     "expected_assist_loop_delta": 0,
+     "assist_loop_lines_after": null,
+     "risk": "medium (another repository; other people's uncommitted files there)",
+     "golden_coverage": "the fleet's own suite on its master (257 test functions at 0dc947c); new: needs_v1.json equals _NEEDS; a robot that reports `install` gets an `install` goal; two robots that declare one kind with different footprints",
+     "notes": "Own worktree of robot_fleet from master 0dc947c; demos/* and tracked .pyc files of other people are never touched. The footprint of a kind is fleet-wide: equal reports are used, a disagreement between two robots is an error at registration, a kind nobody reports keeps graph.py's rule. Merge into the fleet's LOCAL master only when its tests are green; no push."
+    }
+   ]
+  },
+  {
+   "id": "W7",
+   "steps": [
+    {
+     "id": "S08",
+     "title": "The read-back phrase is chosen by kind",
+     "stream": "LOOP",
+     "model": "sonnet",
+     "needs": [
+      "S04",
+      "S05"
+     ],
+     "parallel_with": [
+      "S25"
+     ],
+     "files": [
+      "robot_agent/packs/household/callables/goals.py",
+      "robot_agent/core/pack/goal_semantics.py",
+      "robot_agent/core/planning/assist_loop.py",
+      "tests/legacy_ref/goal_phrase.py",
+      "tests/test_goal_phrase_diff.py",
+      "tools/arch_baseline.json"
+     ],
+     "expected_assist_loop_delta": -40,
+     "assist_loop_lines_after": 3493,
+     "risk": "low to medium (LocalText: key, slots and text must all be equal)",
+     "golden_coverage": "question; S01: readback_kinds, handover, non_english, template_go; mutations readback_in_phrase, rb_go_phrase",
+     "notes": "summary and _goal_phrase stay static names on the class that delegate. An unknown kind keeps today's plain text '<kind> the <object>'."
+    },
+    {
+     "id": "S25",
+     "title": "Opt-in: typed `act` arguments in a tree, `[ask, <pack question>]`, the answer as a fact",
+     "stream": "OPT",
+     "model": "sonnet",
+     "needs": [
+      "S25a",
+      "S26"
+     ],
+     "parallel_with": [
+      "S08"
+     ],
+     "files": [
+      "robot_agent/options/bt_goal.py",
+      "robot_agent/core/planning/behavior_tree.py",
+      "robot_agent/core/planning/tree_host.py",
+      "docs/bt_goal.md",
+      "tests/test_option_bt_goal_typed.py",
+      "tests/golden/scenario_sets/s25_*.py",
+      "tests/golden/set_cassettes/s25_*.cassette.json",
+      "tests/golden/commits/s25.json",
+      "tools/golden_mutations/s25_*.py"
+     ],
+     "expected_assist_loop_delta": 0,
+     "assist_loop_lines_after": null,
+     "risk": "medium (bt_goal.py is near its size limit)",
+     "golden_coverage": "bt_goal (6) and the S25a cassettes: unchanged",
+     "notes": "An optional mapping as the last argument of `act`; the answer of a pack question is kept as answered(<question>, <choice>) and its raw text with keep_text. Feature cassettes (fakeline): a typed argument reaches the skill; a tree branches on the content of an answer."
+    }
+   ]
+  },
+  {
+   "id": "W8",
+   "steps": [
+    {
+     "id": "S13",
+     "title": "The Find ladder moves verbatim to find_ladder.py",
+     "stream": "LOOP",
+     "model": "sonnet",
+     "needs": [
+      "S03"
+     ],
+     "parallel_with": [
+      "S29"
+     ],
+     "files": [
+      "robot_agent/core/planning/find_ladder.py",
+      "robot_agent/core/planning/phases/__init__.py",
+      "robot_agent/core/planning/assist_loop.py",
+      "tools/arch_baseline.json"
+     ],
+     "expected_assist_loop_delta": -254,
+     "assist_loop_lines_after": 3239,
+     "risk": "medium (8 outward calls, 11 attributes)",
+     "golden_coverage": "replan (find_miss_replan), bt_goal (absent_sage_replan, stop_word); S01: search_legs",
+     "notes": "Verbatim mixin move (_recover_find to _refuted), SECOND_LOOKS with it. Waits if search_legs could not be recorded."
+    },
+    {
+     "id": "S29",
+     "title": "Opt-in: a declared goal kind without a rules callable: holds list, reached by simulation, unknown_is, phrase key, planned_by tree",
+     "stream": "PACK",
+     "model": "opus",
+     "needs": [
+      "S04",
+      "S05",
+      "S06",
+      "S07",
+      "S08",
+      "S12",
+      "S25a",
+      "S26"
+     ],
+     "parallel_with": [
+      "S13"
+     ],
+     "files": [
+      "robot_agent/core/pack/goal_semantics.py",
+      "robot_agent/core/pack/verifiers.py",
+      "robot_agent/core/planning/phases/verify_goals.py",
+      "tests/test_pack_declared_kinds.py",
+      "tests/golden/scenario_sets/s29_*.py",
+      "tests/golden/set_cassettes/s29_*.cassette.json",
+      "tests/golden/commits/s29.json",
+      "tools/golden_mutations/s29_*.py"
+     ],
+     "expected_assist_loop_delta": 0,
+     "assist_loop_lines_after": null,
+     "risk": "high (it defines 'done' for a kind the core never saw)",
+     "golden_coverage": "all (schema 1: an unknown kind stays vacuously done, cassette given_goals_unknown_kind of S01)",
+     "notes": "For a schema-2 kind: holds = every predicate of the list is True in the belief (cannot tell = not holding); reached = the list evaluated after the steps' rules and declared effects are applied (cannot tell = not refuted); missing = one line per predicate not reached; unknown_is: failure turns a verifier's 'cannot tell' into an unmet goal with the code perception_unavailable; a kind with neither rules nor holds, or with observe null and unknown_is failure, is a load error; a planned_by tree kind never goes to the planner (its tree exhausted = ask or stop). Feature cassettes (fakeline): done by holds and verifier; verifier cannot tell -> failed; the read-back from a phrase key."
+    }
+   ]
+  },
+  {
+   "id": "W9",
+   "steps": [
+    {
+     "id": "S14",
+     "title": "Recovery policies are selected by name (by action, by goal kind)",
+     "stream": "LOOP",
+     "model": "opus",
+     "needs": [
+      "S13",
+      "S23a"
+     ],
+     "parallel_with": [],
+     "files": [
+      "robot_agent/core/planning/phases/recover.py",
+      "robot_agent/core/pack/recovery.py",
+      "robot_agent/packs/household/callables/recover.py",
+      "robot_agent/packs/household/recovery.yaml",
+      "robot_agent/core/planning/step_ladder.py",
+      "robot_agent/core/planning/phases/__init__.py",
+      "robot_agent/core/planning/assist_loop.py",
+      "tests/test_pack_recovery.py",
+      "tools/arch_baseline.json",
+      "tests/golden/scenario_sets/s14_*.py",
+      "tests/golden/set_cassettes/s14_*.cassette.json",
+      "tests/golden/commits/s14.json",
+      "tools/golden_mutations/s14_*.py"
+     ],
+     "expected_assist_loop_delta": -170,
+     "assist_loop_lines_after": 3069,
+     "risk": "high (the order of the ten steps of _step_failed)",
+     "golden_coverage": "replan (pick_fails_twice_replan), failure (skill_bug_failure, bt_goal_hw_fault), bt_goal (blocked_move, grasp_help), question; S01: move_help, drop_refind, custom_action; mutations ladder_choice, help_move_changed",
+     "notes": "by_action equals the six names of the dict at assist_loop.py:3701-3703 and STEP_LADDER (equality test first); an action not listed goes to the planner; by_kind is empty. Builtins planner, stop, tree. The declared ladder executor with `with:` overrides is deferred. Feature cassette (fakeline): a custom action with a registered policy."
+    }
+   ]
+  },
+  {
+   "id": "W10",
+   "steps": [
+    {
+     "id": "S16b",
+     "title": "The understand prompt text becomes a pack file (UNDERSTAND_PROMPT is a view)",
+     "stream": "LOOP",
+     "model": "opus",
+     "needs": [
+      "S04",
+      "S07"
+     ],
+     "parallel_with": [],
+     "files": [
+      "robot_agent/packs/household/prompts/understand.en.txt",
+      "robot_agent/packs/household/phrases.yaml",
+      "robot_agent/core/pack/prompts.py",
+      "robot_agent/core/planning/assist_loop.py",
+      "tests/test_pack_prompt.py",
+      "tools/arch_baseline.json"
+     ],
+     "expected_assist_loop_delta": -26,
+     "assist_loop_lines_after": 3043,
+     "risk": "high (one changed character changes every understand prompt)",
+     "golden_coverage": "every cassette with an understand call (20 of 21; the prompt hash); mutation understand_prompt_one_word (exists)",
+     "notes": "The text has a non-Latin example: it may live in assist_loop.py or in a data file, never in another .py file (tests/test_lang_inventory.py:80-86). Byte equality test first. UNDERSTAND_SCHEMA stays where it is (its goal part built from the kinds is deferred)."
+    }
+   ]
+  },
+  {
+   "id": "W11",
+   "steps": [
+    {
+     "id": "S09",
+     "title": "Grounding moves to phases/ground.py",
+     "stream": "LOOP",
+     "model": "sonnet",
+     "needs": [
+      "S03"
+     ],
+     "parallel_with": [],
+     "files": [
+      "robot_agent/core/planning/phases/ground.py",
+      "robot_agent/core/planning/phases/__init__.py",
+      "robot_agent/core/planning/assist_loop.py",
+      "tools/arch_baseline.json"
+     ],
+     "expected_assist_loop_delta": -188,
+     "assist_loop_lines_after": 2855,
+     "risk": "medium",
+     "golden_coverage": "question (which_table_question), goals_only, success; S01: template_go, template_say_deliver, handover",
+     "notes": "Verbatim mixin move; hook on_ground and service person_where stay at the same point; _ground_template stays callable through the class."
+    }
+   ]
+  },
+  {
+   "id": "W12",
+   "steps": [
+    {
+     "id": "S11",
+     "title": "The plan checker moves to phases/gate.py; a delegating _check stays in assist_loop.py",
+     "stream": "LOOP",
+     "model": "sonnet",
+     "needs": [
+      "S05"
+     ],
+     "parallel_with": [],
+     "files": [
+      "robot_agent/core/planning/phases/gate.py",
+      "robot_agent/core/planning/phases/__init__.py",
+      "robot_agent/core/planning/assist_loop.py",
+      "tools/arch_baseline.json"
+     ],
+     "expected_assist_loop_delta": -160,
+     "assist_loop_lines_after": 2695,
+     "risk": "medium",
+     "golden_coverage": "gate (gate_symbolic_repair), replan, success; S01: gate_findings (the reason text of planner_calls); mutation gate_sees_nothing (exists; it patches AssistLoop._check)",
+     "notes": "tests/test_wiring_function_size.py:28 looks up 'assist_loop.py:_check' by file name: _check stays in assist_loop.py as a 2-line method that calls the moved body (40 lines or fewer). The 20 finding sentences stay code (their move to phrase keys is deferred)."
+    }
+   ]
+  },
+  {
+   "id": "W13",
+   "steps": [
+    {
+     "id": "S15",
+     "title": "The say / ask plumbing moves to phases/answer.py",
+     "stream": "LOOP",
+     "model": "sonnet",
+     "needs": [
+      "S03"
+     ],
+     "parallel_with": [],
+     "files": [
+      "robot_agent/core/planning/phases/answer.py",
+      "robot_agent/core/planning/phases/__init__.py",
+      "robot_agent/core/planning/assist_loop.py",
+      "tools/arch_baseline.json"
+     ],
+     "expected_assist_loop_delta": -176,
+     "assist_loop_lines_after": 2519,
+     "risk": "medium",
+     "golden_coverage": "question (5), stop (bt_goal_stop_word); S01: unclear_answer, readback_correction, two_destinations, non_english; mutations silence_is_yes, correction_rest_lost, say_not_translated",
+     "notes": "Verbatim mixin move; no question gets a kind and no inline sentence gets a key. _fresh_question and yes_no stay callable through the class."
+    }
+   ]
+  },
+  {
+   "id": "W14",
+   "steps": [
+    {
+     "id": "S16a",
+     "title": "The understand model call and the capability check move to phases/understand_call.py",
+     "stream": "LOOP",
+     "model": "sonnet",
+     "needs": [
+      "S16b"
+     ],
+     "parallel_with": [],
+     "files": [
+      "robot_agent/core/planning/phases/understand_call.py",
+      "robot_agent/core/planning/phases/__init__.py",
+      "robot_agent/core/planning/assist_loop.py",
+      "tools/arch_baseline.json"
+     ],
+     "expected_assist_loop_delta": -270,
+     "assist_loop_lines_after": 2249,
+     "risk": "medium to high",
+     "golden_coverage": "every cassette with an understand call; refused; goals_only; S01: llm_roles (capture llm_kw)",
+     "notes": "run_blocking is INSIDE the moved line range (assist_loop.py:779-784) and STAYS in assist_loop.py (tests/test_wiring_function_size.py:28). Hooks on_understand_prompt and on_understand_schema stay at the same point."
+    }
+   ]
+  },
+  {
+   "id": "W15",
+   "steps": [
+    {
+     "id": "S17",
+     "title": "The understand rounds move to phases/understand_rounds.py",
+     "stream": "LOOP",
+     "model": "sonnet",
+     "needs": [
+      "S03"
+     ],
+     "parallel_with": [],
+     "files": [
+      "robot_agent/core/planning/phases/understand_rounds.py",
+      "robot_agent/core/planning/phases/__init__.py",
+      "robot_agent/core/planning/assist_loop.py",
+      "tools/arch_baseline.json"
+     ],
+     "expected_assist_loop_delta": -260,
+     "assist_loop_lines_after": 1989,
+     "risk": "medium",
+     "golden_coverage": "all cassettes with an understand call; refused; goals_only; question; S01: given_goals_unknown_kind, two_destinations",
+     "notes": "Verbatim mixin move (first third of :1787-2549, cut by method groups)."
+    }
+   ]
+  },
+  {
+   "id": "W16",
+   "steps": [
+    {
+     "id": "S18",
+     "title": "Agreement and read-back move to phases/agree.py",
+     "stream": "LOOP",
+     "model": "sonnet",
+     "needs": [
+      "S17"
+     ],
+     "parallel_with": [],
+     "files": [
+      "robot_agent/core/planning/phases/agree.py",
+      "robot_agent/core/planning/phases/__init__.py",
+      "robot_agent/core/planning/assist_loop.py",
+      "tools/arch_baseline.json"
+     ],
+     "expected_assist_loop_delta": -260,
+     "assist_loop_lines_after": 1729,
+     "risk": "medium",
+     "golden_coverage": "question (readback_no_correction, which_table_question); S01: readback_kinds, non_english",
+     "notes": "Verbatim mixin move; hook on_issues and services confirm_limit, unrefused stay."
+    }
+   ]
+  },
+  {
+   "id": "W17",
+   "steps": [
+    {
+     "id": "S19",
+     "title": "Corrections move to phases/correct.py",
+     "stream": "LOOP",
+     "model": "sonnet",
+     "needs": [
+      "S18"
+     ],
+     "parallel_with": [],
+     "files": [
+      "robot_agent/core/planning/phases/correct.py",
+      "robot_agent/core/planning/phases/__init__.py",
+      "robot_agent/core/planning/assist_loop.py",
+      "tools/arch_baseline.json"
+     ],
+     "expected_assist_loop_delta": -240,
+     "assist_loop_lines_after": 1489,
+     "risk": "medium",
+     "golden_coverage": "question; S01: readback_correction (required), goal_change, two_destinations",
+     "notes": "Verbatim mixin move."
+    }
+   ]
+  },
+  {
+   "id": "W18",
+   "steps": [
+    {
+     "id": "S20",
+     "title": "Generate-and-certify moves to phases/certify.py",
+     "stream": "LOOP",
+     "model": "sonnet",
+     "needs": [
+      "S11"
+     ],
+     "parallel_with": [],
+     "files": [
+      "robot_agent/core/planning/phases/certify.py",
+      "robot_agent/core/planning/phases/__init__.py",
+      "robot_agent/core/planning/assist_loop.py",
+      "tools/arch_baseline.json"
+     ],
+     "expected_assist_loop_delta": -287,
+     "assist_loop_lines_after": 1202,
+     "risk": "medium",
+     "golden_coverage": "success, gate, replan, plan_only, bt_goal; S01: gate_findings, planner_visible (capture planner_io); mutation planner_obs_empty",
+     "notes": "Verbatim mixin move; hooks on_plan, on_plan_findings stay."
+    }
+   ]
+  },
+  {
+   "id": "W19",
+   "steps": [
+    {
+     "id": "S21",
+     "title": "Replan, goal change and the task stack move to phases/replan.py and phases/goal_edit.py",
+     "stream": "LOOP",
+     "model": "sonnet",
+     "needs": [
+      "S20"
+     ],
+     "parallel_with": [],
+     "files": [
+      "robot_agent/core/planning/phases/replan.py",
+      "robot_agent/core/planning/phases/goal_edit.py",
+      "robot_agent/core/planning/phases/__init__.py",
+      "robot_agent/core/planning/assist_loop.py",
+      "tools/arch_baseline.json"
+     ],
+     "expected_assist_loop_delta": -255,
+     "assist_loop_lines_after": 947,
+     "risk": "medium (the task stack is in one cassette only)",
+     "golden_coverage": "replan (4), bt_goal (goal_change); S01: goal_change, new_task_first (required), planner_visible",
+     "notes": "Verbatim mixin move. core/planning/goal_change.py exists already: the new module has another name."
+    }
+   ]
+  },
+  {
+   "id": "W20",
+   "steps": [
+    {
+     "id": "S22",
+     "title": "The execute stage moves to phases/execute.py",
+     "stream": "LOOP",
+     "model": "opus",
+     "needs": [
+      "S23a",
+      "S14"
+     ],
+     "parallel_with": [],
+     "files": [
+      "robot_agent/core/planning/phases/execute.py",
+      "robot_agent/core/planning/phases/__init__.py",
+      "robot_agent/core/planning/assist_loop.py",
+      "tools/arch_baseline.json"
+     ],
+     "expected_assist_loop_delta": -266,
+     "assist_loop_lines_after": 681,
+     "risk": "high (one step's life)",
+     "golden_coverage": "all cassettes that move the robot (16 of 21), stop (cancel_during_move), bt_goal (try_step calls _run_step); S01: pause_resume, coverage (if the fakes play them)",
+     "notes": "_reconcile, _sense and _save_world STAY in assist_loop.py (they call current()). _guard stays callable through the class."
+    }
+   ]
+  },
+  {
+   "id": "W21",
+   "steps": [
+    {
+     "id": "S23b",
+     "title": "The finish block moves to phases/finish.py",
+     "stream": "LOOP",
+     "model": "sonnet",
+     "needs": [
+      "S22"
+     ],
+     "parallel_with": [],
+     "files": [
+      "robot_agent/core/planning/phases/finish.py",
+      "robot_agent/core/planning/phases/__init__.py",
+      "robot_agent/core/planning/assist_loop.py",
+      "tools/arch_baseline.json"
+     ],
+     "expected_assist_loop_delta": -85,
+     "assist_loop_lines_after": 596,
+     "risk": "medium (28 methods call _finish or _cancelled)",
+     "golden_coverage": "all (every run ends in _finish); mutation stop_not_seen (exists)",
+     "notes": "_finish moves VERBATIM as a mixin method, never as a delegating stub: tests/test_sage_v2_r3_m10_round1b.py:73 reads its source for two phrase keys."
+    }
+   ]
+  },
+  {
+   "id": "W22",
+   "steps": [
+    {
+     "id": "S24",
+     "title": "The config resolution moves to loop_config.py; assist_loop.py is the thin driver",
+     "stream": "LOOP",
+     "model": "opus",
+     "needs": [
+      "S23b"
+     ],
+     "parallel_with": [],
+     "files": [
+      "robot_agent/core/planning/loop_config.py",
+      "robot_agent/core/planning/phases/__init__.py",
+      "robot_agent/core/planning/assist_loop.py",
+      "tools/arch_baseline.json"
+     ],
+     "expected_assist_loop_delta": -230,
+     "assist_loop_lines_after": 366,
+     "risk": "high (the order of cfg.update, the environment, 28 __new__ tests)",
+     "golden_coverage": "all; default_options (fetch_engine_defaults); S01: env_override, the resolved-config snapshots, the replay smoke test",
+     "notes": "__init__ stays in assist_loop.py and computes current() (line 375) and host_id() (line 437) THERE, then passes them on: both names are patched on the assist_loop module (tests/conftest.py:66-69, tests/golden/harness.py:185-188, observe/replay.py:396-405). _run_blocking keeps its four calls (no PIPELINE object). The moved code keeps `self.cfg` so the wiring counts do not fall by a change of spelling. The string option '0' (fit S1) is not fixed here."
+    }
+   ]
+  }
+ ],
+ "deferred": [
+  "S28 remaining literals (the 19 options with a kind word and the 2 with action names, constants as pack data, the four default-on household options switched on by the standard pack, phrase keys for inline English): no cassette switches most of these options on, and moving an option's default is the owner's decision; do it per option when a second robot needs it.",
+  "Gate finding sentences as `finding.<code>` phrase data (half of the old Step 11): one user (the household pack), the text is planner input; the move of the checker itself is S11.",
+  "Callable namespaces goal.compile, goal.ground, goal.phrase, goal.conflicts and action.rules, and the schema fields needs_when, canonical, understood: option:<key>: one user each (say, give); they stay code in core/planning/goals.py (review finding 10).",
+  "The Phase protocol and the PIPELINE tuple: no pack can add a phase; _run_blocking keeps its four calls (review finding 10).",
+  "The declarative table of the 28 household questions with a registry of answer readers, the answer type `number`, `extract`, `unclear: model`, and questions_default_kind: name: the bt ask leaf with pack word lists (S25a, S25) and the literal default kind (S31) cover what a pack needs today (review finding 9).",
+  "The declared ladder executor (rungs with `with:` argument overrides): a tree with typed arguments (S25) and the tree key `ladder: false` (S25a) cover it (review finding 9).",
+  "A skill's own LLM channel (fit G7): not in level B; G7 stays open for skills.",
+  "Failure subcodes, `duration_s` and `errors` of an action, `failure_patterns` per language: nobody reads them today.",
+  "Fact predicates that persist across runs (`persistent: true`): S26 resets facts at run start; decide when a pack needs it.",
+  "The fleet field `carries` and the per-kind `phrase` in the manifest answer: one possible value / the fleet's voice is open data.",
+  "The schema's goal part built from the kinds' slots (UNDERSTAND_SCHEMA as data): one user; the prompt text is S16b.",
+  "Phases as objects with explicit inputs in place of mixins: not provable in small steps.",
+  "fit S1 (the string option \"0\" read as true): a bug fix with a behaviour change; blocked by an owner decision.",
+  "More than one base pack, importing single entries from another pack, pack discovery through entry points."
+ ]
+}

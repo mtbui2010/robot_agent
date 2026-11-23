@@ -25,9 +25,19 @@ import threading
 from dataclasses import dataclass
 from typing import Callable, Optional
 
-# spoken yes / no (ko / vi / en) for read-backs
-YES = re.compile(r"\b(yes|yeah|yep|ok|okay|right|correct|sure|go ahead|네|예|응|맞아|맞아요|좋아|có|đúng|vâng|ừ)\b")
-NO = re.compile(r"\b(no|nope|not|wrong|아니|아니요|아뇨|không|sai)\b")
+from ..core.planning import langdata
+
+
+def _words_rx(key: str):
+    """``\\b(w1|w2|...)\\b`` over the words ``dialogue[key]`` of every language pack (language order), None when no pack has any."""
+    ws = langdata.dialogue_all(key)
+    return re.compile(r"\b(" + "|".join(re.escape(w) for w in ws) + r")\b") if ws else None
+
+
+# spoken yes / no for read-backs: the words are language-pack data (``dialogue.yes`` / ``dialogue.no``); a language with
+# no pack contributes none (a reply in it is then read as a correction, as any text is)
+YES = _words_rx("yes") or re.compile(r"(?!)")
+NO = _words_rx("no") or re.compile(r"(?!)")
 
 SOURCE_ROBOT = 'robot'          # the robot's own I/O (its microphone, the dashboard listen, its screen)
 SOURCE_TYPED = 'typed'          # an ANSWER injected into the run by any client
@@ -97,7 +107,10 @@ def ask_heard(run, question: str, io: Callable[[str], str], silence_retries: int
     n = 0
     for k in range(1 + max(0, int(silence_retries))):
         n += 1
-        ans = ask(run, question if k == 0 else again.format(q=question), io)
+        # a robot phrase (planning.speech.LocalText) is asked again as a phrase, so it is said in the user's language
+        q = question if k == 0 else (question.again() if callable(getattr(question, "again", None))
+                                     else again.format(q=question))
+        ans = ask(run, q, io)
         if ans or (run is not None and run.cancel_requested) or (cancelled is not None and cancelled()):
             return ans, n
     return Answer(), n
@@ -110,22 +123,33 @@ def yes_no(text) -> tuple[Optional[bool], str]:
         return None, ""
     low = t.lower()
     if NO.search(low):
-        rest = NO.sub(" ", low, count=1).strip(" ,.!?")
+        rest = _no_polite(NO.sub(" ", low, count=1).strip(" ,.!?"))
         return False, rest
     if YES.search(low):
         return True, ""
     return False, t                              # anything else: a correction ("the restroom one")
 
 
+def _no_polite(rest: str) -> str:
+    """``rest`` (what follows a "no") without the polite words of the language packs (``dialogue.polite``: a lone
+    politeness word after a no is manners, not a correction). Packs with none: ``rest`` as it is."""
+    ws = langdata.dialogue_all("polite")
+    if not ws or not rest:
+        return rest
+    rx = re.compile(r"(?<!\w)(?:" + "|".join(re.escape(w) for w in sorted(ws, key=len, reverse=True)) + r")(?!\w)")
+    return " ".join(rx.sub(" ", rest).split()).strip(" ,.!?")
+
+
 # ── unclear answers to a yes / no question (ASR2) ────────────────────────────
 # A yes / no question answered with noise or a near-miss of yes / no ("yet", "yea", "uh", "내" for 네) is
 # not a correction: it is asked again once ("yes or no?"), so the question keeps its turn. A clear
 # correction ("the one in the restroom") still is one: it has a word that is not a filler or a near-miss.
-_FILLERS = {"uh", "um", "umm", "er", "erm", "ah", "eh", "oh", "hm", "hmm", "mm", "mhm", "huh", "what", "sorry",
-            "pardon", "well", "so", "the", "a", "an", "it", "is", "that", "this", "i", "noise", "inaudible", "unk",
-            "음", "어", "아", "에", "으", "흠", "뭐", "글쎄", "ờ", "à", "ừm", "hả"}
-_YN_WORDS = ("yes", "yeah", "yep", "okay", "no", "nope", "sure")
-_NEAR_KO = {"내", "녜", "네에", "예에", "니", "예스", "노"}
+def _fillers() -> set:
+    return set(langdata.dialogue_all("fillers")) | set(langdata.dialogue_all("near_yes_no"))
+
+
+def _yn_words() -> tuple:
+    return tuple(langdata.dialogue_all("yn_words"))
 
 
 @dataclass(frozen=True)
@@ -153,10 +177,10 @@ def _near(a: str, b: str) -> bool:
 
 def _vague(tok: str) -> bool:
     """A token that carries no answer: a filler, a near-miss of yes / no, a 1-2 letter fragment."""
-    if tok in _FILLERS or tok in _NEAR_KO:
+    if tok in _fillers():
         return True
-    if tok.isascii():
-        return len(tok) <= 2 or (len(tok) <= 5 and any(_near(tok, w) for w in _YN_WORDS))
+    if tok.isascii() or langdata.latin_text(tok):
+        return len(tok) <= 2 or (len(tok) <= 5 and any(_near(tok, w) for w in _yn_words()))
     return False
 
 

@@ -57,7 +57,6 @@ def test_words(raw, out):
     ("dining table", "", [DT]),
     ("the desk", "", [DS]),
     ("식탁", "", [DT]),                                   # alias (ko)
-    ("bàn ăn", "", [DT]),                                 # alias (vi)
     ("kitchen drawer", "", [DR]),
     ("drawer", "", [DR]),
     ("counter@kitchen", "", ["counter@kitchen"]),         # an ENV key as-is
@@ -80,7 +79,7 @@ def test_places_misc(places):
     assert places.said(DT, "put it on the 식탁") and places.said("shelf@kitchen", "the shelf")
     assert not places.said(DT, "the counter")
     assert places.in_room("bedroom") == ["chest@bedroom", "stool@bedroom"]
-    assert places.describe().splitlines()[0] == "- sofa@living room (also: 소파, ghế sofa)"
+    assert places.describe().splitlines()[0] == "- sofa@living room (also: 소파)"
     assert Places.head("shelf@restroom") == "shelf" and Places.room("shelf@restroom") == "restroom"
     assert Places({"a": {}, "junk": 3}).keys == ["a"]          # non-dict ENV entries are ignored
 
@@ -176,7 +175,7 @@ def test_ground_step(loop, places):
 
 
 @pytest.mark.parametrize("text, out", [
-    ("yes please", (True, "")), ("네", (True, "")), ("vâng", (True, "")),
+    ("yes please", (True, "")), ("네", (True, "")),
     ("no, the restroom one", (False, "the restroom one")), ("아니요", (False, "")),
     ("the restroom one", (False, "the restroom one")), ("", (None, "")),
 ])
@@ -190,3 +189,18 @@ def test_summary():
     assert s == ("I will put the apple from the desk in the study room on the dining table in the kitchen, then put "
                  "the orange in the drawer in the kitchen, then open the drawer in the kitchen, then close the drawer "
                  "in the kitchen.")
+
+
+def test_missing_matches_an_object_by_its_words_not_by_equality(loop):
+    """The reader's 'phone' and the executor's 'Pick cell phone' are one thing (one name's words contain the
+    other's); 'red book' / 'green book' and 'phone' / 'green book' stay different."""
+    plan = steps(f"MoveTo {DR}", "Pick cell phone", f"MoveTo {DT}", f"Place {DT}")
+    assert loop._missing(plan, W(), [G("on", "phone", "", DT)]) == []
+    assert loop._reaches(plan, W(), [G("on", "phone", "", DT)])
+    assert loop._missing(plan, W(), [G("on", "green book", "", DT)]) != []
+    pb = steps("Pick red book", f"MoveTo {DT}", f"Place {DT}")
+    assert loop._missing(pb, W(), [G("on", "green book", "", DT)]) != []
+    assert loop._missing(pb, W(), [G("on", "book", "", DT)]) == []
+    two = steps("Pick red book", f"Place {DT}", "Pick green book", f"Place {DS}")
+    assert loop._missing(two, W(), [G("on", "book", "", DT)]) != []   # ambiguous 'book': not guessed
+    assert loop._missing(plan, W(), [G("in", "phone", "", DR)]) != []

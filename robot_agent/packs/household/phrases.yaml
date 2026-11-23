@@ -1,0 +1,42 @@
+# The standard pack's phrases (section `phrases`): the household words: read-back pieces of pick / place / open / go / say,
+# the questions about places, drawers and objects. Moved from CORE_PHRASES of core/planning/speech.py (robot_agent 2d57c99),
+# the text character for character; the pack's own `source` label (pack.yaml) labels every entry. Language: English only.
+# `text.<name>` entries are single texts the engine says as they are (not phrase keys): speech.CORE_PHRASES leaves them out.
+# A key is in ONE of the two files (tests/test_pack_phrases.py proves it).
+# The understand prompt is not an entry here: it is the file prompts/understand.en.txt next to this one (core/pack/prompts.py).
+phrases:
+  q_where_put: {en: "Where should I put the {object}?", slots: [object]}
+  q_which_place: {en: "Which place do you mean: {options}?", slots: [options]}
+  q_which_one: {en: "I see more than one {object} here: {text}. Which one do you mean?", slots: [object, text]}
+  q_which_known: {en: "I know of more than one {object}: {text}. Which one do you mean?", slots: [object, text]}
+  q_which_drawer: {en: "Which drawer should I {verb}?", slots: [verb]}
+  q_where_go: {en: "Where should I go?"}
+  q_where_take: {en: "Where should I take it?"}
+  q_what_say: {en: "What should I say?"}
+  q_where_are_you: {en: "Where are you?"}
+  q_where_is_person: {en: "Where is {person}?", slots: [person]}
+  q_where_is: {en: "I couldn't find the {object}. Where is it?", slots: [object]}
+  q_where_is_obj: {en: "Where is the {object}?", slots: [object]}
+  q_where_is_here: {en: "I don't see the {object} here. Where is it?", slots: [object]}
+  q_place_unknown: {en: "I could not find '{said}' on my map. Do you mean: {options}? Or tell me another place.", slots: [said, options]}
+  q_where_bring: {en: "Where are you? Or where should I put it?"}
+  q_where_in_home: {en: "Which room, or which piece of furniture, is it in?"}
+  a_look_in_room: {en: "OK, I will look in the {room}.", slots: [room]}
+  q_what_bring: {en: "What should I bring?"}
+  rb_on: {en: "put the {object} on the {place}", slots: [object, place]}
+  rb_on_from: {en: "put the {object} from the {source} on the {place}", slots: [object, source, place]}
+  rb_in: {en: "put the {object} in the {place}", slots: [object, place]}
+  rb_to_you: {en: "bring you the {object}", slots: [object]}
+  rb_on_near_you: {en: "bring you the {object} and put it on the {place} next to you", slots: [object, place]}
+  rb_on_near_person: {en: "bring the {object} to {person} and put it on the {place} next to them", slots: [object, person, place]}
+  rb_hand_you: {en: "hand you the {object}", slots: [object]}
+  rb_to_person: {en: "bring the {object} to {person}", slots: [object, person]}
+  rb_hand_person: {en: "hand the {object} to {person}", slots: [object, person]}
+  rb_open: {en: "open the {place}", slots: [place]}
+  rb_close: {en: "close the {place}", slots: [place]}
+  rb_go: {en: "go to the {place}", slots: [place]}
+  rb_say: {en: "tell {person}: \"{text}\"", slots: [person, text]}
+  rb_say_here: {en: "say \"{text}\"", slots: [text]}
+  rb_say_at: {en: "say \"{text}\" in the {place}", slots: [text, place]}
+  text.help_pick: {en: "Could you move it closer to the edge, then say yes?"}
+  text.help_move: {en: "Is something in the way? Please clear the way and say yes."}

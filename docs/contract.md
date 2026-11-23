@@ -24,7 +24,8 @@ The dependency only goes one way. The robot package imports
 ```yaml
 robot: kaair
 version: "1.0"
-language: ko
+language: ko                   # the default language
+languages: [ko, en]            # optional: every language the robot talks in (default: just `language`)
 capabilities: {base: true, arms: 1, hands: [right], lift: true, head: true, drawer: true}
 geometry: {arrive_tol_m: 0.3, reach_m: 0.78, reach_far_m: 1.0}
 skills:
@@ -53,6 +54,17 @@ Optional planner data: `planner: {seed_memory: ../planner/seed_memory.jsonl}` (p
 relative to the manifest; `Manifest.seed_memory`; see `memory.md`) and `planner.notes`: a list of
 short strings the direct planner's prompt shows as the robot's notes
 ([direct_prompt.md](direct_prompt.md); each a non-empty string, at most 300 characters).
+
+Detecting the user's language: the dashboard may start a run with `lang: 'auto'`; `/robot/languages` then tells it (`declared`) whether
+the manifest names any language (none: only "detect" is offered). See `core/languages.py` and `utils.speech_to_text(auto=...)`.
+
+Languages: `language` is the robot's default (two- or three-letter code, `ko`); `languages` lists every
+language it talks in and must include `language` (absent = `[language]`; a bad code, a duplicate or a list
+without the default is a `ManifestError`). `Manifest.supported_languages` gives them default first. The core
+names no language: `GET /robot/languages` returns `{robot, language, languages, supported, declared}` for clients (`supported`: the manifest's list; `languages`: what the site switched on, set with `PUT /robot/languages {languages}` and kept in `<configs>/languages.json`) (the dashboard
+builds its picker from it), and a run that names none (`/ws/agent` without `lang`) uses `language`. A
+robot whose manifest cannot be read talks English only. The skills decide what they can say: a language in
+`languages` that a skill has no phrases for is that skill's refusal, not the manifest's.
 
 Optional prompt text: a top-level `description:` (one or two sentences about the robot's body;
 `Manifest.description`) and a skill-level `description:` (what the skill does). The planner
@@ -89,7 +101,7 @@ Unset geometry falls back to the values the core used to hard-code:
 1. `<pkg>/configs/adapter.py`, if it exists. It must define `ADAPTER` (an
    instance), `make_adapter()` / `get_adapter()` (a factory) or a class
    `Adapter`. New robots made from `robot_template` get this file.
-2. Otherwise `NamemapAdapter(<pkg>.configs.grace_namemap, manifest)`, a shim
+2. Otherwise X, a shim
    over the existing duck-typed namemap. `bind()` reproduces what
    `ActionMapper.to_skill` and `ClosedLoop._build_params` do today:
    - `SKILL_MAP` / `NOOP_ACTIONS` / `SUPPORTED_ACTIONS`
@@ -108,12 +120,12 @@ An adapter may also define (read by `core/planning/robot.py` `RobotView`):
 |---|---|---|
 | `is_openable(key, entry)` | what an ENV place opens (plan checker, step guard) | the ENV entry's `openable` flag |
 | `quiet_skills` | skills whose steps are not narrated (they speak themselves) | `reply`, `ask`, `announce`, `wait` |
-| `i18n.phrases` | `{kind: {lang: text}}` narration (announcer kinds, `verb.<Action>`), `robot_description` (task-understanding prompt), `verify_failed.<Action>` | English / Vietnamese in the core |
+| `i18n.phrases` | `{kind: {lang: text}}` narration (announcer kinds, `verb.<Action>`), `robot_description` (task-understanding prompt), `verify_failed.<Action>` | English in the core |
 | `recovery_overrides` | per-code recovery rules | the table below |
 
 The robot's capabilities (`hands`, `find_reaches`, default one hand and
 `find_reaches: false`) go to the action model and to SAGE
-(`SAGEPlanner(capabilities=...)` through `GraceBackend`).
+(`SAGEPlanner(capabilities=...)` through `SageBackend`).
 
 `bind()` returns `(skill, params)`, returns `None` for a no-op step, and raises
 `Unbindable` when the robot cannot do the step.

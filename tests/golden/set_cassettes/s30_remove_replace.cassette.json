@@ -1,0 +1,1292 @@
+{
+ "format": 1,
+ "name": "s30_remove_replace",
+ "tags": [
+  "success",
+  "template",
+  "fakeline"
+ ],
+ "about": "the pack removes open and close and replaces deliver (no prompt line): the run log is as in template_say_deliver; the understand prompt loses the deliver line and the schema enum loses open and close",
+ "scenario": {
+  "name": "s30_remove_replace",
+  "env": {
+   "bin@cell a": {
+    "aliases": [
+     "bin"
+    ],
+    "loc": {
+     "x": 1.0,
+     "y": 1.0
+    },
+    "surface": true
+   },
+   "jig@cell a": {
+    "aliases": [
+     "jig"
+    ],
+    "loc": {
+     "x": 2.0,
+     "y": 1.0
+    },
+    "surface": true
+   },
+   "outfeed@cell b": {
+    "aliases": [
+     "outfeed"
+    ],
+    "loc": {
+     "x": 6.0,
+     "y": 3.0
+    },
+    "surface": true
+   }
+  },
+  "robot_pkg": "fakeline",
+  "task": "Tell the operator the batch is ready at the jig, then deliver the bracket to the outfeed.",
+  "robot": {
+   "objects": {
+    "bracket": "bin@cell a",
+    "bolt": "jig@cell a"
+   },
+   "start": "bin@cell a",
+   "skills": {
+    "say": {
+     "isdone": true,
+     "msg": "said"
+    },
+    "wait_for_unload": {
+     "isdone": true,
+     "msg": "tray empty"
+    },
+    "inspect": {
+     "isdone": true,
+     "msg": "inspected"
+    },
+    "fasten": {
+     "isdone": true,
+     "msg": "fastened"
+    }
+   }
+  },
+  "llm": {
+   "script": [],
+   "default": {
+    "status": "clear",
+    "reason": "",
+    "question": "",
+    "goals": [
+     {
+      "type": "say",
+      "object": "The batch is ready.",
+      "from": "",
+      "to": "jig"
+     },
+     {
+      "type": "deliver",
+      "object": "bracket",
+      "from": "",
+      "to": "outfeed"
+     }
+    ]
+   }
+  },
+  "planner": {
+   "plan": [],
+   "replans": []
+  },
+  "options": {
+   "input_pivot": "none",
+   "look_then_ask": "0",
+   "bring_ask": "0",
+   "bt_goal": "0",
+   "fetch_guard": "0"
+  },
+  "capture": [
+   "prompts"
+  ],
+  "pack": {
+   "schema": 2,
+   "name": "s30_merge",
+   "extends": "household",
+   "assumed": true,
+   "remove": {
+    "goal_kinds": [
+     "open",
+     "close"
+    ]
+   },
+   "goal_kinds": {
+    "deliver": {
+     "rules": "std.deliver",
+     "needs": [
+      "MoveTo",
+      "WaitForUnload"
+     ],
+     "understood": "capable",
+     "planned_by": "template",
+     "conflicts": "default",
+     "subgoal": "deliver to {to}",
+     "assumed": true
+    }
+   }
+  }
+ },
+ "recorded": {
+  "llm_calls": [
+   {
+    "prompt": "a06b3f8d5e21eb4f",
+    "format": "2538b063192f16ec",
+    "head": "You turn a household robot task into goals. The robot is an assembly-lin",
+    "answer": "{\"status\": \"clear\", \"reason\": \"\", \"question\": \"\", \"goals\": [{\"type\": \"say\", \"object\": \"The batch is ready.\", \"from\": \"\", \"to\": \"jig\"}, {\"type\": \"deliver\", \"object\": \"bracket\", \"from\": \"\", \"to\": \"outfeed\"}]}"
+   }
+  ],
+  "planner_calls": [],
+  "robot_calls": [
+   {
+    "skill": "mobile_pose",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "pose": [
+      1.0,
+      1.0,
+      0
+     ]
+    }
+   },
+   {
+    "skill": "move",
+    "params": {
+     "inputs": "jig@cell a"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "arrived at jig@cell a"
+    }
+   },
+   {
+    "skill": "mobile_pose",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "pose": [
+      2.0,
+      1.0,
+      0
+     ]
+    }
+   },
+   {
+    "skill": "say",
+    "params": {
+     "inputs": "the batch is ready."
+    },
+    "result": {
+     "isdone": true,
+     "msg": "said"
+    }
+   },
+   {
+    "skill": "move",
+    "params": {
+     "inputs": "outfeed@cell b"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "arrived at outfeed@cell b"
+    }
+   },
+   {
+    "skill": "mobile_pose",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "pose": [
+      6.0,
+      3.0,
+      0
+     ]
+    }
+   },
+   {
+    "skill": "say",
+    "params": {
+     "inputs": "please take the part from my tray."
+    },
+    "result": {
+     "isdone": true,
+     "msg": "said"
+    }
+   },
+   {
+    "skill": "wait_for_unload",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "msg": "tray empty"
+    }
+   }
+  ],
+  "events": [
+   {
+    "event": "task_start",
+    "task": "Tell the operator the batch is ready at the jig, then deliver the bracket to the outfeed.",
+    "world": {
+     "arrived": "bin@cell a",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from bin@cell a"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Starting the task"
+   },
+   {
+    "event": "reconcile",
+    "when": "start",
+    "changed": {
+     "arrived": [
+      null,
+      "bin@cell a"
+     ]
+    },
+    "sensors": {
+     "arrived": {
+      "pose": [
+       1.0,
+       1.0
+      ],
+      "detail": "0.00 m from bin@cell a",
+      "source": "mobile_pose"
+     },
+     "containers": {},
+     "unconfirmed": []
+    },
+    "provenance": {
+     "arrived": {
+      "source": "sensor",
+      "detail": "0.00 m from bin@cell a"
+     },
+     "found": {
+      "source": "belief"
+     },
+     "holding": {
+      "source": "belief"
+     },
+     "opened": {
+      "source": "sensor",
+      "containers": {},
+      "unconfirmed": []
+     },
+     "on": {
+      "source": "belief"
+     }
+    },
+    "world": {
+     "arrived": "bin@cell a",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from bin@cell a"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    }
+   },
+   {
+    "event": "status",
+    "msg": "Understanding the task..."
+   },
+   {
+    "event": "understand",
+    "status": "clear",
+    "reason": "",
+    "goals": [
+     {
+      "type": "say",
+      "object": "The batch is ready.",
+      "from": "",
+      "to": "jig@cell a"
+     },
+     {
+      "type": "deliver",
+      "object": "bracket",
+      "from": "",
+      "to": "outfeed@cell b"
+     }
+    ],
+    "question": null
+   },
+   {
+    "event": "status",
+    "msg": "Generating task plan..."
+   },
+   {
+    "event": "gate",
+    "round": 0,
+    "problems": [],
+    "plan": [
+     "MoveTo jig@cell a",
+     "Say The batch is ready.",
+     "MoveTo outfeed@cell b",
+     "Say Please take the part from my tray.",
+     "WaitForUnload "
+    ]
+   },
+   {
+    "event": "plan",
+    "steps": [
+     {
+      "action": "MoveTo",
+      "object": "jig@cell a",
+      "grounded": true
+     },
+     {
+      "action": "Say",
+      "object": "The batch is ready."
+     },
+     {
+      "action": "MoveTo",
+      "object": "outfeed@cell b",
+      "grounded": true
+     },
+     {
+      "action": "Say",
+      "object": "Please take the part from my tray."
+     },
+     {
+      "action": "WaitForUnload",
+      "object": ""
+     }
+    ],
+    "plan_meta": {
+     "method": "compiled",
+     "llm_plan": [
+      {
+       "action": "MoveTo",
+       "object": "jig@cell a",
+       "grounded": true
+      },
+      {
+       "action": "Say",
+       "object": "The batch is ready."
+      },
+      {
+       "action": "MoveTo",
+       "object": "outfeed@cell b",
+       "grounded": true
+      },
+      {
+       "action": "Say",
+       "object": "Please take the part from my tray."
+      },
+      {
+       "action": "WaitForUnload",
+       "object": ""
+      }
+     ],
+     "edits": [],
+     "certified": true,
+     "gate_findings": [],
+     "repaired_by_op": {},
+     "completed_by_gate": 0
+    },
+    "warnings": [],
+    "plan_text": "move::jig@cell a\nsay::The batch is ready.\nmove::outfeed@cell b\nsay::Please take the part from my tray.\nwait_for_unload::",
+    "certified": true,
+    "world": {
+     "arrived": "bin@cell a",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from bin@cell a"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    }
+   },
+   {
+    "event": "step_start",
+    "index": 0,
+    "action": "MoveTo",
+    "object": "jig@cell a",
+    "skill": "move",
+    "say": "I will move to jig in the cell a"
+   },
+   {
+    "event": "step_verify",
+    "index": 0,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "arrived at jig@cell a",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "localization",
+      "ok": true,
+      "detail": "0.00 m from jig@cell a",
+      "confidence": null,
+      "unknown": false
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 0,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "arrived at jig@cell a"
+    },
+    "world": {
+     "arrived": "jig@cell a",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: move to jig in the cell a"
+   },
+   {
+    "event": "step_start",
+    "index": 1,
+    "action": "Say",
+    "object": "The batch is ready.",
+    "skill": "say",
+    "say": "I will say the batch is ready."
+   },
+   {
+    "event": "step_verify",
+    "index": 1,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "said",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "sensor",
+      "ok": true,
+      "detail": "unknown: say declares no sensor that checks it",
+      "confidence": null,
+      "unknown": true
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 1,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "said"
+    },
+    "world": {
+     "arrived": "jig@cell a",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: say the batch is ready."
+   },
+   {
+    "event": "step_start",
+    "index": 2,
+    "action": "MoveTo",
+    "object": "outfeed@cell b",
+    "skill": "move",
+    "say": "I will move to outfeed in the cell b"
+   },
+   {
+    "event": "step_verify",
+    "index": 2,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "arrived at outfeed@cell b",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "localization",
+      "ok": true,
+      "detail": "0.00 m from outfeed@cell b",
+      "confidence": null,
+      "unknown": false
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 2,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "arrived at outfeed@cell b"
+    },
+    "world": {
+     "arrived": "outfeed@cell b",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: move to outfeed in the cell b"
+   },
+   {
+    "event": "step_start",
+    "index": 3,
+    "action": "Say",
+    "object": "Please take the part from my tray.",
+    "skill": "say",
+    "say": "I will say please take the part from my tray."
+   },
+   {
+    "event": "step_verify",
+    "index": 3,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "said",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "sensor",
+      "ok": true,
+      "detail": "unknown: say declares no sensor that checks it",
+      "confidence": null,
+      "unknown": true
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 3,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "said"
+    },
+    "world": {
+     "arrived": "outfeed@cell b",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: say please take the part from my tray."
+   },
+   {
+    "event": "step_start",
+    "index": 4,
+    "action": "WaitForUnload",
+    "object": "",
+    "skill": "wait_for_unload",
+    "say": "I will waitforunload"
+   },
+   {
+    "event": "step_verify",
+    "index": 4,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "tray empty",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "sensor",
+      "ok": true,
+      "detail": "unknown: wait_for_unload declares no sensor that checks it",
+      "confidence": null,
+      "unknown": true
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 4,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "tray empty"
+    },
+    "world": {
+     "arrived": "outfeed@cell b",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: waitforunload"
+   },
+   {
+    "event": "status",
+    "msg": "Checking the goals..."
+   },
+   {
+    "event": "goal_check",
+    "goal": {
+     "type": "deliver",
+     "object": "bracket",
+     "from": "",
+     "to": "outfeed@cell b"
+    },
+    "ok": null,
+    "evidence": "deliver bracket: no sensor declared for it (belief)",
+    "world": {
+     "arrived": "outfeed@cell b",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    }
+   },
+   {
+    "event": "goal_check",
+    "goal": {
+     "type": "say",
+     "object": "The batch is ready.",
+     "from": "",
+     "to": "jig@cell a"
+    },
+    "ok": null,
+    "evidence": "say The batch is ready.: no sensor declared for it (belief)",
+    "world": {
+     "arrived": "outfeed@cell b",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    }
+   },
+   {
+    "event": "done",
+    "status": "success",
+    "msg": "",
+    "world": {
+     "arrived": "outfeed@cell b",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Task completed"
+   }
+  ],
+  "final": {
+   "robot": {
+    "at": "outfeed@cell b",
+    "holding": null,
+    "objects": {
+     "bracket": "bin@cell a",
+     "bolt": "jig@cell a"
+    },
+    "opened": [],
+    "asked": []
+   },
+   "belief": {
+    "arrived": "outfeed@cell b",
+    "found": null,
+    "holding": null,
+    "opened": [],
+    "on": [],
+    "found_pose": null,
+    "holding_pose": null,
+    "provenance": {
+     "arrived": {
+      "source": "sensor",
+      "detail": "MoveTo localization check"
+     },
+     "found": {
+      "source": "belief"
+     },
+     "holding": {
+      "source": "belief"
+     },
+     "opened": {
+      "source": "sensor",
+      "containers": {},
+      "unconfirmed": []
+     },
+     "on": {
+      "source": "belief"
+     }
+    }
+   },
+   "lab_log": [],
+   "record": {
+    "task": "Tell the operator the batch is ready at the jig, then deliver the bracket to the outfeed.",
+    "lang": "en",
+    "obs": "goals: [{\"type\": \"say\", \"object\": \"The batch is ready.\", \"from\": \"\", \"to\": \"jig@cell a\"}, {\"type\": \"deliver\", \"object\": \"bracket\", \"from\": \"\", \"to\": \"outfeed@cell b\"}]",
+    "visible": [],
+    "planner": "sage+assist",
+    "plan_meta": {
+     "method": "compiled",
+     "llm_plan": [
+      {
+       "action": "MoveTo",
+       "object": "jig@cell a",
+       "grounded": true
+      },
+      {
+       "action": "Say",
+       "object": "The batch is ready."
+      },
+      {
+       "action": "MoveTo",
+       "object": "outfeed@cell b",
+       "grounded": true
+      },
+      {
+       "action": "Say",
+       "object": "Please take the part from my tray."
+      },
+      {
+       "action": "WaitForUnload",
+       "object": ""
+      }
+     ],
+     "edits": [],
+     "certified": true,
+     "gate_findings": [],
+     "repaired_by_op": {},
+     "completed_by_gate": 0
+    },
+    "warnings": [],
+    "steps": [
+     {
+      "index": 0,
+      "action": "MoveTo",
+      "object": "jig@cell a",
+      "skill": "move",
+      "params": {
+       "inputs": "jig@cell a"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "arrived at jig@cell a"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "arrived at jig@cell a",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "localization",
+        "ok": true,
+        "detail": "0.00 m from jig@cell a",
+        "confidence": null,
+        "unknown": false
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 1,
+      "action": "Say",
+      "object": "The batch is ready.",
+      "skill": "say",
+      "params": {
+       "inputs": "the batch is ready."
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "said"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "said",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "sensor",
+        "ok": true,
+        "detail": "unknown: say declares no sensor that checks it",
+        "confidence": null,
+        "unknown": true
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 2,
+      "action": "MoveTo",
+      "object": "outfeed@cell b",
+      "skill": "move",
+      "params": {
+       "inputs": "outfeed@cell b"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "arrived at outfeed@cell b"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "arrived at outfeed@cell b",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "localization",
+        "ok": true,
+        "detail": "0.00 m from outfeed@cell b",
+        "confidence": null,
+        "unknown": false
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 3,
+      "action": "Say",
+      "object": "Please take the part from my tray.",
+      "skill": "say",
+      "params": {
+       "inputs": "please take the part from my tray."
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "said"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "said",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "sensor",
+        "ok": true,
+        "detail": "unknown: say declares no sensor that checks it",
+        "confidence": null,
+        "unknown": true
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 4,
+      "action": "WaitForUnload",
+      "object": "",
+      "skill": "wait_for_unload",
+      "params": {},
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "tray empty"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "tray empty",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "sensor",
+        "ok": true,
+        "detail": "unknown: wait_for_unload declares no sensor that checks it",
+        "confidence": null,
+        "unknown": true
+       }
+      ],
+      "logs": []
+     }
+    ],
+    "replans": [],
+    "status": "success",
+    "failure": {}
+   },
+   "log_kinds": [
+    "reconcile",
+    "task_start",
+    "status",
+    "understand",
+    "status",
+    "gate",
+    "plan",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "status",
+    "goal_check",
+    "goal_check",
+    "done",
+    "snapshot"
+   ]
+  },
+  "prompts": {
+   "sage_prompt_kwargs": {
+    "actions": {
+     "sha": "2ee7674c5ad38bcd",
+     "head": "[\"MoveTo <place>: move to a place\", \"Find <object>: look for an object where the robot is\", \"Pic",
+     "chars": 352
+    },
+    "robot_description": {
+     "sha": "f7e3a86e90e960e4",
+     "head": "fakeline: a robot that has 1 arm with a hand (right), so it holds one object at a time, drives o",
+     "chars": 162
+    }
+   },
+   "direct_prompt": {
+    "sha": "962a09ba8762c817",
+    "head": "You plan tasks for this robot: fakeline: a robot that has 1 arm with a hand (right), so it holds",
+    "chars": 1056
+   },
+   "planner_cfg": {
+    "sha": "b52ce21b001cd73f",
+    "head": "{\"actions\": [\"Fasten\", \"Find\", \"Inspect\", \"MoveTo\", \"Pick\", \"Place\", \"Say\", \"WaitForUnload\"], \"c",
+    "chars": 642
+   }
+  }
+ },
+ "commit": "c04e6ee"
+}

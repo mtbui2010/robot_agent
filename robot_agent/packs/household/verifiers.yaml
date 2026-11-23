@@ -1,0 +1,19 @@
+# The verifiers of the standard (household) pack (Step S12): the rules the loop used to decide itself, by name.
+# - A GOAL verifier is named in a goal kind's `observe` (goal_kinds.yaml); it looks at one goal after the task.
+# - A STEP verifier runs after the core layers of a step's check (isdone, the declared effects, the skill's verify specs, a
+#   stale pose): every entry with `every_step: true`, in this file's order, then the names an action lists in `post`.
+# The callables are robot_agent/packs/household/callables/verifiers.py; robot_agent/core/pack/verifiers.py picks them.
+# A robot pack drops a step check with `remove: {verifiers: [std.find_reach]}`; tests/test_pack_verifiers.py compares the
+# old code (tests/legacy_ref/s12_verify.py) with these on made-up inputs.
+verifiers:
+  std.find_at_destination:            # go to the goal's place, Find the object; a miss after a verified release: look again
+    callable: std.find_at_destination
+    source: "robot_agent/core/planning/assist_loop.py:3046-3083 at 9f1786d (AssistLoop._observe_goal after its kind test)"
+  std.release_second_look:            # Place / PutIn / the robot's own release: the gripper read again before it fails
+    callable: std.release_second_look
+    every_step: true
+    source: "robot_agent/core/planning/assist_loop.py:3237-3249 at 9f1786d (the two release rules of AssistLoop._post_check)"
+  std.find_reach:                     # a Find seen farther than the loop's `reach_far` fails the `reach` layer
+    callable: std.find_reach
+    every_step: true
+    source: "robot_agent/core/planning/assist_loop.py:3250-3260 at 9f1786d (the Find rule of AssistLoop._post_check)"

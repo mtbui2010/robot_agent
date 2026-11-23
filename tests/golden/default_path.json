@@ -1,0 +1,667 @@
+[
+ {
+  "events": [
+   {
+    "event": "task_start"
+   },
+   {
+    "event": "reconcile"
+   },
+   {
+    "event": "understand",
+    "status": "clear"
+   },
+   {
+    "event": "gate",
+    "round": 0
+   },
+   {
+    "event": "plan"
+   },
+   {
+    "action": "MoveTo",
+    "event": "step_start",
+    "object": "desk@study room"
+   },
+   {
+    "event": "step_verify"
+   },
+   {
+    "event": "step_done",
+    "status": "success"
+   },
+   {
+    "action": "Find",
+    "event": "step_start",
+    "object": "mug"
+   },
+   {
+    "event": "step_verify"
+   },
+   {
+    "event": "step_done",
+    "status": "success"
+   },
+   {
+    "action": "Pick",
+    "event": "step_start",
+    "object": "mug"
+   },
+   {
+    "event": "step_verify"
+   },
+   {
+    "event": "step_done",
+    "status": "success"
+   },
+   {
+    "action": "MoveTo",
+    "event": "step_start",
+    "object": "dining table@kitchen"
+   },
+   {
+    "event": "step_verify"
+   },
+   {
+    "event": "step_done",
+    "status": "success"
+   },
+   {
+    "action": "Place",
+    "event": "step_start",
+    "object": "dining table@kitchen"
+   },
+   {
+    "event": "step_verify"
+   },
+   {
+    "event": "step_done",
+    "status": "success"
+   },
+   {
+    "event": "goal_check"
+   },
+   {
+    "event": "done",
+    "status": "success"
+   }
+  ],
+  "name": "success",
+  "trace": [
+   [
+    "move",
+    "desk@study room",
+    true
+   ],
+   [
+    "find",
+    "mug",
+    true
+   ],
+   [
+    "pick",
+    "mug",
+    true
+   ],
+   [
+    "move",
+    "dining table@kitchen",
+    true
+   ],
+   [
+    "place",
+    "dining table@kitchen",
+    true
+   ],
+   [
+    "find",
+    "mug",
+    true
+   ]
+  ]
+ },
+ {
+  "events": [
+   {
+    "event": "task_start"
+   },
+   {
+    "event": "reconcile"
+   },
+   {
+    "event": "understand",
+    "status": "clear"
+   },
+   {
+    "event": "gate",
+    "round": 0
+   },
+   {
+    "event": "plan"
+   },
+   {
+    "action": "MoveTo",
+    "event": "step_start",
+    "object": "desk@study room"
+   },
+   {
+    "event": "step_verify"
+   },
+   {
+    "event": "step_done",
+    "status": "success"
+   },
+   {
+    "action": "Find",
+    "event": "step_start",
+    "object": "mug"
+   },
+   {
+    "event": "step_verify"
+   },
+   {
+    "event": "step_done",
+    "reason": "find failed",
+    "status": "failed"
+   },
+   {
+    "event": "replan",
+    "reason": "E: Find mug failed. R: find failed; the mug could not be checked at desk@study room (unknown): it may still be there. S: robot at desk@study room, holding nothing; goals: on mug to dining table@kitchen"
+   },
+   {
+    "action": "Find",
+    "event": "step_start",
+    "object": "mug"
+   },
+   {
+    "event": "step_verify"
+   },
+   {
+    "event": "step_done",
+    "status": "success"
+   },
+   {
+    "action": "Pick",
+    "event": "step_start",
+    "object": "mug"
+   },
+   {
+    "event": "step_verify"
+   },
+   {
+    "event": "step_done",
+    "status": "success"
+   },
+   {
+    "action": "MoveTo",
+    "event": "step_start",
+    "object": "dining table@kitchen"
+   },
+   {
+    "event": "step_verify"
+   },
+   {
+    "event": "step_done",
+    "status": "success"
+   },
+   {
+    "action": "Place",
+    "event": "step_start",
+    "object": "dining table@kitchen"
+   },
+   {
+    "event": "step_verify"
+   },
+   {
+    "event": "step_done",
+    "status": "success"
+   },
+   {
+    "event": "goal_check"
+   },
+   {
+    "event": "done",
+    "status": "success"
+   }
+  ],
+  "name": "find_miss_then_replan",
+  "trace": [
+   [
+    "move",
+    "desk@study room",
+    true
+   ],
+   [
+    "find",
+    "mug",
+    false
+   ],
+   [
+    "find",
+    "mug",
+    true
+   ],
+   [
+    "pick",
+    "mug",
+    true
+   ],
+   [
+    "move",
+    "dining table@kitchen",
+    true
+   ],
+   [
+    "place",
+    "dining table@kitchen",
+    true
+   ],
+   [
+    "find",
+    "mug",
+    true
+   ]
+  ]
+ },
+ {
+  "events": [
+   {
+    "event": "task_start"
+   },
+   {
+    "event": "reconcile"
+   },
+   {
+    "event": "understand",
+    "status": "clear"
+   },
+   {
+    "event": "gate",
+    "round": 0
+   },
+   {
+    "event": "plan"
+   },
+   {
+    "action": "MoveTo",
+    "event": "step_start",
+    "object": "desk@study room"
+   },
+   {
+    "event": "step_verify"
+   },
+   {
+    "event": "step_done",
+    "status": "success"
+   },
+   {
+    "action": "Find",
+    "event": "step_start",
+    "object": "mug"
+   },
+   {
+    "event": "step_verify"
+   },
+   {
+    "event": "step_done",
+    "status": "success"
+   },
+   {
+    "action": "Pick",
+    "event": "step_start",
+    "object": "mug"
+   },
+   {
+    "event": "step_verify"
+   },
+   {
+    "event": "step_done",
+    "reason": "pick failed",
+    "status": "failed"
+   },
+   {
+    "event": "recover",
+    "kind": "retry",
+    "msg": "pick mug failed; looking again"
+   },
+   {
+    "action": "Find",
+    "event": "step_start",
+    "object": "mug"
+   },
+   {
+    "event": "step_verify"
+   },
+   {
+    "event": "step_done",
+    "status": "success"
+   },
+   {
+    "action": "Pick",
+    "event": "step_start",
+    "object": "mug"
+   },
+   {
+    "event": "step_verify"
+   },
+   {
+    "event": "step_done",
+    "reason": "pick failed",
+    "status": "failed"
+   },
+   {
+    "event": "clarify",
+    "question": "I can't pick up the mug. Could you move it closer to the edge, then say yes?",
+    "round": 0
+   },
+   {
+    "event": "replan",
+    "reason": "E: Pick mug failed. R: pick failed; the grasp of the mug failed 2 times and nobody could help: try it again. S: robot at desk@study room, holding nothing; goals: on mug to dining table@kitchen"
+   },
+   {
+    "action": "Find",
+    "event": "step_start",
+    "object": "mug"
+   },
+   {
+    "event": "step_verify"
+   },
+   {
+    "event": "step_done",
+    "status": "success"
+   },
+   {
+    "action": "Pick",
+    "event": "step_start",
+    "object": "mug"
+   },
+   {
+    "event": "step_verify"
+   },
+   {
+    "event": "step_done",
+    "status": "success"
+   },
+   {
+    "action": "MoveTo",
+    "event": "step_start",
+    "object": "dining table@kitchen"
+   },
+   {
+    "event": "step_verify"
+   },
+   {
+    "event": "step_done",
+    "status": "success"
+   },
+   {
+    "action": "Place",
+    "event": "step_start",
+    "object": "dining table@kitchen"
+   },
+   {
+    "event": "step_verify"
+   },
+   {
+    "event": "step_done",
+    "status": "success"
+   },
+   {
+    "event": "goal_check"
+   },
+   {
+    "event": "done",
+    "status": "success"
+   }
+  ],
+  "name": "pick_fails_twice",
+  "trace": [
+   [
+    "move",
+    "desk@study room",
+    true
+   ],
+   [
+    "find",
+    "mug",
+    true
+   ],
+   [
+    "pick",
+    "mug",
+    false
+   ],
+   [
+    "find",
+    "mug",
+    true
+   ],
+   [
+    "pick",
+    "mug",
+    false
+   ],
+   [
+    "ask",
+    "I can't pick up the mug. Could you move it closer to the edge, then say yes?",
+    false
+   ],
+   [
+    "ask",
+    "Sorry, I didn't hear you. I can't pick up the mug. Could you move it closer to the edge, then say yes?",
+    false
+   ],
+   [
+    "find",
+    "mug",
+    true
+   ],
+   [
+    "pick",
+    "mug",
+    true
+   ],
+   [
+    "move",
+    "dining table@kitchen",
+    true
+   ],
+   [
+    "place",
+    "dining table@kitchen",
+    true
+   ],
+   [
+    "find",
+    "mug",
+    true
+   ]
+  ]
+ },
+ {
+  "events": [
+   {
+    "event": "task_start"
+   },
+   {
+    "event": "reconcile"
+   },
+   {
+    "event": "understand",
+    "status": "clear"
+   },
+   {
+    "event": "gate",
+    "round": 0
+   },
+   {
+    "event": "plan"
+   },
+   {
+    "action": "MoveTo",
+    "event": "step_start",
+    "object": "desk@study room"
+   },
+   {
+    "event": "step_verify"
+   },
+   {
+    "event": "step_done",
+    "status": "success"
+   },
+   {
+    "action": "Find",
+    "event": "step_start",
+    "object": "mug"
+   },
+   {
+    "event": "step_verify"
+   },
+   {
+    "event": "step_done",
+    "reason": "mug not found",
+    "status": "failed"
+   },
+   {
+    "event": "search",
+    "object": "mug"
+   },
+   {
+    "event": "replan",
+    "reason": "E: Find mug failed. R: mug not found; it is not at desk@study room. Look next at dining table@kitchen. S: robot at desk@study room, holding nothing; goals: on mug to dining table@kitchen"
+   },
+   {
+    "action": "MoveTo",
+    "event": "step_start",
+    "object": "dining table@kitchen"
+   },
+   {
+    "event": "step_verify"
+   },
+   {
+    "event": "step_done",
+    "status": "success"
+   },
+   {
+    "action": "Find",
+    "event": "step_start",
+    "object": "mug"
+   },
+   {
+    "event": "step_verify"
+   },
+   {
+    "event": "step_done",
+    "reason": "mug not found",
+    "status": "failed"
+   },
+   {
+    "event": "replan",
+    "reason": "E: Find mug failed. R: mug not found; it is not at dining table@kitchen. Look next at sofa@living room. S: robot at dining table@kitchen, holding nothing; goals: on mug to dining table@kitchen"
+   },
+   {
+    "action": "MoveTo",
+    "event": "step_start",
+    "object": "sofa@living room"
+   },
+   {
+    "event": "step_verify"
+   },
+   {
+    "event": "step_done",
+    "status": "success"
+   },
+   {
+    "action": "Find",
+    "event": "step_start",
+    "object": "mug"
+   },
+   {
+    "event": "step_verify"
+   },
+   {
+    "event": "step_done",
+    "reason": "mug not found",
+    "status": "failed"
+   },
+   {
+    "event": "replan",
+    "reason": "E: Find mug failed. R: mug not found; it is not at sofa@living room. Look next at side table@living room. S: robot at sofa@living room, holding nothing; goals: on mug to dining table@kitchen"
+   },
+   {
+    "action": "MoveTo",
+    "event": "step_start",
+    "object": "dining table@kitchen"
+   },
+   {
+    "event": "step_verify"
+   },
+   {
+    "event": "step_done",
+    "status": "success"
+   },
+   {
+    "action": "Find",
+    "event": "step_start",
+    "object": "mug"
+   },
+   {
+    "event": "step_verify"
+   },
+   {
+    "event": "step_done",
+    "reason": "mug not found",
+    "status": "failed"
+   },
+   {
+    "code": "absent",
+    "event": "done",
+    "msg": "plan finished but the goals do not hold: on mug to dining table@kitchen",
+    "status": "failed"
+   }
+  ],
+  "name": "object_not_there",
+  "trace": [
+   [
+    "move",
+    "desk@study room",
+    true
+   ],
+   [
+    "find",
+    "mug",
+    false
+   ],
+   [
+    "move",
+    "dining table@kitchen",
+    true
+   ],
+   [
+    "find",
+    "mug",
+    false
+   ],
+   [
+    "move",
+    "sofa@living room",
+    true
+   ],
+   [
+    "find",
+    "mug",
+    false
+   ],
+   [
+    "move",
+    "dining table@kitchen",
+    true
+   ],
+   [
+    "find",
+    "mug",
+    false
+   ]
+  ]
+ }
+]
