@@ -2,7 +2,8 @@
 
 What: ``reaches`` (do these steps reach every goal), ``missing`` (one text per goal the steps leave unmet, for the planner)
 and ``holds`` (does every goal hold in the belief) ask, for each goal, the rules object that its kind names in the robot's
-pack (``goal_kinds.<kind>.rules``: a ``goal.rules`` name of the pack registry). ``simulate``, ``reached_by`` and
+pack (``goal_kinds.<kind>.rules``: a ``goal.rules`` name of the pack registry); ``phrase`` (Step S08) asks the same object
+for the read-back phrase of one goal. ``simulate``, ``reached_by`` and
 ``releases`` are what the loop's seams (``AssistLoop._simulate_goals``, ``_on_reached``, ``_releases``) delegate to.
 Why: the loop names no goal kind and no action (docs/proposals/generalize_core_design.md, "Goal kinds", Step S05); the
 standard pack (``robot_agent/packs/household``) holds the household rules, one object per kind.
@@ -138,6 +139,16 @@ def missing(loop, steps, world, goals, seams: Seams) -> list:
     return out
 
 
+def phrase(goal, places, nice, pack: Optional[Pack] = None):
+    """The read-back phrase of ``goal``: the ``phrase(goal, places, nice)`` of its kind's rules object (a ``LocalText``, or a
+    plain text). A kind with no rules object, or a rules object with no ``phrase``, reads "<kind> the <object>" in plain
+    text, as an unknown kind always did. ``pack``: the robot's pack; None = the standard pack (the read-back phrase is
+    asked through static methods of the loop, which have no robot)."""
+    kind = goal["type"]
+    fn = getattr(rules_of(pack if pack is not None else _default(), kind), "phrase", None)
+    return fn(goal, places, nice) if callable(fn) else f"{kind} the {nice(goal.get('object') or '')}"
+
+
 def holds(loop, goals, belief: Belief) -> bool:
     """Does every goal hold in ``belief``? A goal of a kind with no rules holds."""
     pack = pack_of(loop)
@@ -149,4 +160,4 @@ def holds(loop, goals, belief: Belief) -> bool:
 
 
 __all__ = ["Belief", "Seams", "GoalCtx", "pack_of", "rules_of", "shared", "releases", "simulate", "reached_by", "reaches",
-           "missing", "holds"]
+           "missing", "holds", "phrase"]
