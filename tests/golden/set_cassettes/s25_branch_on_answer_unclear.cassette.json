@@ -1,0 +1,535 @@
+{
+ "format": 1,
+ "name": "s25_branch_on_answer_unclear",
+ "tags": [
+  "bt_goal",
+  "question",
+  "failure",
+  "fakeline"
+ ],
+ "about": "the same tree, an answer that names no choice: the ask leaf fails (no fact answered, the raw text is kept) and the tree has no way left",
+ "scenario": {
+  "name": "s25_branch_on_answer_unclear",
+  "env": {
+   "bin@cell a": {
+    "aliases": [
+     "bin"
+    ],
+    "loc": {
+     "x": 1.0,
+     "y": 1.0
+    },
+    "surface": true
+   },
+   "jig@cell a": {
+    "aliases": [
+     "jig"
+    ],
+    "loc": {
+     "x": 2.0,
+     "y": 1.0
+    },
+    "surface": true
+   },
+   "outfeed@cell b": {
+    "aliases": [
+     "outfeed"
+    ],
+    "loc": {
+     "x": 6.0,
+     "y": 3.0
+    },
+    "surface": true
+   }
+  },
+  "robot_pkg": "fakeline",
+  "task": "Put the bracket on the jig.",
+  "robot": {
+   "objects": {
+    "bracket": "bin@cell a",
+    "bolt": "jig@cell a"
+   },
+   "start": "bin@cell a",
+   "skills": {
+    "say": {
+     "isdone": true,
+     "msg": "said"
+    },
+    "wait_for_unload": {
+     "isdone": true,
+     "msg": "tray empty"
+    },
+    "inspect": {
+     "isdone": true,
+     "msg": "inspected"
+    },
+    "fasten": {
+     "isdone": true,
+     "msg": "fastened"
+    }
+   },
+   "answers": [
+    "Hmm, I do not know."
+   ]
+  },
+  "llm": {
+   "script": [],
+   "default": {
+    "status": "clear",
+    "reason": "",
+    "question": "",
+    "goals": [
+     {
+      "type": "on",
+      "object": "bracket",
+      "from": "bin",
+      "to": "jig"
+     }
+    ]
+   }
+  },
+  "planner": {
+   "plan": [],
+   "replans": []
+  },
+  "options": {
+   "input_pivot": "none",
+   "look_then_ask": "0",
+   "bring_ask": "0",
+   "bt_goal": "1",
+   "fetch_guard": "0"
+  },
+  "pack": {
+   "schema": 2,
+   "name": "s25_line_check",
+   "extends": "household",
+   "assumed": true,
+   "questions": {
+    "check": {
+     "phrase": "q_what_exactly",
+     "kind": "check",
+     "answer": {
+      "type": "choice",
+      "keep_text": true,
+      "choices": {
+       "inspect": {
+        "words": {
+         "en": [
+          "inspect",
+          "look it over"
+         ]
+        }
+       },
+       "skip": {
+        "words": {
+         "en": [
+          "skip",
+          "no need"
+         ]
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "pack_options": {
+   "bt_goal": {
+    "trees": {
+     "on": {
+      "tree": [
+       "sequence",
+       [
+        "ask",
+        "check"
+       ],
+       [
+        "fallback",
+        [
+         "sequence",
+         [
+          "cond",
+          "answered",
+          "check",
+          "inspect"
+         ],
+         [
+          "act",
+          "Inspect",
+          "{object}"
+         ]
+        ],
+        [
+         "cond",
+         "answered",
+         "check",
+         "skip"
+        ]
+       ],
+       [
+        "act",
+        "Find",
+        "{object}"
+       ],
+       [
+        "act",
+        "Pick",
+        "{object}"
+       ],
+       [
+        "act",
+        "MoveTo",
+        "{to}"
+       ],
+       [
+        "act",
+        "Place",
+        "{to}"
+       ],
+       [
+        "cond",
+        "placed",
+        "{object}",
+        "{to}"
+       ]
+      ],
+      "skip_if": [
+       "hand"
+      ],
+      "assumed": true
+     }
+    }
+   }
+  }
+ },
+ "recorded": {
+  "llm_calls": [
+   {
+    "prompt": "2a308b91c6fabbb5",
+    "format": "0d88e5861dd05da8",
+    "head": "You turn a household robot task into goals. The robot is an assembly-lin",
+    "answer": "{\"status\": \"clear\", \"reason\": \"\", \"question\": \"\", \"goals\": [{\"type\": \"on\", \"object\": \"bracket\", \"from\": \"bin\", \"to\": \"jig\"}]}"
+   }
+  ],
+  "planner_calls": [],
+  "robot_calls": [
+   {
+    "skill": "mobile_pose",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "pose": [
+      1.0,
+      1.0,
+      0
+     ]
+    }
+   },
+   {
+    "skill": "ask",
+    "params": {
+     "inputs": "What should I do exactly?"
+    },
+    "result": {
+     "isdone": true,
+     "text": "Hmm, I do not know."
+    }
+   }
+  ],
+  "events": [
+   {
+    "event": "task_start",
+    "task": "Put the bracket on the jig.",
+    "world": {
+     "arrived": "bin@cell a",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from bin@cell a"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Starting the task"
+   },
+   {
+    "event": "reconcile",
+    "when": "start",
+    "changed": {
+     "arrived": [
+      null,
+      "bin@cell a"
+     ]
+    },
+    "sensors": {
+     "arrived": {
+      "pose": [
+       1.0,
+       1.0
+      ],
+      "detail": "0.00 m from bin@cell a",
+      "source": "mobile_pose"
+     },
+     "containers": {},
+     "unconfirmed": []
+    },
+    "provenance": {
+     "arrived": {
+      "source": "sensor",
+      "detail": "0.00 m from bin@cell a"
+     },
+     "found": {
+      "source": "belief"
+     },
+     "holding": {
+      "source": "belief"
+     },
+     "opened": {
+      "source": "sensor",
+      "containers": {},
+      "unconfirmed": []
+     },
+     "on": {
+      "source": "belief"
+     }
+    },
+    "world": {
+     "arrived": "bin@cell a",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from bin@cell a"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    }
+   },
+   {
+    "event": "status",
+    "msg": "Understanding the task..."
+   },
+   {
+    "event": "understand",
+    "status": "clear",
+    "reason": "",
+    "goals": [
+     {
+      "type": "on",
+      "object": "bracket",
+      "from": "",
+      "to": "jig@cell a"
+     }
+    ],
+    "question": null
+   },
+   {
+    "event": "status",
+    "msg": "Generating task plan..."
+   },
+   {
+    "event": "clarify",
+    "question": "What should I do exactly?",
+    "round": 0,
+    "kind": "check"
+   },
+   {
+    "event": "done",
+    "status": "failed",
+    "msg": "on bracket failed (bt_goal: no way left): ",
+    "world": {
+     "arrived": "bin@cell a",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from bin@cell a"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     },
+     "facts": {
+      "answer_text": [
+       [
+        "check",
+        "Hmm, I do not know."
+       ]
+      ]
+     }
+    },
+    "code": "unknown",
+    "say": "on bracket failed (bt goal: no way left):"
+   }
+  ],
+  "final": {
+   "robot": {
+    "at": "bin@cell a",
+    "holding": null,
+    "objects": {
+     "bracket": "bin@cell a",
+     "bolt": "jig@cell a"
+    },
+    "opened": [],
+    "asked": [
+     "What should I do exactly?"
+    ]
+   },
+   "belief": {
+    "arrived": "bin@cell a",
+    "found": null,
+    "holding": null,
+    "opened": [],
+    "on": [],
+    "found_pose": null,
+    "holding_pose": null,
+    "provenance": {
+     "arrived": {
+      "source": "sensor",
+      "detail": "0.00 m from bin@cell a"
+     },
+     "found": {
+      "source": "belief"
+     },
+     "holding": {
+      "source": "belief"
+     },
+     "opened": {
+      "source": "sensor",
+      "containers": {},
+      "unconfirmed": []
+     },
+     "on": {
+      "source": "belief"
+     }
+    },
+    "facts": {
+     "answer_text": [
+      [
+       "check",
+       "Hmm, I do not know."
+      ]
+     ]
+    }
+   },
+   "lab_log": [
+    {
+     "flag": "bt_goal",
+     "goal": 1,
+     "status": "claimed"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.0 ask check",
+     "status": "failure"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0 sequence",
+     "status": "failure"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "status": "exhausted",
+     "action": "stop",
+     "code": null,
+     "rung": null
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "status": "exhausted",
+     "action": "stop"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": "on bracket jig@cell a",
+     "status": "stop"
+    }
+   ],
+   "record": {
+    "task": "Put the bracket on the jig.",
+    "lang": "en",
+    "obs": "goals: [{\"type\": \"on\", \"object\": \"bracket\", \"from\": \"\", \"to\": \"jig@cell a\"}]",
+    "visible": [],
+    "planner": "sage+assist",
+    "plan_meta": {
+     "method": "option"
+    },
+    "warnings": [],
+    "steps": [],
+    "replans": [],
+    "status": "failed",
+    "failure": {
+     "code": "unknown"
+    }
+   },
+   "log_kinds": [
+    "reconcile",
+    "task_start",
+    "status",
+    "understand",
+    "status",
+    "done",
+    "snapshot"
+   ]
+  }
+ },
+ "commit": "26dd144"
+}
