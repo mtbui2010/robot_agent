@@ -425,3 +425,61 @@ still needs the pack re-expressed in `pex_robot` and one test (Round C, not star
 2. Continue the remaining steps of `generalize_core_plan.json` after S21, at most 4 streams per wave, stopping at the first mismatch.
 3. Round C (the PEX robot on this framework) can start for G1 to G6, P7 and P8.
 4. Nothing is pushed; the owner reviews first.
+
+## Run 2 (waves W1 onward): final status, all listed waves ran (W22)
+
+This section replaces the earlier "status at the stop" sections of run 2 where they differ. They stay as written for the record.
+
+### Corrections to earlier lines
+
+- S05 is merged and accepted. Its equivalence proof is the differential test `tests/test_goal_semantics_diff.py` (27 tests, 5
+  deliberate mutations of the new code are each caught by it) plus roundB with 0 FAIL on the merged tip. Any earlier line that
+  lists S05 as unproven is out of date.
+- S21 was reported as stopped at wave W19. It was redone and merged (commit 1a722ad), and S22 followed (156ac46). The stop was a
+  worker problem, not a behaviour mismatch.
+- Some timing tests (`plan_sec` in `tests/test_sage_lab_r7*` and `r4*`) are flaky under machine load. They compare an event stream
+  that holds a measured time; a run can fail once and pass on a re-run. They are not caused by this work and no test was changed.
+
+### Steps done
+
+The last two steps, each one verbatim extraction proven by the golden traces and the roundB check:
+
+- S23b: the finish block moves to `phases/finish.py` (FinishPhase mixin), merged as 6883c07. assist_loop.py 881 -> 804 lines after S22 and S23b together.
+- S24: the config resolution moves to `loop_config.py` (LoopConfig mixin), commit 9ad19ab, merged as 5d09fbb. assist_loop.py 804 -> 561 lines.
+
+### Failed or stopped
+
+None. Stop reason: none (all listed waves ran, W1 to W22).
+
+### Numbers now versus the baseline
+
+| Measure | Start of run 1 | Now (tip ab68500) |
+|---|---|---|
+| `robot_agent/core/planning/assist_loop.py` lines | 4081 | 561 (3520 fewer) |
+| Tests passed (ratchet floor) | 3075 | 3979 |
+
+The tests were added only; no existing test, golden or cassette was edited. Nothing is pushed.
+
+### Workarounds of `pex_case/docs/framework_fit.md`
+
+| Id | Status now |
+|---|---|
+| G1 | Can be deleted: S29 is built (a goal kind declared with no rules). |
+| G2 | Can be deleted in the pex pack, with a test (S06 and S25). |
+| G3 | Can be deleted (S10, S26, S25). |
+| G4 | Can be deleted in the pex pack, with a test (S14: recovery policy per action, chosen by name). |
+| G5 | Can be deleted in the pex pack, with a test (S25, S27a, S31, S32). |
+| G6 | Can be deleted (S25a). |
+| G7 | Cannot be deleted yet: the pack's own model call is not in level B scope (listed as deferred). |
+| P7 | Can be deleted: it depended only on S29. |
+| P8 | Can be deleted once `pex.pipe_in_clips` is written in the pack (S12). |
+
+So G1 to G6, P7 and P8 are deletable at the pack level; only G7 cannot. "Deletable" means the framework side exists; each deletion
+still needs the pack re-expressed in `pex_robot` plus one test per deletion (Round C, not started).
+
+### What is next
+
+1. Round C: re-express `pex_robot` with the new pack declaration, delete G1 to G6, P7 and P8 one by one with a test each, re-run the
+   four scenarios and rebuild the videos.
+2. Deferred items (listed in `generalize_core_plan.json`, key `deferred`, for example S28 literals and G7) wait for the owner or a second robot.
+3. The owner reviews `generalize-core` before any merge to main or any push.
