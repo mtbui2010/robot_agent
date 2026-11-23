@@ -1,24 +1,31 @@
-"""Pure helpers of the bt_goal tree host: the opt-in keys of a tree entry, the public node event, and the choice words of a pack question.
+"""Pure helpers of the bt_goal tree host: the opt-in keys of a tree entry, the public node event, the choice words of a pack question, and
+the answer of a pack question kept as a fact.
 
 What: ``tree_keys(entry)`` reads the two opt-in keys that sit next to ``tree:`` in a declared tree entry (``ladder: false``: the tree's
 steps do not run the engine's recovery ladder, the tree decides; ``events: true``: every node is sent as a ``tree_node`` event);
 ``node_event`` builds that event's fields; ``pack_words`` reads the words of a ``block.key`` list of the language pack and, when a ref has
 no such list, the words of one choice of a question of the robot's pack (ref ``<question>.<choice>``: ``answer.choices.<choice>.words``
-of the language, and its ``lists``).
+of the language, and its ``lists``). ``question_of`` / ``read_choice`` / ``take_answer`` / ``answered`` (Step S25) let an ``ask`` leaf name a
+question of the pack (``[ask, <question>]``): the answer is read as one of its choices and kept as the fact ``answered(<question>, <choice>)``
+(and, with ``answer.keep_text``, its raw text as ``answer_text(<question>, <text>)``) in the belief's fact store, so a later ``cond answered``
+leaf branches on the content of the answer.
 Why: a robot declares the recovery of a goal in the goal's own tree and shows it in the public event stream, and a tree branches on a
 choice a pack declares (docs/bt_goal.md, "Tree keys"); the seams exist already (``try_step(ladder=False)``, service ``emit``).
-Switch off: an entry with neither key, and a ref no pack question names, behave as before (the defaults below are the old behaviour).
+Switch off: an entry with neither key, a ref no pack question names, and an ``ask`` whose first argument names no pack question behave as
+before (the defaults below are the old behaviour).
 Pure: data in, data out; the host (options/bt_goal.py) calls the services.
 """
 
 from __future__ import annotations
 
+import re
 from typing import Callable, Optional
 
-from . import langdata
+from . import langdata, names
 
 EVENT = "tree_node"                                    # the public event of a node (key ``events``)
 DEFAULT_KEYS = {"ladder": True, "events": False}       # the behaviour of an entry with neither key: the engine's ladder runs, no node event
+ANSWERED, ANSWER_TEXT = "answered", "answer_text"      # the facts of a pack question's answer: (question, choice) and (question, raw text)
 
 
 def tree_keys(entry) -> dict:
@@ -49,6 +56,11 @@ def choice_words(questions, ref, lang: str) -> list:
     name, _dot, choice = str(ref).rpartition(".")
     answer = (questions or {}).get(name) if isinstance(questions, dict) else None
     spec = ((answer.get("answer") or {}).get("choices") or {}).get(choice) if isinstance(answer, dict) else None
+    return spec_words(spec, lang)
+
+
+def spec_words(spec, lang: str) -> list:
+    """The words of one declared choice (``{words: {lang: [...]}, lists: [...]}``) in ``lang``; [] for anything else."""
     if not isinstance(spec, dict):
         return []
     words = spec.get("words")
@@ -70,4 +82,65 @@ def pack_words(lang: str, refs, questions: Optional[Callable[[], dict]] = None) 
     return out
 
 
-__all__ = ["EVENT", "DEFAULT_KEYS", "tree_keys", "node_event", "language_words", "choice_words", "pack_words"]
+def question_of(questions: Callable[[], dict], name) -> Optional[dict]:
+    """The pack question ``name`` an ``ask`` leaf can put (pure): its entry when it has a phrase key and reads a ``choice`` answer, else None
+    (not declared, no phrase, another answer type, a table that cannot be read: the leaf is then the old ``[ask, <phrase key>, *refs]``)."""
+    try:
+        spec = (questions() or {}).get(name)
+    except Exception:
+        return None
+    answer = spec.get("answer") if isinstance(spec, dict) else None
+    ok = isinstance(answer, dict) and answer.get("type") == "choice" and isinstance(spec.get("phrase"), str) and bool(spec["phrase"])
+    return spec if ok else None
+
+
+def _said(text: str, words: list, lang: str) -> bool:
+    """Does ``text`` say one of ``words``: a word as ``names.says`` reads it, a phrase of several words as that run of whole words (case and
+    punctuation do not matter)."""
+    tokens = " " + " ".join(re.findall(r"\w+", str(text).lower())) + " "
+    phrases = [" " + " ".join(t) + " " for t in (re.findall(r"\w+", w.lower()) for w in words if len(w.split()) > 1) if t]
+    return any(p in tokens for p in phrases) or names.says([text], [w for w in words if len(w.split()) == 1], (lang,))
+
+
+def read_choice(spec: dict, text: str, lang: str) -> Optional[str]:
+    """The first choice of the question ``spec`` (declaration order) whose words the answer ``text`` says in ``lang``; None for silence or no word."""
+    for choice, c in ((spec.get("answer") or {}).get("choices") or {}).items():
+        if _said(text, spec_words(c, lang), lang):
+            return choice
+    return None
+
+
+def has_phrase(says: Callable[[str], bool], questions: Callable[[], dict], key) -> bool:
+    """Can an ``ask`` / ``reply`` leaf with first argument ``key`` be put: the robot says the phrase ``key`` (``says``), or ``key`` is a
+    question of the pack whose phrase it says. The pack is read only when ``key`` is no phrase of the robot."""
+    if says(key):
+        return True
+    spec = question_of(questions, key)
+    return spec is not None and says(spec["phrase"])
+
+
+def take_answer(facts, question: str, spec: dict, text: str, lang: str) -> bool:
+    """Read the answer ``text`` of the pack question ``spec`` (``read_choice``) and keep it (``keep_answer``, with the question's ``keep_text``);
+    True when a choice was read."""
+    choice = read_choice(spec, text, lang)
+    keep_answer(facts, question, choice, text, bool((spec.get("answer") or {}).get("keep_text")))
+    return choice is not None
+
+
+def keep_answer(facts, question: str, choice: Optional[str], text: str, keep_text: bool) -> None:
+    """Keep the answer of ``question`` in the fact store ``facts`` (name -> set of tuples; changed in place; anything else is left alone): the
+    earlier answer of the question is replaced, ``answered(question, choice)`` is set when a choice was read, and with ``keep_text`` and a
+    non-empty answer ``answer_text(question, text)`` too."""
+    if not isinstance(facts, dict):
+        return
+    for name, row in ((ANSWERED, choice), (ANSWER_TEXT, text if keep_text and text else None)):
+        facts[name] = {t for t in facts.get(name, ()) if t[:1] != (question,)} | ({(question, row)} if row else set())
+
+
+def answered(facts, args) -> bool:
+    """The tree condition ``answered <question> <choice>``: that choice was read for that question (False for a wrong number of arguments)."""
+    return isinstance(facts, dict) and len(args) == 2 and tuple(args) in facts.get(ANSWERED, ())
+
+
+__all__ = ["EVENT", "DEFAULT_KEYS", "ANSWERED", "ANSWER_TEXT", "tree_keys", "node_event", "language_words", "choice_words", "spec_words",
+           "pack_words", "question_of", "read_choice", "has_phrase", "take_answer", "keep_answer", "answered"]

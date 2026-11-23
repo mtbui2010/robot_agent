@@ -14,7 +14,8 @@ Why: a declared control flow per goal kind, the engine's own recovery inside it,
 Data: ``planner.options.bt_goal.trees`` {type: {tree, skip_if, needs_openable, ladder, events, source | assumed} or a list, first usable}, ``menu``.
 Tree keys (next to ``tree``, per entry; none = as above): ``ladder: false`` runs each ``act`` without the engine's ladder (the tree's own
 Retry / Fallback decide), ``events: true`` sends each node as a ``tree_node`` event; the ``ask`` leaf also reads ``<question>.<choice>`` of the
-robot pack's ``questions`` (``core/planning/tree_host.py``).
+robot pack's ``questions`` (``core/planning/tree_host.py``). Opt-in, Step S25: ``act`` may end with a mapping of typed arguments (the step's ``args``);
+``[ask, <question of the pack>]`` keeps the answer as the fact ``answered(<question>, <choice>)`` (``keep_text``: its raw text too) and ``[cond, answered, q, c]`` branches on it.
 Switch off: key ``enabled`` (run option ``bt_goal=0``), on by default. Event: lab flag ``bt_goal``: {goal, status} ("claimed", per goal, the
 exhausted action) and {goal, node, status} per node.
 """
@@ -96,7 +97,7 @@ def _filled(entry, goal, actions, can_ask, has_phrase, values, openable=None) ->
     tree = bt.fill(entry["tree"], {**values, **{k: goal.get(k) for k in SLOTS if k != "from"}})
     for leaf in bt.leaves(tree) if tree else ():
         kind, arg = leaf[0], leaf[1]
-        if (kind == "act" and arg not in actions or kind == "cond" and arg not in CONDITIONS or kind in ASKS and not can_ask
+        if (kind == "act" and arg not in actions or kind == "cond" and arg not in CONDITIONS + (tree_host.ANSWERED,) or kind in ASKS and not can_ask
                 or kind in ASKS + ("reply",) and not has_phrase(arg)):
             return None
     return tree
@@ -151,6 +152,12 @@ def pack_words(lang: str, refs, questions=None) -> list:
     return tree_host.pack_words(lang, refs, questions)
 
 
+def _pack_questions(robot) -> dict:
+    """The questions table of the robot's pack ({} for a stub robot with no pack)."""
+    pack = getattr(robot, "pack", None)
+    return pack.table("questions") if pack is not None else {}
+
+
 def label(node) -> str:
     """A node as the trace names it: a leaf with its arguments, a composite by its type."""
     return node[0] if node[0] in bt.COMPOSITES else f"retry {node[1]}" if node[0] == "retry" else " ".join(map(str, node))
@@ -170,23 +177,27 @@ class _Leaves:
             self.svc.emit(self.run, tree_host.EVENT, **tree_host.node_event(self.idx, path, label(node), status))
 
     def cond(self, name, *args):
+        if name == tree_host.ANSWERED:               # the answer of a pack question, kept by ``ask`` as a fact
+            return tree_host.answered(getattr(self.run.world, "facts", None), args)
         return holds(name, args, self.run.world, getattr(self.run, "placed", None))
 
-    def act(self, action, obj):
+    def act(self, action, obj, args=None):
         waits = getattr(self.svc, "changes_waiting", None)
         if callable(waits) and waits(self.run):      # the engine applies the change at its next step boundary, as between two plan steps
             self.changed = True
             return None
-        return (yield from self.svc.try_step(self.run, {"action": action, "object": obj}, ladder=self.keys["ladder"]))
+        step = {"action": action, "object": obj, **({"args": dict(args)} if args else {})}   # ``args``: the typed arguments of the tree's act
+        return (yield from self.svc.try_step(self.run, step, ladder=self.keys["ladder"]))
 
     def ask(self, key, *refs):
-        ans = yield from self.put(self._phrase(key))
-        return None if ans is None else names.says([ans], pack_words(self.lang, refs, self._questions), (self.lang,))
+        spec = tree_host.question_of(self._questions, key)       # ``[ask, <question of the pack>]``: read as one of its choices, kept as facts
+        ans = yield from self.put(self._phrase(spec["phrase"] if spec else key), spec.get("kind") if spec else FLAG)
+        if ans is None or spec is not None:
+            return None if ans is None else tree_host.take_answer(getattr(self.run.world, "facts", None), key, spec, ans, self.lang)
+        return names.says([ans], pack_words(self.lang, refs, self._questions), (self.lang,))
 
     def _questions(self) -> dict:
-        """The questions table of the robot's pack ({} for a stub robot with no pack)."""
-        pack = getattr(self.svc.robot, "pack", None)
-        return pack.table("questions") if pack is not None else {}
+        return _pack_questions(self.svc.robot)
 
     def confirm(self, key):
         ans = yield from self.put(self._phrase(key))
@@ -201,9 +212,9 @@ class _Leaves:
         obj = self.svc.said_of(self.run, self.goal.get("object")) if self.goal.get("object") else ""
         return speech.pack_phrase(self.svc.robot, key, self.lang, object=obj, place=self.goal.get("to") or "")
 
-    def put(self, q):
-        """Flow: the question ``q`` (a clarify event, the engine's ``ask``): the answer ('' on silence), None when the run was stopped."""
-        yield self.run.ev("clarify", question=q, round=0, kind=FLAG)
+    def put(self, q, kind=FLAG):
+        """Flow: the question ``q`` (a clarify event of ``kind``, none when None; the engine's ``ask``): the answer ('' on silence), None when the run was stopped."""
+        yield self.run.ev("clarify", question=q, round=0, **({"kind": kind} if kind else {}))
         ans = self.svc.ask(self.run, q) or ""
         stop = self.svc.cancelled(self.run)
         if stop:
@@ -225,7 +236,8 @@ class BtGoal(Option):
         robot, lang = self.svc.robot, getattr(run, "lang", None) or "en"
         spec, text, places = getattr(robot, "ask_spec", None), getattr(robot, "text", None), getattr(run, "places", None)
         return plan_picks(goals, self._key("trees"), set(getattr(robot, "plan_actions", None) or ()), callable(spec) and spec() is not None,
-                          lambda k: speech.pack_phrase(robot, k, lang, object="", place="") is not None,
+                          lambda k: tree_host.has_phrase(lambda x: speech.pack_phrase(robot, x, lang, object="", place="") is not None,
+                                                         lambda: _pack_questions(robot), k),
                           lambda obj: self.svc.remembered(run, obj) if obj else None,
                           {DELIVERY: text(DELIVERY, lang) if callable(text) else ""},
                           lambda k: places is not None and declared_openable(getattr(places, "env", None), k, places.openable), mixed)
