@@ -14,6 +14,7 @@ from .certify import CertifyPhase
 from .correct import CorrectPhase
 from .exec_helpers import ExecHelpers
 from .execute import ExecutePhase
+from .finish import FinishPhase
 from .gate import GatePhase
 from .goal_edit import GoalEditPhase
 from .ground import GroundPhase
@@ -39,4 +40,5 @@ PHASE_MIXINS: tuple = (
     ReplanPhase,
     GoalEditPhase,
     ExecutePhase,
+    FinishPhase,
 )
