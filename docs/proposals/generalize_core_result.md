@@ -214,12 +214,11 @@ G7 stays open.
 
 - Steps done: S25 (typed act arguments and pack questions in a bt_goal tree, the answer kept as a fact), commit 39c2d2a, merged as
   44ea7fb. Its six feature cassettes and eight mutations are in 32181d3.
-- Failed or stopped: S08 (the read-back phrase of a goal is chosen by its kind). Stop reason: wave W7: the run could not prove
-  equivalence for S08 and applied the owner's stop rule (stop at the first mismatch). No later wave was started.
-- State of the repository, stated plainly: the code of S08 (commit 7059fa5) is already merged on `generalize-core` (7d97aa2). It comes
-  with `tests/legacy_ref/goal_phrase.py` and `tests/test_goal_phrase_diff.py` (7 tests, 7 passed when re-run on 2026-11-23), and the
-  roundB check at the wave tip reported 0 FAIL. So the stop was recorded by the run, but the files do not show a mismatch. Until the
-  owner reviews the S08 proof, treat S08 as "merged, equivalence not accepted". Re-check it first before wave W8.
+- Also done: S08 (the read-back phrase of a goal is chosen by its kind), commit 7059fa5, merged as 7d97aa2. Correction: the run first
+  recorded "S08 stopped, equivalence not proven". As with S05 and S26, that was a stale or blocked worker answer (two workers on one
+  worktree, or a usage-limit failure), not a mismatch. Checked on 2026-11-23: the differential test `tests/test_goal_phrase_diff.py`
+  (against the reference copy `tests/legacy_ref/goal_phrase.py` of the old code) and the whole golden set pass (118 passed), the
+  mutation check catches all 64 mutations, and roundB at the wave tip reported 0 FAIL. S08 is accepted.
 - Numbers: `assist_loop.py` is 3512 lines (4081 at the start of run 1, 3548 after W6; 569 fewer than the start). Tests passed:
   the ratchet floor is 3657 passed (3075 at the end of run 1, 3624 after W6).
 - Flaky: `plan_sec` in `tests/test_sage_lab_r7*` and `r4*` is a measured time inside the compared event stream. Under machine load a run
@@ -241,4 +240,4 @@ Workarounds of `pex_case/docs/framework_fit.md` after W7:
 
 So G2, G3, G5, G6 and P8 are now deletable at the pack level; G1, P7 and G4 are not (S29, S14); G7 is not.
 
-What is next: re-check the S08 proof (owner), then S29 and S14, then Round C. Nothing is pushed.
+What is next: wave W8 (S13, S29), then S14 and the rest, then Round C. Nothing is pushed.
