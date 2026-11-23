@@ -144,8 +144,9 @@ This section describes the second run. The text above describes run 1 and stays 
   Correction of an earlier line of this section: the run first reported "S05 stopped, proof open". That was a bookkeeping artefact. After
   a session restart two workers worked on S05 at once; one stopped without changing anything (it found the other writing in the same
   worktree), the other finished with the proof. The run took the first answer. The proof exists: `tests/legacy_ref/goal_reach.py`
-  (a verbatim copy of the six old methods) and `tests/test_goal_semantics_diff.py` (27 tests, re-run on 2026-11-23: 27 passed), and the
-  roundB check (goldens, mutation check, full suite) is green with S05. S05 is accepted.
+  (a verbatim copy of the six old methods) and `tests/test_goal_semantics_diff.py` (27 tests, re-run on 2026-11-23: 27 passed;
+  5 deliberate mutations of the new code are each caught by it), and the roundB check (goldens, mutation check, full suite) is
+  0 FAIL on the merged tip. The differential test plus roundB 0 FAIL is the equivalence proof of S05. S05 is merged and accepted.
 - Waves W1 to W6 steps reported done: S07 (goal-kind table as pack data), S25a (bt_goal tree keys and goldens), S31
   (`questions_default_kind`), S10 (action table read from the standard pack), S30 (goldens and tests for the merge of `extends` and
   `remove`), S27a (`GET /robot/manifest` reports the pack, goal kinds with needs, and question kinds), S23a (execution helpers move
@@ -208,3 +209,36 @@ G7 stays open.
    the first mismatch.
 3. Round C (the PEX robot on the new framework) starts after S25, S29 and S14 exist; G3, G6 and P8 could be deleted earlier.
 4. Nothing is pushed; the owner reviews first.
+
+### Wave W7 (S25 and S08), added 2026-11-23
+
+- Steps done: S25 (typed act arguments and pack questions in a bt_goal tree, the answer kept as a fact), commit 39c2d2a, merged as
+  44ea7fb. Its six feature cassettes and eight mutations are in 32181d3.
+- Failed or stopped: S08 (the read-back phrase of a goal is chosen by its kind). Stop reason: wave W7: the run could not prove
+  equivalence for S08 and applied the owner's stop rule (stop at the first mismatch). No later wave was started.
+- State of the repository, stated plainly: the code of S08 (commit 7059fa5) is already merged on `generalize-core` (7d97aa2). It comes
+  with `tests/legacy_ref/goal_phrase.py` and `tests/test_goal_phrase_diff.py` (7 tests, 7 passed when re-run on 2026-11-23), and the
+  roundB check at the wave tip reported 0 FAIL. So the stop was recorded by the run, but the files do not show a mismatch. Until the
+  owner reviews the S08 proof, treat S08 as "merged, equivalence not accepted". Re-check it first before wave W8.
+- Numbers: `assist_loop.py` is 3512 lines (4081 at the start of run 1, 3548 after W6; 569 fewer than the start). Tests passed:
+  the ratchet floor is 3657 passed (3075 at the end of run 1, 3624 after W6).
+- Flaky: `plan_sec` in `tests/test_sage_lab_r7*` and `r4*` is a measured time inside the compared event stream. Under machine load a run
+  fails on a difference such as 0.01 s and a re-run can pass. It was seen again on 2026-11-23 (a different test in the same file failed
+  on each run when the file was run alone). No test was changed; the fix is a test change, which is the owner's call.
+
+Workarounds of `pex_case/docs/framework_fit.md` after W7:
+
+| Id | Status |
+|---|---|
+| G1, P7 | Cannot be deleted yet: S29 (`conflicts: none`) is not built. |
+| G2 | Framework side now exists (S06 and S25: pack predicates and typed leaves in trees); to be deleted in the pex pack with a test. |
+| G3 | Can be deleted (S10, S26, and S25 for typed arguments in trees). |
+| G4 | Cannot be deleted: S14 (recovery policy per action) is not built. |
+| G5 | Framework side now exists (S25 pack questions, S27a, S31, S32); to be deleted with a test. |
+| G6 | Can be deleted (S25a). |
+| G7 | Stays open (not in level B). |
+| P8 | Can be deleted once `pex.pipe_in_clips` is written (S12). |
+
+So G2, G3, G5, G6 and P8 are now deletable at the pack level; G1, P7 and G4 are not (S29, S14); G7 is not.
+
+What is next: re-check the S08 proof (owner), then S29 and S14, then Round C. Nothing is pushed.
