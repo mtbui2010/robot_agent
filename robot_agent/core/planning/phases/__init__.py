@@ -8,6 +8,7 @@ Switch off: an empty tuple (today) is the old class exactly; a step is reverted 
 """
 
 from ..find_ladder import FindLadder
+from ..loop_config import LoopConfig
 from .agree import AgreeReadBack
 from .answer import AnswerPhase
 from .certify import CertifyPhase
@@ -41,4 +42,5 @@ PHASE_MIXINS: tuple = (
     GoalEditPhase,
     ExecutePhase,
     FinishPhase,
+    LoopConfig,
 )
