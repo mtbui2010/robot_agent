@@ -13,6 +13,7 @@ from .exec_helpers import ExecHelpers
 from .gate import GatePhase
 from .ground import GroundPhase
 from .recover import RecoverPhase
+from .understand_call import UnderstandCall
 from .verify_goals import VerifyGoals
 
 PHASE_MIXINS: tuple = (
@@ -23,4 +24,5 @@ PHASE_MIXINS: tuple = (
     FindLadder,
     RecoverPhase,
     AnswerPhase,
+    UnderstandCall,
 )
