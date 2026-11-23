@@ -1,0 +1,203 @@
+{
+ "manifest_of": {
+  "capabilities": {
+   "arms": 1,
+   "base": true,
+   "drawer": false,
+   "find_reaches": false,
+   "hands": [
+    "right"
+   ],
+   "head": false,
+   "lift": false,
+   "tray": true,
+   "vlm_verify": false,
+   "voice": true
+  },
+  "goal_kinds": {
+   "close": {
+    "feasible": false,
+    "footprint": {
+     "objects": [
+      "object"
+     ],
+     "places": [
+      "from",
+      "to",
+      "object"
+     ]
+    },
+    "needs": [
+     "Close"
+    ],
+    "slots": {}
+   },
+   "deliver": {
+    "feasible": true,
+    "footprint": {
+     "objects": [
+      "object"
+     ],
+     "places": [
+      "from",
+      "to"
+     ]
+    },
+    "needs": [
+     "MoveTo",
+     "WaitForUnload"
+    ],
+    "slots": {}
+   },
+   "fasten": {
+    "feasible": true,
+    "footprint": {
+     "objects": [
+      "object"
+     ],
+     "places": [
+      "from",
+      "to"
+     ]
+    },
+    "needs": [
+     "Pick"
+    ],
+    "slots": {}
+   },
+   "go": {
+    "feasible": true,
+    "footprint": {
+     "objects": [
+      "object"
+     ],
+     "places": [
+      "from",
+      "to"
+     ]
+    },
+    "needs": [
+     "MoveTo"
+    ],
+    "slots": {}
+   },
+   "in": {
+    "feasible": true,
+    "footprint": {
+     "objects": [
+      "object"
+     ],
+     "places": [
+      "from",
+      "to"
+     ]
+    },
+    "needs": [
+     "Pick",
+     [
+      "PutIn",
+      "Place"
+     ]
+    ],
+    "slots": {}
+   },
+   "mount": {
+    "feasible": true,
+    "footprint": {
+     "objects": [
+      "object"
+     ],
+     "places": [
+      "to"
+     ]
+    },
+    "needs": [
+     "Pick",
+     [
+      "Place",
+      "MoveTo"
+     ]
+    ],
+    "slots": {
+     "object": "object",
+     "to": "place"
+    }
+   },
+   "on": {
+    "feasible": true,
+    "footprint": {
+     "objects": [
+      "object"
+     ],
+     "places": [
+      "from",
+      "to"
+     ]
+    },
+    "needs": [
+     "Pick",
+     "Place"
+    ],
+    "slots": {}
+   },
+   "open": {
+    "feasible": false,
+    "footprint": {
+     "objects": [
+      "object"
+     ],
+     "places": [
+      "from",
+      "to",
+      "object"
+     ]
+    },
+    "needs": [
+     "Open"
+    ],
+    "slots": {}
+   },
+   "say": {
+    "feasible": true,
+    "footprint": {
+     "objects": [
+      "object"
+     ],
+     "places": [
+      "from",
+      "to"
+     ]
+    },
+    "needs": [
+     "Say"
+    ],
+    "slots": {}
+   }
+  },
+  "pack": {
+   "extends": "household",
+   "name": "line",
+   "schema": 2,
+   "version": "1.0"
+  },
+  "places": [
+   "bin@cell a",
+   "jig@cell a",
+   "outfeed@cell b"
+  ],
+  "plan_actions": [
+   "Fasten",
+   "Find",
+   "Inspect",
+   "MoveTo",
+   "Pick",
+   "Place",
+   "Say",
+   "WaitForUnload"
+  ],
+  "question_kinds": [],
+  "robot": "fakeline",
+  "site": "golden",
+  "version": "1.0"
+ }
+}

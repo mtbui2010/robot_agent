@@ -145,6 +145,55 @@ The event that fails first tells you the stage. Run A is the `skill` row of this
 
 The verify layers are the checks after a skill says it worked. See [Checks before motion](../concepts/checks-before-motion.md) and the [glossary](../start/glossary.md#verify-layers). `verdict` in `verify.py` says a step passes only when every layer passed, and its reason is the first failing detail.
 
+### Where did my run fail? A decision tree
+
+Start from the `done` event and the first event that went wrong. The tree asks the same questions as the table above, in the order the loop meets them. Each leaf is a branch; the table under the picture says which record rows and which page to read for it.
+
+```mermaid
+flowchart TD
+    A["Read the done event<br/>and the events before it"]
+    F{"Was the run stopped by the person?<br/>done outcome aborted"}
+    G["5. Cancelled or stopped"]
+    B{"Did a step start?<br/>any step_start event"}
+    C{"Did understand end without goals?<br/>status not clear, a clarify question, or refused"}
+    D["1. Understand or clarify"]
+    E["2. Plan gate"]
+    H{"In the failed step, is the first verify layer isdone false?"}
+    I["3. A skill failed"]
+    J{"Is isdone true<br/>and a later layer false?"}
+    K["4. A sensor check disagreed"]
+    L{"Did the run end after the replans were used up?<br/>replan events up to max_replans"}
+    M["6. Replans used up"]
+    N["Read the done event again:<br/>code, device, evidence, msg"]
+
+    A --> F
+    F -- "yes" --> G
+    F -- "no" --> B
+    B -- "no" --> C
+    C -- "yes" --> D
+    C -- "no, goals exist but the plan did not run" --> E
+    B -- "yes" --> H
+    H -- "yes" --> I
+    H -- "no" --> J
+    J -- "yes" --> K
+    J -- "no" --> L
+    L -- "yes" --> M
+    L -- "no" --> N
+```
+
+*Drawn from the code at e65e9aa, not from a recorded run.* The question order follows `assist_loop.py`: the refusal and clarify path, the gate end state (`I could not make a plan that passes my checks`), `_cancelled` (asked first in the picture because a stop can come at any time), and the step verdict in `verify.py`, then `_replan_or_fail` and `max_replans` (default 6). Several branches can show up in one run: a skill failure that is retried and then replanned until the budget is used is branch 3 first and branch 6 at the end. Read the first failure first.
+
+| Branch | What you see | Record rows to read | Where to read more |
+|---|---|---|---|
+| 1. Understand or clarify | `understand` with a status other than `clear`, a `clarify` question, or `done` with status `refused` and a `refusal` kind. No `plan` of steps. | `event` rows `understand`, `clarify`, `done`; `user` rows for the answers; `llm` rows for the model's reading | [Dialog and intent](../concepts/dialog-and-intent.md#typed-refusals): typed refusals and the questions before a plan |
+| 2. Plan gate | `gate` events with non-empty `problems`, then `plan` with `certified: false`; `done` says "I could not make a plan that passes my checks"; no `step_start` | `event` rows `gate`, `plan`, `done`; `planner` rows for what the planner returned | [Run C above](#run-c-the-plan-never-ran), [Checks before motion](../concepts/checks-before-motion.md#1-the-gate-the-whole-plan), [Add a planner](add-a-planner.md) |
+| 3. A skill failed | `step_verify` with `isdone` false, `step_done` with `status: failed`, then `recover`, `search`, `clarify` or `replan` | `skill` rows (the raw return and the SkillResult with its `code`), `event` rows `step_done`, `recover`, `done` | [Step 3 above](#step-3-read-the-failure-code), [Skills, results, failure codes](../concepts/skills-and-failures.md#the-failure-codes) and its [recovery picture](../concepts/skills-and-failures.md#one-failed-step-to-its-recovery) |
+| 4. A sensor check disagreed | `isdone` true, then a later layer (`symbolic`, `sensor`, `localization`) false in `step_verify`; the step still fails | `event` rows `step_verify`, `step_done`; the `skill` row of the check skill (for example the sensor skill) | [Run B above](#run-b-the-skill-said-yes-a-check-said-no), [Checks before motion](../concepts/checks-before-motion.md#success-needs-an-observation), [VerifySpec](../concepts/skills-and-failures.md#verifyspec-how-a-step-is-checked) |
+| 5. Cancelled or stopped | `done` with outcome `aborted` and the message "Cancelled by user"; or a stop by the recovery table (`estop`, `software`, `budget_exceeded`: `retry_allowed` false) | `event` row `done`; `end` row; `user` rows for a stop said during the run | [Runs and records](../concepts/runs-and-records.md#a-run-and-its-id) for the run states, [Skills, results, failure codes](../concepts/skills-and-failures.md#the-failure-codes) for codes that never retry |
+| 6. Replans used up | Several `replan` events; `replans` in the metrics line; `done` ends with "(replan budget used)" or "the new plan did not pass my checks" | `event` rows `replan` and `gate` after it; `planner` rows of each repair; the metrics line | [Step 1 above](#step-1-find-the-run-and-its-metrics-line), [The closed loop](../concepts/closed-loop.md), [Planners](../concepts/planners.md) |
+
+Branches 5 and 6 are about how a run ended, not where it began. Branch 5 by a stop from the table is also a skill failure (branch 3): read the failure code to tell them apart. When the tree gives no leaf, the checklist at the end of this page is the fallback.
+
 ### Run B: the skill said yes, a check said no
 
 Run B had the same fault in the world but a different symptom. The part of its events that differs:
@@ -196,6 +245,8 @@ A [failure code](../start/glossary.md#failurecode) says **why**, in a form that 
 !!! note "The table is the default, the loop can do more"
     Run A got `grasp_failed`, and the table says "retry once, then replan". The AssistLoop handles a `Pick` through a step ladder of its own first (`_recover_pick` in `step_ladder.py`; the ladders are declared in `STEP_LADDER` in `contract/recovery.py`, for `Pick` and `MoveTo`): it looks and grasps again in place, then asks the person to move the object closer, and then, when nobody helps, it asks the planner for a new plan (the failed code's own rule says `then=REPLAN`). So the events you see (`recover`, `clarify`, `replan`) are the ladder's rungs, not the generic table. At the earlier pin of this site the run ended at the question with "could not pick up the apple"; it no longer does. The same kind of ladder exists for `Find` and `MoveTo`. Read the events, not only the table.
 
+A failed `Find` with code `unknown` (the skill said "not done" and gave no text the engine knows) is read as `absent` while the option `fetch_guard` is on (it is on by default; see Step 6). If you see `absent` on a `Find` with no reason text, that is why; with `fetch_guard=0` it stays `unknown` and the loop replans.
+
 The code comes from the skill's result. A skill that still returns only `{'isdone': False, 'msg': '...'}` gets its code read off the text by `classify_legacy_failure`, in one place. A message that matches nothing becomes `unknown`. If you see `unknown` and the message is clear to a person, the text did not match any rule: the fix is in the skill (return a code) or in that function, not in the loop. A message that mentions a Python error, such as `TypeError` or `has no attribute`, becomes `software`, and the run stops.
 
 !!! warning "Two cases where the metrics line is thin"
@@ -233,6 +284,14 @@ What it tells you:
 - `found = None`: the last `Find`, at the counter, did not see the apple, so the belief was cleared. It is a belief value, not a sensor reading.
 - `holding = None` matches the failed grasp: nothing is in the hand.
 - The code, device and evidence in the last line are those of the failed pick, which stay the deciding failure although later steps ran.
+
+- **A `found` that is missing at the start.** A run that starts with `found` set from an earlier run (the belief is kept on disk) can lose it at once. At run start the sensor reconcile drops that `found` when the base has moved more than 0.25 m from where the object was seen ([`drop_stale_found`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/reconcile.py#L151-L162)). The first `reconcile` event then has the old name in `sensors.found_dropped` (the report is built in [`reconcile_sensors` L165-L175](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/reconcile.py#L165-L175)), and `changed` shows `found` going to `None`:
+
+```text
+{"event": "reconcile", "when": "start", "changed": {"found": ["widget", null]}, "sensors": {..., "found_dropped": "widget"}, ...}
+```
+
+  That line is the shape the code builds; it was written from the code and the test `tests/test_reconcile_stale_found.py`, not copied from a run. Read it as: the plan has to look (or ask) again, as it should. A sighting with no base pose, or a pose that could not be read, is **not** dropped, so a stale `found` can still survive in that case. Before this change a run on the real kcare robot began with `found=plastic spoon` from a find 10 minutes and more than 3 m earlier, and the planner skipped the Find (from the engine's changelog of 2026-11-20).
 
 Compare this with a belief that is wrong. If `holding` shows an object but the run failed with `dropped` or a "not in the gripper" reason, the belief and the robot disagreed, and the guard or reconcile should have fixed it. See [Belief and reconcile](../concepts/belief-and-reconcile.md).
 
@@ -315,6 +374,26 @@ How to tell in a failed run whether `bt_goal` was involved: (1) read the manifes
 
 The step events of a tree run are the usual `step_start`, `step_verify` and `step_done`: a tree acts through the engine's own step path and recovery ladder, so the guide's Steps 2 and 3 apply to them unchanged.
 
+### The `fetch_guard` flag
+
+The option `fetch_guard` (on by default) keeps the place an object must end up at from being taken for the place where it is now ([`docs/options.md`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/docs/options.md#L138-L149)). It writes a lab entry `{"flag": "fetch_guard", "part": ...}` for each of its three parts:
+
+| Entry | Meaning |
+|---|---|
+| `{part: "rank_unknown", object}` | An `on` / `in` goal had no source and no trusted sighting, so the ranked search ran first and its first place that is not the destination became the goal's `from`. |
+| `{part: "plan_finding", finding}` | The plan made its first `Find` or `Pick` of that object at the goal's destination, so the gate got an extra finding (`finding` is its text) and the plan was refined. A run that still ends uncertified may have this entry. |
+| `{part: "absent_find"}` | A failed `Find` with code `unknown` was changed to `absent`, so the search ladder and then the question "I couldn't find the X. Where is it?" ran instead of a replan. |
+
+The three entries are written in [`options/fetch_guard.py` L80-L100](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/options/fetch_guard.py#L80-L100). `docs/options.md` lists only `rank_unknown` and `plan_finding` for the flag; the code at this pin also writes `absent_find`.
+
+How to read a failed run with it:
+
+- **Many failed `Find` steps at one place, and `replan` events that bring the same plan back**: the pattern of the real kcare run of 2026-11-20 that led to this option (5 failed Finds, 4 identical replans, the banana searched for at its destination). With `fetch_guard` on, look for `absent_find` (the loop moves on to the search ladder and the question) and `plan_finding` (the plan is refined before it runs).
+- **No `fetch_guard` entry in a run like that**: the object had a source or a trusted sighting, or the option was off. Check `fetch_guard=0` in the run options (also `$ROBOT_AGENT_FETCH_GUARD=0`); one part off is `fetch_guard.rank_unknown=0`, `fetch_guard.plan_finding=0` or `fetch_guard.absent_find=0`.
+- **Switch it off for one run** to see whether the result changes. Its effect is **not measured** on any benchmark and it was **not run with a real LLM**; the two real-robot run records of 2026-11-20 (one good, one bad) are the only evidence.
+
+A related lab entry comes from `look_then_ask` with its key `offer_near`: `answered_unmatched` and `second_answer` say that an answer such as "on the dinning table" named no place and got one follow-up that offered up to 3 near places ([Dialog and intent](../concepts/dialog-and-intent.md)).
+
 ## Step 7. Check the robot and the skill
 
 The record says what the loop saw. If the cause is in the robot, check the robot.
@@ -338,7 +417,8 @@ The record says what the loop saw. If the cause is in the robot, check the robot
 5. Read the belief and its sources.
 6. Replay with `plan` and `exec --fake`. Expect exit 0, except the retry case above.
 7. If an option is suspected (for example `bt_goal`), read its lab flag (Step 6) and run again with the option off.
-8. If the cause is in the robot, run the diagnostics and turn on the debug response.
+8. In a run of many failed `Find` steps or an opening `reconcile` with `found_dropped`, read the `fetch_guard` entries (Step 6) and the first `reconcile` event (Step 4).
+9. If the cause is in the robot, run the diagnostics and turn on the debug response.
 
 ## Where to go next
 

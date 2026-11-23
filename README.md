@@ -98,6 +98,10 @@ dashboard takes one HTTP POST — no robot restart, no code change.
 
 - **Thread-safe** registry (`threading.Lock` over the connection dict)
 - **Atomic persistence** — write to `.tmp`, rotate `.bak`, replace original
+- **Simulated robots without ROS 2** — `ROBOT_AGENT_ROS=off` (also `0`, `false`, `no`) skips the `rclpy`
+  import and `rclpy.init()` at boot, so a robot package whose skills are simulated runs on a machine with no
+  ROS 2. The default is on: real robots behave as before, and without ROS 2 they still stop with the
+  "ROS2 not found" error (which now names the switch).
 - **Lazy ROS init** — one shared `CustomNode` with 4 callback groups, spun in a
   daemon thread
 

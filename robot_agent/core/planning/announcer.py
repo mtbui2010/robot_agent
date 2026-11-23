@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import threading
 
+from ..pack import actions as action_data
+
 
 # Map run language -> gTTS voice code (a two-letter code is used as is).
 _GTTS_CODE = {'en': 'en'}
@@ -22,21 +24,14 @@ _GTTS_CODE = {'en': 'en'}
 # Per-action localized verbs (resolved into {verb} when ctx carries 'action').
 # Keys cover both SAGE actions (CamelCase) and the skill names used by the
 # direct/structured path (lowercase, e.g. ``find::apple``).
-VERBS: dict[str, dict[str, str]] = {
-    'en': {
-        'MoveTo': 'move to', 'GoTo': 'move to', 'Navigate': 'move to',
-        'Find': 'find', 'Search': 'find', 'Detect': 'find',
-        'Pick': 'pick', 'PickUp': 'pick', 'Grasp': 'pick',
-        'Place': 'place', 'PlaceAt': 'place', 'PutDown': 'place', 'PutIn': 'place',
-        'Open': 'open', 'Close': 'close',
-        # direct-path skills
-        'navigate': 'move to', 'move': 'move to', 'moveto': 'move to',
-        'find': 'find', 'detect': 'find', 'detect_object': 'find',
-        'pick': 'pick', 'grasp': 'pick',
-        'place': 'place', 'put': 'place',
-        'open': 'open', 'close': 'close',
-    },
-}
+# The canonical actions' verbs are pack data (actions.yaml, field ``verb``); the other names the planners and the direct path
+# use for the same action (a synonym, or the lowercase skill name) are listed here with the action they stand for.
+_VERB_OF = {'GoTo': 'MoveTo', 'Navigate': 'MoveTo', 'Search': 'Find', 'Detect': 'Find', 'PickUp': 'Pick', 'Grasp': 'Pick',
+            'PlaceAt': 'Place', 'PutDown': 'Place', 'navigate': 'MoveTo', 'move': 'MoveTo', 'moveto': 'MoveTo',
+            'find': 'Find', 'detect': 'Find', 'detect_object': 'Find', 'pick': 'Pick', 'grasp': 'Pick', 'place': 'Place',
+            'put': 'Place', 'open': 'Open', 'close': 'Close'}
+_EN = action_data.words(action_data.default_table(), 'verb')
+VERBS: dict[str, dict[str, str]] = {'en': {**_EN, **{a: _EN[t] for a, t in _VERB_OF.items()}}}
 
 # Localized templates keyed by [lang][kind]. step_* use {verb} and {object}.
 PHRASES: dict[str, dict[str, str]] = {

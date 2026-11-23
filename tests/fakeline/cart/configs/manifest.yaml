@@ -1,0 +1,13 @@
+# ``fakeline.cart``: the armless tray cart of the made-up assembly line (tests/golden, Step S01). Made up (assumed); schema 1.
+robot: fakeline_cart
+version: "1.0"
+language: en
+capabilities: {base: true, arms: 0, hands: [], voice: true, tray: true}
+geometry: {arrive_tol_m: 0.3}
+skills:
+  - {name: move, action: MoveTo, params: {type: object, properties: {inputs: {type: string}}, required: [inputs]},
+     effects: ["arrived(?inputs)"], verify: [{kind: symbolic}, {kind: sensor, skill: mobile_pose}]}
+  - {name: say, action: Say, params: {type: object, properties: {inputs: {type: string}}, required: [inputs]}}
+  - {name: wait_for_unload, action: WaitForUnload, params: {type: object, properties: {}, required: []}}
+  - {name: mobile_pose, action: Observe, params: {type: object, properties: {}, required: []}}
+  - {name: ask, action: Ask, params: {type: object, properties: {inputs: {type: string}}, required: [inputs]}}

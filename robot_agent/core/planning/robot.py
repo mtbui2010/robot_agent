@@ -15,34 +15,16 @@ from typing import Any, Optional
 
 from robot_agent.contract import (FailureCode, Geometry, Messages, SkillResult, SkillSpec, Unbindable,
                                   VerifySpec, classify_legacy_failure, load_adapter, policy_for)
+from ..pack import actions as action_data, constants as constant_data
 from . import action_model, concrete
 
-# what the core says when the robot's i18n has no phrase for a key (English, {placeholders})
-CORE_TEXT = {
-    "verify_failed": "{skill} reported success but the {sensor} check says otherwise",
-    "verify_unknown": "unknown: {skill} declares no sensor that checks it",
-    "sensor_unknown": "unknown: the {sensor} check could not run ({why})",
-    "robot_description": "The robot can: {abilities}.",
-    # a goal kind needs an action the robot has no skill for (the robot's i18n `cannot_do` wins)
-    "cannot_do": "I can't do that: I have no {missing} skill.",
-    # what a delivering robot says when it arrives (deliver goals)
-    "delivery": "I have a delivery for you. Please take it.",
-    # the run used its LLM-call budget (budget.budget_end)
-    "llm_budget": "I have to stop: I could not work this task out within my limit of tries.",
-    # an unclear answer to a yes / no question ("yet", noise) is asked again with this (interact.dialog)
-    "yes_or_no": "Sorry, I didn't catch that. Please answer yes or no.",
-}
-
-# manifest actions that are not plan steps: sensors (Observe / Verify), the dialog (Ask, the core's
-# own) and queries to another model (Query)
-NOT_PLAN_STEPS = {"Observe", "Verify", "Ask", "Query"}
-
-# abstract action -> how the task-understanding prompt describes it (robots override the
-# whole sentence with the i18n key "robot_description")
-_ABILITY = {"MoveTo": "move to a place", "Find": "find an object", "Pick": "pick it up",
-            "Place": "place it on a surface", "Open": "open / close a container",
-            "PutIn": "put an object in an open container", "Say": "say something to someone",
-            "WaitForUnload": "carry an item to someone, who takes it"}
+# what the core says when the robot's i18n has no phrase for a key (English, {placeholders}); declared data of the standard
+# pack (constants.yaml). NOT_PLAN_STEPS: manifest actions that are not plan steps (sensors, the dialog, queries to another
+# model) and _ABILITY: how the task-understanding prompt describes an abstract action (robots override the whole sentence
+# with the i18n key "robot_description") are read from its actions.yaml.
+CORE_TEXT = constant_data.texts(constant_data.default_table(), "core_text.")
+NOT_PLAN_STEPS = set(action_data.names(action_data.default_table(), plan_step=False))
+_ABILITY = action_data.words(action_data.default_table(), "ability")
 
 
 class RobotView:
@@ -55,10 +37,31 @@ class RobotView:
         self.i18n: Messages = getattr(adapter, "i18n", None) or Messages(language=self.manifest.language or "en")
         self.policy = policy_for(adapter)
         self.registry: Any = None               # the skill registry (loops set it): plan skills, aliases
+        if getattr(self.manifest, "pack", None):    # a declared pack (schema 2) is resolved now: a wrong one stops the load
+            self.use_pack(self.manifest.pack)
 
     @classmethod
     def load(cls, robot_pkg: str) -> "RobotView":
-        return cls(load_adapter(robot_pkg))
+        place_args = action_data.names(action_data.default_table(), cls=("move", "release"))      # pack: actions.yaml
+        return cls(load_adapter(robot_pkg, location_actions=place_args))
+
+    # ── the pack: vocabulary and rules as declared data (robot_agent/core/pack) ──
+    @property
+    def pack(self):
+        """The resolved pack of this robot (``core/pack/loader.resolve``), kept once resolved: on first use for a manifest
+        with no ``pack:`` section (schema 1: the standard pack), at construction for one that declares a pack. A reader
+        takes it from here at the time it needs it and keeps no copy (``use_pack`` may replace it)."""
+        if self.__dict__.get("_pack") is None:
+            from ..pack import resolve
+            self._pack = resolve(self.manifest, self.adapter)
+        return self._pack
+
+    def use_pack(self, raw):
+        """Use ``raw`` (a ``pack:`` section as in a manifest; None = none, schema 1) as this robot's pack declaration from
+        now on, in place of the manifest's. Returns the resolved pack; raises ``PackError`` when ``raw`` is wrong."""
+        from ..pack import resolve
+        self._pack = resolve(self.manifest, self.adapter, raw=raw)
+        return self._pack
 
     # ── vocabulary ──────────────────────────────────────────────────────
     @property

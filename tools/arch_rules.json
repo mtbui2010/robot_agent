@@ -3,6 +3,7 @@
   "contract": ["robot_agent/contract"],
   "engine": ["robot_agent/core"],
   "options": ["robot_agent/options"],
+  "packs": ["robot_agent/packs"],
   "interact": ["robot_agent/interact"],
   "api": ["robot_agent/api"]
  },
@@ -10,6 +11,7 @@
   "contract": [],
   "engine": ["contract"],
   "options": ["contract", "engine"],
+  "packs": ["contract", "engine"],
   "interact": ["contract", "engine"],
   "api": ["contract", "engine", "interact"]
  },
@@ -18,8 +20,10 @@
  "only_in": {"embodiplan": ["robot_agent/core/planning/backends/", "robot_agent/core/planning/action_model.py"]},
  "size": [
   {"path": "robot_agent/core", "max_function": 80, "max_file": 1200},
+  {"path": "robot_agent/core/planning/assist_loop.py", "max_function": 80, "max_file": 400},
   {"path": "robot_agent/contract", "max_function": 80, "max_file": 1200},
   {"path": "robot_agent/interact", "max_function": 80, "max_file": 1200},
-  {"path": "robot_agent/options", "max_function": 60, "max_file": 400}
+  {"path": "robot_agent/options", "max_function": 60, "max_file": 400},
+  {"path": "robot_agent/packs", "max_function": 60, "max_file": 400}
  ]
 }

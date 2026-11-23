@@ -16,6 +16,7 @@ from typing import Any, Callable, Optional
 
 from robot_agent.contract import SkillResult
 from robot_agent.contract.types import FailureCode
+from robot_agent.core.pack import predicates
 
 from . import action_model
 from .base import WorldState  # noqa: F401  (contract: do not redefine WorldState)
@@ -57,17 +58,8 @@ def _holds(world, pred: str, bind) -> Optional[bool]:
         return None
     neg, name, arg = m.group(1), m.group(2), (m.group(3) or "").strip()
     val = None if arg in ("", "*") else bind(arg)
-    if name == "hand_empty":
-        r = world.holding is None
-    elif name in ("arrived", "found", "holding"):
-        cur = getattr(world, name, None)
-        r = (cur == val) if val is not None else (cur is not None)
-    elif name in ("opened", "on"):
-        cur = set(getattr(world, name, ()) or ())
-        r = (val in cur) if val is not None else bool(cur)
-    else:
-        return None
-    return (not r) if neg else r
+    r = predicates.holds_in_effect(name, val, world)      # the pack's predicate table; None: not one the world model tracks
+    return r if r is None or not neg else not r
 
 
 def effects_check(step: dict, world: "WorldState", effects=(), *, params: Optional[dict] = None,

@@ -1,0 +1,452 @@
+{
+ "format": 1,
+ "name": "given_goals_unknown_kind",
+ "tags": [
+  "failure",
+  "given_goals"
+ ],
+ "about": "a caller's goal of a kind no table knows: today it is vacuously reached (the gate says the goals are done before the first step; the plan is not certified, nothing moves)",
+ "scenario": {
+  "name": "given_goals_unknown_kind",
+  "env": "sim_house",
+  "robot_pkg": "fakebot",
+  "task": "polish the apple",
+  "robot": {
+   "objects": {
+    "apple": "desk@study room",
+    "mug": "desk@study room",
+    "banana": "dining table@kitchen",
+    "orange": "dining table@kitchen",
+    "sponge": "counter@kitchen",
+    "spoon": "drawer@kitchen/in",
+    "tennis ball": "stool@bedroom"
+   }
+  },
+  "llm": {
+   "script": [],
+   "default": null
+  },
+  "planner": {
+   "plan": [
+    "MoveTo desk@study room",
+    "Find apple"
+   ],
+   "replans": []
+  },
+  "options": {
+   "input_pivot": "none",
+   "look_then_ask": "0",
+   "bring_ask": "0",
+   "bt_goal": "0",
+   "fetch_guard": "0",
+   "accept_goals": "1"
+  },
+  "goals": [
+   {
+    "type": "polish",
+    "object": "apple",
+    "from": "desk@study room",
+    "to": ""
+   }
+  ]
+ },
+ "recorded": {
+  "llm_calls": [],
+  "planner_calls": [
+   {
+    "call": "generate_plan",
+    "task": "polish the apple"
+   },
+   {
+    "call": "generate_plan",
+    "task": "polish the apple"
+   }
+  ],
+  "robot_calls": [
+   {
+    "skill": "mobile_pose",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "pose": [
+      0.25,
+      2.1,
+      90.0
+     ]
+    }
+   }
+  ],
+  "events": [
+   {
+    "event": "task_start",
+    "task": "polish the apple",
+    "world": {
+     "arrived": "entrance",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from entrance"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Starting the task"
+   },
+   {
+    "event": "reconcile",
+    "when": "start",
+    "changed": {
+     "arrived": [
+      null,
+      "entrance"
+     ]
+    },
+    "sensors": {
+     "arrived": {
+      "pose": [
+       0.25,
+       2.1
+      ],
+      "detail": "0.00 m from entrance",
+      "source": "mobile_pose"
+     },
+     "containers": {},
+     "unconfirmed": []
+    },
+    "provenance": {
+     "arrived": {
+      "source": "sensor",
+      "detail": "0.00 m from entrance"
+     },
+     "found": {
+      "source": "belief"
+     },
+     "holding": {
+      "source": "belief"
+     },
+     "opened": {
+      "source": "sensor",
+      "containers": {},
+      "unconfirmed": []
+     },
+     "on": {
+      "source": "belief"
+     }
+    },
+    "world": {
+     "arrived": "entrance",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from entrance"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    }
+   },
+   {
+    "event": "understand",
+    "status": "clear",
+    "reason": "goals given by the caller",
+    "goals": [
+     {
+      "type": "polish",
+      "object": "apple",
+      "from": "",
+      "to": ""
+     }
+    ],
+    "question": null,
+    "unasked": "Where should I put the apple?"
+   },
+   {
+    "event": "status",
+    "msg": "Generating task plan..."
+   },
+   {
+    "event": "gate",
+    "round": 0,
+    "problems": [
+     "the goals are done after step 0; remove the steps after it (do not repeat the task)"
+    ],
+    "plan": [
+     "MoveTo desk@study room"
+    ],
+    "tidied": [
+     "the goals are reached after 1 steps: the 1 steps after them removed"
+    ]
+   },
+   {
+    "event": "gate",
+    "round": "symbolic",
+    "edits": [],
+    "problems": [
+     "the goals are done after step 0; remove the steps after it (do not repeat the task)"
+    ],
+    "plan": [
+     "MoveTo desk@study room"
+    ]
+   },
+   {
+    "event": "gate",
+    "round": 1,
+    "edits": [],
+    "problems": [
+     "the goals are done after step 0; remove the steps after it (do not repeat the task)"
+    ],
+    "plan": [
+     "MoveTo desk@study room"
+    ]
+   },
+   {
+    "event": "gate",
+    "round": 2,
+    "problems": [
+     "the goals are done after step 0; remove the steps after it (do not repeat the task)"
+    ],
+    "plan": [
+     "MoveTo desk@study room"
+    ]
+   },
+   {
+    "event": "plan",
+    "steps": [
+     {
+      "action": "MoveTo",
+      "object": "desk@study room",
+      "grounded": true
+     }
+    ],
+    "plan_meta": {
+     "method": "scripted",
+     "llm_plan": [
+      {
+       "action": "MoveTo",
+       "object": "desk@study room",
+       "grounded": true
+      },
+      {
+       "action": "Find",
+       "object": "apple"
+      }
+     ],
+     "edits": [],
+     "certified": false,
+     "gate_findings": [
+      "the goals are done after step 0; remove the steps after it (do not repeat the task)"
+     ],
+     "repaired_by_op": {
+      "completed_by_gate": 0
+     },
+     "completed_by_gate": 0
+    },
+    "warnings": [
+     "the goals are done after step 0; remove the steps after it (do not repeat the task)"
+    ],
+    "plan_text": "move::desk@study room",
+    "certified": false,
+    "world": {
+     "arrived": "entrance",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from entrance"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    }
+   },
+   {
+    "event": "done",
+    "status": "failed",
+    "msg": "I could not make a plan that passes my checks: the goals are done after step 0; remove the steps after it (do not repeat the task)",
+    "world": {
+     "arrived": "entrance",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from entrance"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "code": "unknown",
+    "say": "I could not make a plan that passes my checks: the goals are done after step 0; remove the steps after it (do not repeat the task)"
+   }
+  ],
+  "final": {
+   "robot": {
+    "at": "entrance",
+    "holding": null,
+    "objects": {
+     "apple": "desk@study room",
+     "mug": "desk@study room",
+     "banana": "dining table@kitchen",
+     "orange": "dining table@kitchen",
+     "sponge": "counter@kitchen",
+     "spoon": "drawer@kitchen/in",
+     "tennis ball": "stool@bedroom"
+    },
+    "opened": [],
+    "asked": []
+   },
+   "belief": {
+    "arrived": "entrance",
+    "found": null,
+    "holding": null,
+    "opened": [],
+    "on": [],
+    "found_pose": null,
+    "holding_pose": null,
+    "provenance": {
+     "arrived": {
+      "source": "sensor",
+      "detail": "0.00 m from entrance"
+     },
+     "found": {
+      "source": "belief"
+     },
+     "holding": {
+      "source": "belief"
+     },
+     "opened": {
+      "source": "sensor",
+      "containers": {},
+      "unconfirmed": []
+     },
+     "on": {
+      "source": "belief"
+     }
+    }
+   },
+   "lab_log": [],
+   "record": {
+    "task": "polish the apple",
+    "lang": "en",
+    "obs": "goals: [{\"type\": \"polish\", \"object\": \"apple\", \"from\": \"\", \"to\": \"\"}]",
+    "visible": [],
+    "planner": "sage+assist",
+    "plan_meta": {
+     "method": "scripted",
+     "llm_plan": [
+      {
+       "action": "MoveTo",
+       "object": "desk@study room",
+       "grounded": true
+      },
+      {
+       "action": "Find",
+       "object": "apple"
+      }
+     ],
+     "edits": [],
+     "certified": false,
+     "gate_findings": [
+      "the goals are done after step 0; remove the steps after it (do not repeat the task)"
+     ],
+     "repaired_by_op": {
+      "completed_by_gate": 0
+     },
+     "completed_by_gate": 0
+    },
+    "warnings": [],
+    "steps": [],
+    "replans": [],
+    "status": "failed",
+    "failure": {
+     "code": "unknown"
+    }
+   },
+   "log_kinds": [
+    "reconcile",
+    "task_start",
+    "understand",
+    "status",
+    "gate",
+    "gate",
+    "gate",
+    "gate",
+    "plan",
+    "done",
+    "snapshot"
+   ]
+  }
+ },
+ "commit": "4d584ba"
+}

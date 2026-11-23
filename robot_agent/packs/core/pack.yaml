@@ -1,0 +1,10 @@
+# The core pack: what a run needs at all (say, ask, wait, stop, the generic questions). Always first in the chain.
+# The header only. Each section is its own file next to this one (<section>.yaml: goal_kinds, predicates, actions, verifiers,
+# recovery, questions, phrases, trees, constants, options, fleet); the step that moves a table out of the code adds its file.
+pack:
+  schema: 2
+  name: core
+  version: "1.0"
+  extends: null
+  callables: robot_agent.packs.core.callables
+  source: "robot_agent 8002347: the engine's own constants of core/planning, moved as data"

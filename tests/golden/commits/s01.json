@@ -1,0 +1,7 @@
+{
+ "about": "Step S01 of docs/proposals/generalize_core_design.md: the commits the S01 set cassettes were recorded on. kind equivalence: the old code, before any production commit of round B; tests/golden/test_golden_order.py checks that every listed commit has the same robot_agent/ tree as old_code. A later step adds its own file here (tests/golden/commits/<step>.json) and edits none; kind feature (a cassette recorded after a production commit of its step) has no old_code and no tree check.",
+ "kind": "equivalence",
+ "old_code": "65124d0",
+ "commits": ["65124d0", "4d584ba"],
+ "notes": {"4d584ba": "generalize-core tip when S01 was recorded: 65124d0 plus docs/proposals only (the design, the plan, the ratchet); robot_agent/ identical"}
+}

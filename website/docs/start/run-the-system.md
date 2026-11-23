@@ -28,6 +28,38 @@ This page lists, for four set-ups, what each repo needs to start, in which order
 
 The language model is chosen by an `llm` entry in the site's [`connections.json`](glossary.md#connections-json). The hub starts the backend named in the entry's `name` key: `llama`, `chatgpt` or `openai`, or `gemini` ([`connect/llm/__init__.py:6-10`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/connect/llm/__init__.py#L6-L10)).
 
+### Which process talks to which
+
+The picture shows the four set-ups side by side. In A everything is one Python process. In B the simulator server and the hub are one process and there is no ROS. In C and D the hub talks to ROS 2: to the simulator bridge in a container in C, to the robot's drivers in D. The dashboard connects only to the hub's API port (a URL you add in the dashboard).
+
+```mermaid
+flowchart TD
+    subgraph SA["A. Offline fake robot, one process"]
+        A1["test script<br/>AssistLoop"] --> A2["FakeRobot and<br/>scripted FakeLLM"]
+    end
+    subgraph SB["B. Symbolic simulator, no ROS"]
+        B1["simulator server<br/>with the hub API<br/>ROBOT_AGENT_ROS=off"] --> B2["symbolic world<br/>in the same process"]
+    end
+    subgraph SC["C. Physics simulation, in a container"]
+        C1["kcare_robot hub API<br/>port 8001"] -- "ROS 2" --> C2["MuJoCo bridge<br/>and house"]
+        C3["VLA drawer node<br/>only with VLA=1"] --> C4["vla-serve<br/>port 11450"]
+    end
+    subgraph SD["D. Real robot"]
+        D1["kcare_robot hub API<br/>port 8001"] -- "ROS 2" --> D2["robot drivers"]
+        D1 --> D3["vision service<br/>how to start: not documented"]
+    end
+    UI["dashboard in a browser<br/>robotapp, port 3007"]
+    LLM["language model server<br/>llm entry in connections.json"]
+    UI -- "HTTP and /ws/agent" --> B1
+    UI -- "HTTP and /ws/agent" --> C1
+    UI -- "HTTP and /ws/agent" --> D1
+    B1 --> LLM
+    C1 --> LLM
+    D1 --> LLM
+```
+
+Drawn from this page and the repos' Makefiles and scripts at the pins above, not from a recorded run; only A was run. The symbolic simulator listens on port 8091 by default and the examples use 8121; the picture leaves the port out. Left out: which process starts first on the real robot (not documented, see the end of this page) and where the language model server runs (it is an address in a config, not fixed). The link from the VLA node to the hub in C is not drawn because this page does not say how they connect.
+
 ## A. Fully offline with the hub's fake robot
 
 This runs the [AssistLoop](glossary.md#assistloop) from the hub on the hub's symbolic fake robot. The language model and the planner are scripted by the test code (the fakes are in [`tests/fakes.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/tests/fakes.py)). Nothing is started, so the dashboard cannot connect to this set-up. It shows what the loop does with understanding, the [gate](glossary.md#certified-gate), a failed step and a [replan](glossary.md#replan).

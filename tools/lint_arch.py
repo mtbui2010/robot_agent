@@ -8,8 +8,12 @@ Checks (all fail on NEW findings only; the old ones are recorded in ``tools/arch
                name of another module; a module imports the benchmark, a robot pack or the tests. RELATIVE imports are resolved.
 * ``size``     a function or file over its limit (engine functions 80 lines, option functions 60; files 1200, options 400) that is
                not in the baseline, or a baseline offender that grew.
-* ``wiring``   ``assist_loop.py``: the number of distinct option keys it reads from ``self.cfg`` and of ``if`` branches on
-               ``self.cfg`` may not grow, and a registered option's keys appear in it 0 times.
+* ``wiring``   the loop's files (``LOOP_SET``: ``assist_loop.py`` and the modules its code moves to, the ones that exist): the
+               number of distinct option keys each reads from ``self.cfg`` and of ``if`` branches on ``self.cfg``, summed
+               over the files, may not grow, and a registered option's keys appear in them 0 times.
+* ``loop``     the same files: no import of embodiplan or of a private name of ``action_model`` (one source of action rules);
+               the language-literal rows of ``tools/lang_inventory.py`` and the lines with a standard action name or a goal
+               kind in double quotes may not grow (ratchets); ``core/pack`` and ``packs`` hold no language literal at all.
 
 A baseline entry that no longer applies is also an error ("shrink it": run ``--update``): the baseline is a ratchet.
 
@@ -21,6 +25,8 @@ A baseline entry that no longer applies is also an error ("shrink it": run ``--u
 from __future__ import annotations
 
 import ast
+import glob
+import importlib.util
 import json
 import os
 import re
@@ -33,6 +39,10 @@ PKG = "robot_agent"
 RULES_FILE = os.path.join(HERE, "arch_rules.json")
 BASELINE_FILE = os.path.join(HERE, "arch_baseline.json")
 LOOP = "robot_agent/core/planning/assist_loop.py"
+# the loop's files: the guards follow the code when a step moves it out of assist_loop.py (design, invariant 18)
+LOOP_SET = (LOOP, "robot_agent/core/planning/phases/*.py", "robot_agent/core/planning/places.py",
+            "robot_agent/core/planning/loop_config.py", "robot_agent/core/planning/find_ladder.py", "robot_agent/core/pack/*.py")
+NO_LANG_LAYERS = ("robot_agent/core/pack/", "robot_agent/packs/")
 
 
 def load_rules(path: str = RULES_FILE) -> dict:
@@ -193,22 +203,48 @@ _CFG_KEY = re.compile(r"self\.cfg(?:\.get)?\(?\[?[\"']([a-z_0-9.]+)[\"']")
 _CFG_IF = re.compile(r"\bif\b[^\n]*self\.cfg")
 
 
+def loop_files(root: str) -> List[str]:
+    """The files of ``LOOP_SET`` that exist (paths relative to root, '/', in the order of the set)."""
+    out: List[str] = []
+    for pat in LOOP_SET:
+        out += sorted(os.path.relpath(p, root).replace(os.sep, "/") for p in glob.glob(os.path.join(root, pat)))
+    return list(dict.fromkeys(out))
+
+
+def _src(root: str, rel: str) -> str:
+    with open(os.path.join(root, rel), encoding="utf-8") as f:
+        return f.read()
+
+
 def wiring(root: str) -> dict:
-    src = open(os.path.join(root, LOOP), encoding="utf-8").read()
-    keys = sorted(set(_CFG_KEY.findall(src)))
-    return {"cfg_keys": len(keys), "cfg_branches": len(_CFG_IF.findall(src)), "keys": keys, "lines": src.count("\n") + 1}
+    """The option keys read (distinct per file) and the ``if`` branches on ``self.cfg``, summed over the loop's files."""
+    per = {rel: _src(root, rel) for rel in loop_files(root)}
+    keys = [set(_CFG_KEY.findall(s)) for s in per.values()]
+    lines = per[LOOP].count("\n") + 1 if LOOP in per else 0
+    return {"cfg_keys": sum(map(len, keys)), "cfg_branches": sum(len(_CFG_IF.findall(s)) for s in per.values()),
+            "keys": sorted(set().union(*keys)), "lines": lines}
 
 
 def check_wiring(root: str, base: dict, option_names: List[str]) -> Dict[str, str]:
     cur, bad = wiring(root), {}
     for k in ("cfg_keys", "cfg_branches"):
         if cur[k] > base.get(k, 10 ** 9):
-            bad[f"wiring: {k}"] = f"{LOOP} reads more option keys ({k}): {base[k]} -> {cur[k]}"
-    src = open(os.path.join(root, LOOP), encoding="utf-8").read()
-    for name in option_names:
-        if re.search(r"""["']""" + re.escape(name) + r"""["']""", src):
-            bad[f"wiring: {name}"] = f"{LOOP} names the registered option key {name!r}: it belongs to its option module"
+            bad[f"wiring: {k}"] = f"the loop's files read more option keys ({k}): {base[k]} -> {cur[k]}"
+    for rel in loop_files(root):
+        src = _src(root, rel)
+        for name in option_names:
+            if re.search(r"""["']""" + re.escape(name) + r"""["']""", src):
+                key = f"wiring: {name}" if rel == LOOP else f"wiring: {rel}: {name}"
+                bad[key] = f"{rel} names the registered option key {name!r}: it belongs to its option module"
     return bad
+
+
+def check_loop(root: str, base: dict) -> Tuple[Dict[str, str], List[str], Dict[str, int]]:
+    """The loop guards of ``tools/lint_loop.py`` over the loop's files: (new findings, stale entries, counts)."""
+    spec = importlib.util.spec_from_file_location("lint_loop", os.path.join(HERE, "lint_loop.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.check(root, loop_files(root), base, NO_LANG_LAYERS)
 
 
 # ── driver ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -231,16 +267,19 @@ def run(root: str = ROOT, rules_path: str = RULES_FILE, baseline_path: str = BAS
     layers = check_layers(root, rules)
     size_bad, size_cur = check_size(root, rules, base.get("size", {}))
     wiring_bad = check_wiring(root, base.get("wiring", {}), registered_key_names() if names is None else names)
+    loop_bad, loop_stale, loop_cur = check_loop(root, base.get("loop", {}))
     new = {k: m for k, m in layers.items() if k not in base.get("layers", {})}
     new.update(size_bad)
     new.update(wiring_bad)
+    new.update(loop_bad)
     stale = [f"layers: {k}" for k in base.get("layers", {}) if k not in layers]
     stale += [f"size: {k}" for k, v in base.get("size", {}).items() if k not in size_cur or size_cur[k] < v]
     w = wiring(root)
     stale += [f"wiring: {k} {base['wiring'][k]} -> {w[k]}" for k in ("cfg_keys", "cfg_branches")
               if k in base.get("wiring", {}) and w[k] < base["wiring"][k]]
+    stale += loop_stale
     state = {"layers": {k: layers[k] for k in sorted(layers)}, "size": dict(sorted(size_cur.items())),
-             "wiring": {"cfg_keys": w["cfg_keys"], "cfg_branches": w["cfg_branches"]}}
+             "wiring": {"cfg_keys": w["cfg_keys"], "cfg_branches": w["cfg_branches"]}, "loop": loop_cur}
     return new, stale, state
 
 
@@ -263,7 +302,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     for s in stale:
         print("STALE    ", s, "(fixed: run tools/lint_arch.py --update to shrink the baseline)")
     print(f"architecture: {len(new)} new finding(s), {len(stale)} stale baseline entr(ies); baseline {len(state['layers'])} import "
-          f"findings, {len(state['size'])} size offenders, wiring {state['wiring']}")
+          f"findings, {len(state['size'])} size offenders, wiring {state['wiring']}, loop {state['loop']}")
     return 1 if new or stale else 0
 
 

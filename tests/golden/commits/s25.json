@@ -1,0 +1,6 @@
+{
+ "about": "Step S25 (bt_goal: typed act arguments, [ask, <pack question>], the answer kept as a fact): the commit the feature cassettes of tests/golden/scenario_sets/s25_typed_ask.py were recorded on (s25_typed_arg_reaches_skill, s25_typed_arg_wrong_value, s25_branch_on_answer_shortcut, s25_branch_on_answer_detour, s25_branch_on_answer_both, s25_branch_on_answer_unclear). Recorded on the step's own production commit: the mapping and the pack question do not exist before it. The equivalence of every other cassette (the six bt_goal cassettes and the S25a ones) is proven by their replay.",
+ "kind": "feature",
+ "commits": ["39c2d2a"],
+ "notes": {"39c2d2a": "gc/s25: S25 production commit (core/planning/behavior_tree.py, core/planning/tree_host.py, options/bt_goal.py), its unit tests and docs; the cassettes were recorded on it"}
+}

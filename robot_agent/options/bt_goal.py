@@ -11,7 +11,10 @@ goals with trees is ticked, a run of goals without trees is planned by SAGE once
 steps run through the engine's own step path and ladder; a step with no way left hands the goals left to SAGE (``_to_sage``). Not one goal has
 a tree: SAGE plans the run as when off.
 Why: a declared control flow per goal kind, the engine's own recovery inside it, no planner call unless the policy says so (docs/bt_goal.md).
-Data: ``planner.options.bt_goal.trees`` {type: {tree, skip_if, needs_openable, source | assumed} or a list, first usable}, ``menu``.
+Data: ``planner.options.bt_goal.trees`` {type: {tree, skip_if, needs_openable, ladder, events, source | assumed} or a list, first usable}, ``menu``.
+Tree keys (next to ``tree``, per entry; none = as above): ``ladder: false`` runs each ``act`` without the engine's ladder (the tree's own
+Retry / Fallback decide), ``events: true`` sends each node as a ``tree_node`` event; the ``ask`` leaf also reads ``<question>.<choice>`` of the
+robot pack's ``questions`` (``core/planning/tree_host.py``).
 Switch off: key ``enabled`` (run option ``bt_goal=0``), on by default. Event: lab flag ``bt_goal``: {goal, status} ("claimed", per goal, the
 exhausted action) and {goal, node, status} per node.
 """
@@ -22,9 +25,10 @@ from typing import Optional
 
 from robot_agent.contract.recovery import Recovery
 from robot_agent.core.options import NEXT, STOP, Key, Option, OptionSpec, register
+from robot_agent.core.pack import predicates
 from robot_agent.core.planning import behavior_tree as bt
 from robot_agent.core.planning import goals as goal_kinds
-from robot_agent.core.planning import langdata, names, pack_data, speech
+from robot_agent.core.planning import names, pack_data, speech, tree_host
 from robot_agent.core.run_control import yes_no
 
 FLAG = "bt_goal"
@@ -48,17 +52,12 @@ SPEC = OptionSpec(
 
 
 def holds(name: str, args, world, placed) -> bool:
-    """The belief predicate ``name`` (pure): holding o, hand_free, at p, placed o p (put at p and not in the hand), opened c, closed c."""
-    held, opened = getattr(world, "holding", None), set(getattr(world, "opened", None) or ())
-    preds = {"holding": lambda o: held == o, "hand_free": lambda: held is None, "at": lambda p: getattr(world, "arrived", None) == p,
-             "placed": lambda o, p: (placed or {}).get(o) == p and held != o, "opened": lambda c: c in opened, "closed": lambda c: c not in opened}
-    try:
-        return bool(preds[name](*args))
-    except (KeyError, TypeError):
-        return False
+    """The belief predicate ``name`` (pure), read from the pack's predicate table (core/pack/predicates.py; the standard pack:
+    holding o, hand_free, at p, placed o p, opened c, closed c); False for an unknown name or a wrong number of arguments."""
+    return predicates.holds_in_tree(name, args, world, placed)
 
 
-CONDITIONS = ("holding", "hand_free", "at", "placed", "opened", "closed")
+CONDITIONS = predicates.names(predicates.TREE)
 
 
 def declared_openable(env, key, rule) -> bool:
@@ -68,17 +67,24 @@ def declared_openable(env, key, rule) -> bool:
     return isinstance(entry, dict) and "openable" in entry and bool(rule(key))
 
 
-def tree_for(goal: dict, trees, actions, can_ask: bool, has_phrase, source=None, extra=None, openable=None) -> Optional[list]:
-    """The tree that runs ``goal``, its slots filled (pure; ``source``: where the object is when the goal names no ``from``, e.g. the
-    engine's trusted object memory; ``extra``: more slot values, e.g. ``delivery``); None when no usable tree is declared for it. A kind
-    may declare a list of entries: the first one the goal and the robot can use (e.g. a ``say`` with a place, then one without; an entry
-    with ``needs_openable`` slots only when ``openable(place)`` says yes for each, e.g. Open the source before Find, then one without)."""
+def pick(goal: dict, trees, actions, can_ask: bool, has_phrase, source=None, extra=None, openable=None) -> Optional[tuple]:
+    """``(tree, keys)`` for ``goal`` (pure): the first declared entry of its kind that the goal and the robot can use, its slots filled
+    (``source``: where the object is when the goal names no ``from``, e.g. the engine's trusted object memory; ``extra``: more slot values,
+    e.g. ``delivery``), and the entry's opt-in keys (``tree_host.tree_keys``: ``ladder``, ``events``); None when no usable tree is declared. A kind
+    may declare a list of entries (e.g. a ``say`` with a place, then one without; an entry with ``needs_openable`` slots only when
+    ``openable(place)`` says yes for each, e.g. Open the source before Find, then one without)."""
     entries = trees.get(goal.get("type")) if isinstance(trees, dict) else None
     for entry in entries if isinstance(entries, list) else [entries]:
         tree = _filled(entry, goal, actions, can_ask, has_phrase, {**(extra or {}), "from": goal.get("from") or source}, openable)
         if tree is not None:
-            return tree
+            return tree, tree_host.tree_keys(entry)
     return None
+
+
+def tree_for(goal: dict, trees, actions, can_ask: bool, has_phrase, source=None, extra=None, openable=None) -> Optional[list]:
+    """The tree that runs ``goal``, its slots filled (``pick`` without the keys); None when no usable tree is declared for it."""
+    found = pick(goal, trees, actions, can_ask, has_phrase, source, extra, openable)
+    return found[0] if found else None
 
 
 def _filled(entry, goal, actions, can_ask, has_phrase, values, openable=None) -> Optional[list]:
@@ -90,19 +96,25 @@ def _filled(entry, goal, actions, can_ask, has_phrase, values, openable=None) ->
     tree = bt.fill(entry["tree"], {**values, **{k: goal.get(k) for k in SLOTS if k != "from"}})
     for leaf in bt.leaves(tree) if tree else ():
         kind, arg = leaf[0], leaf[1]
-        if (kind == "act" and arg not in actions or kind == "cond" and arg not in CONDITIONS or kind in ASKS and not can_ask
+        if (kind == "act" and arg not in actions or kind == "cond" and arg not in CONDITIONS + (tree_host.ANSWERED,) or kind in ASKS and not can_ask
                 or kind in ASKS + ("reply",) and not has_phrase(arg)):
             return None
     return tree
 
 
-def plan_trees(goals, trees, actions, can_ask: bool, has_phrase, source=lambda obj: None, extra=None, openable=None, mixed: bool = False) -> Optional[list]:
-    """One filled tree per goal, in goal order; None when any goal has none (then SAGE plans the whole run). ``mixed``: a goal without a tree is
+def plan_picks(goals, trees, actions, can_ask: bool, has_phrase, source=lambda obj: None, extra=None, openable=None, mixed: bool = False) -> Optional[list]:
+    """One ``pick`` per goal, in goal order; None when any goal has none (then SAGE plans the whole run). ``mixed``: a goal without a tree is
     None in the list (SAGE plans it), and the result is None only when NO goal has a tree."""
-    out = [tree_for(g, trees, actions, can_ask, has_phrase, source(g.get("object")), extra, openable) for g in goals or ()]
+    out = [pick(g, trees, actions, can_ask, has_phrase, source(g.get("object")), extra, openable) for g in goals or ()]
     if mixed:
         return out if any(t is not None for t in out) else None
     return out if out and all(t is not None for t in out) else None
+
+
+def plan_trees(goals, trees, actions, can_ask: bool, has_phrase, source=lambda obj: None, extra=None, openable=None, mixed: bool = False) -> Optional[list]:
+    """One filled tree per goal (``plan_picks`` without the keys): a goal without a tree is None in the list under ``mixed``."""
+    picks = plan_picks(goals, trees, actions, can_ask, has_phrase, source, extra, openable, mixed)
+    return None if picks is None else [p[0] if p else None for p in picks]
 
 
 def exhausted_action(rule, policy: str, asked: bool) -> str:
@@ -133,14 +145,16 @@ def source_place(place: Optional[str], goal: dict) -> Optional[str]:
     return None if place and place == goal.get("to") else place
 
 
-def pack_words(lang: str, refs) -> list:
-    """The words of the language-pack lists ``refs`` (``block.key``, e.g. ``ask_next.retry``) of ``lang``; [] for a list it lacks."""
-    out = []
-    for ref in refs or ():
-        blk, _dot, key = str(ref).partition(".")
-        words = langdata.block(lang, blk).get(key)
-        out += [w for w in words if isinstance(w, str) and w.strip()] if isinstance(words, list) else []
-    return out
+def pack_words(lang: str, refs, questions=None) -> list:
+    """The words of the lists ``refs`` (``block.key``, e.g. ``ask_next.retry``) of the language pack in ``lang``; [] for a list it lacks, unless
+    ``questions`` (a function giving the robot pack's ``questions`` table) knows the ref as ``<question>.<choice>`` (``tree_host.pack_words``)."""
+    return tree_host.pack_words(lang, refs, questions)
+
+
+def pack_questions(robot) -> dict:
+    """The questions table of the robot's pack ({} for a stub robot with no pack)."""
+    pack = getattr(robot, "pack", None)
+    return pack.table("questions") if pack is not None else {}
 
 
 def label(node) -> str:
@@ -151,26 +165,38 @@ def label(node) -> str:
 class _Leaves:
     """The leaves of one goal's tree over the engine services (the host of ``behavior_tree.tick``)."""
 
-    def __init__(self, svc, run, goal, idx) -> None:
+    def __init__(self, svc, run, goal, idx, keys=None) -> None:
         self.svc, self.run, self.goal, self.idx, self.lang = svc, run, goal, idx, getattr(run, "lang", None) or "en"
+        self.keys = {**tree_host.DEFAULT_KEYS, **(keys or {})}   # the entry's opt-in keys ``ladder`` / ``events``
         self.changed = False                         # a goal change was said: the tree gave the run back before its next step
 
     def note(self, path, node, status):
         self.svc.lab(FLAG, goal=self.idx, node=f"{path} {label(node)}", status=status)
+        if self.keys["events"]:                      # key ``events``: the node goes to the public event stream too
+            self.svc.emit(self.run, tree_host.EVENT, **tree_host.node_event(self.idx, path, label(node), status))
 
     def cond(self, name, *args):
+        if name == tree_host.ANSWERED:               # the answer of a pack question, kept by ``ask`` as a fact
+            return tree_host.answered(getattr(self.run.world, "facts", None), args)
         return holds(name, args, self.run.world, getattr(self.run, "placed", None))
 
-    def act(self, action, obj):
+    def act(self, action, obj, args=None):
         waits = getattr(self.svc, "changes_waiting", None)
         if callable(waits) and waits(self.run):      # the engine applies the change at its next step boundary, as between two plan steps
             self.changed = True
             return None
-        return (yield from self.svc.try_step(self.run, {"action": action, "object": obj}, ladder=True))
+        step = {"action": action, "object": obj, **({"args": dict(args)} if args else {})}   # ``args``: the typed arguments of the tree's act
+        return (yield from self.svc.try_step(self.run, step, ladder=self.keys["ladder"]))
 
     def ask(self, key, *refs):
-        ans = yield from self.put(self._phrase(key))
-        return None if ans is None else names.says([ans], pack_words(self.lang, refs), (self.lang,))
+        spec = tree_host.question_of(self._questions, key)       # ``[ask, <question of the pack>]``: read as one of its choices, kept as facts
+        ans = yield from self.put(self._phrase(spec["phrase"] if spec else key), spec.get("kind") if spec else FLAG)
+        if ans is None or spec is not None:
+            return None if ans is None else tree_host.take_answer(getattr(self.run.world, "facts", None), key, spec, ans, self.lang)
+        return names.says([ans], pack_words(self.lang, refs, self._questions), (self.lang,))
+
+    def _questions(self) -> dict:
+        return pack_questions(self.svc.robot)
 
     def confirm(self, key):
         ans = yield from self.put(self._phrase(key))
@@ -185,9 +211,9 @@ class _Leaves:
         obj = self.svc.said_of(self.run, self.goal.get("object")) if self.goal.get("object") else ""
         return speech.pack_phrase(self.svc.robot, key, self.lang, object=obj, place=self.goal.get("to") or "")
 
-    def put(self, q):
-        """Flow: the question ``q`` (a clarify event, the engine's ``ask``): the answer ('' on silence), None when the run was stopped."""
-        yield self.run.ev("clarify", question=q, round=0, kind=FLAG)
+    def put(self, q, kind=FLAG):
+        """Flow: the question ``q`` (a clarify event of ``kind``, none when None; the engine's ``ask``): the answer ('' on silence), None when the run was stopped."""
+        yield self.run.ev("clarify", question=q, round=0, **({"kind": kind} if kind else {}))
         ans = self.svc.ask(self.run, q) or ""
         stop = self.svc.cancelled(self.run)
         if stop:
@@ -205,19 +231,22 @@ class BtGoal(Option):
     def _key(self, name):
         return pack_data.fresh(SPEC, self.cfg, pack_data.planner_of(self.svc), name)
 
-    def _trees(self, run, goals, mixed=False):
+    def _picks(self, run, goals, mixed=False):
         robot, lang = self.svc.robot, getattr(run, "lang", None) or "en"
         spec, text, places = getattr(robot, "ask_spec", None), getattr(robot, "text", None), getattr(run, "places", None)
-        return plan_trees(goals, self._key("trees"), set(getattr(robot, "plan_actions", None) or ()), callable(spec) and spec() is not None,
-                          lambda k: speech.pack_phrase(robot, k, lang, object="", place="") is not None,
+        return plan_picks(goals, self._key("trees"), set(getattr(robot, "plan_actions", None) or ()), callable(spec) and spec() is not None,
+                          lambda k: tree_host.has_phrase(lambda x: speech.pack_phrase(robot, x, lang, object="", place="") is not None,
+                                                         lambda: pack_questions(robot), k),
                           lambda obj: self.svc.remembered(run, obj) if obj else None,
                           {DELIVERY: text(DELIVERY, lang) if callable(text) else ""},
                           lambda k: places is not None and declared_openable(getattr(places, "env", None), k, places.openable), mixed)
 
     def runs_goals(self, run):
         """Service: True when every goal of ``run`` has a usable tree (they are kept for ``on_run_goals``), else None (SAGE plans)."""
-        found = self._trees(run, list(getattr(run, "goals", None) or ()), mixed=self.cfg.get("mixed", True) is not False)    # not ``_key``: it reads a False (a run option set to 0) as empty and gives the default
+        picks = self._picks(run, list(getattr(run, "goals", None) or ()), mixed=self.cfg.get("mixed", True) is not False)    # not ``_key``: it reads a False (a run option set to 0) as empty and gives the default
+        found = None if picks is None else [p[0] if p else None for p in picks]
         self._state(run)["trees"] = found
+        self._state(run)["keys"] = None if picks is None else [p[1] if p else None for p in picks]
         if found:
             self.svc.lab(FLAG, goal=len(found), status="claimed")
         return True if found else None
@@ -237,12 +266,12 @@ class BtGoal(Option):
         return None
         yield                                            # a flow hook: a generator that yields nothing
 
-    def _tick(self, run, idx, goal, tree):
-        """Flow: one pass of ``tree`` for goal number ``idx``: SUCCESS, FAILURE, STOPPED or CHANGED (a goal change waits: the run goes back)."""
+    def _tick(self, run, idx, goal, tree, keys=None):
+        """Flow: one pass of ``tree`` (its opt-in ``keys``) for goal number ``idx``: SUCCESS, FAILURE, STOPPED or CHANGED (a goal change waits: the run goes back)."""
         s = self._state(run)
         s["active"], s["failed"] = True, None
         s.setdefault("from", {})[idx] = goal.get("from") or (self.svc.remembered(run, goal["object"]) if goal.get("object") else None)
-        host = _Leaves(self.svc, run, goal, idx)
+        host = _Leaves(self.svc, run, goal, idx, keys)
         try:
             status = yield from bt.tick(tree, host)
             return CHANGED if host.changed else status
@@ -251,7 +280,7 @@ class BtGoal(Option):
 
     def on_run_goals(self, run):
         """Flow: tick each goal's tree in order; a tree with no way left goes to ``_exhausted``. STOP: the run ended; NEXT: the plan's end."""
-        goals, trees = list(run.goals), self._state(run)["trees"]
+        goals, trees, keys = list(run.goals), self._state(run)["trees"], self._state(run).get("keys") or []
         idx = 0
         while idx < len(goals) and idx < len(trees or ()):
             goal, tree, n = goals[idx], trees[idx], 1
@@ -260,7 +289,7 @@ class BtGoal(Option):
                     n += 1
                 status = yield from self._sage_goals(run, idx, goals[idx:idx + n], goals[idx:])
             else:
-                status = yield from self._tick(run, idx, goal, tree)
+                status = yield from self._tick(run, idx, goal, tree, keys[idx] if idx < len(keys) else None)
                 if status == bt.FAILURE:
                     status = yield from self._exhausted(run, idx, goal, goals[idx:])
             self.svc.lab(FLAG, goal=f"{goal.get('type')} {goal.get('object')} {goal.get('to')}", status=status)
@@ -305,10 +334,10 @@ class BtGoal(Option):
             again, said = yield from self._ask_menu(run, goal, facts)
         if said == "cancelled":
             return STOP
-        tree = (self._trees(run, [again]) or [None])[0] if again is not None else None
+        tree, keys = ((self._picks(run, [again]) or [None])[0] or (None, None)) if again is not None else (None, None)
         self.svc.lab(FLAG, goal=idx, status="exhausted", action=said or act, code=getattr(facts.get("code"), "value", None), rung=facts.get("rung"))
         if tree is not None:
-            status = yield from self._tick(run, idx, again, tree)
+            status = yield from self._tick(run, idx, again, tree, keys)
             if status != bt.FAILURE:
                 return status
             facts = self._state(run)["failed"] or facts

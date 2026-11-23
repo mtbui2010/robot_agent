@@ -1,6 +1,6 @@
 ---
-sources: [robot_agent:robot_agent/contract/types.py, robot_agent:robot_agent/contract/failures.py, robot_agent:robot_agent/contract/recovery.py, robot_agent:robot_agent/core/planning/robot.py, robot_agent:robot_agent/core/planning/loop.py, robot_agent:robot_agent/core/planning/assist_loop.py, robot_agent:robot_agent/core/skill_registry.py, robot_agent:tests/fakes.py, kcare_robot:kcare_robot/configs/manifest.yaml]
-verified_at: {robot_agent: 3269923, embodiplan: 76da520, kcare_robot: d4f5577b342e}
+sources: [robot_agent:robot_agent/contract/types.py, robot_agent:robot_agent/contract/failures.py, robot_agent:robot_agent/contract/recovery.py, robot_agent:robot_agent/core/planning/robot.py, robot_agent:robot_agent/core/planning/loop.py, robot_agent:robot_agent/core/planning/assist_loop.py, robot_agent:robot_agent/options/fetch_guard.py, robot_agent:robot_agent/core/skill_registry.py, robot_agent:tests/fakes.py, kcare_robot:kcare_robot/configs/manifest.yaml]
+verified_at: {robot_agent: e65e9aa, embodiplan: 76da520, kcare_robot: d4f5577b342e}
 ---
 
 # Skills, results, failure codes
@@ -19,7 +19,7 @@ When a step goes wrong, the core needs to know **why** in a way that does not de
 
 ## What a skill is
 
-A skill is a plain function, called as `func(node=node, **params)` ([`skill_registry.py:227`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/skill_registry.py#L227-L227)). The [manifest](../start/glossary.md#manifest) describes it with a [SkillSpec](../start/glossary.md#skillspec) (see [A robot as data](robot-as-data.md)). The registry knows three kinds ([`skill_registry.py:197-203`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/skill_registry.py#L197-L203)):
+A skill is a plain function, called as `func(node=node, **params)` ([`skill_registry.py:227`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/skill_registry.py#L227-L227)). The [manifest](../start/glossary.md#manifest) describes it with a [SkillSpec](../start/glossary.md#skillspec) (see [A robot as data](robot-as-data.md)). The registry knows three kinds ([`skill_registry.py:197-203`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/skill_registry.py#L197-L203)):
 
 | Kind | How it runs |
 |---|---|
@@ -31,7 +31,7 @@ If a skill raises an exception, the registry catches it and returns a failure wh
 
 ## SkillResult
 
-Older skills return a dict, `{'isdone': bool, 'msg': str, ...}`. New code returns a `SkillResult`. The core turns every return value into one through `SkillResult.from_legacy`, in one place: `run_skill` ([`robot.py:306`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/robot.py#L318-L334)).
+Older skills return a dict, `{'isdone': bool, 'msg': str, ...}`. New code returns a `SkillResult`. The core turns every return value into one through `SkillResult.from_legacy`, in one place: `run_skill` ([`robot.py:306`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/robot.py#L318-L334)).
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -41,7 +41,7 @@ Older skills return a dict, `{'isdone': bool, 'msg': str, ...}`. New code return
 | `device` | str or `None` | Which device failed, when the skill knows. |
 | `data` | dict | Evidence: a pose, a confidence, detections. Any key of a legacy dict that is not a status key goes here. |
 
-Source: [`types.py:62-153`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/types.py#L62-L153). Helpers: `SkillResult.success(msg, **data)`, `SkillResult.failure(code, msg, device, **data)`, `from_legacy(raw, strict)` and `to_legacy()`. A `SkillResult` is truthy when `ok` is true.
+Source: [`types.py:62-153`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/contract/types.py#L62-L153). Helpers: `SkillResult.success(msg, **data)`, `SkillResult.failure(code, msg, device, **data)`, `from_legacy(raw, strict)` and `to_legacy()`. A `SkillResult` is truthy when `ok` is true.
 
 How `from_legacy` reads other return values:
 
@@ -55,7 +55,7 @@ How `from_legacy` reads other return values:
 
 ### The text heuristics live in one place
 
-Skills that still return only English text have no code. [`classify_legacy_failure`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/failures.py#L26-L69) reads the code off the text. It is the only place in the core that does this. It tries a list of regular expressions in order, and the first match wins, so more severe causes come first. For example, a Python `TypeError` in the text is always `software`, even when the text also says "not found". When nothing matches, the code is `unknown`.
+Skills that still return only English text have no code. [`classify_legacy_failure`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/contract/failures.py#L26-L69) reads the code off the text. It is the only place in the core that does this. It tries a list of regular expressions in order, and the first match wins, so more severe causes come first. For example, a Python `TypeError` in the text is always `software`, even when the text also says "not found". When nothing matches, the code is `unknown`.
 
 Real calls (run offline):
 
@@ -88,7 +88,7 @@ The failure has code `absent` ("I looked and it is not here"). The text rule mat
 
 ## The failure codes
 
-The enum is [`FailureCode`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/types.py#L15-L28). I counted its members: **13**. The value is the lowercase string; `FailureCode.parse` also accepts upper case and the enum member.
+The enum is [`FailureCode`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/contract/types.py#L15-L28). I counted its members: **13**. The value is the lowercase string; `FailureCode.parse` also accepts upper case and the enum member.
 
 | Value | Plain meaning | First action | Retries, then |
 |---|---|---|---|
@@ -106,6 +106,8 @@ The enum is [`FailureCode`](https://github.com/mtbui2010/robot_agent/blob/326992
 | `unknown` | A legacy result with no usable reason. | `verify` | 1, then `replan` |
 | `budget_exceeded` | The run used up its LLM-call budget. | `stop`, never retried | none |
 
+One code can be changed by the engine after the skill returned it. With the option `fetch_guard` (on by default, part `absent_find`), the AssistLoop asks the service `failure_code` at a step failure ([`assist_loop.py` line 3676](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/assist_loop.py#L3676)). A failed `Find` whose code is `unknown` (the skill reported "not done" and no text the heuristic reads) becomes `absent`: the look did not see the object, so the search runs, and then the question "I couldn't find the X. Where is it?", instead of the `unknown` rule (`verify`, then `replan`) that could return the same plan. Other actions and other codes are not changed, and a camera that cannot look keeps `perception_unavailable`. This is not measured on a benchmark; the reason for it is a real-robot run record of 2026-11-20 with 5 failed Finds and 4 identical replans.
+
 The code in the first column is the thing a skill or an adapter must return. A manifest lists, per skill, which of these it may return (`errors:`). A value that is not one of the 13 stops the manifest from loading. The loader's error says which values are valid; for example `'oops' is not a FailureCode (valid: absent, perception_unavailable, ...)`.
 
 ## Who decides what to do
@@ -113,7 +115,7 @@ The code in the first column is the thing a skill or an adapter must return. A m
 Three parties are involved:
 
 1. **The skill or the adapter decides the code.** The skill returns it, or the text heuristic above reads it. The adapter maps device errors onto the 13 codes.
-2. **The recovery table decides the default answer.** It is `DEFAULT_RECOVERY` in [`recovery.py:66-92`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/recovery.py#L66-L92), the one table every robot shares. A robot can override single entries by giving its adapter a `recovery_overrides` attribute (`{code: rule}`); `policy_for(adapter)` merges them. The `NamemapAdapter` also takes a module-level `RECOVERY_OVERRIDES`.
+2. **The recovery table decides the default answer.** It is `DEFAULT_RECOVERY` in [`recovery.py:66-92`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/contract/recovery.py#L66-L92), the one table every robot shares. A robot can override single entries by giving its adapter a `recovery_overrides` attribute (`{code: rule}`); `policy_for(adapter)` merges them. The `NamemapAdapter` also takes a module-level `RECOVERY_OVERRIDES`.
 3. **The loop applies it.** Planner loops differ in how much of the table they use.
 
 ### The recovery table
@@ -150,16 +152,115 @@ Flags that matter:
 
 | Loop | What it takes from the table |
 |---|---|
-| ClosedLoop (planner key `sage_plain`) | Only `retry_allowed`: a code that forbids a retry stops the run; every other failure leads to a replan ([`loop.py:814-836`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/core/planning/loop.py#L814-L836)). |
-| AssistLoop (planner key `sage`) | The whole table. It applies `stop`, `wait_health` and `health_check` itself in `_apply_policy`. The other actions go to per-action recovery code (Find, Pick, MoveTo, Open, Place, PutIn), and then to a replan. Options can act first through the hook `on_step_failed`. ([`assist_loop.py:3660-3767`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/assist_loop.py#L3660-L3767)). |
+| ClosedLoop (planner key `sage_plain`) | Only `retry_allowed`: a code that forbids a retry stops the run; every other failure leads to a replan ([`loop.py:814-836`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/loop.py#L814-L836)). |
+| AssistLoop (planner key `sage`) | The whole table. It applies `stop`, `wait_health` and `health_check` itself in `_apply_policy`. The other actions go to per-action recovery code (Find, Pick, MoveTo, Open, Place, PutIn), and then to a replan. Options can act first through the hook `on_step_failed`. ([`assist_loop.py:3660-3767`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/assist_loop.py#L3660-L3767)). |
 
-Pick and MoveTo also have a ladder of their own after the policy's rung. `STEP_LADDER` in `contract/recovery.py` names the code whose rule gives the ladder (Pick: `grasp_failed`, MoveTo: `blocked`), and `step_rung` picks the rung: retry, then ask the person once, then replan (Pick) or stop (MoveTo). The code that runs these rungs is in [`step_ladder.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/step_ladder.py). A failed `Find` with `absent` uses the search described in the closed-loop page; its three retries are the default of the loop's `search_max`, after which the person is asked where the object is. Before that search starts, `look_then_ask` may already have looked where the robot stands and asked once "I don't see the X here. Where is it?" (see [Dialog and intent](dialog-and-intent.md#two-questions-the-robot-adds-before-it-plans); English phrases only, other languages not verified).
+Pick and MoveTo also have a ladder of their own after the policy's rung. `STEP_LADDER` in `contract/recovery.py` names the code whose rule gives the ladder (Pick: `grasp_failed`, MoveTo: `blocked`), and `step_rung` picks the rung: retry, then ask the person once, then replan (Pick) or stop (MoveTo). The code that runs these rungs is in [`step_ladder.py`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/step_ladder.py). A failed `Find` with `absent` (or with `unknown`, which `fetch_guard` turns into `absent`, see above) uses the search described in the closed-loop page; its three retries are the default of the loop's `search_max`, after which the person is asked where the object is. Before that search starts, `look_then_ask` may already have looked where the robot stands and asked once "I don't see the X here. Where is it?" (see [Dialog and intent](dialog-and-intent.md#two-questions-the-robot-adds-before-it-plans); English phrases only, other languages not verified).
+
+### One failed step to its recovery
+
+The picture follows one failed step in the AssistLoop (`_step_failed` and `_apply_policy` in `assist_loop.py`). The step first gets a failure code. The code picks a row of `DEFAULT_RECOVERY`. Then the loop applies the row, and the step's own ladder if it has one (`step_ladder.py`).
+
+```mermaid
+flowchart TD
+    A["Step runs: the skill returns a SkillResult,<br/>then the verify layers read it: isdone, symbolic, sensor"]
+    B{"Skill ok and every layer ok?"}
+    C["Next step"]
+    D["Failure code:<br/>the skill's own code,<br/>else the text rules of failures.py,<br/>else unknown"]
+    E{"A Find with code unknown<br/>and fetch_guard absent_find on?"}
+    F["The code becomes absent"]
+    G["The rule: the row of the code in DEFAULT_RECOVERY,<br/>plus the robot's own overrides"]
+    H{"retry_allowed is false?<br/>estop, cancelled, software, budget_exceeded"}
+    S["Stop: the run ends as failed"]
+    I{"_apply_policy:<br/>what does the rule say for the n-th failure?"}
+    J{"Robot health ok?<br/>wait_health waits first, health_check asks once"}
+    K{"Which step failed?"}
+    L["Find: the Find path<br/>in the next picture"]
+    M["Pick: look and grasp again,<br/>ask the person once,<br/>then replan if nobody helps"]
+    N["MoveTo: move again,<br/>ask the person once,<br/>then stop"]
+    P["Any other action:<br/>per-action recovery, else replan"]
+    Q{"Replans used less than max_replans?"}
+    T["Planner repairs the plan<br/>from this step"]
+    R["The same step runs again"]
+
+    A --> B
+    B -- "yes" --> C
+    B -- "no" --> D
+    D --> E
+    E -- "yes" --> F
+    E -- "no" --> G
+    F --> G
+    G --> H
+    H -- "yes" --> S
+    H -- "no" --> I
+    I -- "stop: retries used up" --> S
+    I -- "wait_health or health_check" --> J
+    I -- "any other action of the rule" --> K
+    J -- "no" --> S
+    J -- "yes, wait_health" --> R
+    J -- "yes, health_check" --> K
+    K -- "Find" --> L
+    K -- "Pick" --> M
+    K -- "MoveTo" --> N
+    K -- "other" --> P
+    M -- "retry or the person helped" --> R
+    N -- "retry or the person helped" --> R
+    M -- "replan rung, or the person named a place" --> Q
+    N -- "no help" --> S
+    L -- "a new plan is needed" --> Q
+    P --> Q
+    Q -- "yes" --> T
+    Q -- "no" --> S
+    R --> A
+    T --> A
+```
+
+*Drawn from the code at e65e9aa, not from a recorded run.* What each box reads: the code box is `failure_code` in `robot.py` and `classify_legacy_failure` in `failures.py`; the rule is `policy.rule_for(code)`; `max_replans` has the default 6 in `assist_loop.py`. The rungs of the Pick and MoveTo ladders are `STEP_LADDER` and `step_rung`, run by `_recover_pick` and `_recover_move`. Not drawn: the option hook `on_step_failed` (an option can end the run before the rule is applied), the check that stops a non-Find step which failed the same way a third time, the `Open`, `Place` and `PutIn` recovery, and the VLM refusal path (a step the VLM says did not happen goes straight to a replan). The Find box is also not drawn to the end: a Find may be re-run in place without a replan (a second look, a search leg), and the Find path says why.
+
+#### The Find path
+
+A failed Find with code `absent` is a search, not a mistake. `_recover_find` marks the place as searched, picks the next place from the belief, and asks the person "I couldn't find the X. Where is it?" once the misses are over `search_max`. The default of `search_max` is the `retries` of the `absent` row (3), so a robot that overrides that row also moves the question.
+
+```mermaid
+flowchart TD
+    A["A Find failed"]
+    B{"Code?"}
+    C["unknown becomes absent<br/>when fetch_guard absent_find is on"]
+    D["perception_unavailable:<br/>wait_health first, the place is NOT marked searched"]
+    E{"The object was lost here earlier in this run<br/>and not looked at again yet?"}
+    F["Look again once here"]
+    G["The place counts as searched<br/>only if the rule has mark_searched: absent"]
+    H["Count the miss<br/>and pick the next place from the belief"]
+    I{"Misses over search_max, or no place left,<br/>and the loop may ask?"}
+    J["Ask: I couldn't find the X. Where is it?"]
+    K{"Did the answer name a place?"}
+    L["The belief says: user said.<br/>The planner repairs the plan with that place"]
+    M["No place: search the likely rest,<br/>or stop naming the places looked at"]
+    N["Search on: the next place replaces the Find,<br/>or a replan says Look next at ...<br/>Stop when the places run out"]
+
+    A --> B
+    B -- "unknown" --> C
+    B -- "perception_unavailable" --> D
+    B -- "absent" --> E
+    C --> E
+    E -- "yes" --> F
+    E -- "no" --> G
+    G --> H
+    H --> I
+    I -- "yes" --> J
+    I -- "no" --> N
+    J --> K
+    K -- "yes" --> L
+    K -- "no" --> M
+```
+
+*Drawn from the code at e65e9aa, not from a recorded run.* Read from `_recover_find` and `_missed_enough` (`search_hooks.py`) and `FetchGuard.failure_code`. The box for `perception_unavailable` ends there on purpose: the loop waits for the robot's health first (see the first picture) and does not treat the failure as evidence of absence. Whether the question is worded the same in other languages is not verified here.
 
 I read `_step_failed` and `_apply_policy`. I did not trace each per-action recovery method, so this page does not claim that every action in the table is carried out the same way in every case. For the two loops themselves, see [Planners](planners.md) and [The closed loop](closed-loop.md).
 
 ## VerifySpec: how a step is checked
 
-A skill that returns `ok` may still not have changed the world. The manifest lists post-checks in `verify:`. Each is a [`VerifySpec`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/types.py#L155-L186) with a `kind`:
+A skill that returns `ok` may still not have changed the world. The manifest lists post-checks in `verify:`. Each is a [`VerifySpec`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/contract/types.py#L155-L186) with a `kind`:
 
 | `kind` | What it checks | Fields |
 |---|---|---|
@@ -169,7 +270,7 @@ A skill that returns `ok` may still not have changed the world. The manifest lis
 
 A `sensor` whose result has a `pose` checks the base against the target place, within `arrive_tol_m`. Any other sensor passes when its `isdone` equals `expect`. `expect` defaults to true ("the hand holds it"); a release step declares `expect: false`.
 
-Real example: the kcare `pick` skill has `verify: [{kind: symbolic}, {kind: sensor, skill: grasp_succeed}]` ([`manifest.yaml:114-131`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/configs/manifest.yaml#L114-L131)). The skill can report success, and the sensor skill still decides whether the hand really holds something. If a check fails, its reason text goes through the same `classify_legacy_failure`, so a failed check also ends up as a failure code ([`failure_code`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/robot.py#L275-L281)). In the kcare manifest the `vlm` checks exist but are off by default (`vlm_verify: false`).
+Real example: the kcare `pick` skill has `verify: [{kind: symbolic}, {kind: sensor, skill: grasp_succeed}]` ([`manifest.yaml:114-131`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/configs/manifest.yaml#L114-L131)). The skill can report success, and the sensor skill still decides whether the hand really holds something. If a check fails, its reason text goes through the same `classify_legacy_failure`, so a failed check also ends up as a failure code ([`failure_code`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/robot.py#L275-L281)). In the kcare manifest the `vlm` checks exist but are off by default (`vlm_verify: false`).
 
 !!! warning "A skill that returns nothing"
     In the planner, a skill that returns `None` or a dict with no `isdone` or `ok` is a failure with code `unknown` (`strict=True`). In the direct path (`unified_agent`) the same return counts as success. Always return a dict with `isdone` or a `SkillResult`.
@@ -178,11 +279,12 @@ Real example: the kcare `pick` skill has `verify: [{kind: symbolic}, {kind: sens
     A skill whose message happens to contain a phrase such as `not found` is classified `absent`, even if the real cause is something else. Return a code yourself, with `SkillResult.failure(code, msg)`, so the heuristic is not needed.
 
 !!! code "Where in the code"
-    - Types: [`contract/types.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/types.py)
-    - Text to code: [`contract/failures.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/failures.py)
-    - Recovery table: [`contract/recovery.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/contract/recovery.py)
-    - Run one skill: [`core/planning/robot.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/planning/robot.py#L318-L334)
-    - Registry: [`core/skill_registry.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/core/skill_registry.py)
-    - Offline fake: [`tests/fakes.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/tests/fakes.py)
+    - Types: [`contract/types.py`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/contract/types.py)
+    - Text to code: [`contract/failures.py`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/contract/failures.py)
+    - Recovery table: [`contract/recovery.py`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/contract/recovery.py)
+    - Run one skill: [`core/planning/robot.py`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/robot.py#L318-L334)
+    - Registry: [`core/skill_registry.py`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/skill_registry.py)
+    - Option that changes one code: [`options/fetch_guard.py`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/options/fetch_guard.py#L80-L85) (`failure_code`)
+    - Offline fake: [`tests/fakes.py`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/tests/fakes.py)
 
 Next: [The belief](belief-and-reconcile.md). To write a skill, see [Add a skill](../guides/add-a-skill.md).

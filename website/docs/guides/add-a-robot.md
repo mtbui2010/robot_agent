@@ -32,6 +32,31 @@ The hub never names a robot. It loads the robot package by its Python name and a
 
 The concepts behind them are in [A robot as data](../concepts/robot-as-data.md) and [Skills, results, failure codes](../concepts/skills-and-failures.md).
 
+### How the hub loads a package
+
+The hub loads a robot in one place: `RobotView.load` calls `load_adapter`. The diagram shows the order of the checks and what each piece of the package ends up feeding. The places map (`ENV`) and the skill table are not read by `load_adapter`; the loops and the skill registry read them.
+
+```mermaid
+flowchart TD
+    A["RobotView.load robot_pkg<br/>planning/robot.py"] --> B["load_adapter robot_pkg<br/>contract/legacy_adapter.py"]
+    B --> C{"configs/adapter.py exists?"}
+    C -- "yes" --> D["_from_adapter_module<br/>ADAPTER, else make_adapter,<br/>get_adapter or Adapter"]
+    C -- "no" --> E{"namemap module found?<br/>NAMEMAP_MODULES in order:<br/>sage_namemap, then grace_namemap"}
+    E -- "no" --> F["ImportError<br/>no adapter.py and no namemap"]
+    E -- "yes" --> G["NamemapAdapter namemap, manifest<br/>manifest.yaml if present, else made<br/>from the namemap SKILL_MAP"]
+    D --> H["adapter: manifest, geometry, i18n"]
+    G --> H
+    G --> I["from the namemap module:<br/>SKILL_MAP, to_loc, to_obj, build_params,<br/>PHRASES for i18n, RECOVERY_OVERRIDES"]
+    H --> J["RobotView<br/>manifest skills, geometry, i18n,<br/>planner.options such as bt_goal trees"]
+    I --> J
+    I --> K["policy_for adapter<br/>default recovery plus recovery_overrides"]
+    K --> J
+    L["configs/skills_config.py<br/>SKILL_CONFIGS"] --> M["SkillRegistry<br/>load_from_skill_configs"]
+    N["ENV places<br/>robot configs, tasks.py"] --> O["read by the loops<br/>through skill_configs.ENV"]
+```
+
+Drawn from the code at e65e9aa ([`legacy_adapter.py:205-240`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/contract/legacy_adapter.py#L205-L240), [`NAMEMAP_MODULES`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/contract/legacy_adapter.py#L25-L27), [`robot.py:48-62`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/core/planning/robot.py#L48-L62)), not from a recorded run. A package with `adapter.py` does not need a namemap; the old name `grace_namemap` still loads. The `tinybot` below takes the left branch.
+
 ## 2. Choose how to start
 
 There are three routes to a package. This guide writes the files by hand.
@@ -65,6 +90,31 @@ Next:
 ```
 
 `check_manifest` passes on the copy (`minibot, 4 skills: 0 error(s), 0 warning(s)`). The "Next" lines mention a `Makefile`; `tinybot` has none, so those lines apply only to a fork of a package that has one.
+
+### The steps as a checklist
+
+The next steps in this guide each end in a check. If a check fails, fix the step and run it again.
+
+```mermaid
+flowchart TD
+    S3["Step 3: write skills,<br/>skills_config.py and adapter.py"] --> S4["Step 4: write manifest.yaml"]
+    S4 --> C4{"check_manifest --strict<br/>0 errors, 0 warnings?"}
+    C4 -- "no" --> S4
+    C4 -- "yes" --> S5["Step 5: bind each plan action"]
+    S5 --> C5{"each action gives the<br/>skill you expect, others<br/>raise Unbindable?"}
+    C5 -- "no" --> S4
+    C5 -- "yes" --> S6["Step 6: run_skill through<br/>the SkillRegistry"]
+    S6 --> C6{"results and failure<br/>codes as you meant?"}
+    C6 -- "no" --> S3
+    C6 -- "yes" --> S7["Step 7: scripted AssistLoop run"]
+    S7 --> C7{"done status=success?"}
+    C7 -- "no" --> S3
+    C7 -- "yes" --> S8["make lint-core in the hub"]
+    S8 --> C8{"ends with total 0?"}
+    C8 -- "yes" --> R["Offline checks pass.<br/>Hardware still untested"]
+```
+
+What `check_manifest` reads: the manifest loads, each skill is in the registry, its function takes the declared params, a `sensor` verify names a real skill, and `planner.seed_memory` is a JSONL file ([`check_manifest.py:1-26`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/contract/check_manifest.py#L1-L26), [`check`](https://github.com/mtbui2010/robot_agent/blob/e65e9aa/robot_agent/contract/check_manifest.py#L237-L311)). Drawn from the code at e65e9aa and the steps of this page, not from a recorded run. Where a failed check sends you back is a suggestion, not something the tools enforce.
 
 ## 3. Write the smallest package
 
