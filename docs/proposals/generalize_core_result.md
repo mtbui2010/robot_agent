@@ -361,3 +361,67 @@ still needs the pack re-expressed in `pex_robot` and one test (Round C, not star
 2. Continue the remaining steps of `generalize_core_plan.json` after S19, at most 4 streams per wave, stopping at the first mismatch.
 3. Round C (the PEX robot on this framework) can start for G1 to G6, P7 and P8.
 4. Nothing is pushed; the owner reviews first.
+
+## Run 2 (waves W1 onward): status at the stop in wave W19
+
+This section replaces the "status at the stop in wave W17" section above where they differ. The earlier sections are kept as
+written for the record.
+
+### Corrections to earlier lines
+
+- S05 is merged and accepted. Its equivalence proof is the differential test `tests/test_goal_semantics_diff.py` (27 tests,
+  5 deliberate mutations of the new code are each caught by it) plus roundB with 0 FAIL on the merged tip. Any earlier line that
+  lists S05 as unproven is out of date.
+- Some timing tests (`plan_sec` in `tests/test_sage_lab_r7*` and `r4*`) are flaky under machine load. They compare an event stream
+  that holds a measured time; a run can fail once and pass on a re-run. They are not caused by this work and no test was changed.
+
+### Steps done
+
+S19 and S20, on top of the steps listed in the sections above. Each is one verbatim extraction, proven by the golden traces and the
+roundB check.
+
+- S19: the correction and grounding-of-understanding methods move to `phases/correct.py` (CorrectPhase mixin), commit fc6bec2,
+  merged as b670ac7.
+- S20: the generate-and-certify methods move to `phases/certify.py` (CertifyPhase mixin), commit 51cc6b6, merged as 2db9bdb.
+
+The W17 stop (S19 not proven) was resolved: S19 was redone on `gc/s19-r3` and accepted.
+
+### Failed or stopped
+
+S21. Stop reason: wave W19, could not prove equivalence for S21. The owner's stop rule is to stop at the first mismatch, so the run
+stopped there and nothing from S21 is in `generalize-core`. As with S05, S08, S14, S19 and S26, the cause may be a stale or blocked
+worker rather than a real behaviour change; this was not established. S21 must be re-checked alone first.
+
+### Numbers now versus the baseline
+
+| Measure | Start of run 1 | Now (tip f984a53) |
+|---|---|---|
+| `robot_agent/core/planning/assist_loop.py` lines | 4081 | 1377 (2704 fewer) |
+| Tests passed (ratchet floor) | 3075 | 3889 |
+
+The tests-passed figure is the ratchet floor recorded at wave W18. The line count is the file at the tip. The `plan_sec` flakiness
+applies to fresh full runs.
+
+### Workarounds of `pex_case/docs/framework_fit.md`
+
+| Id | Status now |
+|---|---|
+| G1 | Can be deleted: S29 is built (a goal kind declared with no rules). |
+| G2 | Can be deleted in the pex pack, with a test (S06 and S25). |
+| G3 | Can be deleted (S10, S26, S25). |
+| G4 | Can be deleted in the pex pack, with a test (S14: recovery policy per action, chosen by name). |
+| G5 | Can be deleted in the pex pack, with a test (S25, S27a, S31, S32). |
+| G6 | Can be deleted (S25a). |
+| G7 | Cannot be deleted yet: the pack's own model call is not in level B scope. |
+| P7 | Can be deleted: it depended only on S29. |
+| P8 | Can be deleted once `pex.pipe_in_clips` is written in the pack (S12). |
+
+So G1 to G6, P7 and P8 are deletable at the pack level; only G7 cannot. "Deletable" means the framework side exists; each deletion
+still needs the pack re-expressed in `pex_robot` and one test (Round C, not started).
+
+### What is next
+
+1. Re-check S21 alone (one worker, own worktree) and decide whether it is a real mismatch or a stale worker answer.
+2. Continue the remaining steps of `generalize_core_plan.json` after S21, at most 4 streams per wave, stopping at the first mismatch.
+3. Round C (the PEX robot on this framework) can start for G1 to G6, P7 and P8.
+4. Nothing is pushed; the owner reviews first.
