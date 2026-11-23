@@ -1,0 +1,6 @@
+{
+ "about": "Step S14 (recovery policies chosen by name: by_kind, by_action, an action's own recovery field, the builtins planner / stop / tree, a registered recovery callable of a robot's own package): the commit the S14 set cassettes (s14_registered_policy, s14_by_kind_stop, s14_by_action_planner; tests/golden/scenario_sets/s14_recovery_policies.py) were recorded on. kind feature: a pack could not choose a policy before it; the equivalence of every other cassette is proven by their replay (the standard pack maps the old six actions to the old ladders, and no other shipped or made-up pack of the other cassettes declares a recovery table).",
+ "kind": "feature",
+ "commits": ["a19e1ca"],
+ "notes": {"a19e1ca": "gc/s14-r4: S14 production commit (core/pack/recovery.py, packs/household/recovery.yaml and callables/recover.py, phases/recover.py, step_ladder.py, assist_loop.py) and its unit tests; the cassettes were recorded on it"}
+}

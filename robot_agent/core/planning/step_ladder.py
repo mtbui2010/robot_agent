@@ -3,8 +3,9 @@
 The rungs come from the declared table (``contract.recovery``): ``STEP_LADDER`` names the code whose rule is the
 step's ladder (its action, RETRY, and its retries), ``step_rung`` picks the rung (RETRY, then ASK_HELP once, then
 the failed code's REPLAN or STOP); the methods here run the rung. A robot changes a ladder through its
-``recovery_overrides``; ``ask_help`` off closes the ASK_HELP rung. ``AssistLoop._step_failed`` calls
-``_recover_pick`` / ``_recover_move`` / ``_recover_place``; ``_recover_find`` shares the ASK_HELP rung (``_may_ask`` /
+``recovery_overrides``; ``ask_help`` off closes the ASK_HELP rung; the pack's policy of the action may declare the ladder's
+code (``ladder_code``, ``may_replan``: core/pack/recovery.py). The standard pack's recovery policies
+(packs/household/recovery.yaml) run ``_recover_pick`` / ``_recover_move`` / ``_recover_place``; ``_recover_find`` shares the ASK_HELP rung (``_may_ask`` /
 ``_ask_help``); a release whose hand is empty runs the DROPPED rule's REFIND rung (``_refind_dropped``, ``_splice_refind``).
 """
 
@@ -13,6 +14,7 @@ from __future__ import annotations
 from robot_agent.contract import STEP_LADDER, Recovery, step_rung
 
 from ..options import NEXT, STOP
+from ..pack import goal_semantics, recovery as pack_recovery
 from .speech import HELP_MOVE, HELP_PICK
 
 
@@ -102,10 +104,11 @@ class StepLadder:
         yield self._finish(r, "failed", msg=f"could not get to {o}: {reason}")
         return STOP, ""
 
-    @staticmethod
-    def _ladder(r, action):
-        """The rule of the step's own ladder and whether it may end in a replan (contract STEP_LADDER)."""
-        code, replan = STEP_LADDER[action]
+    def _ladder(self, r, action):
+        """The rule of the step's own ladder and whether it may end in a replan: as the pack's policy of ``action`` declares
+        it (``ladder_code``, ``may_replan``; the standard pack's are contract STEP_LADDER), else contract STEP_LADDER."""
+        own = pack_recovery.ladder_of(pack_recovery.selecting_pack(goal_semantics.pack_of(self)), action)
+        code, replan = own or STEP_LADDER[action]
         return r.robot.policy.rule_for(code), replan
 
     def _may_ask(self, r, kind, o) -> bool:
