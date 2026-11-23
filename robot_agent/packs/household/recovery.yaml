@@ -1,0 +1,32 @@
+# The recovery policies of the standard (household) pack (Step S14): which ladder recovers a failed step of each action.
+# - `policies`: name -> {callable: a registered `recovery` callable} (robot_agent/packs/household/callables/recover.py).
+# - `by_action`: action -> policy name. An action not listed goes to the builtin `planner` (builtins: planner, stop, tree).
+# - `by_kind`: goal kind -> policy name; it wins over by_action while a goal of that kind runs. The standard pack has none.
+# Source: the dict of AssistLoop._step_failed (robot_agent/core/planning/assist_loop.py lines 3150-3152 at 3deb5c5) and
+# contract/recovery.py STEP_LADDER (the two actions with a declared ladder: Pick, MoveTo). robot_agent/core/pack/recovery.py
+# picks a policy; tests/test_pack_recovery.py proves this table equals the old dict. The loop does not read it yet.
+recovery:
+  policies:
+    std.find_search:                  # relook, mark searched, search legs, ask where, second looks
+      callable: std.find_search
+      source: "robot_agent/core/planning/find_ladder.py FindLadder._recover_find (assist_loop.py:3150 at 3deb5c5)"
+    std.pick_ladder:                  # STEP_LADDER Pick: retry in place, ask the person, then replan or stop
+      callable: std.pick_ladder
+      source: "robot_agent/core/planning/step_ladder.py StepLadder._recover_pick (assist_loop.py:3150 at 3deb5c5)"
+    std.move_ladder:                  # STEP_LADDER MoveTo: retry, ask the person to clear the way, else stop
+      callable: std.move_ladder
+      source: "robot_agent/core/planning/step_ladder.py StepLadder._recover_move (assist_loop.py:3151 at 3deb5c5)"
+    std.release_refind:               # an empty hand after a release: refind on the room's floor place, else stop
+      callable: std.release_refind
+      source: "robot_agent/core/planning/step_ladder.py StepLadder._recover_place (assist_loop.py:3151-3152 at 3deb5c5)"
+    std.open_in_search:               # an Open that failed during a search gives that container up
+      callable: std.open_in_search
+      source: "robot_agent/core/planning/search_hooks.py SearchHooks._recover_open (assist_loop.py:3151 at 3deb5c5)"
+  by_action:
+    Find: std.find_search
+    Pick: std.pick_ladder
+    MoveTo: std.move_ladder
+    Open: std.open_in_search
+    Place: std.release_refind
+    PutIn: std.release_refind
+  by_kind: {}

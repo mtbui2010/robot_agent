@@ -6,6 +6,8 @@ the failed code's REPLAN or STOP); the methods here run the rung. A robot change
 ``recovery_overrides``; ``ask_help`` off closes the ASK_HELP rung. ``AssistLoop._step_failed`` calls
 ``_recover_pick`` / ``_recover_move`` / ``_recover_place``; ``_recover_find`` shares the ASK_HELP rung (``_may_ask`` /
 ``_ask_help``); a release whose hand is empty runs the DROPPED rule's REFIND rung (``_refind_dropped``, ``_splice_refind``).
+``_recover_by_policy`` is the prepared seam of Step S14 (the policy the robot's pack names, core/pack/recovery.py); nothing
+calls it yet: ``_step_failed`` keeps its dict while tests/test_find_ladder.py pins that dict's text.
 """
 
 from __future__ import annotations
@@ -13,12 +15,29 @@ from __future__ import annotations
 from robot_agent.contract import STEP_LADDER, Recovery, step_rung
 
 from ..options import NEXT, STOP
+from ..pack import goal_semantics, recovery as pack_recovery
 from .speech import HELP_MOVE, HELP_PICK
 
 
 class StepLadder:
     """Mixin of :class:`~robot_agent.core.planning.assist_loop.AssistLoop` (needs ``cfg``, ``options``, ``_holding``,
-    ``_effect``, ``_finish``, ``_ask_heard``, ``_log_fn``, ``_search_told``, ``_recover_phantom``, ``yes_no``)."""
+    ``_effect``, ``_finish``, ``_ask_heard``, ``_log_fn``, ``_search_told``, ``_recover_phantom``, ``_refuted``, ``yes_no``)."""
+
+    def _recover_by_policy(self, r, st, reason, rule, no):
+        """The recovery of a failed step after the policy rung: the policy the robot's pack names for it (by goal kind, by
+        action: core/pack/recovery.py). A refuted step (``no``) and the builtins planner / tree give the planner's hint;
+        ``stop`` ends the run. Returns (outcome or None, replan hint). Equal to the dict of ``_step_failed`` for the
+        standard pack (tests/test_pack_recovery.py); not called yet."""
+        pack = pack_recovery.recovering_pack(goal_semantics.pack_of(self))
+        kinds = [g.get("type") for g in getattr(r, "goals", None) or () if isinstance(g, dict)]
+        name = pack_recovery.PLANNER if no is not None else pack_recovery.policy_name(pack, st, kinds)
+        fn, entry = pack_recovery.policy(pack, name)
+        if fn is not None:
+            return (yield from fn(r, st, reason, rule, pack_recovery.Ctx(self, r, entry)))
+        if name == pack_recovery.STOP:
+            yield self._finish(r, "failed", msg=f"{st.get('action')} {st.get('object')} failed: {reason}")
+            return STOP, ""
+        return None, self._refuted(r, st, no)
 
     def _recover_pick(self, r, st, reason, rule):
         """Look + grasp again in place (pick_retries, not when out of lateral reach), then ask the person to move it closer. Returns (outcome or None, replan hint)."""
