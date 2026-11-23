@@ -1,1 +1,1 @@
-{"assist_loop_lines": 1131, "suite_floor": 3929, "status": "2026-11-23 wave W19 merged (S21 by hand: per-file size rule in arch_rules.json keeps assist_loop.py a recorded offender); roundB 0 FAIL"}
+{"assist_loop_lines": 881, "suite_floor": 3949, "status": "2026-11-23 wave W20 merged (S22: execute stage in phases/execute.py); roundB 0 FAIL"}
