@@ -43,11 +43,11 @@
  },
  "loop": {
   "lang_rows": 6,
-  "vocab_actions": 57,
-  "vocab_kinds": 46
+  "vocab_actions": 51,
+  "vocab_kinds": 45
  },
  "size": {
-  "file: robot_agent/core/planning/assist_loop.py": 3713,
+  "file: robot_agent/core/planning/assist_loop.py": 3549,
   "fn: robot_agent/contract/manifest.py::_planner#0": 89,
   "fn: robot_agent/core/device_manager.py::DeviceManager.add_connect#0": 240,
   "fn: robot_agent/core/plan_skill.py::run_plan_skill#0": 91,
@@ -57,7 +57,7 @@
   "fn: robot_agent/core/unified_agent.py::UnifiedAgent.run_direct._blocking#0": 81
  },
  "wiring": {
-  "cfg_branches": 59,
-  "cfg_keys": 63
+  "cfg_branches": 58,
+  "cfg_keys": 62
  }
 }
