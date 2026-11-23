@@ -304,6 +304,19 @@ def _loop_translates(planner, options) -> bool:
     return bool(sage and pivot in ('translate', 'both'))
 
 
+def _goals_replace_translation(planner, options) -> bool:
+    """Typed ``goals`` from the caller (a fleet manager) that the SAGE loop will take (``accept_goals`` named in the run's options): the prompt is
+    only the caller's label of those goals and no planner reads it as a request, so the plain translation (an LLM call of 10-20 s that can
+    also change the sense of an English label) is skipped. Anything else (no goals, another planner, ``accept_goals`` not given in the
+    options) translates as before."""
+    import os
+    from .planning.planner_names import is_assist
+    o = options or {}
+    goals = o.get('goals')
+    accepted = str(o.get('accept_goals', '')).lower() in ('1', 'true', 'yes', 'on')
+    return bool(isinstance(goals, list) and goals and accepted and is_assist(planner, os.environ.get('ROBOT_AGENT_PLANNER')))
+
+
 def _given_goals(assist: bool, options) -> dict:
     """``run_blocking``'s ``goals`` from the run's options (``/ws/agent`` puts a caller's typed goals there): only the AssistLoop takes
     them, and only with its ``accept_goals`` on; none given: no argument (the call is the one it always was)."""
@@ -362,7 +375,7 @@ class UnifiedAgent:
                     emit({'event': 'log_dir', 'log_dir': _ds_dir})
 
                 prompt_en = prompt
-                if lang != 'en' and not _loop_translates(planner, options):
+                if lang != 'en' and not _loop_translates(planner, options) and not _goals_replace_translation(planner, options):
                     emit({'event': 'status', 'msg': 'Translating...'})
                     from ..utils import translate
                     prompt_en = translate(prompt, to_language='english',
