@@ -14,8 +14,10 @@ from .certify import CertifyPhase
 from .correct import CorrectPhase
 from .exec_helpers import ExecHelpers
 from .gate import GatePhase
+from .goal_edit import GoalEditPhase
 from .ground import GroundPhase
 from .recover import RecoverPhase
+from .replan import ReplanPhase
 from .understand_call import UnderstandCall
 from .understand_rounds import UnderstandRounds
 from .verify_goals import VerifyGoals
@@ -33,4 +35,6 @@ PHASE_MIXINS: tuple = (
     AgreeReadBack,
     CorrectPhase,
     CertifyPhase,
+    ReplanPhase,
+    GoalEditPhase,
 )
