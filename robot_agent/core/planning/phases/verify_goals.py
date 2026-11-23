@@ -4,7 +4,7 @@ and the final verdict.
 What: ``VerifyGoals`` is a mixin with ``_observe_goals``, ``_end_action``, ``_return_tries``, ``_return_to_end``, ``_look``
 and ``_final_check``, moved VERBATIM out of ``assist_loop.py`` (step S12 of the core generalization), plus the two seams
 that now ask the robot's pack: ``_observe_goal`` (the goal kind's ``observe`` verifier looks at one goal; a kind with none
-stays on the belief) and ``_step_checks`` (the pack's step verifiers after the core layers of ``_post_check``). Both read
+stays on the belief; a kind that declares ``unknown_is: failure`` makes a "cannot tell" an unmet goal, Step S29) and ``_step_checks`` (the pack's step verifiers after the core layers of ``_post_check``). Both read
 the pack through robot_agent/core/pack/verifiers.py; the standard pack names ``std.find_at_destination`` for on / in and
 ``std.release_second_look``, ``std.find_reach`` for every step (robot_agent/packs/household/verifiers.yaml).
 Why: the loop decided itself which goals are looked at and which steps get a second look
@@ -47,6 +47,9 @@ class VerifyGoals:
                 r.placed.pop(g["object"], None); r.memory.see(g["object"], None, "not at its goal place")
                 code = FailureCode.DROPPED if g.get("to") == last_placed else FailureCode.ABSENT
                 unmet.append({"code": code.value, "device": device,
+                              "evidence": {"goal": r.goal_checks[-1]["goal"], "observed": ev_}})
+            elif ok is None and pack_verifiers.unknown_fails(goal_semantics.pack_of(self), g.get("type")):
+                unmet.append({"code": FailureCode.PERCEPTION_UNAVAILABLE.value, "device": device,     # S29: could not look
                               "evidence": {"goal": r.goal_checks[-1]["goal"], "observed": ev_}})
         last = r.goals[-1] if r.goals else {}
         if last.get("type") == "go" and last.get("to") and r.world.arrived != last["to"]:
