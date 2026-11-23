@@ -8,7 +8,9 @@ Switch off: an empty tuple (today) is the old class exactly; a step is reverted 
 """
 
 from .exec_helpers import ExecHelpers
+from .verify_goals import VerifyGoals
 
 PHASE_MIXINS: tuple = (
     ExecHelpers,
+    VerifyGoals,
 )
