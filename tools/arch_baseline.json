@@ -47,7 +47,7 @@
   "vocab_kinds": 38
  },
  "size": {
-  "file: robot_agent/core/planning/assist_loop.py": 3513,
+  "file: robot_agent/core/planning/assist_loop.py": 3256,
   "fn: robot_agent/contract/manifest.py::_planner#0": 89,
   "fn: robot_agent/core/device_manager.py::DeviceManager.add_connect#0": 240,
   "fn: robot_agent/core/plan_skill.py::run_plan_skill#0": 91,
