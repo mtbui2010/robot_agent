@@ -241,3 +241,55 @@ Workarounds of `pex_case/docs/framework_fit.md` after W7:
 So G2, G3, G5, G6 and P8 are now deletable at the pack level; G1, P7 and G4 are not (S29, S14); G7 is not.
 
 What is next: wave W8 (S13, S29), then S14 and the rest, then Round C. Nothing is pushed.
+
+## Run 2 (waves W1 onward): final status at the stop in wave W9
+
+This section is the closing record of run 2. The earlier "Run 2" and wave sections above hold the per-wave detail.
+
+### Steps done
+
+S02, S03, S04, S05, S06, S07, S25a, S31, S10, S30, S27a, S23a, S32, S12, S26, S27b, S08, S25, S13, S29. Each was one extraction or
+one declared-data change, proven by the golden traces (or, for S08, S05 and S26, by a differential test plus the golden set).
+Waves W8 (S13, S29) were merged in commit 3deb5c5.
+
+### Failed or stopped
+
+S14 (recovery policy per action). Branches `gc/s14` and `gc/s14-r3` exist in the worktree list but are NOT merged.
+
+Stop reason: wave W9, equivalence for S14 could not be proven. The owner's stop rule is to stop at the first mismatch, so the run
+stopped there and nothing from S14 is in `generalize-core`. Whether the cause is a real behaviour change or a stale or blocked
+worker (as happened for S05, S08 and S26, which were later checked and accepted) was not established in this run. The next step is
+to re-check S14 on its own, with one worker per worktree, before any further step.
+
+### Numbers now versus the baseline
+
+| Measure | Start of run 1 | Now (tip 3deb5c5) |
+|---|---|---|
+| `robot_agent/core/planning/assist_loop.py` lines | 4081 | 3255 (826 fewer) |
+| Tests passed (ratchet floor) | 3075 | 3689 |
+
+The tests-passed figure is the ratchet floor recorded at wave W8, not a fresh full run in this step. The `plan_sec` flakiness in
+`tests/test_sage_lab_r7*` and `r4*` (see wave W7) still applies.
+
+### Workarounds of `pex_case/docs/framework_fit.md`
+
+| Id | Status now |
+|---|---|
+| G1 | Can be deleted: S29 (a goal kind declared with no rules, `conflicts: none`) is built. |
+| G2 | Can be deleted in the pex pack, with a test (S06 and S25 give pack predicates and typed leaves in trees). |
+| G3 | Can be deleted (S10, S26, S25). |
+| G4 | Cannot be deleted: it needs S14, which is stopped. |
+| G5 | Can be deleted in the pex pack, with a test (S25 pack questions, S27a, S31, S32). |
+| G6 | Can be deleted (S25a). |
+| G7 | Cannot be deleted: not in level B scope. |
+| P7 | Can be deleted: it depended only on S29. |
+| P8 | Can be deleted once `pex.pipe_in_clips` is written in the pack (S12). |
+
+So G1, G2, G3, G5, G6, P7 and P8 are deletable at the pack level; G4 and G7 are not.
+
+### What is next
+
+1. Re-check S14 alone (one worker, own worktree), and decide whether it is a real mismatch or a stale worker answer.
+2. Continue the remaining steps of `generalize_core_plan.json` after S14, at most 4 streams per wave, stopping at the first mismatch.
+3. Round C (the PEX robot on this framework) can start for G1, G2, G3, G5, G6, P7 and P8; G4 waits for S14.
+4. Nothing is pushed; the owner reviews first.
