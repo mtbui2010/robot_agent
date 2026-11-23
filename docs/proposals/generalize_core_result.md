@@ -435,8 +435,12 @@ This section replaces the earlier "status at the stop" sections of run 2 where t
 - S05 is merged and accepted. Its equivalence proof is the differential test `tests/test_goal_semantics_diff.py` (27 tests, 5
   deliberate mutations of the new code are each caught by it) plus roundB with 0 FAIL on the merged tip. Any earlier line that
   lists S05 as unproven is out of date.
-- S21 was reported as stopped at wave W19. It was redone and merged (commit 1a722ad), and S22 followed (156ac46). The stop was a
-  worker problem, not a behaviour mismatch.
+- S21 was reported as stopped at wave W19. It was redone and merged (commit 1a722ad), and S22 followed (156ac46). The stop was not a
+  behaviour mismatch and not a stale worker: the move itself was proven (AST equality with a reference copy, a differential test, goldens,
+  mutation check). Once `assist_loop.py` was under the 1200-line file limit, two existing architecture tests contradicted each other (one
+  needs the file to stay a recorded size offender in `tools/arch_baseline.json`, the other fails on any baseline entry that is no longer
+  over its limit). The coordinator fixed it with a per-file rule in `tools/arch_rules.json` (max_file 400, stricter than before), so the
+  file stays an offender while it shrinks. When the file nears 400 lines this pair of tests needs an owner decision.
 - Some timing tests (`plan_sec` in `tests/test_sage_lab_r7*` and `r4*`) are flaky under machine load. They compare an event stream
   that holds a measured time; a run can fail once and pass on a re-run. They are not caused by this work and no test was changed.
 
