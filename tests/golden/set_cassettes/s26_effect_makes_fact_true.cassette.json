@@ -1,0 +1,1519 @@
+{
+ "format": 1,
+ "name": "s26_effect_makes_fact_true",
+ "tags": [
+  "success",
+  "fakeline"
+ ],
+ "about": "Inspect's declared effect makes inspected(bracket) true (in the gate's simulation and in the belief: world.facts of the events after it), so Fasten passes the gate and the guard; torque_nm is declared by the action but not by the fasten skill, so it does not reach the skill",
+ "scenario": {
+  "name": "s26_effect_makes_fact_true",
+  "env": {
+   "bin@cell a": {
+    "aliases": [
+     "bin"
+    ],
+    "loc": {
+     "x": 1.0,
+     "y": 1.0
+    },
+    "surface": true
+   },
+   "jig@cell a": {
+    "aliases": [
+     "jig"
+    ],
+    "loc": {
+     "x": 2.0,
+     "y": 1.0
+    },
+    "surface": true
+   },
+   "outfeed@cell b": {
+    "aliases": [
+     "outfeed"
+    ],
+    "loc": {
+     "x": 6.0,
+     "y": 3.0
+    },
+    "surface": true
+   }
+  },
+  "robot_pkg": "fakeline",
+  "task": "Put the bracket on the jig, inspect it and fasten it.",
+  "robot": {
+   "objects": {
+    "bracket": "bin@cell a",
+    "bolt": "jig@cell a"
+   },
+   "start": "bin@cell a",
+   "skills": {
+    "say": {
+     "isdone": true,
+     "msg": "said"
+    },
+    "wait_for_unload": {
+     "isdone": true,
+     "msg": "tray empty"
+    },
+    "inspect": {
+     "isdone": true,
+     "msg": "inspected"
+    },
+    "fasten": {
+     "isdone": true,
+     "msg": "fastened"
+    }
+   }
+  },
+  "llm": {
+   "script": [],
+   "default": {
+    "status": "clear",
+    "reason": "",
+    "question": "",
+    "goals": [
+     {
+      "type": "on",
+      "object": "bracket",
+      "from": "bin",
+      "to": "jig"
+     }
+    ]
+   }
+  },
+  "planner": {
+   "plan": [
+    "MoveTo bin@cell a",
+    "Find bracket",
+    "Pick bracket",
+    "MoveTo jig@cell a",
+    "Inspect bracket",
+    {
+     "action": "Fasten",
+     "object": "bracket",
+     "args": {
+      "torque_nm": 3
+     }
+    },
+    "Place jig@cell a"
+   ],
+   "replans": []
+  },
+  "options": {
+   "input_pivot": "none",
+   "look_then_ask": "0",
+   "bring_ask": "0",
+   "bt_goal": "0",
+   "fetch_guard": "0"
+  },
+  "pack": {
+   "schema": 2,
+   "name": "s26_line_rules",
+   "extends": "household",
+   "assumed": true,
+   "predicates": {
+    "inspected": {
+     "kind": "fact",
+     "args": [
+      "object"
+     ],
+     "scopes": [
+      "tree",
+      "effect",
+      "pre",
+      "goal"
+     ],
+     "assumed": true
+    }
+   },
+   "actions": {
+    "Inspect": {
+     "arg": {
+      "name": "part",
+      "type": "object"
+     },
+     "rules": "declared",
+     "effects": {
+      "add": [
+       "inspected(?part)"
+      ]
+     },
+     "assumed": true
+    },
+    "Fasten": {
+     "arg": {
+      "name": "part",
+      "type": "object"
+     },
+     "rules": "declared",
+     "pre": [
+      "inspected(?part)"
+     ],
+     "args": {
+      "torque_nm": {
+       "type": "number",
+       "min": 0,
+       "max": 10,
+       "unit": "Nm"
+      }
+     },
+     "assumed": true
+    }
+   }
+  }
+ },
+ "recorded": {
+  "llm_calls": [
+   {
+    "prompt": "a99caa5e6f19b714",
+    "format": "0d88e5861dd05da8",
+    "head": "You turn a household robot task into goals. The robot is an assembly-lin",
+    "answer": "{\"status\": \"clear\", \"reason\": \"\", \"question\": \"\", \"goals\": [{\"type\": \"on\", \"object\": \"bracket\", \"from\": \"bin\", \"to\": \"jig\"}]}"
+   }
+  ],
+  "planner_calls": [
+   {
+    "call": "generate_plan",
+    "task": "Put the bracket on the jig, inspect it and fasten it."
+   }
+  ],
+  "robot_calls": [
+   {
+    "skill": "mobile_pose",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "pose": [
+      1.0,
+      1.0,
+      0
+     ]
+    }
+   },
+   {
+    "skill": "find",
+    "params": {
+     "inputs": "bracket"
+    },
+    "result": {
+     "isdone": true,
+     "ins": {
+      "bracket": {
+       "pose_3d": [
+        0.6,
+        0.05,
+        0.8
+       ]
+      }
+     }
+    }
+   },
+   {
+    "skill": "pick",
+    "params": {
+     "inputs": "bracket"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "grasped"
+    }
+   },
+   {
+    "skill": "grasp_succeed",
+    "params": {},
+    "result": {
+     "isdone": true
+    }
+   },
+   {
+    "skill": "move",
+    "params": {
+     "inputs": "jig@cell a"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "arrived at jig@cell a"
+    }
+   },
+   {
+    "skill": "mobile_pose",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "pose": [
+      2.0,
+      1.0,
+      0
+     ]
+    }
+   },
+   {
+    "skill": "inspect",
+    "params": {
+     "inputs": "bracket"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "inspected"
+    }
+   },
+   {
+    "skill": "fasten",
+    "params": {
+     "inputs": "bracket"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "fastened"
+    }
+   },
+   {
+    "skill": "grasp_succeed",
+    "params": {},
+    "result": {
+     "isdone": true
+    }
+   },
+   {
+    "skill": "place",
+    "params": {
+     "inputs": "jig@cell a"
+    },
+    "result": {
+     "isdone": true,
+     "msg": "placed"
+    }
+   },
+   {
+    "skill": "grasp_succeed",
+    "params": {},
+    "result": {
+     "isdone": false
+    }
+   },
+   {
+    "skill": "find",
+    "params": {
+     "inputs": "bracket"
+    },
+    "result": {
+     "isdone": true,
+     "ins": {
+      "bracket": {
+       "pose_3d": [
+        0.6,
+        0.05,
+        0.8
+       ]
+      }
+     }
+    }
+   }
+  ],
+  "events": [
+   {
+    "event": "task_start",
+    "task": "Put the bracket on the jig, inspect it and fasten it.",
+    "world": {
+     "arrived": "bin@cell a",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from bin@cell a"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Starting the task"
+   },
+   {
+    "event": "reconcile",
+    "when": "start",
+    "changed": {
+     "arrived": [
+      null,
+      "bin@cell a"
+     ]
+    },
+    "sensors": {
+     "arrived": {
+      "pose": [
+       1.0,
+       1.0
+      ],
+      "detail": "0.00 m from bin@cell a",
+      "source": "mobile_pose"
+     },
+     "containers": {},
+     "unconfirmed": []
+    },
+    "provenance": {
+     "arrived": {
+      "source": "sensor",
+      "detail": "0.00 m from bin@cell a"
+     },
+     "found": {
+      "source": "belief"
+     },
+     "holding": {
+      "source": "belief"
+     },
+     "opened": {
+      "source": "sensor",
+      "containers": {},
+      "unconfirmed": []
+     },
+     "on": {
+      "source": "belief"
+     }
+    },
+    "world": {
+     "arrived": "bin@cell a",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from bin@cell a"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    }
+   },
+   {
+    "event": "status",
+    "msg": "Understanding the task..."
+   },
+   {
+    "event": "understand",
+    "status": "clear",
+    "reason": "",
+    "goals": [
+     {
+      "type": "on",
+      "object": "bracket",
+      "from": "",
+      "to": "jig@cell a"
+     }
+    ],
+    "question": null
+   },
+   {
+    "event": "status",
+    "msg": "Generating task plan..."
+   },
+   {
+    "event": "gate",
+    "round": 0,
+    "problems": [],
+    "plan": [
+     "Find bracket",
+     "Pick bracket",
+     "MoveTo jig@cell a",
+     "Inspect bracket",
+     "Fasten bracket",
+     "Place jig@cell a"
+    ],
+    "tidied": [
+     "step 1 'MoveTo bin@cell a' does nothing here: removed"
+    ]
+   },
+   {
+    "event": "plan",
+    "steps": [
+     {
+      "action": "Find",
+      "object": "bracket"
+     },
+     {
+      "action": "Pick",
+      "object": "bracket"
+     },
+     {
+      "action": "MoveTo",
+      "object": "jig@cell a",
+      "grounded": true
+     },
+     {
+      "action": "Inspect",
+      "object": "bracket"
+     },
+     {
+      "action": "Fasten",
+      "object": "bracket",
+      "args": {
+       "torque_nm": 3
+      }
+     },
+     {
+      "action": "Place",
+      "object": "jig@cell a",
+      "grounded": true
+     }
+    ],
+    "plan_meta": {
+     "method": "scripted",
+     "llm_plan": [
+      {
+       "action": "MoveTo",
+       "object": "bin@cell a",
+       "grounded": true
+      },
+      {
+       "action": "Find",
+       "object": "bracket"
+      },
+      {
+       "action": "Pick",
+       "object": "bracket"
+      },
+      {
+       "action": "MoveTo",
+       "object": "jig@cell a",
+       "grounded": true
+      },
+      {
+       "action": "Inspect",
+       "object": "bracket"
+      },
+      {
+       "action": "Fasten",
+       "object": "bracket",
+       "args": {
+        "torque_nm": 3
+       }
+      },
+      {
+       "action": "Place",
+       "object": "jig@cell a",
+       "grounded": true
+      }
+     ],
+     "edits": [],
+     "certified": true,
+     "gate_findings": [],
+     "repaired_by_op": {},
+     "completed_by_gate": 0
+    },
+    "warnings": [],
+    "plan_text": "find::bracket\npick::bracket\nmove::jig@cell a\ninspect::bracket\nfasten::bracket\nplace::jig@cell a",
+    "certified": true,
+    "world": {
+     "arrived": "bin@cell a",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from bin@cell a"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    }
+   },
+   {
+    "event": "step_start",
+    "index": 0,
+    "action": "Find",
+    "object": "bracket",
+    "skill": "find",
+    "say": "I will find bracket"
+   },
+   {
+    "event": "step_verify",
+    "index": 0,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "sensor",
+      "ok": true,
+      "detail": "unknown: find declares no sensor that checks it",
+      "confidence": null,
+      "unknown": true
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 0,
+    "status": "success",
+    "result": {
+     "ins": {
+      "bracket": {
+       "pose_3d": [
+        0.6,
+        0.05,
+        0.8
+       ]
+      }
+     },
+     "isdone": true,
+     "msg": ""
+    },
+    "world": {
+     "arrived": "bin@cell a",
+     "found": "bracket",
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from bin@cell a"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: find bracket"
+   },
+   {
+    "event": "step_start",
+    "index": 1,
+    "action": "Pick",
+    "object": "bracket",
+    "skill": "pick",
+    "say": "I will pick bracket"
+   },
+   {
+    "event": "step_verify",
+    "index": 1,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "grasped",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "sensor",
+      "ok": true,
+      "detail": "grasp_succeed: ok",
+      "confidence": null,
+      "unknown": false
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 1,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "grasped"
+    },
+    "world": {
+     "arrived": "bin@cell a",
+     "found": null,
+     "holding": "bracket",
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from bin@cell a"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: pick bracket"
+   },
+   {
+    "event": "step_start",
+    "index": 2,
+    "action": "MoveTo",
+    "object": "jig@cell a",
+    "skill": "move",
+    "say": "I will move to jig in the cell a"
+   },
+   {
+    "event": "step_verify",
+    "index": 2,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "arrived at jig@cell a",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "localization",
+      "ok": true,
+      "detail": "0.00 m from jig@cell a",
+      "confidence": null,
+      "unknown": false
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 2,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "arrived at jig@cell a"
+    },
+    "world": {
+     "arrived": "jig@cell a",
+     "found": null,
+     "holding": "bracket",
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Done: move to jig in the cell a"
+   },
+   {
+    "event": "step_start",
+    "index": 3,
+    "action": "Inspect",
+    "object": "bracket",
+    "skill": "inspect",
+    "say": "I will inspect bracket"
+   },
+   {
+    "event": "step_verify",
+    "index": 3,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "inspected",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "sensor",
+      "ok": true,
+      "detail": "unknown: inspect declares no sensor that checks it",
+      "confidence": null,
+      "unknown": true
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 3,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "inspected"
+    },
+    "world": {
+     "arrived": "jig@cell a",
+     "found": null,
+     "holding": "bracket",
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     },
+     "facts": {
+      "inspected": [
+       [
+        "bracket"
+       ]
+      ]
+     }
+    },
+    "say": "Done: inspect bracket"
+   },
+   {
+    "event": "step_start",
+    "index": 4,
+    "action": "Fasten",
+    "object": "bracket",
+    "skill": "fasten",
+    "say": "I will fasten bracket"
+   },
+   {
+    "event": "step_verify",
+    "index": 4,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "fastened",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "sensor",
+      "ok": true,
+      "detail": "unknown: fasten declares no sensor that checks it",
+      "confidence": null,
+      "unknown": true
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 4,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "fastened"
+    },
+    "world": {
+     "arrived": "jig@cell a",
+     "found": null,
+     "holding": "bracket",
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     },
+     "facts": {
+      "inspected": [
+       [
+        "bracket"
+       ]
+      ]
+     }
+    },
+    "say": "Done: fasten bracket"
+   },
+   {
+    "event": "step_start",
+    "index": 5,
+    "action": "Place",
+    "object": "jig@cell a",
+    "skill": "place",
+    "say": "I will place jig in the cell a"
+   },
+   {
+    "event": "step_verify",
+    "index": 5,
+    "verifies": [
+     {
+      "layer": "isdone",
+      "ok": true,
+      "detail": "placed",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "symbolic",
+      "ok": true,
+      "detail": "",
+      "confidence": null,
+      "unknown": false
+     },
+     {
+      "layer": "sensor",
+      "ok": true,
+      "detail": "grasp_succeed: ok",
+      "confidence": null,
+      "unknown": false
+     }
+    ]
+   },
+   {
+    "event": "step_done",
+    "index": 5,
+    "status": "success",
+    "result": {
+     "isdone": true,
+     "msg": "placed"
+    },
+    "world": {
+     "arrived": "jig@cell a",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     },
+     "facts": {
+      "inspected": [
+       [
+        "bracket"
+       ]
+      ]
+     }
+    },
+    "say": "Done: place jig in the cell a"
+   },
+   {
+    "event": "status",
+    "msg": "Checking the goals..."
+   },
+   {
+    "event": "goal_check",
+    "goal": {
+     "type": "on",
+     "object": "bracket",
+     "from": "",
+     "to": "jig@cell a"
+    },
+    "ok": true,
+    "evidence": "the bracket is seen on the jig in the cell a",
+    "world": {
+     "arrived": "jig@cell a",
+     "found": "bracket",
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     },
+     "facts": {
+      "inspected": [
+       [
+        "bracket"
+       ]
+      ]
+     }
+    }
+   },
+   {
+    "event": "done",
+    "status": "success",
+    "msg": "",
+    "world": {
+     "arrived": "jig@cell a",
+     "found": "bracket",
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "MoveTo localization check"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     },
+     "facts": {
+      "inspected": [
+       [
+        "bracket"
+       ]
+      ]
+     }
+    },
+    "say": "Task completed"
+   }
+  ],
+  "final": {
+   "robot": {
+    "at": "jig@cell a",
+    "holding": null,
+    "objects": {
+     "bracket": "jig@cell a",
+     "bolt": "jig@cell a"
+    },
+    "opened": [],
+    "asked": []
+   },
+   "belief": {
+    "arrived": "jig@cell a",
+    "found": "bracket",
+    "holding": null,
+    "opened": [],
+    "on": [],
+    "found_pose": null,
+    "holding_pose": null,
+    "provenance": {
+     "arrived": {
+      "source": "sensor",
+      "detail": "MoveTo localization check"
+     },
+     "found": {
+      "source": "belief"
+     },
+     "holding": {
+      "source": "belief"
+     },
+     "opened": {
+      "source": "sensor",
+      "containers": {},
+      "unconfirmed": []
+     },
+     "on": {
+      "source": "belief"
+     }
+    },
+    "facts": {
+     "inspected": [
+      [
+       "bracket"
+      ]
+     ]
+    }
+   },
+   "lab_log": [],
+   "record": {
+    "task": "Put the bracket on the jig, inspect it and fasten it.",
+    "lang": "en",
+    "obs": "goals: [{\"type\": \"on\", \"object\": \"bracket\", \"from\": \"\", \"to\": \"jig@cell a\"}]",
+    "visible": [],
+    "planner": "sage+assist",
+    "plan_meta": {
+     "method": "scripted",
+     "llm_plan": [
+      {
+       "action": "MoveTo",
+       "object": "bin@cell a",
+       "grounded": true
+      },
+      {
+       "action": "Find",
+       "object": "bracket"
+      },
+      {
+       "action": "Pick",
+       "object": "bracket"
+      },
+      {
+       "action": "MoveTo",
+       "object": "jig@cell a",
+       "grounded": true
+      },
+      {
+       "action": "Inspect",
+       "object": "bracket"
+      },
+      {
+       "action": "Fasten",
+       "object": "bracket",
+       "args": {
+        "torque_nm": 3
+       }
+      },
+      {
+       "action": "Place",
+       "object": "jig@cell a",
+       "grounded": true
+      }
+     ],
+     "edits": [],
+     "certified": true,
+     "gate_findings": [],
+     "repaired_by_op": {},
+     "completed_by_gate": 0
+    },
+    "warnings": [],
+    "steps": [
+     {
+      "index": 0,
+      "action": "Find",
+      "object": "bracket",
+      "skill": "find",
+      "params": {
+       "inputs": "bracket"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "ins": {
+        "bracket": {
+         "pose_3d": [
+          0.6,
+          0.05,
+          0.8
+         ]
+        }
+       },
+       "isdone": true,
+       "msg": ""
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "sensor",
+        "ok": true,
+        "detail": "unknown: find declares no sensor that checks it",
+        "confidence": null,
+        "unknown": true
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 1,
+      "action": "Pick",
+      "object": "bracket",
+      "skill": "pick",
+      "params": {
+       "inputs": "bracket"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "grasped"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "grasped",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "sensor",
+        "ok": true,
+        "detail": "grasp_succeed: ok",
+        "confidence": null,
+        "unknown": false
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 2,
+      "action": "MoveTo",
+      "object": "jig@cell a",
+      "skill": "move",
+      "params": {
+       "inputs": "jig@cell a"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "arrived at jig@cell a"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "arrived at jig@cell a",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "localization",
+        "ok": true,
+        "detail": "0.00 m from jig@cell a",
+        "confidence": null,
+        "unknown": false
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 3,
+      "action": "Inspect",
+      "object": "bracket",
+      "skill": "inspect",
+      "params": {
+       "inputs": "bracket"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "inspected"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "inspected",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "sensor",
+        "ok": true,
+        "detail": "unknown: inspect declares no sensor that checks it",
+        "confidence": null,
+        "unknown": true
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 4,
+      "action": "Fasten",
+      "object": "bracket",
+      "skill": "fasten",
+      "params": {
+       "inputs": "bracket"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "fastened"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "fastened",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "sensor",
+        "ok": true,
+        "detail": "unknown: fasten declares no sensor that checks it",
+        "confidence": null,
+        "unknown": true
+       }
+      ],
+      "logs": []
+     },
+     {
+      "index": 5,
+      "action": "Place",
+      "object": "jig@cell a",
+      "skill": "place",
+      "params": {
+       "inputs": "jig@cell a"
+      },
+      "status": "success",
+      "attempt": 1,
+      "result": {
+       "isdone": true,
+       "msg": "placed"
+      },
+      "verifies": [
+       {
+        "layer": "isdone",
+        "ok": true,
+        "detail": "placed",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "symbolic",
+        "ok": true,
+        "detail": "",
+        "confidence": null,
+        "unknown": false
+       },
+       {
+        "layer": "sensor",
+        "ok": true,
+        "detail": "grasp_succeed: ok",
+        "confidence": null,
+        "unknown": false
+       }
+      ],
+      "logs": []
+     }
+    ],
+    "replans": [],
+    "status": "success",
+    "failure": {}
+   },
+   "log_kinds": [
+    "reconcile",
+    "task_start",
+    "status",
+    "understand",
+    "status",
+    "gate",
+    "plan",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "step_start",
+    "step_verify",
+    "step_done",
+    "status",
+    "goal_check",
+    "done",
+    "snapshot"
+   ]
+  }
+ },
+ "commit": "8c3e614"
+}

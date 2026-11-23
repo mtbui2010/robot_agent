@@ -1,0 +1,6 @@
+{
+ "about": "Step S26 (declared preconditions and effects of pack actions, the fact store, typed arguments at bind): the commit the S26 set cassettes (s26_pre_fails_at_gate, s26_pre_fails_at_guard, s26_effect_makes_fact_true, s26_typed_args_reach_skill; tests/golden/scenario_sets/s26_action_rules.py) were recorded on. kind feature: the rules do not exist before it; the equivalence of every other cassette is proven by their replay (no shipped or made-up schema-1 pack declares rules or typed args).",
+ "kind": "feature",
+ "commits": ["8c3e614"],
+ "notes": {"8c3e614": "gc/s26-r3: S26 production commit (core/pack/action_rules.py, action_model.py, base.py, loop.py, phases/exec_helpers.py) and its unit tests; the cassettes were recorded on it"}
+}
