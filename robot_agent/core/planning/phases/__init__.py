@@ -14,6 +14,7 @@ from .gate import GatePhase
 from .ground import GroundPhase
 from .recover import RecoverPhase
 from .understand_call import UnderstandCall
+from .understand_rounds import UnderstandRounds
 from .verify_goals import VerifyGoals
 
 PHASE_MIXINS: tuple = (
@@ -25,4 +26,5 @@ PHASE_MIXINS: tuple = (
     RecoverPhase,
     AnswerPhase,
     UnderstandCall,
+    UnderstandRounds,
 )
