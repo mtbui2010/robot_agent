@@ -152,11 +152,13 @@ This section describes the second run. The text above describes run 1 and stays 
   verbatim to `phases/exec_helpers.py`), S32 (the pack `fleet:` section is resolved and reported), S12 (the end-of-run goal check and
   the post-step checks are pack verifiers chosen by name), S27b (robot_fleet reads needs from the manifest; this lives in the
   robot_fleet repo and was not re-checked for this note).
-- Failed or stopped: S26 (declared action preconditions and effects, typed arguments at bind). Stop reason: in wave W6 the run could
-  not prove equivalence for S26, and the owner's stop rule is to stop at the first mismatch. Open point to confirm: the integration
-  branch history contains the merge `410f9d0` (gc/s26) and the roundB check of wave W6 ended with 0 FAIL on the tip (see the
-  scratchpad file w6_check3.txt), so the repository state and the stop report disagree. The owner should decide whether S26 stays
-  merged (it is opt-in, with 4 feature cassettes and 4 mutations) or is reverted. Until then this note counts S26 as not accepted.
+- Also done: S26 (declared action preconditions and effects, typed arguments at bind), merged as 410f9d0. Correction: an earlier
+  line of this section said "S26 stopped, not accepted". Like the S05 case, that came from a stale cached worker answer after a usage
+  limit stop, not from a mismatch. Checked on 2026-11-23 at the tip: `tests/test_pack_action_rules.py` and the whole golden set pass
+  (120 passed), the mutation check catches all 56 mutations (4 of them are the S26 mutations), and roundB is green. S26 is opt-in:
+  a pack with no declared rules behaves exactly as before. S26 is accepted.
+- S27b lives in robot_fleet: it is merged only into that repository's own local master (0fd8bb9, not pushed), and its 282 tests pass
+  against this robot_agent branch (checked on 2026-11-23).
 - Not merged on purpose: branch `gc/s04` is a second, competing implementation of S04 (S04b is the one merged); it conflicts and is
   kept only as a branch.
 - Known flakiness (not caused by this work): some tests compare an event stream that holds a measured time (`plan_sec`); under heavy
@@ -188,7 +190,7 @@ the pack re-expressed in `pex_robot` with one test per deletion (Round C, not st
 |---|---|---|
 | G1, P7 (kind `install`, two walls, one object) | S07 and S29 | Cannot be deleted yet. S07 (goal-kind table as pack data) is done; S29 (`conflicts: none`) is not built. |
 | G2 (predicates in trees) | S06 and S25 | Cannot be deleted yet. S06 is done; S25 (pack-declared predicates in trees) is not built. |
-| G3 (typed action arguments) | S10 (and S26 for checks at bind) | Can be deleted at the pack level: S10 is done (action table is pack data). Typed arguments checked at bind are in S26, which is not accepted (see Steps). |
+| G3 (typed action arguments) | S10 (and S26 for checks at bind) | Can be deleted at the pack level: S10 is done (action table is pack data) and S26 (typed arguments checked at bind) is accepted (see Steps). |
 | G4 (recovery policy per action) | S14 | Cannot be deleted. S14 is not built. |
 | G5 (free-text answers) | S25, S27a, S32 | Cannot be deleted yet. S27a, S31 and S32 are done; S25 is not. |
 | G6 (public tree-node events) | S25a | Can be deleted: S25a is done and merged. |
@@ -201,8 +203,8 @@ G7 stays open.
 
 ### What is next
 
-1. Decide S26 (see Steps): keep the merge or revert it; if kept, record the equivalence proof for it.
-2. Continue from wave W6 of `generalize_core_plan.json`: S25, S29, S14 and the rest, at most 4 parallel streams per wave, stopping at
+1. (Done: S26 is accepted, see Steps.)
+2. Continue from wave W7 of `generalize_core_plan.json`: S25, S29, S14 and the rest, at most 4 parallel streams per wave, stopping at
    the first mismatch.
 3. Round C (the PEX robot on the new framework) starts after S25, S29 and S14 exist; G3, G6 and P8 could be deleted earlier.
 4. Nothing is pushed; the owner reviews first.
