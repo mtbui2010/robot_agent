@@ -1,0 +1,42 @@
+# The recovery policies of the standard (household) pack (Step S14): which ladder a failed step runs, chosen by name.
+# - `by_action`: action -> policy name. The six actions of the dict the loop had in AssistLoop._step_failed
+#   (robot_agent/core/planning/assist_loop.py:3150-3152 at 6f844de); an action not listed goes to the builtin `planner`.
+# - `by_kind`: goal kind -> policy name; it wins over `by_action` while a goal of that kind runs. Empty: no household kind
+#   has a policy of its own.
+# - `policies`: name -> a registered `recovery` callable (robot_agent/packs/household/callables/recover.py). `ladder_code`
+#   and `may_replan` are contract STEP_LADDER (robot_agent/contract/recovery.py:97): the failure code whose rule is the
+#   step's own ladder, and whether the failed code's `then: replan` may end it.
+# - `codes`: nothing; the contract's table (robot_agent/contract/recovery.py) is the default, a robot overrides it per code.
+# Builtins every pack has: `planner` (replan or fail), `stop` (end the run), `tree` (the goal's tree decides; with no tree
+# the planner). tests/test_pack_recovery.py compares this file with the old dict and STEP_LADDER.
+recovery:
+  source: "robot_agent/core/planning/assist_loop.py:3150-3152 and robot_agent/contract/recovery.py:97 at 6f844de"
+  policies:
+    std.find_search:                  # relook, mark searched, search legs, ask where, second looks (find_ladder.py)
+      callable: std.find_search
+      source: "AssistLoop._step_failed dict entry Find -> _recover_find at 6f844de"
+    std.pick_ladder:                  # grasp again in place, ask to move it closer, then replan (step_ladder.py)
+      callable: std.pick_ladder
+      ladder_code: grasp_failed
+      may_replan: true
+      source: "AssistLoop._step_failed dict entry Pick -> _recover_pick; STEP_LADDER Pick at 6f844de"
+    std.move_ladder:                  # move again, ask to clear the way, then stop (step_ladder.py)
+      callable: std.move_ladder
+      ladder_code: blocked
+      may_replan: false
+      source: "AssistLoop._step_failed dict entry MoveTo -> _recover_move; STEP_LADDER MoveTo at 6f844de"
+    std.open_in_search:               # an Open that failed while searching: that container is given up (search_hooks.py)
+      callable: std.open_in_search
+      source: "AssistLoop._step_failed dict entry Open -> _recover_open at 6f844de"
+    std.release_refind:               # a release with an empty hand: the dropped object is looked for on the room's floor place
+      callable: std.release_refind
+      source: "AssistLoop._step_failed dict entries Place, PutIn -> _recover_place at 6f844de"
+  by_action:
+    Find: std.find_search
+    Pick: std.pick_ladder
+    MoveTo: std.move_ladder
+    Open: std.open_in_search
+    Place: std.release_refind
+    PutIn: std.release_refind
+  by_kind: {}
+  codes: {}
