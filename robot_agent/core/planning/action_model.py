@@ -5,11 +5,18 @@ verify (``verify.symbolic_check``) and the world effects (``ActionMapper.apply_e
 ``AssistLoop._effect``) all decide through this module, so they cannot drift apart again.
 It is the only planning module that imports the rules from embodiplan; the others import
 from here. See ``docs/action_model_divergence.md``.
+
+A pack action with ``rules: declared`` (Step S26, ``core/pack/action_rules.py``) adds its rules here, still the one place
+rules are read: ``check`` also lists the ``pre`` predicates that do not hold (code ``pre_<predicate>``), ``apply`` also
+adds and removes its ``effects`` facts. The active rules are those of the robot whose run is going on; with none (every
+shipped pack, every schema-1 robot) both return the action model's answer unchanged. ``simulate`` is the model's only.
 """
 
 from __future__ import annotations
 
 import functools
+
+from ..pack import action_rules
 
 # embodiplan is imported on first use, not at import time: importing the package loads
 # all its planners (and `requests`), and `import robot_agent.core.planning` stays light.
@@ -28,13 +35,24 @@ def _model():
 
 
 def check(step, world, **kw):
-    """embodiplan.action_model.check."""
-    return _model().check(step, world, **kw)
+    """embodiplan.action_model.check, plus the unmet ``pre`` of a declared pack action (errors still come first)."""
+    out = _model().check(step, world, **kw)
+    rules = action_rules.active()
+    if rules.empty:
+        return out
+    found = out + [_model().Violation(code, why) for code, why in action_rules.violations(rules, step, world)]
+    return sorted(found, key=lambda v: not v.is_error)
 
 
 def apply(step, world, **kw):
-    """embodiplan.action_model.apply."""
-    return _model().apply(step, world, **kw)
+    """embodiplan.action_model.apply, plus the ``effects`` facts of a declared pack action."""
+    rules = action_rules.active()
+    if rules.empty:
+        return _model().apply(step, world, **kw)
+    bound = action_rules.binding(rules, step, world)         # read before the step changes the hand
+    after = _model().apply(step, world, **kw)
+    action_rules.apply_effects(rules, step, bound, after)
+    return after
 
 
 def simulate(plan, world=None, **kw):
