@@ -146,6 +146,17 @@ This section describes the second run. The text above describes run 1 and stays 
   worktree), the other finished with the proof. The run took the first answer. The proof exists: `tests/legacy_ref/goal_reach.py`
   (a verbatim copy of the six old methods) and `tests/test_goal_semantics_diff.py` (27 tests, re-run on 2026-11-23: 27 passed), and the
   roundB check (goldens, mutation check, full suite) is green with S05. S05 is accepted.
+- Waves W1 to W6 steps reported done: S07 (goal-kind table as pack data), S25a (bt_goal tree keys and goldens), S31
+  (`questions_default_kind`), S10 (action table read from the standard pack), S30 (goldens and tests for the merge of `extends` and
+  `remove`), S27a (`GET /robot/manifest` reports the pack, goal kinds with needs, and question kinds), S23a (execution helpers move
+  verbatim to `phases/exec_helpers.py`), S32 (the pack `fleet:` section is resolved and reported), S12 (the end-of-run goal check and
+  the post-step checks are pack verifiers chosen by name), S27b (robot_fleet reads needs from the manifest; this lives in the
+  robot_fleet repo and was not re-checked for this note).
+- Failed or stopped: S26 (declared action preconditions and effects, typed arguments at bind). Stop reason: in wave W6 the run could
+  not prove equivalence for S26, and the owner's stop rule is to stop at the first mismatch. Open point to confirm: the integration
+  branch history contains the merge `410f9d0` (gc/s26) and the roundB check of wave W6 ended with 0 FAIL on the tip (see the
+  scratchpad file w6_check3.txt), so the repository state and the stop report disagree. The owner should decide whether S26 stays
+  merged (it is opt-in, with 4 feature cassettes and 4 mutations) or is reverted. Until then this note counts S26 as not accepted.
 - Not merged on purpose: branch `gc/s04` is a second, competing implementation of S04 (S04b is the one merged); it conflicts and is
   kept only as a branch.
 - Known flakiness (not caused by this work): some tests compare an event stream that holds a measured time (`plan_sec`); under heavy
@@ -156,34 +167,42 @@ This section describes the second run. The text above describes run 1 and stays 
 
 | Measure | Baseline (run 1) | Now |
 |---|---|---|
-| `robot_agent/core/planning/assist_loop.py` lines | 4081 | 3810 (271 fewer; 3887 after W1) |
-| Tests passed | 3075 | 3315 passed, 1 skipped (the ratchet floor is 3315) |
+| `robot_agent/core/planning/assist_loop.py` lines | 4081 | 3548 (533 fewer) |
+| Tests passed | 3075 | 3624 passed, 1 skipped (the ratchet floor is 3624) |
 
-The tests were added only; no existing test, golden or cassette was edited. The wave W2 integration check
-(`check.sh roundB`) was run again after two earlier red runs were fixed (each had one failing test); its result is in the reply that
-accompanies this change.
+The tests were added only; no existing test, golden or cassette was edited. The earlier W2 figures (3810 lines, 3315 tests) are
+replaced by these. The first two W6 checks each had one failing test
+(`tests/test_accept_goals.py::test_option_off_ignores_given_goals_byte_identical`); the third ended with 0 FAIL. That test passes or
+fails depending on load, like the timing tests below. The result of the final check for this note is in the reply that accompanies
+this change.
+
+Flaky tests: some timing tests (`plan_sec` in `tests/test_sage_lab_r7*` and `r4*`) can fail once under machine load and pass on a
+re-run. They are not caused by this work and no test was changed.
 
 ### Workarounds of `pex_case/docs/framework_fit.md`: what can be deleted
 
-Nothing can be deleted yet. The workarounds depend on steps that are not built in this run (S07, S10, S12, S14, S25, S25a, S27a,
-S29, S32). The table lists what the done steps contribute.
+Their dependencies are now built for some of them. "Deletable" means: the framework side exists; the deletion itself still needs
+the pack re-expressed in `pex_robot` with one test per deletion (Round C, not started).
 
 | Id | Needs | Status after run 2 |
 |---|---|---|
-| G1, P7 (kind `install`, two walls, one object) | S07 and S29 | Cannot be deleted. S02 gives the pack loader and S05 (open proof) the per-kind rules object, but the `install` kind and `conflicts: none` are not built. |
-| G2 (predicates in trees) | S06 and S25 | Cannot be deleted yet. S06 is done (one predicate table), but pack-declared predicates in trees need S25. |
-| G3 (typed action arguments) | S10 | Cannot be deleted. |
-| G4 (recovery policy per action) | S14 | Cannot be deleted. |
-| G5 (free-text answers) | S25, S27a, S32 | Cannot be deleted. S04 moved the phrases to data, which is a base for it, nothing more. |
-| G6 (public tree-node events) | S25a | Cannot be deleted. Branch gc/s25a exists but is not merged. |
-| P8 (verifier instead of Find within 4 m) | S12 | Cannot be deleted. |
+| G1, P7 (kind `install`, two walls, one object) | S07 and S29 | Cannot be deleted yet. S07 (goal-kind table as pack data) is done; S29 (`conflicts: none`) is not built. |
+| G2 (predicates in trees) | S06 and S25 | Cannot be deleted yet. S06 is done; S25 (pack-declared predicates in trees) is not built. |
+| G3 (typed action arguments) | S10 (and S26 for checks at bind) | Can be deleted at the pack level: S10 is done (action table is pack data). Typed arguments checked at bind are in S26, which is not accepted (see Steps). |
+| G4 (recovery policy per action) | S14 | Cannot be deleted. S14 is not built. |
+| G5 (free-text answers) | S25, S27a, S32 | Cannot be deleted yet. S27a, S31 and S32 are done; S25 is not. |
+| G6 (public tree-node events) | S25a | Can be deleted: S25a is done and merged. |
+| P8 (verifier instead of Find within 4 m) | S12 | Can be deleted: S12 is done (the goal check is a pack verifier chosen by name); the pex verifier `pex.pipe_in_clips` must still be written. |
+| S3 (manager objection dropped) | S32, S27b | Framework side exists (S32 here, S27b in robot_fleet, not re-checked in this note). To be proven in Round C. |
 | G7 (pack's own model call) | not in level B | Stays open. |
 
-So the answer for G1..G7, P7 and P8 is: none can be deleted today; G2 is the closest (one dependency, S25, remains).
+So the answer: G3, G6 and P8 can be deleted now (G3 with the S26 caveat); G1, P7, G2, G4 and G5 cannot yet (missing S29, S25, S14);
+G7 stays open.
 
 ### What is next
 
-1. (Done: the S05 proof exists, see Steps above.)
-2. Continue wave W3 onward from `generalize_core_plan.json`, at most 4 parallel streams per wave, stopping at the first mismatch.
-3. Round C (the PEX robot on the new framework) starts only after the steps listed in the table exist.
+1. Decide S26 (see Steps): keep the merge or revert it; if kept, record the equivalence proof for it.
+2. Continue from wave W6 of `generalize_core_plan.json`: S25, S29, S14 and the rest, at most 4 parallel streams per wave, stopping at
+   the first mismatch.
+3. Round C (the PEX robot on the new framework) starts after S25, S29 and S14 exist; G3, G6 and P8 could be deleted earlier.
 4. Nothing is pushed; the owner reviews first.
