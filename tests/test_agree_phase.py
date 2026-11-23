@@ -24,8 +24,10 @@ from robot_agent.core.planning.understand import LLMBudgetExceeded, LLMUnavailab
 
 NAMES = ("_texts_of", "_agreed_reading", "_agree_reask", "_restated_by_person", "_progress", "_distrusted", "_issues",
          "_object_source", "_goal_readback", "_resample", "_read_back")
-STAY = ("_refused_reading", "_unsure_data", "_agree_state", "_cancelled", "_complete_override", "_ground_understood", "_ground_v2", "_canon", "_unverified_objects", "_local_names",
-        "_correction_texts", "_correction_edit", "_patch_goals")
+STAY = ("_refused_reading", "_unsure_data", "_agree_state", "_cancelled")
+# Written by S18 as "stays in the loop file"; step S19 moves them to a phase mixin, so they only have to stay served by the class.
+MOVED_BY_S19 = ("_complete_override", "_ground_understood", "_ground_v2", "_canon", "_unverified_objects", "_local_names",
+                "_correction_texts", "_correction_edit", "_patch_goals")
 LOOP_FILE = Path(assist_loop.__file__)
 MIXIN_FILE = Path(agree.__file__)
 
@@ -56,6 +58,8 @@ def test_what_stays_is_still_in_the_loop_file():
     for n in STAY:
         assert f"def {n}(" in src, n
         assert n in vars(AssistLoop), n
+    for n in MOVED_BY_S19:
+        assert any(n in vars(c) for c in AssistLoop.__mro__), n
 
 
 def test_a_name_patched_on_the_class_still_wins(monkeypatch):
