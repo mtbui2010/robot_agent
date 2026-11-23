@@ -9,11 +9,13 @@ Switch off: an empty tuple (today) is the old class exactly; a step is reverted 
 
 from ..find_ladder import FindLadder
 from .exec_helpers import ExecHelpers
+from .ground import GroundPhase
 from .recover import RecoverPhase
 from .verify_goals import VerifyGoals
 
 PHASE_MIXINS: tuple = (
     ExecHelpers,
+    GroundPhase,
     VerifyGoals,
     FindLadder,
     RecoverPhase,
