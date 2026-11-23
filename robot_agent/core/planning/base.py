@@ -95,6 +95,11 @@ class WorldState:
     # while the field still has the value it was recorded for; any other value is a belief (a
     # skill's effect, a load from disk). Written by :meth:`mark`, shown by :meth:`provenance_view`.
     provenance: dict = field(default_factory=dict)
+    # The fact store (pack schema 2, Step S26): predicate name -> set of argument tuples, added and removed only by the
+    # declared effects of a pack's actions (core/pack/action_rules.py). Empty for every robot that declares none. Reset at
+    # the start of a run (a fact of an earlier run never satisfies a precondition); in to_dict() only when not empty;
+    # never in as_text() (the planner's view).
+    facts: dict = field(default_factory=dict)
 
     # ── provenance ─────────────────────────────────────────────────────
     _PROV_FIELDS = ("arrived", "found", "holding", "opened", "on")
@@ -162,7 +167,12 @@ class WorldState:
             found_pose=dict(self.found_pose) if self.found_pose else None,
             holding_pose=dict(self.holding_pose) if self.holding_pose else None,
             provenance=_copy.deepcopy(self.provenance),
+            facts={k: set(v) for k, v in self.facts.items()},
         )
+
+    def clear_facts(self) -> None:
+        """Empty the fact store (the start of a run)."""
+        self.facts = {}
 
     def found_pose_is_stale(self, robot_xy, threshold: float = 0.25) -> bool:
         """True if the stored ``found_pose`` can no longer be trusted: there is
@@ -176,8 +186,8 @@ class WorldState:
         return ((rx - robot_xy[0]) ** 2 + (ry - robot_xy[1]) ** 2) ** 0.5 > threshold
 
     def to_dict(self) -> dict:
-        """JSON-serializable snapshot for the UI / edit endpoint (sets -> sorted lists)."""
-        return {
+        """JSON-serializable snapshot for the UI / edit endpoint (sets -> sorted lists); ``facts`` only when there are any."""
+        out = {
             "arrived": self.arrived,
             "found": self.found,
             "holding": self.holding,
@@ -189,6 +199,9 @@ class WorldState:
             # added in SAGE-v2 (docs/guard.md); old clients ignore it, as_text() (the planner's) has none
             "provenance": self.provenance_view(),
         }
+        if any(self.facts.values()):
+            out["facts"] = {k: sorted(list(t) for t in v) for k, v in sorted(self.facts.items()) if v}
+        return out
 
     def update_from_dict(self, d: dict) -> None:
         """Apply an operator edit in place (only the keys present are touched).
@@ -225,6 +238,9 @@ class WorldState:
             self.on = set(d["on"] or [])
         if "holding_since" in d and "holding" not in d:
             self.holding_since = d["holding_since"]
+        if "facts" in d:
+            self.facts = {str(k): {tuple(str(a) for a in (t if isinstance(t, (list, tuple)) else [t])) for t in v or ()}
+                          for k, v in (d["facts"] or {}).items()}
 
     def as_text(self) -> str:
         """Render a compact, human-readable one-line summary of the state.

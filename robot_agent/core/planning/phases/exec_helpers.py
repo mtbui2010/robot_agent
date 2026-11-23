@@ -5,6 +5,8 @@ and ``_place_of_far_point``, moved VERBATIM out of ``assist_loop.py`` (step S23a
 ``self.robot``, ``self.sr``, ``self.cfg``, ``self._query_of``, ``self._in_lang`` and ``self._find_params``, as before.
 Why: the execute phase calls them on every step; they are the small, side-effect-free (apart from sensor reads) part of it
 and leave the loop file shorter. ``_effect`` stays in ``assist_loop.py``: it calls ``current()``, which tests patch there.
+``_bind`` also adds a step's typed ``args`` that the pack declares for its action and the skill's params declare (S26,
+core/pack/action_rules.py; no declared ``args``: nothing is added).
 Switch off: remove the ``ExecHelpers`` line from ``PHASE_MIXINS`` in ``phases/__init__.py`` and put the methods back.
 """
 from __future__ import annotations
@@ -12,7 +14,7 @@ from __future__ import annotations
 import math
 
 from .. import langdata, persons
-from ...pack import actions as action_data
+from ...pack import action_rules, actions as action_data
 
 _LOC_ACTIONS = set(action_data.names(action_data.default_table(), arg=("place", "container")))   # pack: actions.yaml
 
@@ -26,6 +28,9 @@ class ExecHelpers:
             return None
         skill, p = mapped[0], dict(mapped[1] or {})
         a, o = st["action"], st["object"]
+        rules = action_rules.active()
+        if rules.args.get(a):                            # the pack's typed arguments of the action (S26); raises Unbindable
+            p.update(action_rules.typed_params(rules, st, self._skill_params(skill)))
         if a in _LOC_ACTIONS or a in ("Find", "Pick"):
             p["inputs"] = self._query_of(st, o)          # the instance the person chose (which_one), else the name
         lang = getattr(self, "_run_lang", "en") or "en"
@@ -39,6 +44,11 @@ class ExecHelpers:
         if a == "Find" and self.cfg["find_verify"] and "verify" in self._find_params:
             p["verify"] = True
         return skill, p
+
+    def _skill_params(self, skill) -> set:
+        """The parameter names the manifest declares for ``skill`` (its ``params`` schema)."""
+        s = next((x for x in self.robot.manifest.skills if x.name == skill), None)
+        return set(((s.params or {}).get("properties") or {}) if s is not None else ())
 
     def _params(self, st, world):
         """The params of a grounded step (legacy entry point; see ``_bind``)."""
