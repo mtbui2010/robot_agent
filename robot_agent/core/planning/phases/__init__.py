@@ -10,6 +10,7 @@ Switch off: an empty tuple (today) is the old class exactly; a step is reverted 
 from ..find_ladder import FindLadder
 from .agree import AgreeReadBack
 from .answer import AnswerPhase
+from .correct import CorrectPhase
 from .exec_helpers import ExecHelpers
 from .gate import GatePhase
 from .ground import GroundPhase
@@ -29,4 +30,5 @@ PHASE_MIXINS: tuple = (
     UnderstandCall,
     UnderstandRounds,
     AgreeReadBack,
+    CorrectPhase,
 )
