@@ -20,6 +20,7 @@
  "only_in": {"embodiplan": ["robot_agent/core/planning/backends/", "robot_agent/core/planning/action_model.py"]},
  "size": [
   {"path": "robot_agent/core", "max_function": 80, "max_file": 1200},
+  {"path": "robot_agent/core/planning/assist_loop.py", "max_function": 80, "max_file": 400},
   {"path": "robot_agent/contract", "max_function": 80, "max_file": 1200},
   {"path": "robot_agent/interact", "max_function": 80, "max_file": 1200},
   {"path": "robot_agent/options", "max_function": 60, "max_file": 400},
