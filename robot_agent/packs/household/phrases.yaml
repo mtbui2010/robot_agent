@@ -3,6 +3,7 @@
 # the text character for character; the pack's own `source` label (pack.yaml) labels every entry. Language: English only.
 # `text.<name>` entries are single texts the engine says as they are (not phrase keys): speech.CORE_PHRASES leaves them out.
 # A key is in ONE of the two files (tests/test_pack_phrases.py proves it).
+# The understand prompt is not an entry here: it is the file prompts/understand.en.txt next to this one (core/pack/prompts.py).
 phrases:
   q_where_put: {en: "Where should I put the {object}?", slots: [object]}
   q_which_place: {en: "Which place do you mean: {options}?", slots: [options]}

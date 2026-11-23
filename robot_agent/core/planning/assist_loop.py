@@ -67,7 +67,7 @@ from . import langdata
 from . import (action_roles, dialog_agree, dialog_converge, dialog_ext, dialog_unstick, exec_integrity, goal_filter, goal_fix, language, persons, plan_tidy,
                request_coverage, role_models, speech)
 from ..options import REGISTRY as _OPTIONS, Dispatcher
-from ..pack import actions as action_data, goal_semantics
+from ..pack import actions as action_data, goal_semantics, prompts as pack_prompts
 from ..options.dispatch import NULL as _NO_OPTIONS
 from .option_services import LoopServices
 from . import reconcile as sensed
@@ -128,34 +128,7 @@ UNDERSTAND_SCHEMA = {
     "required": ["status", "reason", "question", "goals"],
 }
 
-UNDERSTAND_PROMPT = """You turn a household robot task into goals. {abilities}
-{cannot}
-
-Places (use these names):
-{places}
-
-Earlier answers from this user:
-{answers}
-
-Robot now: {robot}
-
-Return JSON:
-- status: "unsafe" if it could hurt someone or damage things (throwing, out of a window, near fire...);
-  "infeasible" only if it needs an action the robot does not have (any object may be moved; unknown objects are
-  fine); "ambiguous" only if WHAT to do is unclear (e.g. "clean the table" without saying what to move where) — not
-  for a missing or unclear place or an object whose location is unknown, those are handled separately; else "clear".
-- reason: one short sentence.
-- reason_type: for "infeasible" one of "missing_skill" (an action the robot does not have), "payload" (too heavy),
-  "size" (too big), "reach" (out of reach), "unknown_task" (not a household task the robot knows), "other"; else "".
-- question: when ambiguous, one short question to the user; else "".
-- goals: one per object to move / container to open, in order:
-  {{"type": "on", "object": <object>, "from": <place it is on now, or "">, "to": <place to put it, or "me" when the user
-  wants it given to them>}}; "in" = put into a drawer (to = the drawer); "open" / "close": object = the drawer, from/to "".{goal_kinds}
-  Object names: lower case English ("tennis ball", "red cup"); "said": the user's own words for it, in their
-  language ("빨간 컵"); for "say", "content": only the message to pass on, in the user's words.
-
-Task: {task}{original}
-{dialogue}"""
+UNDERSTAND_PROMPT = pack_prompts.text("understand")   # pack: packs/household/prompts/understand.en.txt, byte for byte
 
 
 # ─────────────────────────────────────────────────────────────────────────────
