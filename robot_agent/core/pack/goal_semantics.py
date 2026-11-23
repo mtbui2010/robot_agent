@@ -11,6 +11,10 @@ How: a goal whose kind has no rules object (no pack of the chain declares the ki
 reached and holds vacuously and adds no text: the result of the code before Step S05. A rules object gets a ``GoalCtx``:
 the loop (or None), whether the goal is the last one, the steps' simulation (computed ONCE per question through the loop's
 seam, so a test that patches the seam still reaches every kind) and ``reached_by`` (the loop's other seam).
+A kind a schema-2 pack declares with a ``holds`` list and no ``rules`` (Step S29) is decided by core/pack/declared_kinds.py:
+it holds when every predicate of the list is True in the belief, a plan reaches it unless the list is refuted after the
+steps, ``missing`` adds one line per refuted predicate and its read-back reads its ``phrase`` key (a read-back asked with
+no pack takes the pack of the run's active action rules, core/pack/action_rules.py ``active``).
 Off: a robot whose manifest has no ``pack:`` section gets the standard pack, which reproduces the old if-chains
 (tests/test_goal_semantics_diff.py); a schema-2 pack that removes a kind, or names other rules for it, changes only its own
 goals. There is no switch beyond the pack data: an empty ``goal_kinds`` section makes every goal vacuous.
@@ -21,6 +25,7 @@ from __future__ import annotations
 import functools
 from typing import Any, Callable, NamedTuple, Optional
 
+from . import action_rules, declared_kinds
 from .loader import Pack, default_pack
 
 NAMESPACE = "goal.rules"
@@ -118,24 +123,46 @@ def reached_by(loop, goal, got) -> bool:
     return fn(goal, got, getattr(loop, "_env_places", None)) if fn is not None else False
 
 
+def _apply(step, world, released):
+    from robot_agent.core.planning import action_model       # the one source of action rules (it imports this package first)
+    return action_model.apply(step, world, capabilities={"release_actions": released} if released else None)
+
+
+def _refuted(loop, pack: Pack, goal, steps, world, after: list) -> list:
+    """The planner lines of a goal of a kind declared with a ``holds`` list and no rules (core/pack/declared_kinds.py) that
+    ``steps`` from ``world`` refute; [] for any other goal. ``after``: the belief after the steps, computed once per question."""
+    decl = declared_kinds.declared(pack, goal.get("type"))
+    if decl is None:
+        return []
+    if not after:
+        after.append(declared_kinds.after(steps, world, releases(loop), _apply))
+    return declared_kinds.unmet(pack, decl, goal, after[0])
+
+
 def reaches(loop, steps, world, goals, seams: Seams) -> bool:
-    """Do ``steps`` from ``world`` reach every goal? A goal of a kind with no rules is reached; no goal and no step: False."""
-    pack, sim = pack_of(loop), seams.simulate(steps, world)
+    """Do ``steps`` from ``world`` reach every goal? A goal of a kind with no rules is reached unless its declared ``holds``
+    list is refuted after the steps; no goal and no step: False."""
+    pack, sim, after = pack_of(loop), seams.simulate(steps, world), []
     for g in goals:
         rules = rules_of(pack, g["type"])
         if rules is not None and not rules.reached(g, steps, world, GoalCtx(loop, g, goals, sim, seams)):
+            return False
+        if rules is None and _refuted(loop, pack, g, steps, world, after):
             return False
     return bool(goals) or bool(steps)
 
 
 def missing(loop, steps, world, goals, seams: Seams) -> list:
-    """One text per goal that ``steps`` from ``world`` leave unmet, in goal order (the planner reads them)."""
-    pack, sim, out = pack_of(loop), seams.simulate(steps, world), []
+    """One text per goal that ``steps`` from ``world`` leave unmet, in goal order (the planner reads them); a declared kind
+    with a ``holds`` list: one text per refuted predicate."""
+    pack, sim, out, after = pack_of(loop), seams.simulate(steps, world), [], []
     for g in goals:
         rules = rules_of(pack, g["type"])
         text = rules.missing(g, steps, world, GoalCtx(loop, g, goals, sim, seams)) if rules is not None else None
         if text is not None:
             out.append(text)
+        if rules is None:
+            out += _refuted(loop, pack, g, steps, world, after)
     return out
 
 
@@ -143,18 +170,28 @@ def phrase(goal, places, nice, pack: Optional[Pack] = None):
     """The read-back phrase of ``goal``: the ``phrase(goal, places, nice)`` of its kind's rules object (a ``LocalText``, or a
     plain text). A kind with no rules object, or a rules object with no ``phrase``, reads "<kind> the <object>" in plain
     text, as an unknown kind always did. ``pack``: the robot's pack; None = the standard pack (the read-back phrase is
-    asked through static methods of the loop, which have no robot)."""
+    asked through static methods of the loop, which have no robot). A kind with no rules object that the robot's pack (else
+    the pack of the run's active action rules) declares with a ``phrase`` key reads that phrase (Step S29)."""
     kind = goal["type"]
-    fn = getattr(rules_of(pack if pack is not None else _default(), kind), "phrase", None)
-    return fn(goal, places, nice) if callable(fn) else f"{kind} the {nice(goal.get('object') or '')}"
+    rules = rules_of(pack if pack is not None else _default(), kind)
+    fn = getattr(rules, "phrase", None)
+    if callable(fn):
+        return fn(goal, places, nice)
+    own = pack if pack is not None else action_rules.active().pack if rules is None else None
+    key = declared_kinds.phrase_key(own, kind)
+    return declared_kinds.phrase(own, key, goal, nice) if key else f"{kind} the {nice(goal.get('object') or '')}"
 
 
 def holds(loop, goals, belief: Belief) -> bool:
-    """Does every goal hold in ``belief``? A goal of a kind with no rules holds."""
+    """Does every goal hold in ``belief``? A goal of a kind with no rules holds, unless the kind declares a ``holds`` list
+    (then every predicate of it must be True in the belief)."""
     pack = pack_of(loop)
     for g in goals:
         rules = rules_of(pack, g["type"])
         if rules is not None and not rules.holds(g, belief, GoalCtx(loop, g, goals)):
+            return False
+        decl = declared_kinds.declared(pack, g["type"]) if rules is None else None
+        if decl is not None and not declared_kinds.holds(pack, decl, g, belief.world, belief.placed):
             return False
     return True
 

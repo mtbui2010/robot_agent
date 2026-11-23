@@ -19,7 +19,8 @@ Which pack: ``checking_pack``. A robot's own pack when it builds on the default 
 standard pack) or declares a verifier itself; a pack with ``extends: null`` and no verifier gets the default pack's
 checks, because the loop looked at on / in goals and checked releases and Finds for every robot before this step.
 Off: a kind with no ``observe`` (or a name that is not declared or not registered) is not looked at: the goal stays on the
-belief, the loop says "no sensor declared for it". A step verifier removed from the ``verifiers`` section (a pack's
+belief, the loop says "no sensor declared for it". ``unknown_fails`` (Step S29) reads a kind's ``unknown_is``: only
+``failure`` changes anything (a "cannot tell" is then an unmet goal); no shipped kind declares it. A step verifier removed from the ``verifiers`` section (a pack's
 ``remove: {verifiers: [...]}``) is not run.
 """
 
@@ -97,9 +98,17 @@ def step_verifiers(pack: Any, action=None) -> List[Tuple[Callable, dict]]:
     return out
 
 
+def unknown_fails(pack: Any, kind) -> bool:
+    """Does goal kind ``kind`` declare ``unknown_is: failure`` (Step S29): a goal verifier that cannot tell leaves the goal
+    unmet (code ``perception_unavailable``) instead of on the belief? False for no pack, a kind the pack does not declare and
+    the default ``belief``."""
+    decl = pack.entry("goal_kinds", kind) if pack is not None and isinstance(kind, str) else None
+    return isinstance(decl, dict) and decl.get("unknown_is") == "failure"
+
+
 def observed_kinds(pack: Any) -> List[str]:
     """The goal kinds of ``pack`` that a verifier looks at after the task (in the table's order)."""
     return [k for k in (pack.table("goal_kinds") if pack is not None else {}) if goal_verifier(pack, k)[0] is not None]
 
 
-__all__ = ["GOAL", "STEP", "TABLE", "Ctx", "checking_pack", "goal_verifier", "step_verifiers", "observed_kinds"]
+__all__ = ["GOAL", "STEP", "TABLE", "Ctx", "checking_pack", "goal_verifier", "step_verifiers", "unknown_fails", "observed_kinds"]
