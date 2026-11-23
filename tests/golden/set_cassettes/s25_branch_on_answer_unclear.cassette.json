@@ -1,0 +1,561 @@
+{
+ "format": 1,
+ "name": "s25_branch_on_answer_unclear",
+ "tags": [
+  "bt_goal",
+  "question",
+  "failure"
+ ],
+ "about": "the same tree, an answer that names no choice: the ask leaf fails (no fact answered, the raw text is kept) and the tree has no way left",
+ "scenario": {
+  "name": "s25_branch_on_answer_unclear",
+  "env": {
+   "shelf@loft": {
+    "aliases": [
+     "shelf"
+    ],
+    "loc": {
+     "x": 1.0,
+     "y": 1.0
+    },
+    "surface": true
+   },
+   "bench@den": {
+    "aliases": [
+     "bench"
+    ],
+    "loc": {
+     "x": 6.0,
+     "y": 1.0
+    },
+    "surface": true
+   },
+   "crate@den": {
+    "aliases": [
+     "crate"
+    ],
+    "loc": {
+     "x": 6.5,
+     "y": 2.0
+    },
+    "surface": true
+   }
+  },
+  "robot_pkg": "fakebot",
+  "task": "Take the gizmo from the shelf and put it on the bench.",
+  "robot": {
+   "objects": {
+    "gizmo": "shelf@loft"
+   },
+   "answers": [
+    "Hmm, I do not know."
+   ],
+   "faults": [],
+   "start": "crate@den"
+  },
+  "llm": {
+   "script": [],
+   "default": {
+    "status": "clear",
+    "reason": "",
+    "question": "",
+    "goals": [
+     {
+      "type": "on",
+      "object": "gizmo",
+      "from": "shelf@loft",
+      "to": "bench@den"
+     }
+    ]
+   }
+  },
+  "planner": {
+   "plan": [
+    "MoveTo shelf@loft",
+    "Find gizmo",
+    "Pick gizmo",
+    "MoveTo bench@den",
+    "Place bench@den"
+   ],
+   "replans": []
+  },
+  "options": {
+   "input_pivot": "none",
+   "look_then_ask": "0",
+   "bring_ask": "0",
+   "bt_goal": "1",
+   "fetch_guard": "0",
+   "detector_miss_rate": 0,
+   "search_legs": 1,
+   "health_wait_s": 0
+  },
+  "pack_options": {
+   "bt_goal": {
+    "trees": {
+     "on": {
+      "tree": [
+       "sequence",
+       [
+        "ask",
+        "route"
+       ],
+       [
+        "fallback",
+        [
+         "cond",
+         "answered",
+         "route",
+         "shortcut"
+        ],
+        [
+         "act",
+         "MoveTo",
+         "crate@den"
+        ]
+       ],
+       [
+        "act",
+        "MoveTo",
+        "{from}"
+       ],
+       [
+        "act",
+        "Find",
+        "{object}"
+       ],
+       [
+        "act",
+        "Pick",
+        "{object}"
+       ],
+       [
+        "act",
+        "MoveTo",
+        "{to}"
+       ],
+       [
+        "act",
+        "Place",
+        "{to}"
+       ],
+       [
+        "cond",
+        "placed",
+        "{object}",
+        "{to}"
+       ]
+      ],
+      "skip_if": [
+       "hand"
+      ],
+      "assumed": true
+     },
+     "go": {
+      "tree": [
+       "fallback",
+       [
+        "cond",
+        "at",
+        "{to}"
+       ],
+       [
+        "act",
+        "MoveTo",
+        "{to}"
+       ]
+      ],
+      "assumed": true
+     }
+    },
+    "menu": {
+     "phrases": {
+      "Find": "q_ask_next_find",
+      "Pick": "q_ask_next_pick",
+      "MoveTo": "q_ask_next_move"
+     },
+     "retry": [
+      "ask_next.retry",
+      "ask_next.elsewhere",
+      "dialogue.yes"
+     ],
+     "stop": [
+      "ask_next.stop",
+      "dialogue.stop"
+     ],
+     "assumed": true
+    }
+   }
+  },
+  "pack": {
+   "schema": 2,
+   "name": "route_s25",
+   "assumed": true,
+   "phrases": {
+    "q_where_go": {
+     "en": "Where should I go?",
+     "ko": "어디로 갈까요?",
+     "assumed": true
+    }
+   },
+   "questions": {
+    "route": {
+     "phrase": "q_where_go",
+     "kind": "route",
+     "answer": {
+      "type": "choice",
+      "keep_text": true,
+      "choices": {
+       "shortcut": {
+        "words": {
+         "en": [
+          "shortcut",
+          "direct way"
+         ]
+        }
+       },
+       "detour": {
+        "words": {
+         "en": [
+          "detour",
+          "crate"
+         ]
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ "recorded": {
+  "llm_calls": [
+   {
+    "prompt": "be3fde09a8adddb3",
+    "format": "b69b437228696e32",
+    "head": "You turn a household robot task into goals. The robot is a mobile manipu",
+    "answer": "{\"status\": \"clear\", \"reason\": \"\", \"question\": \"\", \"goals\": [{\"type\": \"on\", \"object\": \"gizmo\", \"from\": \"shelf@loft\", \"to\": \"bench@den\"}]}"
+   }
+  ],
+  "planner_calls": [],
+  "robot_calls": [
+   {
+    "skill": "mobile_pose",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "pose": [
+      6.5,
+      2.0,
+      0
+     ]
+    }
+   },
+   {
+    "skill": "ask",
+    "params": {
+     "inputs": "Where should I go?",
+     "retries": 0,
+     "lang": "en"
+    },
+    "result": {
+     "isdone": true,
+     "text": "Hmm, I do not know."
+    }
+   }
+  ],
+  "events": [
+   {
+    "event": "task_start",
+    "task": "Take the gizmo from the shelf and put it on the bench.",
+    "world": {
+     "arrived": "crate@den",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from crate@den"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Starting the task"
+   },
+   {
+    "event": "reconcile",
+    "when": "start",
+    "changed": {
+     "arrived": [
+      null,
+      "crate@den"
+     ]
+    },
+    "sensors": {
+     "arrived": {
+      "pose": [
+       6.5,
+       2.0
+      ],
+      "detail": "0.00 m from crate@den",
+      "source": "mobile_pose"
+     },
+     "containers": {},
+     "unconfirmed": []
+    },
+    "provenance": {
+     "arrived": {
+      "source": "sensor",
+      "detail": "0.00 m from crate@den"
+     },
+     "found": {
+      "source": "belief"
+     },
+     "holding": {
+      "source": "belief"
+     },
+     "opened": {
+      "source": "sensor",
+      "containers": {},
+      "unconfirmed": []
+     },
+     "on": {
+      "source": "belief"
+     }
+    },
+    "world": {
+     "arrived": "crate@den",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from crate@den"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    }
+   },
+   {
+    "event": "status",
+    "msg": "Understanding the task..."
+   },
+   {
+    "event": "understand",
+    "status": "clear",
+    "reason": "",
+    "goals": [
+     {
+      "type": "on",
+      "object": "gizmo",
+      "from": "shelf@loft",
+      "to": "bench@den"
+     }
+    ],
+    "question": null
+   },
+   {
+    "event": "status",
+    "msg": "Generating task plan..."
+   },
+   {
+    "event": "clarify",
+    "question": "Where should I go?",
+    "round": 0,
+    "kind": "route"
+   },
+   {
+    "event": "done",
+    "status": "failed",
+    "msg": "on gizmo failed (bt_goal: no way left): ",
+    "world": {
+     "arrived": "crate@den",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from crate@den"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     },
+     "facts": {
+      "answer_text": [
+       [
+        "route",
+        "Hmm, I do not know."
+       ]
+      ]
+     }
+    },
+    "code": "unknown",
+    "say": "on gizmo failed (bt goal: no way left):"
+   }
+  ],
+  "final": {
+   "robot": {
+    "at": "crate@den",
+    "holding": null,
+    "objects": {
+     "gizmo": "shelf@loft"
+    },
+    "opened": [],
+    "asked": [
+     "Where should I go?"
+    ]
+   },
+   "belief": {
+    "arrived": "crate@den",
+    "found": null,
+    "holding": null,
+    "opened": [],
+    "on": [],
+    "found_pose": null,
+    "holding_pose": null,
+    "provenance": {
+     "arrived": {
+      "source": "sensor",
+      "detail": "0.00 m from crate@den"
+     },
+     "found": {
+      "source": "belief"
+     },
+     "holding": {
+      "source": "belief"
+     },
+     "opened": {
+      "source": "sensor",
+      "containers": {},
+      "unconfirmed": []
+     },
+     "on": {
+      "source": "belief"
+     }
+    },
+    "facts": {
+     "answer_text": [
+      [
+       "route",
+       "Hmm, I do not know."
+      ]
+     ]
+    }
+   },
+   "lab_log": [
+    {
+     "flag": "bt_goal",
+     "goal": 1,
+     "status": "claimed"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.0 ask route",
+     "status": "failure"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0 sequence",
+     "status": "failure"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "status": "exhausted",
+     "action": "stop",
+     "code": null,
+     "rung": null
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "status": "exhausted",
+     "action": "stop"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": "on gizmo bench@den",
+     "status": "stop"
+    }
+   ],
+   "record": {
+    "task": "Take the gizmo from the shelf and put it on the bench.",
+    "lang": "en",
+    "obs": "goals: [{\"type\": \"on\", \"object\": \"gizmo\", \"from\": \"shelf@loft\", \"to\": \"bench@den\"}]",
+    "visible": [],
+    "planner": "sage+assist",
+    "plan_meta": {
+     "method": "option"
+    },
+    "warnings": [],
+    "steps": [],
+    "replans": [],
+    "status": "failed",
+    "failure": {
+     "code": "unknown"
+    }
+   },
+   "log_kinds": [
+    "reconcile",
+    "task_start",
+    "status",
+    "understand",
+    "status",
+    "done",
+    "snapshot"
+   ]
+  }
+ },
+ "commit": "39c2d2a"
+}

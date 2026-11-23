@@ -1,0 +1,461 @@
+{
+ "format": 1,
+ "name": "s25_typed_arg_wrong_value",
+ "tags": [
+  "bt_goal",
+  "failure",
+  "fakehome"
+ ],
+ "about": "the same tree with a `mode` the pack does not allow (enum front / left / right): the step is refused when it is bound, nothing moves and the run stops",
+ "scenario": {
+  "name": "s25_typed_arg_wrong_value",
+  "env": {
+   "counter@kitchen": {
+    "aliases": [
+     "counter"
+    ],
+    "loc": {
+     "x": 6.0,
+     "y": 1.0
+    },
+    "surface": true
+   },
+   "desk@study": {
+    "aliases": [
+     "desk"
+    ],
+    "loc": {
+     "x": 0.5,
+     "y": 6.0
+    },
+    "surface": true
+   }
+  },
+  "robot_pkg": "fakehome",
+  "task": "Put the mug on the desk.",
+  "robot": {
+   "objects": {
+    "mug": "counter@kitchen"
+   },
+   "start": "desk@study"
+  },
+  "llm": {
+   "script": [],
+   "default": {
+    "status": "clear",
+    "reason": "",
+    "question": "",
+    "goals": [
+     {
+      "type": "on",
+      "object": "mug",
+      "from": "counter",
+      "to": "desk"
+     }
+    ]
+   }
+  },
+  "planner": {
+   "plan": [
+    "MoveTo counter@kitchen",
+    "Find mug",
+    "Pick mug",
+    "MoveTo desk@study",
+    "Place desk@study"
+   ],
+   "replans": []
+  },
+  "options": {
+   "input_pivot": "none",
+   "look_then_ask": "0",
+   "bring_ask": "0",
+   "bt_goal": "1",
+   "fetch_guard": "0",
+   "search_legs": 1,
+   "ask_help": false,
+   "detector_miss_rate": 0,
+   "health_wait_s": 0
+  },
+  "pack": {
+   "schema": 2,
+   "name": "s26_home_args",
+   "extends": "household",
+   "assumed": true,
+   "actions": {
+    "MoveTo": {
+     "class": "move",
+     "arg": {
+      "name": "place",
+      "type": "place"
+     },
+     "verb": "move to",
+     "ability": "move to a place",
+     "describe": "move to a place",
+     "args": {
+      "mode": {
+       "type": "enum",
+       "values": [
+        "front",
+        "left",
+        "right"
+       ]
+      }
+     },
+     "assumed": true
+    }
+   }
+  },
+  "pack_options": {
+   "bt_goal": {
+    "trees": {
+     "on": {
+      "tree": [
+       "sequence",
+       [
+        "act",
+        "MoveTo",
+        "counter@kitchen",
+        {
+         "mode": "up"
+        }
+       ],
+       [
+        "act",
+        "Find",
+        "{object}"
+       ],
+       [
+        "act",
+        "Pick",
+        "{object}"
+       ],
+       [
+        "act",
+        "MoveTo",
+        "{to}",
+        {
+         "mode": "right"
+        }
+       ],
+       [
+        "act",
+        "Place",
+        "{to}"
+       ],
+       [
+        "cond",
+        "placed",
+        "{object}",
+        "{to}"
+       ]
+      ],
+      "skip_if": [
+       "hand"
+      ],
+      "assumed": true
+     }
+    }
+   }
+  }
+ },
+ "recorded": {
+  "llm_calls": [
+   {
+    "prompt": "8312c07ee9d3bf63",
+    "format": "b69b437228696e32",
+    "head": "You turn a household robot task into goals. The robot is a mobile manipu",
+    "answer": "{\"status\": \"clear\", \"reason\": \"\", \"question\": \"\", \"goals\": [{\"type\": \"on\", \"object\": \"mug\", \"from\": \"counter\", \"to\": \"desk\"}]}"
+   }
+  ],
+  "planner_calls": [],
+  "robot_calls": [
+   {
+    "skill": "mobile_pose",
+    "params": {},
+    "result": {
+     "isdone": true,
+     "pose": [
+      0.5,
+      6.0,
+      0
+     ]
+    }
+   }
+  ],
+  "events": [
+   {
+    "event": "task_start",
+    "task": "Put the mug on the desk.",
+    "world": {
+     "arrived": "desk@study",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from desk@study"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "say": "Starting the task"
+   },
+   {
+    "event": "reconcile",
+    "when": "start",
+    "changed": {
+     "arrived": [
+      null,
+      "desk@study"
+     ]
+    },
+    "sensors": {
+     "arrived": {
+      "pose": [
+       0.5,
+       6.0
+      ],
+      "detail": "0.00 m from desk@study",
+      "source": "mobile_pose"
+     },
+     "containers": {},
+     "unconfirmed": []
+    },
+    "provenance": {
+     "arrived": {
+      "source": "sensor",
+      "detail": "0.00 m from desk@study"
+     },
+     "found": {
+      "source": "belief"
+     },
+     "holding": {
+      "source": "belief"
+     },
+     "opened": {
+      "source": "sensor",
+      "containers": {},
+      "unconfirmed": []
+     },
+     "on": {
+      "source": "belief"
+     }
+    },
+    "world": {
+     "arrived": "desk@study",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from desk@study"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    }
+   },
+   {
+    "event": "status",
+    "msg": "Understanding the task..."
+   },
+   {
+    "event": "understand",
+    "status": "clear",
+    "reason": "",
+    "goals": [
+     {
+      "type": "on",
+      "object": "mug",
+      "from": "",
+      "to": "desk@study"
+     }
+    ],
+    "question": null
+   },
+   {
+    "event": "status",
+    "msg": "Generating task plan..."
+   },
+   {
+    "event": "status",
+    "msg": "MoveTo counter@kitchen failed, not replanned: no skill for this step: MoveTo: the argument mode: 'up' is not one of ['front', 'left', 'right']"
+   },
+   {
+    "event": "done",
+    "status": "failed",
+    "msg": "MoveTo counter@kitchen failed (bt_goal: no way left): ",
+    "world": {
+     "arrived": "desk@study",
+     "found": null,
+     "holding": null,
+     "opened": [],
+     "on": [],
+     "found_pose": null,
+     "holding_pose": null,
+     "provenance": {
+      "arrived": {
+       "source": "sensor",
+       "detail": "0.00 m from desk@study"
+      },
+      "found": {
+       "source": "belief"
+      },
+      "holding": {
+       "source": "belief"
+      },
+      "opened": {
+       "source": "sensor",
+       "containers": {},
+       "unconfirmed": []
+      },
+      "on": {
+       "source": "belief"
+      }
+     }
+    },
+    "code": "unknown",
+    "say": "Sorry, I could not finish the task."
+   }
+  ],
+  "final": {
+   "robot": {
+    "at": "desk@study",
+    "holding": null,
+    "objects": {
+     "mug": "counter@kitchen"
+    },
+    "opened": [],
+    "asked": []
+   },
+   "belief": {
+    "arrived": "desk@study",
+    "found": null,
+    "holding": null,
+    "opened": [],
+    "on": [],
+    "found_pose": null,
+    "holding_pose": null,
+    "provenance": {
+     "arrived": {
+      "source": "sensor",
+      "detail": "0.00 m from desk@study"
+     },
+     "found": {
+      "source": "belief"
+     },
+     "holding": {
+      "source": "belief"
+     },
+     "opened": {
+      "source": "sensor",
+      "containers": {},
+      "unconfirmed": []
+     },
+     "on": {
+      "source": "belief"
+     }
+    }
+   },
+   "lab_log": [
+    {
+     "flag": "bt_goal",
+     "goal": 1,
+     "status": "claimed"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0.0 act MoveTo counter@kitchen {'mode': 'up'}",
+     "status": "failure"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "node": "0 sequence",
+     "status": "failure"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "status": "exhausted",
+     "action": "no question",
+     "code": null,
+     "rung": "planner"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": 0,
+     "status": "exhausted",
+     "action": "stop"
+    },
+    {
+     "flag": "bt_goal",
+     "goal": "on mug desk@study",
+     "status": "stop"
+    }
+   ],
+   "record": {
+    "task": "Put the mug on the desk.",
+    "lang": "en",
+    "obs": "goals: [{\"type\": \"on\", \"object\": \"mug\", \"from\": \"\", \"to\": \"desk@study\"}]",
+    "visible": [],
+    "planner": "sage+assist",
+    "plan_meta": {
+     "method": "option"
+    },
+    "warnings": [],
+    "steps": [],
+    "replans": [],
+    "status": "failed",
+    "failure": {
+     "code": "unknown"
+    }
+   },
+   "log_kinds": [
+    "reconcile",
+    "task_start",
+    "status",
+    "understand",
+    "status",
+    "status",
+    "done",
+    "snapshot"
+   ]
+  }
+ },
+ "commit": "39c2d2a"
+}
