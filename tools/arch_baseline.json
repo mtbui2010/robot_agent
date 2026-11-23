@@ -11,7 +11,6 @@
   "private: robot_agent/core/planning/assist_loop.py -> robot_agent.core.planning.loop._DONE": "robot_agent.core.planning.assist_loop imports the private name _DONE of robot_agent.core.planning.loop",
   "private: robot_agent/core/planning/assist_loop.py -> robot_agent.core.planning.loop._NEXT": "robot_agent.core.planning.assist_loop imports the private name _NEXT of robot_agent.core.planning.loop",
   "private: robot_agent/core/planning/assist_loop.py -> robot_agent.core.planning.loop._STOP": "robot_agent.core.planning.assist_loop imports the private name _STOP of robot_agent.core.planning.loop",
-  "private: robot_agent/core/planning/assist_loop.py -> robot_agent.core.planning.loop._vr_list": "robot_agent.core.planning.assist_loop imports the private name _vr_list of robot_agent.core.planning.loop",
   "private: robot_agent/core/planning/dialog_agree.py -> robot_agent.core.planning.understand._norm": "robot_agent.core.planning.dialog_agree imports the private name _norm of robot_agent.core.planning.understand",
   "private: robot_agent/core/planning/dialog_unstick.py -> robot_agent.core.planning.understand._norm": "robot_agent.core.planning.dialog_unstick imports the private name _norm of robot_agent.core.planning.understand",
   "private: robot_agent/core/planning/goal_filter.py -> robot_agent.core.planning.understand._active": "robot_agent.core.planning.goal_filter imports the private name _active of robot_agent.core.planning.understand",
@@ -47,7 +46,7 @@
   "vocab_kinds": 35
  },
  "size": {
-  "file: robot_agent/core/planning/assist_loop.py": 1132,
+  "file: robot_agent/core/planning/assist_loop.py": 882,
   "fn: robot_agent/contract/manifest.py::_planner#0": 89,
   "fn: robot_agent/core/device_manager.py::DeviceManager.add_connect#0": 240,
   "fn: robot_agent/core/plan_skill.py::run_plan_skill#0": 91,
@@ -58,6 +57,6 @@
  },
  "wiring": {
   "cfg_branches": 58,
-  "cfg_keys": 71
+  "cfg_keys": 74
  }
 }
