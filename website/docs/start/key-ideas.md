@@ -25,7 +25,7 @@ flowchart LR
     I2 -. "replan or stop" .-> I7
 ```
 
-Ideas 1, 3 and 7 say who knows what: the core knows no robot, a planner writes abstract steps, and a robot binds them. Ideas 4, 5 and 6 say how a plan is made safe. Idea 2 says how a failure is reported and handled.
+Ideas 1, 3 and 7 say who knows what: the core knows no robot (see [One core, many robots](../concepts/generality.md)), a planner writes abstract steps, and a robot binds them. Ideas 4, 5 and 6 say how a plan is made safe. Idea 2 says how a failure is reported and handled.
 
 ## 1. A robot is data, not code in the core
 
@@ -38,7 +38,10 @@ Evidence: the adapter protocol is [`RobotAdapter` in `contract/adapter.py:23-51`
 !!! warning "The hub is not completely free of robot data"
     `make lint-core` finds no robot names in `core/`, `interact/` and `contract/`, but one robot's values are stored in the hub file [`skill_configs.py:104-110`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/skill_configs.py#L104-L110) (for example `MOBILE_HEIGHT` and a list of object names). Keep your own robot's values in your manifest. See [Known pitfalls](../reference/known-pitfalls.md).
 
-Go deeper: [A robot as data](../concepts/robot-as-data.md) and [Contract: robot package and core](../contracts/robot-package.md).
+!!! note "Generality: a robot, a model, a language and a benchmark are all data"
+    The same idea goes further than the manifest. Since the "level B" refactor (state at `robot_agent` `e8edaca`), the vocabulary and rules of the standard household robot are not written in the loop code. They are declared in a **pack**: a folder of data files with a source label on each entry. The core loads a pack by name, so it has no import edge to it. A language is a data file. A planner is a plug-in. A benchmark imports the core, and the core never imports it. If a pack declares nothing for a feature, the feature does nothing. The refactor was checked by recorded golden traces, a mutation check and size ratchets. The page [One core, many robots](../concepts/generality.md) lists what these prove and what they do not.
+
+Go deeper: [A robot as data](../concepts/robot-as-data.md), [One core, many robots](../concepts/generality.md) and [Contract: robot package and core](../contracts/robot-package.md).
 
 ## 2. Every skill result has one shape, with a failure code from a fixed list
 

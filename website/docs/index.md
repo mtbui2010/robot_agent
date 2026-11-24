@@ -20,10 +20,16 @@ flowchart LR
 
 An arrow points from a repo to the one it depends on. The full picture, with the optional links, is in [Repo map and versions](start/repo-map.md).
 
+## One core, many robots
+
+The core is built to be independent of any one robot, model, language or benchmark. Everything specific is declared as data, in a **pack**, and each entry can carry a source label. In 2026 the core was refactored ("level B") to move the household vocabulary out of the loop code and into such a pack. The recorded checks say the behaviour did not change. What is checked, and what is not claimed, is on one page: [One core, many robots](concepts/generality.md).
+
+
 ## Start here
 
 1. [Key ideas](start/key-ideas.md): seven ideas that explain the design, each with a place in the code.
 2. [Architecture](start/architecture.md): the layers, and one command followed from the dashboard to the robot and back.
+   Then read [One core, many robots](concepts/generality.md): what is core, what is declared data, and how to check it.
 3. [Run the whole system](start/run-the-system.md): what each set-up needs. Only the offline set-up was run.
 4. [Repo map and versions](start/repo-map.md): the six repos, their version pins and the commits this site was checked against.
 5. [Glossary](start/glossary.md): every internal term in plain words.

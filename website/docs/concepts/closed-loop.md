@@ -204,6 +204,8 @@ The `AssistLoop` does not hold every behaviour in its own code. Some are **optio
 | `bring_ask` | **In grounding, for "bring me X".** One combined question, "Where are you? Or where should I put it?", also when the robot tracks the person. Asked once per request. Not asked when the words ask for a hand-over ("hand me the mug"). | run option `bring_ask=0` (or `ROBOT_AGENT_BRING_ASK=0`) |
 | `bt_goal` | **Plan and act.** When the manifest declares `trees` (a behaviour tree per goal kind), the goals with a tree are run by the tree and the planner is not called for them. Each tree step goes through the loop's own step path and recovery ladder. With key `mixed` (default on), neighbouring goals without a tree are planned by SAGE once, when the run reaches them. A step with no way left hands the goals still open to the SAGE replan. A robot that declares no `trees`: nothing changes. | run option `bt_goal=0`; `bt_goal.mixed=0` gives the older all-or-nothing rule |
 
+How an LLM and a behaviour tree share a run is on its own page: [An LLM and a behaviour tree together](llm-and-behavior-trees.md).
+
 What was checked and what was not:
 
 - `look_then_ask` and `bring_ask` were checked with **English phrases only** (the core's own texts for `q_where_is_here` and `q_where_bring`). A run in Korean or Vietnamese is **not verified** for these two options. The follow-up of `offer_near` has only an English phrase (`q_place_unknown`); Korean and Vietnamese are not provided, and other languages go through the translator.

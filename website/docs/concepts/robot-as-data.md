@@ -119,6 +119,16 @@ To add a robot you create a package, not a patch:
 
 The full walk-through is in [Add a robot](../guides/add-a-robot.md). The exact promises both sides make are in [Contract: robot package](../contracts/robot-package.md).
 
+## Beyond the manifest: declared packs
+
+The manifest holds the static facts of one robot. Since the "level B" refactor (state at `robot_agent` `e8edaca`), the vocabulary and rules that the core once held for household robots are data too. They live in a **pack**: goal kinds, actions, verifiers, recovery rules and phrases, each in its own file with a source label.
+
+- A robot manifest may have a `pack:` section. It says which pack the robot builds on (`extends`) and what it adds or removes.
+- A manifest with no `pack:` section is "schema 1". The loader gives it the standard `household` pack and lifts what the manifest already declares.
+- The loader finds a pack by name from `robot_agent/packs/index.yaml`. A pack's code is limited to named callables in a module of the pack itself.
+
+So "a robot is data" now covers its words and rules as well as its skills and distances. See [One core, many robots](generality.md) for the loader, the shipped packs and the limits of the claim. Whether `kcare_robot` or `symbolic_robot` declare a `pack:` section was not verified.
+
 ## Dependency direction
 
 ```mermaid

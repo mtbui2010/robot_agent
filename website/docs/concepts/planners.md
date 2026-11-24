@@ -100,6 +100,8 @@ Both loops share the same event stream, the same record of the run, and the same
 
 In the AssistLoop a robot can declare a behaviour tree per goal kind, as data. The option `bt_goal` has the key `mixed`, on by default. Goals whose kind has a tree run as trees and the planner is not asked for them. Neighbouring goals without a tree are planned by SAGE once, when the run reaches them, from the world as it is then, and their steps run one by one through the engine's own step path with its recovery ladder. If a step has no way left, the goals that are left (this part and every goal after it, trees included) go to the SAGE replan once. A robot that declares no trees gets no change, and with no goal that has a tree SAGE plans the whole run as before. Not covered: the whole-plan gate (see [Checks before motion](checks-before-motion.md)) is skipped for the parts SAGE plans this way, and the effect on the benchmark was not measured. Rules: the hub's [`docs/bt_goal.md`](https://github.com/mtbui2010/robot_agent/blob/3269923/docs/bt_goal.md).
 
+For the full story of how an LLM and a behaviour tree work together (why, the pipeline, what the LLM does not decide, limits), see [An LLM and a behaviour tree together](llm-and-behavior-trees.md).
+
 #### How a mixed run goes
 
 Goals run in the order the reader gave them. A goal with a tree is ticked; a run of neighbouring goals without a tree is planned by SAGE once, when the run reaches it. If no goal has a tree, SAGE plans the whole run as when the option is off.
@@ -186,4 +188,4 @@ For how that planner works inside (sub-goals, expansion, editing, memory), read 
     - ClosedLoop: [`loop.py`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/core/planning/loop.py#L246-L259); AssistLoop and its generator: [`assist_loop.py`](https://github.com/mtbui2010/robot_agent/blob/5058637/robot_agent/core/planning/assist_loop.py#L369-L376)
     - Longer notes (dense): [`docs/planners.md`](https://github.com/mtbui2010/robot_agent/blob/6d31f58/docs/planners.md)
 
-See also: [The closed loop](closed-loop.md), [Checks before motion](checks-before-motion.md).
+See also: [The closed loop](closed-loop.md), [Checks before motion](checks-before-motion.md), [An LLM and a behaviour tree together](llm-and-behavior-trees.md).

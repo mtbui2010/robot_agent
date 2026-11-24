@@ -76,11 +76,13 @@ nav:
   - Concepts:
       - concepts/index.md
       - The closed loop: concepts/closed-loop.md
+      - One core, many robots: concepts/generality.md
       - A robot as data: concepts/robot-as-data.md
       - Skills, results, failure codes: concepts/skills-and-failures.md
       - The belief and reconcile: concepts/belief-and-reconcile.md
       - Checks before motion: concepts/checks-before-motion.md
       - Planners and loops: concepts/planners.md
+      - An LLM and a behaviour tree together: concepts/llm-and-behavior-trees.md
       - Runs and records: concepts/runs-and-records.md
       - Dialog and intent: concepts/dialog-and-intent.md
   - Contracts between repos:

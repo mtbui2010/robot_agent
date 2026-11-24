@@ -46,6 +46,29 @@ flowchart TB
 
 Two rules from the hub's own notes keep the layers apart. Dependencies in the hub run one way, `contract` <- `model` <- `plan` / `execute` <- `interact` <- `api` ([`CLAUDE.md` rule 2](https://github.com/mtbui2010/robot_agent/blob/3269923/CLAUDE.md#L9), reasons in `docs/rules.md` of the hub repo). And `embodiplan` is imported in only two places in the hub, `core/planning/backends/` and `core/planning/action_model.py` ([rule 3](https://github.com/mtbui2010/robot_agent/blob/3269923/CLAUDE.md#L10)), so the planner library stays replaceable.
 
+### What is core and what is declared data
+
+The picture above shows repos. Inside the hub there is a second split: the **engine** (code that runs for every robot) and the **packs** (declared data that the engine loads by name). The import rules in `tools/arch_rules.json` keep them apart. This is the state at `robot_agent` `e8edaca`.
+
+```mermaid
+flowchart TB
+  CT["contract<br/>(imports no other layer)"]
+  EN["engine: robot_agent/core<br/>(imports contract only)"]
+  OP["options<br/>(contract, engine)"]
+  PK["packs: declared data<br/>(contract, engine)"]
+  IN["interact"]
+  AP["api"]
+  EN --> CT
+  OP --> EN
+  PK --> EN
+  IN --> EN
+  AP --> IN
+  EN -. "loads by name,<br/>no import" .-> PK
+  EN -. "loads by name,<br/>no import" .-> OP
+```
+
+The engine reads goal kinds, actions, verifiers, recovery rules and phrases from the packs. It names no robot. The loop file `assist_loop.py` shrank from 4081 to 561 lines in this refactor (SOURCE: `docs/proposals/ratchet.json`). The full table of what is code and what is data, how a pack is found, the checks and the limits are in [One core, many robots](../concepts/generality.md).
+
 !!! code "Where in the code"
     - Hub app factory (mounts the routers): [`app_factory.py`](https://github.com/mtbui2010/robot_agent/blob/3269923/robot_agent/app_factory.py#L73-L89)
     - Robot package entry point: [`kcare_robot/main.py:29`](https://github.com/mtbui2010/kcare_robot/blob/d4f5577b342e/kcare_robot/main.py#L29) calls `create_app(robot_pkg='kcare_robot', ...)`. The hub has no entry point of its own.
