@@ -24,6 +24,22 @@ import threading
 _local = threading.local()
 
 
+def capture_context() -> dict:
+    """The calling thread's skill context: log emitter, spoken names, dataset targets (everything kept in ``_local``)."""
+    return dict(_local.__dict__)
+
+
+def apply_context(ctx: dict) -> None:
+    """Install a captured context in this thread (run_parallel's threads, so ``log_data`` / ``spoken`` / ``dataset_dir`` work there)."""
+    _local.__dict__.update(ctx)
+
+
+def release_context(ctx: dict) -> None:
+    """Remove what ``apply_context(ctx)`` installed from this thread."""
+    for k in ctx:
+        _local.__dict__.pop(k, None)
+
+
 def log_data(data: dict) -> None:
     fn = getattr(_local, 'emit', None)
     if fn is not None:

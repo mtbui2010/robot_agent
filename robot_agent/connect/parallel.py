@@ -10,11 +10,21 @@ import numpy as np
 
 
 def run_parallel(funcs):
-    """Run every callable in *funcs* in its own thread; return results in order."""
+    """Run every callable in *funcs* in its own thread; return results in order.
+
+    Each thread gets the caller's skill context (log emitter, spoken names, dataset targets: they are kept per thread),
+    so ``log_data`` / ``spoken`` inside a skill run here still reach the run.
+    Only the state of ``robot_agent.skills`` is passed: the run binding (RunManager), the run record and the plan depth stay per thread."""
+    from ..skills import apply_context, capture_context, release_context
+    ctx = capture_context()                # taken here, in the calling thread
     results = [None] * len(funcs)
 
     def wrapper(i, func):
-        results[i] = func()
+        apply_context(ctx)
+        try:
+            results[i] = func()
+        finally:
+            release_context(ctx)
 
     threads = [threading.Thread(target=wrapper, args=(i, func), daemon=True)
                for i, func in enumerate(funcs)]
